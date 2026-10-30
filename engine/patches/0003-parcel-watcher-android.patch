@@ -1,0 +1,19 @@
+diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
+index 7d36c80..f2446c5 100755
+--- a/packages/cli/script/build.ts
++++ b/packages/cli/script/build.ts
+@@ -148,7 +148,13 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+     name: "parcel-watcher-binding",
+     setup(build) {
+       build.onLoad({ filter: /filesystem[/\\]watcher-binding\.ts$/ }, () => ({
+-        contents: `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
++        // Android has no @parcel/watcher native build. Emitting a binding that
++        // throws on call (not at bundle time) lets watcher.ts's try/catch fall
++        // back to node:fs polling instead of failing the whole build.
++        contents:
++          item.abi === "android"
++            ? `export default () => { throw new Error("parcel-watcher is not available on android") }`
++            : `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
+         loader: "js",
+       }))
+     },

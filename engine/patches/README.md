@@ -81,6 +81,44 @@ documented, not simulated.
 
 ---
 
+## 0003-parcel-watcher-android.patch
+
+Same class of failure as 0002, one layer deeper.
+
+**Observed failure:**
+
+```
+building cli-linux-arm64-android
+error: Could not resolve: "@parcel/watcher-linux-arm64-android". Maybe you need to "bun install"?
+    at packages/core/src/filesystem/watcher-binding.ts:1:30
+```
+
+`build.ts` synthesises the native package name from the target:
+
+```ts
+const parcelWatcherPackage = `@parcel/watcher-${item.os}-${item.arch}${item.os === "linux" ? `-${item.abi ?? "glibc"}` : ""}`
+```
+
+With `abi: "android"` that becomes `@parcel/watcher-linux-arm64-android`, which
+does not exist. The plugin injects a literal `require(...)`, so the failure
+happens at **bundle time** and aborts the build.
+
+The patch emits a stub that throws only when **called**:
+
+```ts
+contents:
+  item.abi === "android"
+    ? `export default () => { throw new Error("parcel-watcher is not available on android") }`
+    : `export default () => require(${JSON.stringify(parcelWatcherPackage)})`
+```
+
+`packages/core/src/filesystem/watcher.ts` already wraps the binding load in
+`try/catch` and returns `undefined` on failure, so the engine degrades to
+`node:fs` watching instead of crashing. Throwing lazily is what makes that
+fallback reachable — throwing at bundle time is not catchable.
+
+---
+
 ## Known unresolved points
 
 These are not fixed by 0001 and will surface during the first real engine build.
