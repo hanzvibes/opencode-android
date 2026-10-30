@@ -1,0 +1,6 @@
+AGENTS.md
+handoff.md
+plan.md
+
+# local build cache / downloaded artifacts
+.cache/
