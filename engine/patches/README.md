@@ -119,6 +119,61 @@ fallback reachable — throwing at bundle time is not catchable.
 
 ---
 
+## 0004-dirname-filename.patch
+
+Fixes the build-machine path leak that breaks the engine at runtime.
+
+**Observed failure** — the engine started on Android and immediately threw:
+
+```
+TypeError: The argument 'filename' must be a file URL object, file URL string, or
+absolute path string. Received
+'H:\\PUNYA ABID\\PROJECT PRIBADI\\OPENCODE-ANDROID\\.cache\\upstream\\node_modules\\.bun\\@effect+platform-node@4.0.6+...\\@effect\\platform-node\\dist\\internal\\http.js'
+    at createRequire (unknown)
+    at .../@effect/platform-node/dist/internal/http.js:5:30
+```
+
+`@effect/platform-node`'s `internal/http.js` does:
+
+```js
+const require = createRequire(typeof __filename === "string" ? __filename : import.meta.url)
+```
+
+Bun's bundler replaces `__filename` with the **build machine's absolute path** as a
+string literal. When the binary runs on Android, that Windows path is not a valid
+filename, so `createRequire` throws — and every HTTP request goes through this
+module, so the server cannot serve anything.
+
+This is a known Bun bug, fixed by
+[oven-sh/bun#29066](https://github.com/oven-sh/bun/pull/29066) and
+[#35470](https://github.com/oven-sh/bun/pull/35470), neither of which is in a
+release yet.
+
+**The patch** defines the identifiers at bundle time:
+
+```ts
+__dirname: "import.meta.dir",
+__filename: "import.meta.path",
+```
+
+Verified effect: a minimal repro (`createRequire(__filename)` compiled with
+`--target=bun-linux-x64-android`) goes from 2 occurrences of the host path to
+**0**. `import.meta.path` resolves to `/$bunfs/root/...` inside a compiled
+executable, which is a valid absolute path on the device.
+
+**Scope:** the same 5 host-path sites appeared in the engine binary, in
+`@npmcli/run-script`, `@npmcli/arborist`, `write-file-atomic`,
+`@silvia-odwyer/photon-node`, and `@effect/platform-node`. Only the last one is
+on the critical path for serving HTTP; the others would fail if their code paths
+were reached. The `--define` fixes all of them at once.
+
+**Note:** `--define` substitutes the *expression*, not a string. Writing
+`--define '__filename="import.meta.path"'` (with quotes) produces the literal
+string `"import.meta.path"` and does not work — this is the trap described in
+[oven-sh/bun#4216](https://github.com/oven-sh/bun/issues/4216).
+
+---
+
 ## Known unresolved points
 
 These are not fixed by 0001 and will surface during the first real engine build.
