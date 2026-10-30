@@ -1,51 +1,8 @@
-# Android build target for OpenCode CLI
-#
-# Verified against upstream commit 92b2ca0 (v2.2.2).
-#
-# Why this patch exists
-# ---------------------
-# Upstream builds 12 targets (linux/darwin/win32) but no Android target.
-# Bun 1.4.4+ ships an official Android build (bionic, aarch64/x86_64, PIE).
-# Bun accepts "android" ONLY as a libc suffix on a linux target:
-#
-#   bun-linux-arm64-android   -> accepted
-#   bun-android-arm64         -> rejected:
-#                                "invalid target, android only exists with linux"
-#
-# `targetName()` in packages/cli/script/build.ts joins
-#   [binary, os, arch, baseline?, abi?]
-# so declaring the target as { os: "linux", arch: "arm64", abi: "android" }
-# yields "opencode-linux-arm64-android", and line 183's
-# `target.replace(binary, "bun")` yields "bun-linux-arm64-android" — valid.
-#
-# No change to targetName() is required. An earlier hypothesis that
-# targetName() produced an invalid string was wrong: that happens only if the
-# target is declared as { os: "android" }, which must NOT be done.
-#
-# Two real changes are needed:
-#   1. Widen the `abi` union to include "android".
-#   2. Add the two Android entries to allTargets.
-#
-# Notes
-# -----
-# - `compileExecutable()` already builds the release asset name as
-#   ["bun", platform, arch==="arm64"?"aarch64":arch, abi, ...]
-#   which yields "bun-linux-aarch64-android" — the exact asset name Bun
-#   publishes. No change needed.
-# - OPENCODE_LIBC / FFF_LIBC will receive "android". The runtime checks that
-#   read them must tolerate a value other than "glibc"/"musl"; audit those
-#   call sites before shipping.
-# - NativeArch.verify() scans every embedded ELF and requires all of them to
-#   match the target arch. Android has no Android builds of node-pty,
-#   @parcel/watcher, fff, photon or ffi-rs, so this check is expected to fail
-#   until those native addons are either dropped for Android or the verify
-#   call is made target-aware.
-#
 diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
-index 1111111..2222222 100644
+index 80a67fe..7d36c80 100755
 --- a/packages/cli/script/build.ts
 +++ b/packages/cli/script/build.ts
-@@ -40,13 +40,15 @@ const modelsSnapshot = modelsSnapshotPlugin(await bundledModelsSnapshot())
+@@ -40,7 +40,7 @@ const modelsSnapshot = modelsSnapshotPlugin(await bundledModelsSnapshot())
  const allTargets: {
    os: string
    arch: "arm64" | "x64"
@@ -54,17 +11,12 @@ index 1111111..2222222 100644
    avx2?: false
  }[] = [
    { os: "linux", arch: "arm64" },
-   { os: "linux", arch: "x64" },
-   { os: "linux", arch: "x64", avx2: false },
-   { os: "linux", arch: "arm64", abi: "musl" },
-   { os: "linux", arch: "x64", abi: "musl" },
-   { os: "linux", arch: "x64", abi: "musl", avx2: false },
-   { os: "darwin", arch: "arm64" },
-   { os: "darwin", arch: "x64" },
-   { os: "darwin", arch: "x64", avx2: false },
+@@ -55,6 +55,8 @@ const allTargets: {
    { os: "win32", arch: "arm64" },
    { os: "win32", arch: "x64" },
    { os: "win32", arch: "x64", avx2: false },
 +  { os: "linux", arch: "arm64", abi: "android" },
 +  { os: "linux", arch: "x64", abi: "android" },
  ]
+ 
+ const targets =

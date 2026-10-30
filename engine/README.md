@@ -21,6 +21,7 @@ commit into a gitignored cache directory and patched on demand.
 | Commit | `92b2ca0` |
 | Package version | `2.2.2` (`@opencode/core`, `server`, `cli`, `protocol`, `sdk`) |
 | License | MIT |
+| Dependency count | 1.777 packages (`bun install --ignore-scripts`, 551 s) |
 
 ## Build target
 

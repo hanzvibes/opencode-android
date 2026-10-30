@@ -53,6 +53,34 @@ the invalid `bun-android-arm64` — that is the mistake this patch avoids.
 
 ---
 
+## 0002-pty-android.patch
+
+Stops the build from failing when no Android PTY binary exists.
+
+**The failure this fixes**, observed on the first real engine build:
+
+```
+error: Cannot find module '@opencode/pty-linux-arm64-android/bin/opencode-pty'
+  from '...node_modules/@opencode/pty/package.json'
+```
+
+`resolveOpencodePty()` in `packages/cli/script/opencode-pty.ts` guards on
+platform and arch but not on libc. With the Android target declared as
+`{ os: "linux", arch: "arm64", abi: "android" }`, the guard passes
+(`platform === "linux"`, `arch === "arm64"`), then line 25 builds the suffix
+`linux-arm64-android` and looks for `@opencode/pty-linux-arm64-android`, which
+does not exist in the registry.
+
+The patch returns `undefined` for `libc === "android"`, which the caller already
+handles by emitting `export default undefined` for the PTY binding. The engine
+therefore builds without PTY support instead of failing outright.
+
+This is the intended degradation: no PTY on Android, reported honestly rather
+than faked. It matches the project rule that unsupported capabilities are
+documented, not simulated.
+
+---
+
 ## Known unresolved points
 
 These are not fixed by 0001 and will surface during the first real engine build.
@@ -63,14 +91,14 @@ These are not fixed by 0001 and will surface during the first real engine build.
 binary and throws unless all of them match the target architecture. Android has
 no builds for these native addons:
 
-| Package | Used for |
-|---|---|
-| `@lydell/node-pty`, `bun-pty`, `@opencode/pty` | PTY |
-| `@parcel/watcher` | file watching |
-| `@ff-labs/fff` | native file search |
-| `@silvia-odwyer/photon-node` | image processing |
-| `@yuuang/ffi-rs` | FFI |
-| `web-tree-sitter` | parsing |
+| Package | Used for | Android status |
+|---|---|---|
+| `@opencode/pty`, `@lydell/node-pty`, `bun-pty` | PTY | **confirmed absent** — build fails without 0002 |
+| `@parcel/watcher` | file watching | no android variant published |
+| `@ff-labs/fff` | native file search | no android variant published |
+| `@silvia-odwyer/photon-node` | image processing | no android variant published |
+| `@yuuang/ffi-rs` | FFI | no android variant published |
+| `web-tree-sitter` | parsing | needs WASM host, unconfirmed |
 
 Options, in order of preference:
 
