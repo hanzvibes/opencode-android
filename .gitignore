@@ -4,3 +4,13 @@ plan.md
 
 # local build cache / downloaded artifacts
 .cache/
+
+# gradle / android build output
+android/.gradle/
+android/build/
+android/app/build/
+android/core/*/build/
+android/local.properties
+android/app/src/main/jniLibs/
+*.apk
+*.aab

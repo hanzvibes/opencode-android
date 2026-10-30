@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The embedded engine speaks plain HTTP over loopback. Android blocks cleartext by
+  default since API 28, so the host must explicitly allow it — but only for
+  loopback. Everything else stays HTTPS-only, so a provider redirect to plain HTTP
+  still fails.
+
+  Note: `cleartextTrafficPermitted` cannot be limited to a port; it applies to the
+  whole host. 127.0.0.1 and localhost are not reachable off-device, so the blast
+  radius is the device itself.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">::1</domain>
+    </domain-config>
+</network-security-config>
