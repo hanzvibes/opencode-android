@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+*.patch text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.jar binary
+*.keystore binary
+*.apk binary
+*.so binary
