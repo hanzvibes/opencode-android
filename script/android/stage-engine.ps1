@@ -14,6 +14,10 @@
 param(
     [Parameter(Mandatory = $true)][ValidateSet("arm64-v8a", "x86_64")][string]$Abi,
     [Parameter(Mandatory = $true)][string]$Source,
+    # Directory holding the `git` and `rg` binaries built by build-tools.ps1.
+    # They are shipped as lib*.so for the same reason as the engine: only
+    # nativeLibraryDir is exec-allowed on API 29+.
+    [string]$ToolsDir,
     [string]$RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
 )
 
@@ -45,3 +49,43 @@ if ($machine -ne $expected) {
     throw "architecture mismatch: $target reports e_machine=0x$($machine.ToString('X2')), expected 0x$($expected.ToString('X2')) for $Abi"
 }
 Write-Host "verified ELF e_machine=0x$($machine.ToString('X2')) for $Abi"
+
+# Tool binaries. EngineBinary.linkTools() hard-links these to
+# files/engine/tools/bin/{git,rg} and puts that directory on PATH, which is how
+# the engine's `which("git")` and `which("rg")` find them.
+if ($ToolsDir) {
+    foreach ($tool in @("git", "rg")) {
+        $from = Join-Path $ToolsDir $tool
+        if (-not (Test-Path $from)) { throw "tool binary missing: $from" }
+        $to = Join-Path $dest "lib$tool.so"
+        Copy-Item $from $to -Force
+
+        $bytes = [System.IO.File]::ReadAllBytes($to)
+        $toolMachine = [BitConverter]::ToUInt16($bytes, 18)
+        if ($toolMachine -ne $expected) {
+            throw "architecture mismatch: $to reports e_machine=0x$('{0:X2}' -f $toolMachine), expected 0x$('{0:X2}' -f $expected) for $Abi"
+        }
+
+        # 16 KB gate. A 4 KB-aligned ELF installs and runs fine on the emulator
+        # (4 KB kernel) and fails or degrades on Android 15+ devices with a 16 KB
+        # kernel, which is exactly the case this project cannot test locally.
+        $phoff = [BitConverter]::ToUInt64($bytes, 32)
+        $phentsize = [BitConverter]::ToUInt16($bytes, 54)
+        $phnum = [BitConverter]::ToUInt16($bytes, 56)
+        for ($i = 0; $i -lt $phnum; $i++) {
+            $o = [int]$phoff + $i * $phentsize
+            if ([BitConverter]::ToUInt32($bytes, $o) -eq 1) {
+                $align = [BitConverter]::ToUInt64($bytes, $o + 48)
+                if ($align -lt 0x4000) {
+                    throw "$to has a PT_LOAD segment with p_align=0x$('{0:X}' -f $align); needs 0x4000 for 16 KB page sizes"
+                }
+            }
+        }
+
+        $toolMb = [math]::Round($bytes.Length / 1MB, 2)
+        Write-Host "staged $Abi $tool -> $to ($toolMb MB, 16 KB aligned)"
+    }
+}
+else {
+    Write-Warning "no -ToolsDir given: `git` and `rg` will be missing from the APK, so VCS and ripgrep-backed search stay broken (handoff.md §2.31)"
+}
