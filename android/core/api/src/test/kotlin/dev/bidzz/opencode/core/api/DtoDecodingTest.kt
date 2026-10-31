@@ -2,9 +2,11 @@ package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
 import dev.bidzz.opencode.core.api.dto.ModelsResponse
+import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
+import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -127,6 +129,15 @@ class DtoDecodingTest {
         val failure = ApiResult.Failure(code = 404, tag = parsed.tag, message = parsed.message)
         assertTrue(failure.isLocationMissing)
         assertEquals("Project folder is no longer available", failure.display)
+    }
+
+    @Test
+    fun `permission reply body uses the decision field`() {
+        // The engine's reply schema is `{decision: once|always|reject, message?}`.
+        // Sending `reply` instead returns 400 and leaves the tool blocked, so the
+        // field name is load-bearing and worth pinning.
+        val body = ApiJson.encodeToString(PermissionReplyRequest(decision = "always"))
+        assertEquals("""{"decision":"always"}""", body)
     }
 
     @Test

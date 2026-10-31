@@ -129,6 +129,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onDraftChange = chatViewModel::onDraftChange,
                 onSend = chatViewModel::send,
                 onStop = chatViewModel::stop,
+                onPermissionReply = chatViewModel::replyPermission,
                 onStatusClick = { screen = Screen.Diagnostics },
                 onNewSession = chatViewModel::newSession,
                 onSessionsClick = { screen = Screen.Sessions },

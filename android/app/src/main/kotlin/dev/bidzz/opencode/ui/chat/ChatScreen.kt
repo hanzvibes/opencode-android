@@ -45,6 +45,7 @@ fun ChatScreen(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onPermissionReply: (String) -> Unit,
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
     onSessionsClick: () -> Unit,
@@ -115,6 +116,14 @@ fun ChatScreen(
                     }
                 }
             }
+        }
+
+        state.pendingPermission?.let { request ->
+            PermissionPrompt(
+                request = request,
+                onReply = onPermissionReply,
+                modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+            )
         }
 
         Composer(

@@ -4,6 +4,7 @@ import android.util.Log
 import dev.bidzz.opencode.core.api.dto.EngineEvent
 import dev.bidzz.opencode.core.api.dto.EventTypes
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TextDelta
 import dev.bidzz.opencode.core.api.dto.TextEnded
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.serializer
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -35,6 +37,8 @@ data class ChatState(
     val streaming: Map<String, String> = emptyMap(),
     val busy: Boolean = false,
     val lastError: String? = null,
+    /** Active permission request waiting for the operator to reply. */
+    val pendingPermission: PendingPermission? = null,
 )
 
 /**
@@ -105,9 +109,11 @@ class ChatRepository(
                 _state.value = _state.value.copy(
                     messages = chronological,
                     streaming = emptyMap(),
-                    // Busy is decided by the newest entry, not the last in the list:
-                    // an `idle` terminator at the head means the loop finished.
-                    busy = newest != null && !newest.isIdle,
+                    // A run is over when the newest entry is `idle`, or when the
+                    // newest assistant message is finished. The second case matters:
+                    // a rejected permission aborts the run without ever writing an
+                    // `idle` message, so an idle-only check spins "Working" forever.
+                    busy = newest != null && !newest.isIdle && newest.time?.completed == null,
                     lastError = null,
                 )
             }
@@ -154,6 +160,29 @@ class ChatRepository(
         return sessionApi.interrupt(id)
     }
 
+    /**
+     * Answers the pending permission request.
+     *
+     * [decision] is `once`, `always` or `reject`. The engine blocks the tool call
+     * until this arrives, so a dropped reply leaves the agent waiting forever.
+     * `always` persists a saved permission for the project, which is why the UI
+     * must distinguish it from `once`.
+     */
+    suspend fun replyPermission(decision: String, message: String? = null): ApiResult<Unit> {
+        val pending = _state.value.pendingPermission
+            ?: return ApiResult.Failure(code = -1, message = "No pending permission request")
+        return when (val result = sessionApi.replyPermission(pending.sessionID, pending.id, decision, message)) {
+            is ApiResult.Success -> {
+                _state.value = _state.value.copy(pendingPermission = null)
+                ApiResult.Success(Unit)
+            }
+            is ApiResult.Failure -> {
+                _state.value = _state.value.copy(lastError = result.display)
+                result
+            }
+        }
+    }
+
     private fun handle(event: EngineEvent) {
         val payload = event.data?.jsonObject ?: return
         when (event.type) {
@@ -179,8 +208,37 @@ class ChatRepository(
 
             EventTypes.EXECUTION_STARTED -> _state.value = _state.value.copy(busy = true)
 
-            EventTypes.EXECUTION_SUCCEEDED, EventTypes.EXECUTION_FAILED -> {
-                _state.value = _state.value.copy(busy = false)
+            EventTypes.PERMISSION_ASKED -> {
+                val payload = event.data?.jsonObject ?: return
+                val id = payload["id"]?.jsonPrimitive?.contentOrNull ?: return
+                val action = payload["action"]?.jsonPrimitive?.contentOrNull ?: return
+                val resources = payload["resources"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    ?.toSet()
+                    .orEmpty()
+                val save = payload["save"]?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    ?.toSet()
+                    .orEmpty()
+                _state.value = _state.value.copy(
+                    lastError = null,
+                    // Stored so the UI can render the prompt and the operator can reply.
+                    // The engine blocks the tool until this is answered.
+                    pendingPermission = PendingPermission(
+                        id = id,
+                        sessionID = event.sessionIDOf() ?: return,
+                        action = action,
+                        resources = resources,
+                        save = save,
+                        message = payload["message"]?.jsonPrimitive?.contentOrNull,
+                    ),
+                )
+            }
+
+            EventTypes.EXECUTION_SUCCEEDED, EventTypes.EXECUTION_FAILED, EventTypes.EXECUTION_INTERRUPTED -> {
+                // A finished run cannot still be waiting for an answer; drop the
+                // prompt so a dead request does not sit on screen.
+                _state.value = _state.value.copy(busy = false, pendingPermission = null)
                 // Pull the finished message from REST so tool calls and token counts
                 // that never appeared as deltas are included.
                 scope.launch { resync() }

@@ -28,6 +28,8 @@ data class ChatUiState(
     val workspaceReady: Boolean = false,
     val workspacePath: String? = null,
     val draft: String = "",
+    /** Active permission request; the agent is blocked until it is answered. */
+    val pendingPermission: dev.bidzz.opencode.core.api.dto.PendingPermission? = null,
 )
 
 /** A single rendered message. */
@@ -118,6 +120,7 @@ class ChatViewModel(
                     messages = chat.toUiMessages(),
                     busy = chat.busy,
                     error = chat.lastError,
+                    pendingPermission = chat.pendingPermission,
                 )
             }
         }
@@ -176,6 +179,23 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * Answers the pending permission request.
+     *
+     * The engine blocks the tool call until this is sent, so every decision path
+     * (allow once, allow always, reject) must reach it. A failure leaves the
+     * prompt visible so the operator can retry rather than losing the request.
+     */
+    fun replyPermission(decision: String) {
+        val repo = repository ?: return
+        viewModelScope.launch {
+            when (val result = repo.replyPermission(decision)) {
+                is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+                is ApiResult.Success -> Unit
+            }
+        }
+    }
+
     /** Starts a fresh conversation. */
     fun newSession() {
         repository?.close()
@@ -191,6 +211,7 @@ class ChatViewModel(
                         messages = chat.toUiMessages(),
                         busy = chat.busy,
                         error = chat.lastError,
+                        pendingPermission = chat.pendingPermission,
                     )
                 }
             }

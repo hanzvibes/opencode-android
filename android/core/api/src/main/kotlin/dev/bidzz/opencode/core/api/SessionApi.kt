@@ -4,6 +4,7 @@ import dev.bidzz.opencode.core.api.dto.CreateSessionRequest
 import dev.bidzz.opencode.core.api.dto.LocationRef
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
 import dev.bidzz.opencode.core.api.dto.PromptRequest
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
@@ -103,6 +104,26 @@ class SessionApi(private val client: EngineClient) {
     suspend fun interrupt(sessionID: String): ApiResult<Unit> {
         val request = client.request("/api/session/$sessionID/interrupt")
             .post(client.emptyBody())
+            .build()
+        return client.executeUnit(request)
+    }
+
+    /**
+     * Answers a pending permission request.
+     *
+     * The engine blocks the tool call until this arrives. [decision] must be
+     * `once`, `always` or `reject`; `always` writes a saved permission for the
+     * project so the same request is not asked again.
+     */
+    suspend fun replyPermission(
+        sessionID: String,
+        requestID: String,
+        decision: String,
+        message: String? = null,
+    ): ApiResult<Unit> {
+        val body = ApiJson.encodeToString(PermissionReplyRequest(decision = decision, message = message))
+        val request = client.request("/api/session/$sessionID/permission/$requestID/reply")
+            .post(client.jsonBody(body))
             .build()
         return client.executeUnit(request)
     }

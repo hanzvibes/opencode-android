@@ -201,8 +201,15 @@ data class SetModelRequest(
     val model: ModelRef,
 )
 
-/** Body of `POST /api/session/{id}/permission/{requestID}/reply`. */
+/**
+ * Body of `POST /api/session/{id}/permission/{requestID}/reply`.
+ *
+ * The field is `decision`, not `reply` — the OpenAPI spec defines
+ * `{"decision": "once" | "always" | "reject", "message"?: string}`. Sending the
+ * wrong field name returns 400 and leaves the engine blocked.
+ */
 @Serializable
 data class PermissionReplyRequest(
-    val reply: String,
+    val decision: String,
+    val message: String? = null,
 )
