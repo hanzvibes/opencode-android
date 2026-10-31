@@ -38,6 +38,16 @@ class OpenCodeApplication : Application() {
     lateinit var workspaceStore: WorkspaceStore
         private set
 
+    /**
+     * HTTP/SSE layer for the running engine.
+     *
+     * Separate from [processManager] because the credentials change on every engine
+     * restart: the port is dynamic and the password is re-printed to stdout, so the
+     * API handle is rebuilt each time rather than cached across restarts.
+     */
+    lateinit var engineApi: dev.bidzz.opencode.api.EngineApi
+        private set
+
     /** Fallback status published when the binary never resolved. */
     private val unavailableStatus = MutableStateFlow(EngineStatus())
 
@@ -54,6 +64,7 @@ class OpenCodeApplication : Application() {
 
         val nativeLibraryDir = File(applicationInfo.nativeLibraryDir)
         workspaceStore = WorkspaceStore(this)
+        engineApi = dev.bidzz.opencode.api.EngineApi { workspaceStore.resolve().absolutePath }
 
         // The environment reads the workspace through this lambda on every access,
         // so changing the project does not require a new supervisor or a new

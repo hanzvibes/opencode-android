@@ -15,6 +15,11 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import dev.bidzz.opencode.api.describe
+import dev.bidzz.opencode.core.api.ApiResult
+import dev.bidzz.opencode.core.api.ChatRepository
+import dev.bidzz.opencode.core.api.ChatState
+import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import java.io.File
@@ -22,8 +27,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Diagnostics screen.
@@ -74,6 +82,12 @@ class MainActivity : Activity() {
                 Button(this@MainActivity).apply {
                     text = "Workspace"
                     setOnClickListener { pickWorkspace() }
+                },
+            )
+            addView(
+                Button(this@MainActivity).apply {
+                    text = "API"
+                    setOnClickListener { exerciseApi() }
                 },
             )
         }
@@ -258,6 +272,104 @@ class MainActivity : Activity() {
             else -> File("/storage", volume)
         }
         return if (relative.isEmpty()) root else File(root, relative)
+    }
+
+    /**
+     * Exercises the API client end to end: create a session, send a prompt, and
+     * watch the event stream fill in the reply.
+     *
+     * This is a diagnostic harness, not product code. It exists so the API layer
+     * can be proven against a real engine before there is a chat screen to drive it.
+     */
+    private fun exerciseApi() {
+        val app = application as OpenCodeApplication
+        val credentials = app.engineStatus.value.credentials
+        if (credentials == null) {
+            line("")
+            line("API: engine is not running yet")
+            return
+        }
+        val api = app.engineApi
+        val handle = api.attach(credentials)
+        val directory = app.workspaceStore.resolve().absolutePath
+        line("")
+        line("=== API EXERCISE ===")
+        line("base: $directory")
+
+        scope.launch {
+            when (val models = handle.models.list()) {
+                is ApiResult.Success -> line("models: ${models.value.size} (${models.value.take(3).joinToString { it.id }})")
+                is ApiResult.Failure -> line("models failed: ${models.describe()}")
+            }
+
+            val created = handle.sessions.create(directory, title = "api probe")
+            if (created is ApiResult.Failure) {
+                line("create failed: ${created.describe()}")
+                return@launch
+            }
+            val session = (created as ApiResult.Success).value
+            line("session: ${session.id}")
+            line("  location: ${session.location?.directory}")
+
+            val repo = ChatRepository(handle.sessions, handle.stream, scope)
+            repo.open(session.id)
+
+            // Observe streaming text as it arrives.
+            val watcher = launch {
+                repo.state.collect { state ->
+                    val live = state.streaming.values.firstOrNull()
+                    if (live != null) line("  stream: ${live.length} chars")
+                    if (state.lastError != null) line("  error: ${state.lastError}")
+                }
+            }
+
+            delay(1_500)
+            val sent = repo.send("Reply with exactly: APICLIENT-OK")
+            if (sent is ApiResult.Failure) {
+                line("prompt failed: ${sent.describe()}")
+                watcher.cancel()
+                return@launch
+            }
+            line("prompt accepted")
+
+            // Wait for the execution to finish. Two independent signals: the stream's
+            // `execution.succeeded`, and REST reporting an `idle` head. Either is
+            // enough, so a missed event cannot hang the probe.
+            val finished = withTimeoutOrNull(90_000) {
+                repo.state.first { !it.busy && it.messages.any { m -> m.isAssistant } }
+            } ?: run {
+                // Fall back to REST in case the stream is wedged.
+                var settled: ChatState? = null
+                repeat(30) {
+                    val probe = handle.sessions.messages(session.id)
+                    if (probe is ApiResult.Success) {
+                        val newest = probe.value.firstOrNull()
+                        val chronological = probe.value.reversed()
+                        if (newest != null && newest.isIdle && chronological.any { it.isAssistant }) {
+                            settled = ChatState(messages = chronological, busy = false)
+                            return@repeat
+                        }
+                    }
+                    delay(1_000)
+                }
+                settled
+            }
+            watcher.cancel()
+
+            if (finished == null) {
+                line("timed out waiting for a reply")
+                return@launch
+            }
+            val assistant = finished.messages.lastOrNull { it.isAssistant }
+            line("reply: ${assistant?.plainText?.take(120)}")
+            line("history: ${finished.messages.size} messages")
+
+            when (val model = repo.setModel(ModelRef(id = "big-pickle", providerID = "opencode"))) {
+                is ApiResult.Success -> line("setModel: 204 accepted")
+                is ApiResult.Failure -> line("setModel failed: ${model.describe()}")
+            }
+            repo.close()
+        }
     }
 
     private fun render(status: EngineStatus) {

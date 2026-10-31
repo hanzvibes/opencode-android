@@ -75,6 +75,7 @@ dependencies {
     implementation(project(":core:engine"))
     implementation(project(":core:design"))
     implementation(project(":core:common"))
+    implementation(project(":core:api"))
 
     // Declared directly: `implementation` in :core:engine does not expose
     // coroutines to consumers, and the activity uses CoroutineScope and Flow.
