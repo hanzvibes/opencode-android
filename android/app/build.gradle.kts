@@ -94,4 +94,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
 
     testImplementation("junit:junit:4.13.2")
+    // The API DTOs are @Serializable; decoding them in a test needs the runtime on
+    // the test classpath, which `implementation` in :core:api does not expose.
+    testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 }

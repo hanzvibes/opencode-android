@@ -17,6 +17,13 @@ import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatViewModel
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
+import dev.bidzz.opencode.ui.diff.DiffListScreen
+import dev.bidzz.opencode.ui.diff.DiffScreen
+import dev.bidzz.opencode.ui.files.DiffViewModel
+import dev.bidzz.opencode.ui.files.ExplorerScreen
+import dev.bidzz.opencode.ui.files.ExplorerViewModel
+import dev.bidzz.opencode.ui.files.FileViewScreen
+import dev.bidzz.opencode.ui.files.FileViewViewModel
 import dev.bidzz.opencode.ui.projects.ProjectOption
 import dev.bidzz.opencode.ui.projects.ProjectPickerScreen
 import dev.bidzz.opencode.ui.sessions.SessionListScreen
@@ -36,6 +43,10 @@ private sealed interface Screen {
     data object Chat : Screen
     data object Sessions : Screen
     data object Projects : Screen
+    data object Files : Screen
+    data class FileView(val path: String) : Screen
+    data object DiffList : Screen
+    data class Diff(val file: String) : Screen
     data object Settings : Screen
     data object Diagnostics : Screen
 }
@@ -57,6 +68,20 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
     val chatState by chatViewModel.state.collectAsState()
     val sessionsState by sessionViewModel.state.collectAsState()
+
+    val explorerViewModel: ExplorerViewModel = viewModel(factory = viewModelFactory {
+        ExplorerViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+    })
+    val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory {
+        FileViewViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+    })
+    val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory {
+        DiffViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+    })
+
+    val explorerState by explorerViewModel.state.collectAsState()
+    val fileState by fileViewModel.state.collectAsState()
+    val diffState by diffViewModel.state.collectAsState()
 
     // Feed engine state into the view model; it decides when to attach the API.
     LaunchedEffect(engineStatus.state, engineStatus.credentials?.baseUrl) {
@@ -81,6 +106,19 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         if (screen is Screen.Sessions) sessionViewModel.load(sessionScopeToProject)
     }
 
+    // Load the explorer when it first appears or the project changes.
+    LaunchedEffect(screen, engineStatus.credentials?.baseUrl) {
+        if (screen is Screen.Files) explorerViewModel.load()
+    }
+
+    LaunchedEffect(screen) {
+        when (val target = screen) {
+            is Screen.FileView -> fileViewModel.load(target.path)
+            is Screen.Diff -> diffViewModel.load(target.file)
+            else -> Unit
+        }
+    }
+
     // Back always returns to the conversation.
     BackHandler(enabled = screen !is Screen.Chat) { screen = Screen.Chat }
 
@@ -95,7 +133,35 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onNewSession = chatViewModel::newSession,
                 onSessionsClick = { screen = Screen.Sessions },
                 onProjectClick = { screen = Screen.Projects },
+                onFilesClick = { screen = Screen.Files },
                 onSettingsClick = { screen = Screen.Settings },
+            )
+
+            Screen.Files -> ExplorerScreen(
+                state = explorerState,
+                onBack = { screen = Screen.Chat },
+                onOpenDirectory = { row -> explorerViewModel.open(row.path) },
+                onOpenFile = { row -> screen = Screen.FileView(row.path) },
+                onBreadcrumb = { path -> explorerViewModel.open(path) },
+                onUp = { explorerViewModel.up() },
+                onRefresh = { explorerViewModel.load() },
+                onDiff = { screen = Screen.DiffList },
+            )
+
+            is Screen.FileView -> FileViewScreen(
+                state = fileState,
+                onBack = { screen = Screen.Files },
+            )
+
+            Screen.DiffList -> DiffListScreen(
+                changed = explorerState.changed,
+                onBack = { screen = Screen.Files },
+                onOpen = { file -> screen = Screen.Diff(file) },
+            )
+
+            is Screen.Diff -> DiffScreen(
+                state = diffState,
+                onBack = { screen = Screen.DiffList },
             )
 
             Screen.Sessions -> SessionListScreen(
