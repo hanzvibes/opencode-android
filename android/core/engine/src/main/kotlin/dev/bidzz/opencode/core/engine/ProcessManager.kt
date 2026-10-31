@@ -4,17 +4,22 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedReader
-import java.io.File
 import java.io.InputStreamReader
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
@@ -39,10 +44,44 @@ data class EngineStatus(
     val state: EngineState = EngineState.STOPPED,
     val credentials: EngineCredentials? = null,
     val pid: Int? = null,
+    /** Loopback port for the current or most recent attempt; null when stopped. */
+    val port: Int? = null,
     val lastError: String? = null,
     /** Recent stdout/stderr lines, for the diagnostics screen. */
     val recentOutput: List<String> = emptyList(),
 )
+
+/**
+ * Chooses the loopback port the engine listens on.
+ *
+ * Injected so the supervisor can be tested with a fixed port, and so a
+ * deliberately fixed port stays available for `adb forward` debugging.
+ */
+fun interface PortProvider {
+    fun allocate(): Int
+}
+
+/**
+ * Asks the kernel for a free port, then releases it.
+ *
+ * The port is free at the moment it is returned but could in principle be taken
+ * before the engine binds it. That window is milliseconds wide and the engine
+ * only binds after Bun finishes booting, so [ProcessManager] treats a bind
+ * failure as retryable rather than fatal.
+ *
+ * The socket binds to `127.0.0.1` specifically, not `InetAddress.loopbackAddress`:
+ * the latter can resolve to `::1`, and a port free on IPv6 is not necessarily
+ * free on IPv4, which is what the engine binds.
+ */
+class EphemeralPortProvider : PortProvider {
+    override fun allocate(): Int =
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
+}
+
+/** Always returns the same port. Useful for `adb forward tcp:4096` debugging. */
+class FixedPortProvider(private val port: Int) : PortProvider {
+    override fun allocate(): Int = port
+}
 
 /**
  * Supervises the embedded OpenCode server process.
@@ -54,23 +93,43 @@ data class EngineStatus(
  *
  * Deliberately not a Service. It owns no lifecycle of its own; a foreground
  * service drives it. That keeps this class testable on the JVM.
+ *
+ * ## Concurrency contract
+ *
+ * Lifecycle operations ([start], [stop], [restart]) are serialised by a [Mutex],
+ * so two callers can never drive the process at the same time. The critical
+ * sections run under [NonCancellable]: the engine takes up to a minute to become
+ * healthy, and a caller whose scope dies mid-start (an Activity being destroyed,
+ * for instance) must not leave a half-started child process behind.
+ *
+ * State mutation is serialised by [stateLock] and validated against
+ * [EngineState.canTransitionTo]. A refused transition is logged as an error and
+ * dropped rather than thrown: this object runs inside a foreground service where
+ * an exception on a background coroutine would take down the whole app, and the
+ * state machine is already covered by tests.
  */
 class ProcessManager(
     private val binary: EngineBinary,
     private val environment: EngineEnvironment,
-    private val port: Int = DEFAULT_PORT,
+    private val portProvider: PortProvider = EphemeralPortProvider(),
     private val healthCheck: HealthCheck = HttpHealthCheck(),
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     companion object {
         private const val TAG = "EngineProcess"
+
+        /** Historical fixed port. Only used when a [FixedPortProvider] asks for it. */
         const val DEFAULT_PORT = 4096
+
         private const val STARTUP_TIMEOUT_MS = 60_000L
         private const val HEALTH_INTERVAL_MS = 2_000L
         private const val HEALTH_FAILURE_LIMIT = 3
         private const val SHUTDOWN_GRACE_MS = 5_000L
         private const val MAX_OUTPUT_LINES = 200
         private const val PASSWORD_PREFIX = "server password"
+
+        /** One retry covers a port stolen between allocation and bind. */
+        private const val MAX_START_ATTEMPTS = 3
     }
 
     private val _status = MutableStateFlow(EngineStatus())
@@ -79,38 +138,94 @@ class ProcessManager(
     private val process = AtomicReference<Process?>(null)
     private var monitorJob: Job? = null
 
-    /** Guards start/stop against concurrent callers. */
-    private val lifecycleLock = Any()
+    /** Serialises start/stop/restart against each other. */
+    private val lifecycle = Mutex()
 
-    val baseUrl: String get() = "http://127.0.0.1:$port"
+    /** Serialises every write to [_status]. Never held across a suspension point. */
+    private val stateLock = Any()
+
+    /** Brings the engine up. Returns once the health check passes. */
+    suspend fun start(): Result<EngineCredentials> = lifecycle.withLock { startLocked() }
+
+    /** Stops the engine, waiting for the process to exit. */
+    suspend fun stop(): Result<Unit> = lifecycle.withLock { stopLocked() }
+
+    /** Restarts after a failure, preserving the workspace. */
+    suspend fun restart(): Result<EngineCredentials> = lifecycle.withLock {
+        stopLocked()
+        startLocked()
+    }
 
     /**
-     * Brings the engine up. Returns once the health check passes.
+     * Last-resort synchronous shutdown, for `Service.onDestroy`.
      *
-     * Idempotent in the sense that calling it while RUNNING is a no-op; calling it
-     * concurrently while starting waits for the in-flight attempt.
+     * [stop] is the correct path, but `onDestroy` cannot suspend and blocking the
+     * main thread for the full five-second grace period risks an ANR. This method
+     * therefore asks politely for a short while and then kills the child outright.
+     *
+     * Skipping the graceful path risks nothing that matters here: the engine keeps
+     * its state in SQLite, which is crash-safe, and the alternative is an orphaned
+     * 200 MB process that keeps holding a port after the UI is gone.
      */
-    suspend fun start(): Result<EngineCredentials> = withContext(Dispatchers.IO) {
-        synchronized(lifecycleLock) {
-            val current = _status.value.state
-            if (current == EngineState.RUNNING) {
-                return@withContext _status.value.credentials?.let { Result.success(it) }
-                    ?: Result.failure(EngineStartupException("Running without credentials"))
+    fun shutdownBlocking(graceMs: Long = 1_500L) {
+        monitorJob?.cancel()
+        monitorJob = null
+        val proc = process.getAndSet(null)
+        if (proc != null) {
+            runCatching {
+                proc.destroy()
+                if (!proc.waitFor(graceMs, TimeUnit.MILLISECONDS)) {
+                    Log.w(TAG, "engine ignored SIGTERM during shutdown, killing")
+                    proc.destroyForcibly()
+                    proc.waitFor(1, TimeUnit.SECONDS)
+                }
+            }.onFailure { Log.w(TAG, "shutdown failed: ${it.message}") }
+        }
+        val current = _status.value.state
+        if (current != EngineState.STOPPED) {
+            if (current.canTransitionTo(EngineState.STOPPING)) {
+                transition(EngineState.STOPPING)
             }
-            if (!current.canStart) {
-                return@withContext Result.failure(
-                    IllegalTransitionException(current, EngineState.INITIALIZING),
-                )
-            }
-            transition(EngineState.INITIALIZING)
+            transition(EngineState.STOPPED)
+        }
+    }
+
+    private suspend fun startLocked(): Result<EngineCredentials> = withContext(Dispatchers.IO + NonCancellable) {
+        val current = _status.value.state
+        if (current == EngineState.RUNNING) {
+            return@withContext _status.value.credentials?.let { Result.success(it) }
+                ?: Result.failure(EngineStartupException("Running without credentials"))
+        }
+        if (!current.canStart) {
+            return@withContext Result.failure(IllegalTransitionException(current, EngineState.INITIALIZING))
         }
 
+        var lastFailure: Throwable? = null
+        for (attempt in 1..MAX_START_ATTEMPTS) {
+            when (val outcome = attemptStart(attempt)) {
+                is StartOutcome.Ready -> return@withContext Result.success(outcome.credentials)
+                is StartOutcome.Failed -> {
+                    lastFailure = outcome.cause
+                    if (!outcome.portConflict) break
+                    if (attempt < MAX_START_ATTEMPTS) {
+                        Log.w(TAG, "port conflict on attempt $attempt, retrying with a new port")
+                    }
+                }
+            }
+        }
+        Result.failure(lastFailure ?: EngineStartupException("Engine failed to start"))
+    }
+
+    private suspend fun attemptStart(attempt: Int): StartOutcome {
+        var started: Process? = null
         try {
+            transition(EngineState.INITIALIZING)
             environment.prepare()
             environment.clearTmp()
 
-            val command = buildCommand()
-            Log.i(TAG, "starting engine: ${command.joinToString(" ")}")
+            val port = portProvider.allocate()
+            val command = buildCommand(port)
+            Log.i(TAG, "starting engine (attempt $attempt): ${command.joinToString(" ")}")
 
             val builder = ProcessBuilder(command)
                 .directory(environment.workspace)
@@ -118,54 +233,63 @@ class ProcessManager(
             builder.environment().clear()
             builder.environment().putAll(environment.variables(binary.toolBinDir))
 
-            val started = builder.start()
-            process.set(started)
-            transition(EngineState.STARTING, pid = readPid(started))
+            val proc = builder.start()
+            started = proc
+            process.set(proc)
+            val pid = readPid(proc)
+            transition(EngineState.STARTING, pid = pid, port = port)
 
-            val credentials = awaitReady(started)
+            val credentials = awaitReady(proc, port)
             if (credentials == null) {
                 // Startup failed: capture why, then clean up so we do not leak a
                 // half-started process.
                 val reason = _status.value.recentOutput.takeLast(5).joinToString(" | ")
-                terminate(started)
+                terminate(proc)
+                process.compareAndSet(proc, null)
                 transition(EngineState.FAILED, error = "Engine did not become healthy. $reason")
-                return@withContext Result.failure(
-                    EngineStartupException("Engine did not become healthy within ${STARTUP_TIMEOUT_MS}ms"),
+                return StartOutcome.Failed(
+                    cause = EngineStartupException("Engine did not become healthy within ${STARTUP_TIMEOUT_MS}ms"),
+                    portConflict = looksLikePortConflict(reason),
                 )
             }
 
-            transition(EngineState.RUNNING, credentials = credentials)
-            monitorJob = scope.launch { monitor(started) }
-            Result.success(credentials)
+            transition(EngineState.RUNNING, credentials = credentials, pid = pid, port = port)
+            monitorJob = scope.launch { monitor(proc) }
+            return StartOutcome.Ready(credentials)
         } catch (t: Throwable) {
             Log.e(TAG, "engine start failed", t)
+            // Never leave a child running behind a failure.
+            process.getAndSet(null)?.let { terminate(it) } ?: started?.let { terminate(it) }
             transition(EngineState.FAILED, error = t.message ?: t::class.java.simpleName)
-            Result.failure(t)
+            return StartOutcome.Failed(t, portConflict = false)
         }
     }
 
-    /** Stops the engine, waiting for the process to exit. */
-    suspend fun stop(): Result<Unit> = withContext(Dispatchers.IO) {
-        synchronized(lifecycleLock) {
-            if (_status.value.state == EngineState.STOPPED) return@withContext Result.success(Unit)
-            transition(EngineState.STOPPING)
-        }
-        monitorJob?.cancel()
-        monitorJob = null
+    private suspend fun stopLocked(): Result<Unit> = withContext(Dispatchers.IO + NonCancellable) {
+        val current = _status.value.state
+        if (current == EngineState.STOPPED) return@withContext Result.success(Unit)
 
-        val current = process.getAndSet(null)
-        if (current != null) terminate(current)
+        // STOPPING is only reachable from a state that owns a live process. From
+        // FAILED or INITIALIZING there is nothing to wait for, and asking for
+        // STOPPING would be an illegal transition — which is exactly the bug that
+        // made `restart()` throw after a crash.
+        if (!current.canTransitionTo(EngineState.STOPPING)) {
+            monitorJob?.cancelAndJoin()
+            monitorJob = null
+            process.getAndSet(null)?.let { terminate(it) }
+            transition(EngineState.STOPPED)
+            return@withContext Result.success(Unit)
+        }
+
+        transition(EngineState.STOPPING)
+        monitorJob?.cancelAndJoin()
+        monitorJob = null
+        process.getAndSet(null)?.let { terminate(it) }
         transition(EngineState.STOPPED)
         Result.success(Unit)
     }
 
-    /** Restarts after a failure, preserving the workspace. */
-    suspend fun restart(): Result<EngineCredentials> {
-        stop()
-        return start()
-    }
-
-    private fun buildCommand(): List<String> = listOf(
+    private fun buildCommand(port: Int): List<String> = listOf(
         binary.executable.absolutePath,
         "serve",
         "--hostname", "127.0.0.1",
@@ -176,9 +300,10 @@ class ProcessManager(
      * Reads stdout until the server prints its password, then waits for the health
      * check. Returns null on timeout or early process exit.
      */
-    private suspend fun awaitReady(proc: Process): EngineCredentials? {
+    private suspend fun awaitReady(proc: Process, port: Int): EngineCredentials? {
         val deadline = System.currentTimeMillis() + STARTUP_TIMEOUT_MS
-        var password: String? = null
+        // Written by the stdout thread, read by this one.
+        val password = AtomicReference<String?>(null)
 
         // Drain output on a background thread so the pipe never fills, and keep the
         // last lines for diagnostics. The password line is picked out here.
@@ -187,8 +312,8 @@ class ProcessManager(
                 BufferedReader(InputStreamReader(proc.inputStream)).useLines { lines ->
                     lines.forEach { line ->
                         appendOutput(line)
-                        if (password == null && line.startsWith(PASSWORD_PREFIX)) {
-                            password = line.removePrefix(PASSWORD_PREFIX).trim()
+                        if (password.get() == null && line.startsWith(PASSWORD_PREFIX)) {
+                            password.compareAndSet(null, line.removePrefix(PASSWORD_PREFIX).trim())
                         }
                     }
                 }
@@ -201,12 +326,13 @@ class ProcessManager(
             start()
         }
 
+        val baseUrl = "http://127.0.0.1:$port"
         while (System.currentTimeMillis() < deadline) {
             if (!proc.isAlive) {
                 reader.join(500)
                 return null
             }
-            val candidate = password
+            val candidate = password.get()
             if (candidate != null) {
                 val creds = EngineCredentials(baseUrl, candidate)
                 if (healthCheck.isHealthy(creds)) return creds
@@ -225,7 +351,7 @@ class ProcessManager(
             if (healthCheck.isHealthy(creds)) {
                 failures = 0
                 if (_status.value.state == EngineState.DEGRADED) {
-                    transition(EngineState.RUNNING)
+                    transition(EngineState.RUNNING, credentials = creds)
                 }
             } else {
                 failures++
@@ -235,11 +361,13 @@ class ProcessManager(
                 }
             }
         }
-        // The process exited. If we did not ask for it, this is a crash.
+        // The process exited. If we did not ask for it, this is a crash. `stop()`
+        // may have won the race and already moved to STOPPED, in which case there
+        // is nothing to report and the transition is refused.
         if (_status.value.state != EngineState.STOPPING) {
             val code = runCatching { proc.exitValue() }.getOrNull()
             Log.w(TAG, "engine exited unexpectedly, code=$code")
-            process.set(null)
+            process.compareAndSet(proc, null)
             transition(EngineState.FAILED, error = "Engine exited unexpectedly (code $code)")
         }
     }
@@ -269,38 +397,93 @@ class ProcessManager(
             (method.invoke(proc) as Long).toInt()
         }.getOrNull()
 
+    /** True when the engine's own output says it could not bind the port. */
+    private fun looksLikePortConflict(output: String): Boolean = isPortConflict(output)
+
+    /**
+     * Applies a state change, or refuses it.
+     *
+     * Credentials and the port survive into DEGRADED (the monitor needs them to
+     * test recovery) and are cleared everywhere else, so a stopped supervisor
+     * never reports a stale password or port.
+     */
     private fun transition(
         next: EngineState,
-        credentials: EngineCredentials? = _status.value.credentials,
-        pid: Int? = _status.value.pid,
+        credentials: EngineCredentials? = null,
+        pid: Int? = null,
+        port: Int? = null,
         error: String? = null,
-    ) {
-        val current = _status.value.state
-        if (current == next) return
-        if (!current.canTransitionTo(next)) {
-            // A transition the machine forbids means the supervisor has a bug, not
-            // that the caller did something wrong. Fail loudly rather than
-            // publishing an impossible state.
-            throw IllegalTransitionException(current, next)
+    ): Boolean = synchronized(stateLock) {
+        val current = _status.value
+        if (current.state == next) return@synchronized false
+        if (!current.state.canTransitionTo(next)) {
+            Log.e(TAG, "refusing illegal transition ${current.state} -> $next")
+            return@synchronized false
         }
-        Log.i(TAG, "state $current -> $next")
-        _status.value = _status.value.copy(
+        Log.i(TAG, "state ${current.state} -> $next")
+        _status.value = current.copy(
             state = next,
-            credentials = if (next == EngineState.RUNNING) credentials else _status.value.credentials,
-            pid = pid,
+            credentials = when (next) {
+                EngineState.RUNNING -> credentials ?: current.credentials
+                EngineState.DEGRADED -> current.credentials
+                else -> null
+            },
+            pid = when (next) {
+                EngineState.STARTING, EngineState.RUNNING -> pid
+                EngineState.DEGRADED -> current.pid
+                else -> null
+            },
+            port = when (next) {
+                EngineState.STARTING, EngineState.RUNNING -> port
+                EngineState.DEGRADED -> current.port
+                else -> null
+            },
             lastError = error,
         )
+        true
     }
 
     private fun appendOutput(line: String) {
-        val updated = (_status.value.recentOutput + line).takeLast(MAX_OUTPUT_LINES)
-        _status.value = _status.value.copy(recentOutput = updated)
+        synchronized(stateLock) {
+            _status.value = _status.value.copy(
+                recentOutput = (_status.value.recentOutput + line).takeLast(MAX_OUTPUT_LINES),
+            )
+        }
+    }
+
+    /** Result of one start attempt, carrying whether a retry could help. */
+    private sealed interface StartOutcome {
+        data class Ready(val credentials: EngineCredentials) : StartOutcome
+        data class Failed(val cause: Throwable, val portConflict: Boolean) : StartOutcome
     }
 }
 
 /** Seam so the supervisor can be tested without a real HTTP server. */
 interface HealthCheck {
     suspend fun isHealthy(credentials: EngineCredentials): Boolean
+}
+
+/**
+ * Detects a bind failure in the engine's output.
+ *
+ * Kept as a free function so it can be tested directly: the retry decision is the
+ * one piece of start-up logic that cannot be exercised without a real port clash.
+ *
+ * The strings below are the ones actually observed, not guesses. A second engine
+ * instance started on an occupied port prints:
+ *
+ * ```
+ * ServeError: ... [cause]: Error: Failed to start server. Is port 41234 in use?
+ * ```
+ *
+ * Note that it says neither `EADDRINUSE` nor `address already in use`, so matching
+ * only the errno forms would silently fail to retry. Both families are covered
+ * because Bun's wording is not a stable contract.
+ */
+internal fun isPortConflict(output: String): Boolean {
+    val lower = output.lowercase()
+    if (lower.contains("eaddrinuse") || lower.contains("address already in use")) return true
+    return lower.contains("failed to start server") && lower.contains("in use")
 }
 
 /** Calls `GET /api/info` with Basic auth, matching the engine's actual contract. */

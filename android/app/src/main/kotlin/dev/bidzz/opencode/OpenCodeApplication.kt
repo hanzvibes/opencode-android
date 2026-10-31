@@ -1,19 +1,25 @@
 package dev.bidzz.opencode
 
 import android.app.Application
+import android.content.Intent
 import android.util.Log
 import dev.bidzz.opencode.core.engine.EngineBinary
 import dev.bidzz.opencode.core.engine.EngineEnvironment
 import dev.bidzz.opencode.core.engine.EngineStartupException
+import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
+import dev.bidzz.opencode.service.EngineService
 import java.io.File
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Owns the process supervisor for the app's lifetime.
  *
- * Deliberately not a Service yet: this phase proves the engine can be started and
- * supervised from a real app process, which is a different claim from "the engine
- * runs when started from adb". Foreground service integration is the next step.
+ * The supervisor lives here rather than in the service so that the UI can read
+ * engine state without binding, and so that state survives the service being
+ * torn down and recreated. [EngineService] is what keeps the process alive
+ * across a task swipe; this class only holds the handle.
  */
 class OpenCodeApplication : Application() {
     companion object {
@@ -27,6 +33,17 @@ class OpenCodeApplication : Application() {
     /** User-facing reason the engine is unavailable, or null when it resolved. */
     var startupFailure: String? = null
         private set
+
+    /** Fallback status published when the binary never resolved. */
+    private val unavailableStatus = MutableStateFlow(EngineStatus())
+
+    /**
+     * Single source of truth for engine state, read by both the service and the
+     * UI. Never null: a broken install reports FAILED with the reason attached
+     * instead of forcing every caller to handle absence.
+     */
+    val engineStatus: StateFlow<EngineStatus>
+        get() = processManager?.status ?: unavailableStatus
 
     override fun onCreate() {
         super.onCreate()
@@ -43,7 +60,37 @@ class OpenCodeApplication : Application() {
             // Keep the app usable so a diagnostics screen can explain the problem
             // instead of the process dying on launch.
             startupFailure = e.message
+            unavailableStatus.value = EngineStatus(lastError = e.message)
             Log.e(TAG, "engine unavailable: ${e.message}")
         }
+    }
+
+    /**
+     * Asks the foreground service to bring the engine up.
+     *
+     * Returns false when the binary is missing, so the caller can show the reason
+     * instead of starting a service that can only fail.
+     */
+    fun startEngine(): Boolean = sendToService(EngineService.ACTION_START)
+
+    /** Asks the foreground service to stop the engine and itself. */
+    fun stopEngine(): Boolean = sendToService(EngineService.ACTION_STOP)
+
+    /**
+     * Delivers a command to [EngineService].
+     *
+     * `startForegroundService` is used for both actions, not just start: the
+     * service must call `startForeground` within five seconds of being started,
+     * and going through the same entry point keeps that obligation in one place
+     * instead of depending on which action arrived. `minSdk` is 29, so the API
+     * needs no version branch.
+     */
+    private fun sendToService(action: String): Boolean {
+        if (processManager == null) {
+            Log.w(TAG, "engine command $action ignored: ${startupFailure ?: "supervisor not initialised"}")
+            return false
+        }
+        startForegroundService(Intent(this, EngineService::class.java).setAction(action))
+        return true
     }
 }

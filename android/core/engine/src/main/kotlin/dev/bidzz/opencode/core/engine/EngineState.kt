@@ -48,12 +48,14 @@ enum class EngineState {
 
     /** Whether a `stop` call is meaningful from this state. */
     val canStop: Boolean
-        get() = this == RUNNING || this == DEGRADED || this == STARTING
+        get() = this != STOPPED
 
     fun canTransitionTo(next: EngineState): Boolean =
         when (this) {
             STOPPED -> next == INITIALIZING
-            INITIALIZING -> next == STARTING || next == FAILED || next == STOPPED
+            // STOPPING lets a stop request abort an in-flight start. FAILED is
+            // reachable from INITIALIZING because directory preparation can fail.
+            INITIALIZING -> next == STARTING || next == FAILED || next == STOPPING || next == STOPPED
             STARTING -> next == RUNNING || next == FAILED || next == STOPPING
             RUNNING -> next == DEGRADED || next == STOPPING || next == FAILED
             DEGRADED -> next == RUNNING || next == STOPPING || next == FAILED
