@@ -48,6 +48,16 @@ class OpenCodeApplication : Application() {
     lateinit var engineApi: dev.bidzz.opencode.api.EngineApi
         private set
 
+    /**
+     * Session the user was last looking at.
+     *
+     * Held in memory rather than on disk: the engine owns session persistence, and
+     * this is only a hint for restoring the screen after the activity is recreated.
+     * Writing it to `SharedPreferences` would survive a reboot but point at a
+     * session the engine may no longer have.
+     */
+    var lastSessionID: String? = null
+
     /** Fallback status published when the binary never resolved. */
     private val unavailableStatus = MutableStateFlow(EngineStatus())
 

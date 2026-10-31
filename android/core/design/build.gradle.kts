@@ -27,9 +27,13 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui-tooling-preview")
+    // `api` rather than `implementation`: consumers compose with these types
+    // directly, so they need the Compose runtime on their compile classpath too.
+    api(platform("androidx.compose:compose-bom:2024.12.01"))
+    api("androidx.compose.ui:ui")
+    api("androidx.compose.foundation:foundation")
+    api("androidx.compose.material3:material3")
+    api("androidx.compose.material:material-icons-core")
+    api("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

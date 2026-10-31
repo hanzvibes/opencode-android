@@ -1,404 +1,104 @@
 package dev.bidzz.opencode
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import dev.bidzz.opencode.api.describe
-import dev.bidzz.opencode.core.api.ApiResult
-import dev.bidzz.opencode.core.api.ChatRepository
-import dev.bidzz.opencode.core.api.ChatState
-import dev.bidzz.opencode.core.api.dto.ModelRef
-import dev.bidzz.opencode.core.engine.EngineState
-import dev.bidzz.opencode.core.engine.EngineStatus
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import java.io.File
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import dev.bidzz.opencode.ui.OpenCodeApp
 
 /**
- * Diagnostics screen.
+ * Hosts the Compose UI and owns the two permission flows.
  *
- * Its only job is to show what the supervisor reports and to drive the engine
- * service. It is not the product UI and will be replaced.
- *
- * It no longer starts the engine itself: the engine's lifetime is owned by
- * [dev.bidzz.opencode.service.EngineService], so that destroying this Activity
- * (rotation, back press) cannot cancel a start that is still in flight.
+ * Everything else lives in the composables. The engine is started by the foreground
+ * service, not here, so destroying this activity never interrupts it.
  */
-class MainActivity : Activity() {
-    private companion object {
-        const val REQUEST_NOTIFICATIONS = 1
-        const val REQUEST_LEGACY_STORAGE = 2
-        const val REQUEST_PICK_DIRECTORY = 3
-    }
+class MainActivity : ComponentActivity() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private lateinit var output: TextView
-    private val log = StringBuilder()
+    private val requestNotifications =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
+
+    private val requestLegacyStorage =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
+
+    private val pickDirectory =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            uri ?: return@registerForActivityResult
+            val path = treeUriToPath(uri)
+            if (path != null) {
+                (application as OpenCodeApplication).switchWorkspace(path)
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
-        output = TextView(this).apply {
-            typeface = Typeface.MONOSPACE
-            setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 11f)
-            setPadding(32, 32, 32, 32)
+        requestNotificationPermission()
+        (application as OpenCodeApplication).startEngine()
+
+        setContent {
+            OpenCodeApp(app = application as OpenCodeApplication)
         }
-
-        val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(32, 16, 32, 0)
-            addView(
-                Button(this@MainActivity).apply {
-                    text = "Start"
-                    setOnClickListener { (application as OpenCodeApplication).startEngine() }
-                },
-            )
-            addView(
-                Button(this@MainActivity).apply {
-                    text = "Stop"
-                    setOnClickListener { (application as OpenCodeApplication).stopEngine() }
-                },
-            )
-            addView(
-                Button(this@MainActivity).apply {
-                    text = "Workspace"
-                    setOnClickListener { pickWorkspace() }
-                },
-            )
-            addView(
-                Button(this@MainActivity).apply {
-                    text = "API"
-                    setOnClickListener { exerciseApi() }
-                },
-            )
-        }
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(
-                controls,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ),
-            )
-            addView(
-                ScrollView(this@MainActivity).apply { addView(output) },
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                ),
-            )
-        }
-
-        // targetSdk 35 means edge-to-edge is enforced: the window is laid out
-        // underneath the status and navigation bars, so without this the buttons
-        // sit under the status bar and taps land on the system instead of the app.
-        val basePadding = intArrayOf(root.paddingLeft, root.paddingTop, root.paddingRight, root.paddingBottom)
-        root.setOnApplyWindowInsetsListener { view, insets ->
-            view.setPadding(
-                basePadding[0] + insets.systemWindowInsetLeft,
-                basePadding[1] + insets.systemWindowInsetTop,
-                basePadding[2] + insets.systemWindowInsetRight,
-                basePadding[3] + insets.systemWindowInsetBottom,
-            )
-            insets
-        }
-        setContentView(root)
-
-        val app = application as OpenCodeApplication
-        app.startupFailure?.let {
-            line("ENGINE UNAVAILABLE: $it")
-            return
-        }
-        if (app.processManager == null) {
-            line("ENGINE UNAVAILABLE: process manager not initialised")
-            return
-        }
-
-        line("nativeLibraryDir: ${applicationInfo.nativeLibraryDir}")
-        line("filesDir: ${filesDir.absolutePath}")
-        line("workspace: ${app.workspaceStore.resolve().absolutePath}")
-        line("all-files access: ${app.workspaceStore.hasAllFilesAccess()}")
-        line("")
-
-        requestNotificationPermissionIfNeeded()
-
-        scope.launch {
-            app.engineStatus.collectLatest { render(it) }
-        }
-
-        line("asking the engine service to start...")
-        app.startEngine()
     }
 
     /**
-     * Asks for POST_NOTIFICATIONS on API 33+.
+     * POST_NOTIFICATIONS on API 33+.
      *
-     * Denial is not fatal: a foreground service runs regardless, the notification
-     * is simply hidden. So this is a one-shot request with no gating logic.
+     * Denial is not fatal: the foreground service still runs, its notification is
+     * simply hidden. Asked once, no gating logic.
      */
-    private fun requestNotificationPermissionIfNeeded() {
+    private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
-        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+        requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    /**
-     * Opens the system screen for all-files access, then the directory picker.
-     *
-     * Two separate steps because they are two separate grants: all-files access is
-     * a special app access, not a runtime permission, so it cannot be requested
-     * with `requestPermissions`. The directory itself is chosen afterwards so the
-     * user sees the effect of the grant.
-     */
-    private fun pickWorkspace() {
-        val app = application as OpenCodeApplication
-        if (!app.workspaceStore.hasAllFilesAccess()) {
-            line("")
-            line("all-files access is required to use a folder on shared storage")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                runCatching { startActivity(intent) }.onFailure {
-                    // Some OEM builds do not expose the per-app screen.
-                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                }
-            } else {
-                // API 29: legacy read/write permissions are runtime grants.
-                requestPermissions(
-                    arrayOf(
-                        Manifest.permission.READ_EXTERNAL_STORAGE,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                    ),
-                    REQUEST_LEGACY_STORAGE,
-                )
+    /** Unused for now; the workspace picker lives in Settings. */
+    @Suppress("unused")
+    private fun requestStorageIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) return
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                data = Uri.parse("package:$packageName")
             }
-            return
-        }
-        launchDirectoryPicker()
-    }
-
-    private fun launchDirectoryPicker() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-            addFlags(
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            runCatching { startActivity(intent) }
+        } else {
+            requestLegacyStorage.launch(
+                arrayOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                ),
             )
         }
-        runCatching { startActivityForResult(intent, REQUEST_PICK_DIRECTORY) }.onFailure {
-            line("no document picker available: ${it.message}")
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        val granted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-        when (requestCode) {
-            REQUEST_LEGACY_STORAGE -> if (granted) launchDirectoryPicker() else line("storage permission denied")
-            else -> Unit
-        }
-    }
-
-    @Deprecated("startActivityForResult is adequate for this temporary diagnostics screen")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_PICK_DIRECTORY) return
-        if (resultCode != RESULT_OK || data?.data == null) {
-            line("workspace selection cancelled")
-            return
-        }
-        val treeUri = data.data!!
-        val path = treeUriToPath(treeUri)
-        if (path == null) {
-            // The engine cannot use a content:// URI, and this provider does not
-            // expose a real path. Saying so is better than starting the engine on
-            // a directory it cannot see.
-            line("this folder cannot be used: no POSIX path available for $treeUri")
-            return
-        }
-        val app = application as OpenCodeApplication
-        if (!app.switchWorkspace(path)) {
-            line("refused workspace: ${path.absolutePath} (must be a writable folder, not a storage root)")
-            return
-        }
-        line("workspace -> ${path.absolutePath}")
-        line("restart the engine for the change to take effect")
     }
 
     /**
-     * Turns a document-tree URI into a filesystem path.
+     * Maps a document-tree URI to a filesystem path.
      *
-     * `DocumentsContract` exposes the volume id as the URI authority's document id
-     * root; on Android that maps to `/storage/<volumeId>` for the primary and
-     * removable volumes. This is the same assumption every file manager on Android
-     * makes, and it fails closed: if the shape is not what we expect, the caller
-     * reports that the folder is unusable rather than guessing.
+     * The engine needs a POSIX path; a `content://` URI is useless to it. The
+     * document id root is the volume (`primary`, or a UUID for removable media),
+     * which is the same assumption every file manager on Android makes. Fails
+     * closed: an unexpected shape returns null rather than guessing.
      */
     private fun treeUriToPath(uri: Uri): File? {
         val docId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull() ?: return null
         val parts = docId.split(":", limit = 2)
         if (parts.size != 2) return null
-        val volume = parts[0]
-        val relative = parts[1]
         val root = when {
-            volume.equals("primary", ignoreCase = true) -> Environment.getExternalStorageDirectory()
-            volume.isEmpty() -> return null
-            else -> File("/storage", volume)
+            parts[0].equals("primary", ignoreCase = true) -> Environment.getExternalStorageDirectory()
+            parts[0].isEmpty() -> return null
+            else -> File("/storage", parts[0])
         }
-        return if (relative.isEmpty()) root else File(root, relative)
-    }
-
-    /**
-     * Exercises the API client end to end: create a session, send a prompt, and
-     * watch the event stream fill in the reply.
-     *
-     * This is a diagnostic harness, not product code. It exists so the API layer
-     * can be proven against a real engine before there is a chat screen to drive it.
-     */
-    private fun exerciseApi() {
-        val app = application as OpenCodeApplication
-        val credentials = app.engineStatus.value.credentials
-        if (credentials == null) {
-            line("")
-            line("API: engine is not running yet")
-            return
-        }
-        val api = app.engineApi
-        val handle = api.attach(credentials)
-        val directory = app.workspaceStore.resolve().absolutePath
-        line("")
-        line("=== API EXERCISE ===")
-        line("base: $directory")
-
-        scope.launch {
-            when (val models = handle.models.list()) {
-                is ApiResult.Success -> line("models: ${models.value.size} (${models.value.take(3).joinToString { it.id }})")
-                is ApiResult.Failure -> line("models failed: ${models.describe()}")
-            }
-
-            val created = handle.sessions.create(directory, title = "api probe")
-            if (created is ApiResult.Failure) {
-                line("create failed: ${created.describe()}")
-                return@launch
-            }
-            val session = (created as ApiResult.Success).value
-            line("session: ${session.id}")
-            line("  location: ${session.location?.directory}")
-
-            val repo = ChatRepository(handle.sessions, handle.stream, scope)
-            repo.open(session.id)
-
-            // Observe streaming text as it arrives.
-            val watcher = launch {
-                repo.state.collect { state ->
-                    val live = state.streaming.values.firstOrNull()
-                    if (live != null) line("  stream: ${live.length} chars")
-                    if (state.lastError != null) line("  error: ${state.lastError}")
-                }
-            }
-
-            delay(1_500)
-            val sent = repo.send("Reply with exactly: APICLIENT-OK")
-            if (sent is ApiResult.Failure) {
-                line("prompt failed: ${sent.describe()}")
-                watcher.cancel()
-                return@launch
-            }
-            line("prompt accepted")
-
-            // Wait for the execution to finish. Two independent signals: the stream's
-            // `execution.succeeded`, and REST reporting an `idle` head. Either is
-            // enough, so a missed event cannot hang the probe.
-            val finished = withTimeoutOrNull(90_000) {
-                repo.state.first { !it.busy && it.messages.any { m -> m.isAssistant } }
-            } ?: run {
-                // Fall back to REST in case the stream is wedged.
-                var settled: ChatState? = null
-                repeat(30) {
-                    val probe = handle.sessions.messages(session.id)
-                    if (probe is ApiResult.Success) {
-                        val newest = probe.value.firstOrNull()
-                        val chronological = probe.value.reversed()
-                        if (newest != null && newest.isIdle && chronological.any { it.isAssistant }) {
-                            settled = ChatState(messages = chronological, busy = false)
-                            return@repeat
-                        }
-                    }
-                    delay(1_000)
-                }
-                settled
-            }
-            watcher.cancel()
-
-            if (finished == null) {
-                line("timed out waiting for a reply")
-                return@launch
-            }
-            val assistant = finished.messages.lastOrNull { it.isAssistant }
-            line("reply: ${assistant?.plainText?.take(120)}")
-            line("history: ${finished.messages.size} messages")
-
-            when (val model = repo.setModel(ModelRef(id = "big-pickle", providerID = "opencode"))) {
-                is ApiResult.Success -> line("setModel: 204 accepted")
-                is ApiResult.Failure -> line("setModel failed: ${model.describe()}")
-            }
-            repo.close()
-        }
-    }
-
-    private fun render(status: EngineStatus) {
-        val pid = status.pid?.let { "pid: $it" } ?: "pid: -"
-        val port = status.port?.let { "port: $it" } ?: "port: -"
-        line("state: ${status.state}  $pid  $port  ${status.lastError ?: ""}")
-
-        val credentials = status.credentials
-        if (status.state == EngineState.RUNNING && credentials != null) {
-            line("  baseUrl:  ${credentials.baseUrl}")
-            line("  password: ${credentials.password}")
-            line("  auth:     ${credentials.basicAuthHeader}")
-        }
-        if (status.state == EngineState.FAILED) {
-            line("")
-            line("--- recent engine output ---")
-            status.recentOutput.takeLast(25).forEach { line("  $it") }
-        }
-    }
-
-    private fun line(text: String) {
-        log.append(text).append('\n')
-        runOnUiThread { output.text = log.toString() }
-    }
-
-    override fun onDestroy() {
-        // Only this screen's collector dies here. The engine keeps running under
-        // the foreground service.
-        scope.cancel()
-        super.onDestroy()
+        return if (parts[1].isEmpty()) root else File(root, parts[1])
     }
 }
