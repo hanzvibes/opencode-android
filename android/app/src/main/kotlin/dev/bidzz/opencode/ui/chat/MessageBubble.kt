@@ -39,6 +39,7 @@ fun MessageBubble(
     markdown: String,
     modifier: Modifier = Modifier,
     streaming: Boolean = false,
+    tools: List<dev.bidzz.opencode.core.api.dto.ToolCall> = emptyList(),
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -96,6 +97,7 @@ fun MessageBubble(
                     MarkdownText(markdown = markdown)
                 }
             }
+            tools.forEach { ToolRow(it, Modifier.padding(top = spacing.sm)) }
         }
 
         Role.ERROR -> Row(modifier = modifier.fillMaxWidth()) {

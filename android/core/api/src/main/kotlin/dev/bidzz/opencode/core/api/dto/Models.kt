@@ -122,6 +122,8 @@ data class SessionMessage(
     val tokens: TokenUsage? = null,
     /** Present on `idle` messages: "succeeded", "failed", ... */
     val outcome: String? = null,
+    /** Present on a failed `assistant` message, e.g. `provider.free-limit` (HTTP 429). */
+    val error: ToolError? = null,
 ) {
     val isUser: Boolean get() = type == "user"
     val isAssistant: Boolean get() = type == "assistant"
@@ -143,13 +145,40 @@ data class MessageTime(
 /**
  * One content block of an assistant message.
  *
- * `type` is `text` for prose; other kinds (tool calls, reasoning) exist and are
- * preserved as raw values so an unknown block does not lose the rest of the message.
+ * `type` is `text` for prose, `tool` for a tool call, `reasoning` for the model's
+ * private thinking. Unknown kinds are preserved so an unrecognised block does not
+ * lose the rest of the message.
  */
 @Serializable
 data class MessageContent(
     val type: String,
     val text: String? = null,
+    /** Tool call id, on `tool` blocks. */
+    val id: String? = null,
+    /** Tool name (`read`, `shell`, ...), on `tool` blocks. */
+    val name: String? = null,
+    /** Tool state, on `tool` blocks. */
+    val state: ToolState? = null,
+)
+
+/**
+ * What a tool call is doing.
+ *
+ * `status` is `streaming` (the model is still emitting arguments, and `input` is a
+ * raw JSON *string* rather than an object), `running`, `completed` or `error`.
+ */
+@Serializable
+data class ToolState(
+    val status: String,
+    val input: kotlinx.serialization.json.JsonElement? = null,
+    val content: List<MessageContent> = emptyList(),
+    val error: ToolError? = null,
+)
+
+@Serializable
+data class ToolError(
+    val type: String? = null,
+    val message: String? = null,
 )
 
 /** A model the server can run, as returned by `GET /api/model`. */

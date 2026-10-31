@@ -3,7 +3,10 @@ package dev.bidzz.opencode.core.api
 import android.util.Log
 import dev.bidzz.opencode.core.api.dto.EngineEvent
 import dev.bidzz.opencode.core.api.dto.EventTypes
+import dev.bidzz.opencode.core.api.dto.MessageContent
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.api.dto.ToolCall
+import dev.bidzz.opencode.core.api.dto.toolOutput
 import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TextDelta
@@ -39,7 +42,12 @@ data class ChatState(
     val lastError: String? = null,
     /** Active permission request waiting for the operator to reply. */
     val pendingPermission: PendingPermission? = null,
+    /** Tool calls seen on the stream this run, keyed by call id. Cleared on resync. */
+    val liveTools: Map<String, LiveTool> = emptyMap(),
 )
+
+/** A tool call from the live stream, tied to the assistant message that owns it. */
+data class LiveTool(val messageID: String, val call: ToolCall)
 
 /**
  * Owns one session's conversation state.
@@ -109,6 +117,7 @@ class ChatRepository(
                 _state.value = _state.value.copy(
                     messages = chronological,
                     streaming = emptyMap(),
+                    liveTools = emptyMap(),
                     // A run is over when the newest entry is `idle`, or when the
                     // newest assistant message is finished. The second case matters:
                     // a rejected permission aborts the run without ever writing an
@@ -208,6 +217,9 @@ class ChatRepository(
 
             EventTypes.EXECUTION_STARTED -> _state.value = _state.value.copy(busy = true)
 
+            EventTypes.TOOL_INPUT_STARTED, EventTypes.TOOL_CALLED,
+            EventTypes.TOOL_SUCCESS, EventTypes.TOOL_FAILED -> applyToolEvent(event.type, payload)
+
             EventTypes.PERMISSION_ASKED -> {
                 val payload = event.data?.jsonObject ?: return
                 val id = payload["id"]?.jsonPrimitive?.contentOrNull ?: return
@@ -249,6 +261,41 @@ class ChatRepository(
                 if (payload.isEmpty()) Log.v(TAG, "event ${event.type} had no payload")
             }
         }
+    }
+
+    /**
+     * Folds one tool event into [ChatState.liveTools].
+     *
+     * Only `input.started` carries the tool name, so later events keep the name of
+     * the entry they update. An update for an unseen id (stream joined mid-call) is
+     * dropped; `resync()` at the end of the run supplies it from history.
+     */
+    private fun applyToolEvent(type: String, p: kotlinx.serialization.json.JsonObject) {
+        val id = p["id"]?.jsonPrimitive?.contentOrNull ?: return
+        val messageID = p["assistantMessageID"]?.jsonPrimitive?.contentOrNull ?: return
+        val tools = _state.value.liveTools
+        val prev = tools[id]?.call
+        val next = when (type) {
+            EventTypes.TOOL_INPUT_STARTED ->
+                ToolCall(id, p["name"]?.jsonPrimitive?.contentOrNull.orEmpty(), "streaming")
+            EventTypes.TOOL_CALLED -> prev?.copy(status = "running", input = p["input"])
+            EventTypes.TOOL_SUCCESS -> prev?.copy(
+                status = "completed",
+                output = runCatching {
+                    ApiJson.decodeFromJsonElement(
+                        kotlinx.serialization.builtins.ListSerializer(serializer<MessageContent>()),
+                        p["content"] ?: return@runCatching null,
+                    ).toolOutput()
+                }.getOrNull(),
+            )
+            else -> prev?.copy(
+                status = "error",
+                error = p["error"]?.jsonObject?.let { e ->
+                    (e["message"] ?: e["type"])?.jsonPrimitive?.contentOrNull
+                } ?: "failed",
+            )
+        } ?: return
+        _state.value = _state.value.copy(liveTools = tools + (id to LiveTool(messageID, next)))
     }
 
     private fun publish(messageID: String) {

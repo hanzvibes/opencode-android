@@ -129,4 +129,8 @@ object EventTypes {
     const val SESSION_CREATED = "session.created"
     const val SESSION_RENAMED = "session.renamed"
     const val PERMISSION_ASKED = "permission.asked"
+    const val TOOL_INPUT_STARTED = "session.tool.input.started"
+    const val TOOL_CALLED = "session.tool.called"
+    const val TOOL_SUCCESS = "session.tool.success"
+    const val TOOL_FAILED = "session.tool.failed"
 }

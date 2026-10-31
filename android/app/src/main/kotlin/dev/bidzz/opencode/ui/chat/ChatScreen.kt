@@ -107,6 +107,7 @@ fun ChatScreen(
                             role = message.role,
                             markdown = message.text,
                             streaming = message.streaming,
+                            tools = message.tools,
                         )
                     }
                     if (state.error != null) {

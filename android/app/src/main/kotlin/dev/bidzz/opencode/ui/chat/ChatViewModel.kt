@@ -12,6 +12,7 @@ import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import dev.bidzz.opencode.core.api.dto.toToolCall
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -38,6 +39,7 @@ data class ChatMessage(
     val role: Role,
     val text: String,
     val streaming: Boolean = false,
+    val tools: List<dev.bidzz.opencode.core.api.dto.ToolCall> = emptyList(),
 )
 
 /**
@@ -273,10 +275,18 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                 role = Role.USER,
                 text = message.text.orEmpty(),
             )
+            // A failed run with nothing to show would otherwise be an empty bubble.
+            message.isAssistant && message.error != null && message.content.isEmpty() ->
+                result += ChatMessage(
+                    id = message.id,
+                    role = Role.ERROR,
+                    text = message.error?.message ?: message.error?.type ?: "The agent failed",
+                )
             message.isAssistant -> result += ChatMessage(
                 id = message.id,
                 role = Role.ASSISTANT,
                 text = message.plainText,
+                tools = message.content.mapNotNull { it.toToolCall() },
             )
             // `idle` markers are engine bookkeeping, not conversation.
         }
@@ -290,6 +300,19 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
         } else {
             result += ChatMessage(id = messageID, role = Role.ASSISTANT, text = text, streaming = true)
         }
+    }
+
+    // Live tool calls win over history for the same call id; calls for a message
+    // that has no text yet still need a message to hang off.
+    liveTools.values.groupBy { it.messageID }.forEach { (messageID, live) ->
+        var idx = result.indexOfFirst { it.id == messageID }
+        if (idx < 0) {
+            result += ChatMessage(id = messageID, role = Role.ASSISTANT, text = "", streaming = true)
+            idx = result.lastIndex
+        }
+        val liveCalls = live.map { it.call }
+        val liveIds = liveCalls.map { it.id }.toSet()
+        result[idx] = result[idx].copy(tools = result[idx].tools.filter { it.id !in liveIds } + liveCalls)
     }
     return result
 }
