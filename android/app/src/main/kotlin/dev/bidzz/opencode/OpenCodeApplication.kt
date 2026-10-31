@@ -9,6 +9,7 @@ import dev.bidzz.opencode.core.engine.EngineStartupException
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
 import dev.bidzz.opencode.service.EngineService
+import dev.bidzz.opencode.workspace.WorkspaceStore
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,9 @@ class OpenCodeApplication : Application() {
     var startupFailure: String? = null
         private set
 
+    lateinit var workspaceStore: WorkspaceStore
+        private set
+
     /** Fallback status published when the binary never resolved. */
     private val unavailableStatus = MutableStateFlow(EngineStatus())
 
@@ -49,13 +53,18 @@ class OpenCodeApplication : Application() {
         super.onCreate()
 
         val nativeLibraryDir = File(applicationInfo.nativeLibraryDir)
-        val workspace = File(filesDir, "workspace").apply { mkdirs() }
-        val environment = EngineEnvironment(filesDir, cacheDir, workspace)
+        workspaceStore = WorkspaceStore(this)
+
+        // The environment reads the workspace through this lambda on every access,
+        // so changing the project does not require a new supervisor or a new
+        // engine home. The engine's own state must not live inside the project.
+        val environment = EngineEnvironment(filesDir, cacheDir) { workspaceStore.resolve() }
 
         try {
             val binary = EngineBinary.resolve(nativeLibraryDir, filesDir)
             processManager = ProcessManager(binary, environment)
             Log.i(TAG, "engine resolved at ${binary.executable.absolutePath}")
+            Log.i(TAG, "workspace: ${environment.workspace.absolutePath}")
         } catch (e: EngineStartupException) {
             // Keep the app usable so a diagnostics screen can explain the problem
             // instead of the process dying on launch.
@@ -75,6 +84,23 @@ class OpenCodeApplication : Application() {
 
     /** Asks the foreground service to stop the engine and itself. */
     fun stopEngine(): Boolean = sendToService(EngineService.ACTION_STOP)
+
+    /**
+     * Points the engine at a different project directory.
+     *
+     * The engine takes its working directory at process start, so a switch is only
+     * real after a restart. The caller is responsible for stopping first: doing it
+     * here would race with whatever else is driving the service.
+     */
+    fun switchWorkspace(dir: File): Boolean {
+        if (!workspaceStore.isAcceptableWorkspace(dir)) {
+            Log.w(TAG, "refusing workspace: ${dir.absolutePath}")
+            return false
+        }
+        workspaceStore.selectedPath = dir.absolutePath
+        Log.i(TAG, "workspace switched to ${dir.absolutePath}")
+        return true
+    }
 
     /**
      * Delivers a command to [EngineService].

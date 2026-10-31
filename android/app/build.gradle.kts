@@ -14,9 +14,8 @@ android {
         versionCode = 1
         versionName = "0.1.0-dev"
 
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
+        // ABI selection lives in `splits` below: declaring `ndk.abiFilters` as well
+        // is a hard configuration error in AGP 8.
     }
 
     buildTypes {
@@ -35,6 +34,26 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    /**
+     * One APK per ABI, because each carries its own ~217 MB engine.
+     *
+     * A universal APK would be ~340 MB. Play Store limits are irrelevant here (see
+     * the distribution decision in `handoff.md` §3), but an APK that size is
+     * painful to download and update over Obtainium. Splitting also keeps the
+     * emulator-only x86_64 build out of arm64 users' downloads.
+     *
+     * `isUniversalApk = false` matters: without it AGP also emits a combined APK,
+     * which defeats the point.
+     */
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
     }
 
     // The engine binary is shipped as a native library so Android extracts it to
@@ -60,4 +79,6 @@ dependencies {
     // Declared directly: `implementation` in :core:engine does not expose
     // coroutines to consumers, and the activity uses CoroutineScope and Flow.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    testImplementation("junit:junit:4.13.2")
 }
