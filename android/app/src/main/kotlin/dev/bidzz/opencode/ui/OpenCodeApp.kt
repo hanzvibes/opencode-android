@@ -1,12 +1,15 @@
 package dev.bidzz.opencode.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -14,17 +17,25 @@ import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatViewModel
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
+import dev.bidzz.opencode.ui.projects.ProjectOption
+import dev.bidzz.opencode.ui.projects.ProjectPickerScreen
+import dev.bidzz.opencode.ui.sessions.SessionListScreen
+import dev.bidzz.opencode.ui.sessions.SessionListViewModel
+import dev.bidzz.opencode.ui.sessions.SessionRow
 import dev.bidzz.opencode.ui.settings.SettingsScreen
+import java.io.File
 
 /**
  * Top-level navigation.
  *
- * A sealed screen value rather than a navigation library: there are three
- * destinations and no deep links, so a graph would be machinery without a job.
- * Back is handled by the host activity.
+ * A sealed screen value rather than a navigation library: four destinations, no
+ * deep links, no back stack beyond "return to chat". A graph would be machinery
+ * without a job.
  */
 private sealed interface Screen {
     data object Chat : Screen
+    data object Sessions : Screen
+    data object Projects : Screen
     data object Settings : Screen
     data object Diagnostics : Screen
 }
@@ -32,20 +43,20 @@ private sealed interface Screen {
 @Composable
 fun OpenCodeApp(app: OpenCodeApplication) {
     var screen by remember { mutableStateOf<Screen>(Screen.Chat) }
-    var showSettings by remember { mutableStateOf(false) }
+    var sessionScopeToProject by remember { mutableStateOf(true) }
 
     val engineStatus by app.engineStatus.collectAsState()
-    val chatViewModel: ChatViewModel = viewModel(
-        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                @Suppress("UNCHECKED_CAST")
-                return ChatViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath }) as T
-            }
-        },
-    )
 
-    // Feed engine state into the view model; it decides when to attach the API.
+    val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory {
+        ChatViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+    })
+
+    val sessionViewModel: SessionListViewModel = viewModel(factory = viewModelFactory {
+        SessionListViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+    })
+
     val chatState by chatViewModel.state.collectAsState()
+    val sessionsState by sessionViewModel.state.collectAsState()
 
     // Feed engine state into the view model; it decides when to attach the API.
     LaunchedEffect(engineStatus.state, engineStatus.credentials?.baseUrl) {
@@ -61,10 +72,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         }
     }
 
-    // Remember the session so the restore above has something to open.
     LaunchedEffect(chatState.sessionID) {
         chatState.sessionID?.let { app.lastSessionID = it }
     }
+
+    // Load history whenever the screen is shown, and reload when the scope flips.
+    LaunchedEffect(screen, sessionScopeToProject) {
+        if (screen is Screen.Sessions) sessionViewModel.load(sessionScopeToProject)
+    }
+
+    // Back always returns to the conversation.
+    BackHandler(enabled = screen !is Screen.Chat) { screen = Screen.Chat }
 
     OpenCodeTheme {
         when (screen) {
@@ -75,13 +93,50 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onStop = chatViewModel::stop,
                 onStatusClick = { screen = Screen.Diagnostics },
                 onNewSession = chatViewModel::newSession,
-                onSessionsClick = { showSettings = true },
+                onSessionsClick = { screen = Screen.Sessions },
+                onProjectClick = { screen = Screen.Projects },
+                onSettingsClick = { screen = Screen.Settings },
             )
+
+            Screen.Sessions -> SessionListScreen(
+                state = sessionsState,
+                onBack = { screen = Screen.Chat },
+                onOpen = { row: SessionRow ->
+                    chatViewModel.openSession(row.id)
+                    screen = Screen.Chat
+                },
+                onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
+                onNewSession = {
+                    chatViewModel.newSession()
+                    screen = Screen.Chat
+                },
+            )
+
+            Screen.Projects -> {
+                val current = app.workspaceStore.resolve().absolutePath
+                ProjectPickerScreen(
+                    currentPath = current,
+                    internalPath = app.workspaceStore.internalPath(),
+                    hasAllFilesAccess = app.workspaceStore.hasAllFilesAccess(),
+                    options = buildProjectOptions(app, current),
+                    onBack = { screen = Screen.Chat },
+                    onSelect = { option ->
+                        app.switchWorkspace(File(option.path))
+                        // A different project means a different session: the engine
+                        // binds a session to the directory it was created in.
+                        chatViewModel.newSession()
+                        screen = Screen.Chat
+                    },
+                    onChooseFolder = { app.requestWorkspaceFolder() },
+                    onGrantAccess = { app.requestAllFilesAccess() },
+                )
+            }
 
             Screen.Settings -> SettingsScreen(
                 app = app,
                 onBack = { screen = Screen.Chat },
                 onDiagnostics = { screen = Screen.Diagnostics },
+                onProjects = { screen = Screen.Projects },
             )
 
             Screen.Diagnostics -> DiagnosticsScreen(
@@ -90,4 +145,30 @@ fun OpenCodeApp(app: OpenCodeApplication) {
             )
         }
     }
+}
+
+/** Recents plus the internal workspace, with availability checked up front. */
+private fun buildProjectOptions(app: OpenCodeApplication, current: String): List<ProjectOption> {
+    val internal = app.workspaceStore.internalPath()
+    val paths = (listOf(internal) + app.workspaceStore.recentPaths() + current)
+        .distinct()
+        .filter { it.isNotBlank() }
+
+    return paths.map { path ->
+        val file = File(path)
+        ProjectOption(
+            path = path,
+            label = file.name.ifEmpty { path },
+            isCurrent = path == current,
+            available = file.isDirectory && file.canWrite(),
+        )
+    }
+}
+
+/** Small helper so each view model construction stays a single expression. */
+private inline fun <reified VM : ViewModel> viewModelFactory(
+    crossinline create: () -> VM,
+): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = create() as T
 }

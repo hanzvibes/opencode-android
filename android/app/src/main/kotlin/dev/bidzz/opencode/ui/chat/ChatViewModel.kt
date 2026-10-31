@@ -200,8 +200,13 @@ class ChatViewModel(
 
     /** Loads an existing session. */
     fun openSession(session: SessionInfo) {
+        openSession(session.id)
+    }
+
+    /** Loads an existing session by id, from the history list. */
+    fun openSession(sessionID: String) {
         val repo = repository ?: return
-        repo.open(session.id)
+        repo.open(sessionID)
     }
 
     /**

@@ -25,6 +25,10 @@ class WorkspaceStore(private val context: Context) {
     companion object {
         private const val PREFS = "workspace"
         private const val KEY_PATH = "path"
+        private const val KEY_RECENT = "recent"
+
+        /** Enough to cover active work without turning the picker into a list. */
+        private const val MAX_RECENT = 8
 
         /** Default project directory when the user has not picked one. */
         fun internalWorkspace(context: Context): File =
@@ -40,7 +44,25 @@ class WorkspaceStore(private val context: Context) {
             prefs.edit().apply {
                 if (value == null) remove(KEY_PATH) else putString(KEY_PATH, value)
             }.apply()
+            if (value != null) rememberRecent(value)
         }
+
+    /**
+     * Recently used project directories, newest first.
+     *
+     * Stored as a newline-separated list. Small enough that a database would be
+     * overhead, and a corrupt list degrades to "no recents" rather than a crash.
+     */
+    fun recentPaths(): List<String> =
+        prefs.getString(KEY_RECENT, null)
+            ?.split('\n')
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+
+    private fun rememberRecent(path: String) {
+        val updated = (listOf(path) + recentPaths().filter { it != path }).take(MAX_RECENT)
+        prefs.edit().putString(KEY_RECENT, updated.joinToString("\n")).apply()
+    }
 
     /**
      * The directory the engine should use.
@@ -60,6 +82,9 @@ class WorkspaceStore(private val context: Context) {
         }
         return dir
     }
+
+    /** The app-private workspace path, which needs no permission. */
+    fun internalPath(): String = internalWorkspace(context).absolutePath
 
     /** True when the app may read and write shared storage directly. */
     fun hasAllFilesAccess(): Boolean = when {

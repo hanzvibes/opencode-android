@@ -48,6 +48,8 @@ fun ChatScreen(
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
     onSessionsClick: () -> Unit,
+    onProjectClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -74,6 +76,8 @@ fun ChatScreen(
             onStatusClick = onStatusClick,
             onNewSession = onNewSession,
             onSessionsClick = onSessionsClick,
+            onProjectClick = onProjectClick,
+            onSettingsClick = onSettingsClick,
         )
 
         Box(Modifier.weight(1f)) {
@@ -130,10 +134,11 @@ private fun ChatHeader(
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
     onSessionsClick: () -> Unit,
+    onProjectClick: () -> Unit,
+    onSettingsClick: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val dims = OpenCodeTheme.tokens.dimensions
 
     Row(
         modifier = Modifier
@@ -157,8 +162,9 @@ private fun ChatHeader(
 
         Box(Modifier.weight(1f))
 
-        HeaderAction("History", onSessionsClick)
-        HeaderAction("New", onNewSession, Modifier.padding(start = spacing.sm))
+        HeaderAction("Project", onProjectClick)
+        HeaderAction("History", onSessionsClick, Modifier.padding(start = spacing.sm))
+        HeaderAction("⋯", onSettingsClick, Modifier.padding(start = spacing.sm))
     }
     Box(
         Modifier

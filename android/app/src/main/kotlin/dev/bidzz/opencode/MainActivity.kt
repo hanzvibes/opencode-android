@@ -13,8 +13,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import java.io.File
 import dev.bidzz.opencode.ui.OpenCodeApp
+import kotlinx.coroutines.launch
 
 /**
  * Hosts the Compose UI and owns the two permission flows.
@@ -45,9 +47,39 @@ class MainActivity : ComponentActivity() {
 
         requestNotificationPermission()
         (application as OpenCodeApplication).startEngine()
+        observeDialogRequests()
 
         setContent {
             OpenCodeApp(app = application as OpenCodeApplication)
+        }
+    }
+
+    /**
+     * Bridges UI requests to system dialogs.
+     *
+     * The composables cannot launch activities themselves without holding an
+     * Activity reference, which would leak on rotation. They bump a counter on the
+     * Application instead, and this collector turns it into a real dialog.
+     */
+    private fun observeDialogRequests() {
+        val app = application as OpenCodeApplication
+        lifecycleScope.launch {
+            app.workspaceFolderRequest.collect { token ->
+                if (token == 0L) return@collect
+                if (!app.workspaceStore.hasAllFilesAccess() &&
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                ) {
+                    requestStorageIfNeeded()
+                } else {
+                    pickDirectory.launch(null)
+                }
+            }
+        }
+        lifecycleScope.launch {
+            app.allFilesAccessRequest.collect { token ->
+                if (token == 0L) return@collect
+                requestStorageIfNeeded()
+            }
         }
     }
 

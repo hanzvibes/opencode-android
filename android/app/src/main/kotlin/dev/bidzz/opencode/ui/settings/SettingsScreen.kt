@@ -34,6 +34,7 @@ fun SettingsScreen(
     app: OpenCodeApplication,
     onBack: () -> Unit,
     onDiagnostics: () -> Unit,
+    onProjects: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -55,7 +56,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(0.dp),
         ) {
             SectionLabel("Project")
-            InfoRow("Workspace", app.workspaceStore.resolve().absolutePath)
+            ActionRow("Project folder", app.workspaceStore.resolve().absolutePath, onProjects)
             InfoRow("All-files access", if (app.workspaceStore.hasAllFilesAccess()) "Granted" else "Not granted")
 
             SectionLabel("Engine")

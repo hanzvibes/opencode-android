@@ -123,6 +123,25 @@ class OpenCodeApplication : Application() {
         return true
     }
 
+    /** Opens the system folder picker. The result arrives in the activity. */
+    fun requestWorkspaceFolder() {
+        workspaceFolderRequest.value = System.currentTimeMillis()
+    }
+
+    /** Opens the all-files-access settings screen. */
+    fun requestAllFilesAccess() {
+        allFilesAccessRequest.value = System.currentTimeMillis()
+    }
+
+    /**
+     * Signals that the UI wants a system dialog.
+     *
+     * A counter rather than a boolean: repeated taps must re-trigger the flow, and
+     * a boolean would need resetting by the observer.
+     */
+    val workspaceFolderRequest = MutableStateFlow(0L)
+    val allFilesAccessRequest = MutableStateFlow(0L)
+
     /**
      * Delivers a command to [EngineService].
      *
