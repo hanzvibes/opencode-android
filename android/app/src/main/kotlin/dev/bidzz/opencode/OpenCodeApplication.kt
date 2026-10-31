@@ -107,19 +107,28 @@ class OpenCodeApplication : Application() {
     fun stopEngine(): Boolean = sendToService(EngineService.ACTION_STOP)
 
     /**
-     * Points the engine at a different project directory.
+     * Points the engine at a different project directory and restarts it.
      *
-     * The engine takes its working directory at process start, so a switch is only
-     * real after a restart. The caller is responsible for stopping first: doing it
-     * here would race with whatever else is driving the service.
+     * The engine takes its working directory at process start, so storing the new
+     * path is not enough: without the restart the agent keeps editing the previous
+     * project, which is the worst kind of bug because nothing looks wrong.
+     *
+     * The restart goes through the foreground service, so the notification stays
+     * up and the process is never left without a supervisor.
      */
     fun switchWorkspace(dir: File): Boolean {
         if (!workspaceStore.isAcceptableWorkspace(dir)) {
             Log.w(TAG, "refusing workspace: ${dir.absolutePath}")
             return false
         }
+        val previous = workspaceStore.selectedPath
+        if (previous == dir.absolutePath) {
+            Log.i(TAG, "workspace already ${dir.absolutePath}")
+            return true
+        }
         workspaceStore.selectedPath = dir.absolutePath
-        Log.i(TAG, "workspace switched to ${dir.absolutePath}")
+        Log.i(TAG, "workspace switched to ${dir.absolutePath}, restarting engine")
+        sendToService(EngineService.ACTION_RESTART)
         return true
     }
 

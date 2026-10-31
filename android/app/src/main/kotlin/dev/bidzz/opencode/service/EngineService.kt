@@ -57,6 +57,16 @@ class EngineService : Service() {
         const val ACTION_START = "dev.bidzz.opencode.action.START"
         const val ACTION_STOP = "dev.bidzz.opencode.action.STOP"
 
+        /**
+         * Stops the engine and starts it again on the current workspace.
+         *
+         * Needed because the engine takes its working directory at process start:
+         * changing the project directory only takes effect on a restart. Doing it
+         * through the service keeps the foreground notification continuous, so the
+         * app never drops out of the foreground during the swap.
+         */
+        const val ACTION_RESTART = "dev.bidzz.opencode.action.RESTART"
+
         private const val CHANNEL_ID = "engine"
         private const val NOTIFICATION_ID = 1001
         private const val FAILED_NOTIFICATION_ID = 1002
@@ -172,6 +182,24 @@ class EngineService : Service() {
             postFailureNotification("Engine unavailable")
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        if (action == ACTION_RESTART) {
+            scope.launch {
+                Log.i(TAG, "restarting engine for workspace change")
+                // `restart()` holds the supervisor's lifecycle lock, so a start that
+                // is still in flight finishes or aborts cleanly before this runs.
+                val result = supervisor.restart()
+                result.onSuccess {
+                    consecutiveFailures = 0
+                    Log.i(TAG, "engine running at ${it.baseUrl}")
+                }.onFailure { e ->
+                    consecutiveFailures++
+                    Log.e(TAG, "engine restart failed", e)
+                    postFailureNotification(e.message ?: "Engine failed to restart")
+                }
+            }
+            return START_STICKY
         }
 
         // A null intent means the system restarted us after a kill. Treating it as
