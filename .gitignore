@@ -11,6 +11,10 @@ android/build/
 android/app/build/
 android/core/*/build/
 android/local.properties
+# release signing config — the keystore itself lives outside this repository
+android/keystore.properties
+*.jks
+*.keystore
 android/app/src/main/jniLibs/
 *.apk
 *.aab

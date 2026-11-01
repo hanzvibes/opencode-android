@@ -1,7 +1,7 @@
 # Build guide
 
-How to produce the two debug APKs, including the `git` and `rg` binaries the
-engine shells out to.
+How to produce the two APKs — debug for testing, signed release for distribution —
+including the `git` and `rg` binaries the engine shells out to.
 
 Status: the full pipeline runs on this machine and the result has been executed
 on the x86_64 emulator (Android 16 / API 36). The **arm64 APK has not been run on
@@ -144,6 +144,69 @@ Two APKs, not one:
 ```powershell
 adb install -r app\build\outputs\apk\debug\app-x86_64-debug.apk    # emulator
 adb install -r app\build\outputs\apk\debug\app-arm64-v8a-debug.apk # device
+```
+
+---
+
+### 5. Release build and signing
+
+`assembleRelease` works without any signing setup, but the output is
+`app-<abi>-release-unsigned.apk`, which no device will install. Signing is
+configured in `android/app/build.gradle.kts`, which reads
+`android/keystore.properties` — **gitignored**, along with `*.jks`.
+
+The keystore itself deliberately lives **outside the repository**, at
+`H:\PUNYA ABID\PROJECT PRIBADI\OPENCODE-ANDROID-KEYS\opencode-release.jks`, so
+deleting the working tree or clearing `.cache/` cannot destroy it.
+
+```powershell
+cd android
+& "..\.cache\gradle\gradle-8.14\bin\gradle.bat" :app:assembleRelease --no-daemon
+# -> app/build/outputs/apk/release/app-{arm64-v8a,x86_64}-release.apk
+
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\apksigner.bat" `
+    verify --print-certs app\build\outputs\apk\release\app-arm64-v8a-release.apk
+```
+
+Expect `Verifies`, `Verified using v2 scheme: true`, and
+`Signer #1 certificate DN: CN=dev.bidzz.opencode, OU=OpenCode Android, O=bidzz, ST=Indonesia, C=ID`.
+
+`keystore.properties` format — note the **forward slashes**, because
+`java.util.Properties` treats `\` as an escape character:
+
+```properties
+storeFile=H:/PUNYA ABID/PROJECT PRIBADI/OPENCODE-ANDROID-KEYS/opencode-release.jks
+storePassword=<from your password manager>
+keyAlias=opencode
+keyPassword=<same>
+```
+
+#### Back up the key before distributing anything
+
+This is the one irreversible artifact in the build. Android refuses to install an
+update signed with a different key, so **losing this keystore means every device
+that already has the app must uninstall and reinstall, losing app-private state**.
+Copy both the `.jks` and its password to a location that survives a disk failure.
+
+Fingerprint of the current key, to confirm a build was signed with it:
+
+```
+SHA-256  b37f02de4417d8704ba5fe71d6aa1910cf3a77da16f0faf6759319779f0eeb1f
+RSA 4096, self-signed, validity 10950 days (to 2056), PKCS12, alias `opencode`
+```
+
+Regenerating is only correct if the app has never been installed anywhere from
+the old key.
+
+#### Installing a release build over a debug build
+
+They are signed with different keys, so `adb install -r` fails with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall first — this clears app data,
+including stored sessions and the workspace preference:
+
+```powershell
+adb uninstall dev.bidzz.opencode
+adb install app\build\outputs\apk\release\app-x86_64-release.apk
 ```
 
 ---
