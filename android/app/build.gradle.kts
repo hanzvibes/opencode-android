@@ -26,7 +26,7 @@ android {
         minSdk = 29
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0-dev"
+        versionName = "0.1.0"
 
         // ABI selection lives in `splits` below: declaring `ndk.abiFilters` as well
         // is a hard configuration error in AGP 8.
