@@ -196,6 +196,92 @@ class FileViewViewModel(
             }
         }
     }
+
+    fun startEditing() {
+        val s = _state.value
+        if (s.loading || s.error != null || s.editing) return
+        _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false)
+    }
+
+    fun editDraft(text: String) {
+        _state.value = _state.value.copy(draft = text, saved = false)
+    }
+
+    /** Leaves the editor without writing. The draft goes with it. */
+    fun stopEditing() {
+        _state.value = _state.value.copy(editing = false, draft = "", conflict = false, saving = false)
+    }
+
+    /**
+     * Writes the draft, unless something has changed the file first.
+     *
+     * [overwrite] is only ever set from the conflict dialog. A save always re-reads
+     * first: without that there is no way to know whether the draft is being written
+     * over the agent's work, and the engine's write endpoint replaces the whole file.
+     */
+    fun save(overwrite: Boolean = false) {
+        val s = _state.value
+        if (!s.editing || s.saving) return
+        val handle = api.handle() ?: run {
+            _state.value = s.copy(error = "Engine is not running")
+            return
+        }
+        val directory = workspace()
+        _state.value = s.copy(saving = true, error = null, conflict = false)
+
+        viewModelScope.launch {
+            val files = FileApi(handle.client)
+            val onDisk = (files.readText(directory, s.path) as? ApiResult.Success)?.value
+            when (saveAction(s.content, s.draft, onDisk, overwrite)) {
+                // Nothing to write, but the view is stale: reload so the user sees what
+                // is actually in the file rather than what was loaded when they opened it.
+                SaveAction.Unchanged -> {
+                    _state.value = _state.value.copy(saving = false)
+                    load(s.path)
+                }
+
+                SaveAction.Unverifiable -> _state.value = _state.value.copy(
+                    saving = false,
+                    error = "Could not re-read the file to check whether it changed, so nothing was " +
+                        "written. Your text is still here.",
+                )
+
+                SaveAction.Conflict -> _state.value = _state.value.copy(
+                    saving = false,
+                    conflict = true,
+                )
+
+                SaveAction.Write -> when (val result = files.writeText(directory, s.path, s.draft)) {
+                    // The draft survives a failed write: losing typed work on a network
+                    // error would be worse than the error itself.
+                    is ApiResult.Failure -> _state.value = _state.value.copy(
+                        saving = false,
+                        error = result.describe(),
+                    )
+                    is ApiResult.Success -> _state.value = _state.value.copy(
+                        saving = false,
+                        editing = false,
+                        conflict = false,
+                        content = s.draft,
+                        draft = "",
+                        saved = true,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Drops the draft and shows what the file holds now. */
+    fun reloadFromDisk() {
+        val s = _state.value
+        _state.value = s.copy(editing = false, draft = "", conflict = false, saving = false)
+        load(s.path)
+    }
+
+    /** Keeps editing after a conflict, so the difference can be looked at by hand. */
+    fun dismissConflict() {
+        _state.value = _state.value.copy(conflict = false)
+    }
 }
 
 /** Diff for one file. */

@@ -165,6 +165,13 @@ fun OpenCodeApp(app: OpenCodeApplication) {
             is Screen.FileView -> FileViewScreen(
                 state = fileState,
                 onBack = { screen = Screen.Files },
+                onStartEdit = fileViewModel::startEditing,
+                onDraftChange = fileViewModel::editDraft,
+                onSave = { fileViewModel.save() },
+                onCancelEdit = fileViewModel::stopEditing,
+                onOverwrite = { fileViewModel.save(overwrite = true) },
+                onReloadFromDisk = fileViewModel::reloadFromDisk,
+                onDismissConflict = fileViewModel::dismissConflict,
             )
 
             Screen.DiffList -> DiffListScreen(

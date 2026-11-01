@@ -85,6 +85,22 @@ class FileApi(private val client: EngineClient) {
         return false
     }
 
+    /**
+     * Writes a file, creating missing parent directories.
+     *
+     * The target is carried in the query exactly like [readText] carries it, and the
+     * content is the whole request body as `application/octet-stream` — the endpoint
+     * declares binary, so a JSON envelope here would be rejected rather than parsed.
+     */
+    suspend fun writeText(directory: String, path: String, content: String): ApiResult<Unit> {
+        val request = client.request(writeUrl(directory, path)).post(client.bytesBody(content)).build()
+        return client.executeUnit(request)
+    }
+
+    /** Kept separate so the query encoding can be asserted without a running engine. */
+    internal fun writeUrl(directory: String, path: String): String =
+        "/api/experimental/fs/write?${locationParam(directory)}&path=${enc(path)}"
+
     internal fun locationParam(directory: String): String =
         "location%5Bdirectory%5D=${enc(directory)}"
 
@@ -106,7 +122,16 @@ class FileApi(private val client: EngineClient) {
         is ApiResult.Failure -> false
     }
 
-    private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
+    /**
+     * Percent-encoding for query values.
+     *
+     * `URLEncoder` is form-encoding, which writes a space as `+`; the engine reads
+     * query values as percent-encoded, where `+` is a literal plus. Verified on a live
+     * engine: reading `with space.md` through `+` answers
+     * `File not found: with+space.md [HTTP 404] [FileNotFoundError]`.
+     */
+    private fun enc(value: String): String =
+        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 }
 
 /**

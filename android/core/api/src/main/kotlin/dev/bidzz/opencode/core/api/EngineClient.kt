@@ -40,6 +40,7 @@ class EngineClient(
     companion object {
         private const val TAG = "EngineClient"
         private val JSON = "application/json; charset=utf-8".toMediaType()
+        private val OCTET_STREAM = "application/octet-stream".toMediaType()
     }
 
     /**
@@ -102,6 +103,10 @@ class EngineClient(
     internal fun jsonBody(payload: String): okhttp3.RequestBody = payload.toRequestBody(JSON)
 
     internal fun emptyBody(): okhttp3.RequestBody = ByteArray(0).toRequestBody(JSON)
+
+    /** Raw UTF-8 bytes: `fs/write` takes the file content as the body, not as JSON. */
+    internal fun bytesBody(payload: String): okhttp3.RequestBody =
+        payload.toByteArray(Charsets.UTF_8).toRequestBody(OCTET_STREAM)
 
     private fun Response.toFailure(body: String): ApiResult.Failure {
         val parsed = runCatching {
