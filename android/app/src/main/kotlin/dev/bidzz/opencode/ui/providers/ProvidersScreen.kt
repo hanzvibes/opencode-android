@@ -30,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -47,6 +49,7 @@ fun ProvidersScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onSaveKey: (String, String) -> Unit,
+    onSaveCustom: (String, String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -54,6 +57,7 @@ fun ProvidersScreen(
     val radius = OpenCodeTheme.tokens.radius
 
     var keyFor by remember { mutableStateOf<IntegrationInfo?>(null) }
+    var showCustomForm by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { onRefresh() }
 
@@ -88,7 +92,7 @@ fun ProvidersScreen(
                 .padding(spacing.lg),
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
-            if (state.integrations.none { it.connected }) {
+            if (state.integrations.none { it.connected } && state.customProviders.isEmpty()) {
                 Text(
                     text = "No provider connected. Until one is, the agent runs on opencode's " +
                         "free tier, which stops after a short while. Add an API key below to " +
@@ -106,41 +110,30 @@ fun ProvidersScreen(
                 )
             }
 
+            Text("CUSTOM ENDPOINT", style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
+            state.customProviders.forEach { provider ->
+                ProviderRow(
+                    name = provider.name,
+                    detail = provider.baseURL.ifEmpty { provider.id } +
+                        if (provider.models.isEmpty()) "" else " · ${provider.models.size} models",
+                    connected = true,
+                    onClick = null,
+                )
+            }
+            PrimaryButton("Add a custom endpoint…") { showCustomForm = true }
+
+            Text("CATALOG", style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
             state.integrations.forEach { integration ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(radius.md))
-                        .background(colors.surfaceRaised)
-                        .border(0.5.dp, colors.outline, RoundedCornerShape(radius.md))
-                        .clickable(enabled = integration.acceptsKey) { keyFor = integration }
-                        .padding(horizontal = spacing.md, vertical = spacing.md),
-                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(integration.name, style = OpenCodeTypography.body, color = colors.onSurface)
-                        Text(
-                            text = when {
-                                integration.connected -> "connected"
-                                integration.acceptsKey -> "tap to add an API key"
-                                else -> "no API-key method"
-                            },
-                            style = OpenCodeTypography.bodySmall,
-                            color = if (integration.connected) colors.success else colors.onSurfaceFaint,
-                        )
-                    }
-                    if (integration.connected) {
-                        Box(
-                            Modifier
-                                .clip(RoundedCornerShape(radius.full))
-                                .background(colors.surfaceSunken)
-                                .padding(horizontal = spacing.sm, vertical = spacing.xxs),
-                        ) {
-                            Text("ON", style = OpenCodeTypography.label, color = colors.success)
-                        }
-                    }
-                }
+                ProviderRow(
+                    name = integration.name,
+                    detail = when {
+                        integration.connected -> "connected"
+                        integration.acceptsKey -> "tap to add an API key"
+                        else -> "no API-key method"
+                    },
+                    connected = integration.connected,
+                    onClick = if (integration.acceptsKey) ({ keyFor = integration }) else null,
+                )
             }
         }
     }
@@ -154,6 +147,79 @@ fun ProvidersScreen(
                 keyFor = null
             },
         )
+    }
+
+    if (showCustomForm) {
+        CustomProviderDialog(
+            onDismiss = { showCustomForm = false },
+            onSubmit = { name, baseURL, key, models ->
+                onSaveCustom(name, baseURL, key, models)
+                showCustomForm = false
+            },
+        )
+    }
+}
+
+/** One provider row, shared by the custom and catalog sections. */
+@Composable
+private fun ProviderRow(
+    name: String,
+    detail: String,
+    connected: Boolean,
+    onClick: (() -> Unit)?,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surfaceRaised)
+            .border(0.5.dp, colors.outline, RoundedCornerShape(radius.md))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = spacing.md, vertical = spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name, style = OpenCodeTypography.body, color = colors.onSurface)
+            Text(
+                text = detail,
+                style = OpenCodeTypography.bodySmall,
+                color = if (connected) colors.success else colors.onSurfaceFaint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (connected) {
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(radius.full))
+                    .background(colors.surfaceSunken)
+                    .padding(horizontal = spacing.sm, vertical = spacing.xxs),
+            ) {
+                Text("ON", style = OpenCodeTypography.label, color = colors.success)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrimaryButton(text: String, onClick: () -> Unit) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(radius.sm))
+            .background(colors.accent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
+    ) {
+        Text(text, style = OpenCodeTypography.label, color = colors.onAccent)
     }
 }
 
@@ -207,4 +273,95 @@ private fun KeyDialog(name: String, onDismiss: () -> Unit, onSubmit: (String) ->
             TextButton(onClick = onDismiss) { Text("Cancel", color = colors.onSurfaceMuted) }
         },
     )
+}
+
+/**
+ * Form for an OpenAI-compatible endpoint the engine's catalog does not know about.
+ *
+ * The engine resolves providers at startup, so the confirm button says what it
+ * actually does — saving without restarting looks like a silent failure.
+ */
+@Composable
+private fun CustomProviderDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (name: String, baseURL: String, apiKey: String, models: String) -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+
+    var name by remember { mutableStateOf("") }
+    var baseURL by remember { mutableStateOf("") }
+    var apiKey by remember { mutableStateOf("") }
+    var models by remember { mutableStateOf("") }
+
+    val ready = name.isNotBlank() && baseURL.isNotBlank() && apiKey.isNotBlank() && models.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom endpoint", style = OpenCodeTypography.title, color = colors.onSurface) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Text(
+                    text = "For any OpenAI-compatible API. The engine reads this at startup, " +
+                        "so it restarts when you save.",
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+                FormField("Display name", name, singleLine = true) { name = it }
+                FormField("Base URL, e.g. https://api.example.com/v1", baseURL, singleLine = true) { baseURL = it }
+                FormField("API key", apiKey, singleLine = true, secret = true) { apiKey = it }
+                FormField("Model ids, comma or line separated", models, singleLine = false) { models = it }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSubmit(name, baseURL, apiKey, models) }, enabled = ready) {
+                Text("Save & restart", color = colors.accent)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = colors.onSurfaceMuted) }
+        },
+    )
+}
+
+@Composable
+private fun FormField(
+    label: String,
+    value: String,
+    singleLine: Boolean,
+    secret: Boolean = false,
+    onValueChange: (String) -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    Column {
+        Text(label, style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = singleLine,
+            textStyle = OpenCodeTypography.input.copy(color = colors.onSurface),
+            cursorBrush = SolidColor(colors.accent),
+            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = if (secret) {
+                KeyboardOptions(keyboardType = KeyboardType.Password)
+            } else {
+                KeyboardOptions(keyboardType = KeyboardType.Uri)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = spacing.xxs)
+                .clip(RoundedCornerShape(radius.sm))
+                .background(colors.surfaceSunken)
+                .padding(spacing.sm),
+            decorationBox = { inner ->
+                if (value.isEmpty()) {
+                    Text(label, style = OpenCodeTypography.input, color = colors.onSurfaceFaint)
+                }
+                inner()
+            },
+        )
+    }
 }

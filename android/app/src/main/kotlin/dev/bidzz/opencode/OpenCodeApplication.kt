@@ -39,6 +39,13 @@ class OpenCodeApplication : Application() {
         private set
 
     /**
+     * The engine's directory layout. Exposed because the config file the app writes
+     * lives inside it, and duplicating those paths here would let the two drift.
+     */
+    lateinit var engineEnvironment: EngineEnvironment
+        private set
+
+    /**
      * HTTP/SSE layer for the running engine.
      *
      * Separate from [processManager] because the credentials change on every engine
@@ -79,7 +86,8 @@ class OpenCodeApplication : Application() {
         // The environment reads the workspace through this lambda on every access,
         // so changing the project does not require a new supervisor or a new
         // engine home. The engine's own state must not live inside the project.
-        val environment = EngineEnvironment(filesDir, cacheDir) { workspaceStore.resolve() }
+        engineEnvironment = EngineEnvironment(filesDir, cacheDir) { workspaceStore.resolve() }
+        val environment = engineEnvironment
 
         try {
             val binary = EngineBinary.resolve(nativeLibraryDir, filesDir)
@@ -130,6 +138,18 @@ class OpenCodeApplication : Application() {
         Log.i(TAG, "workspace switched to ${dir.absolutePath}, restarting engine")
         sendToService(EngineService.ACTION_RESTART)
         return true
+    }
+
+    /**
+     * Restarts the engine so it re-reads its own config.
+     *
+     * Provider entries are resolved at startup, so writing the config file does
+     * nothing until the process comes back — the same class of trap as a workspace
+     * change that skips its restart.
+     */
+    fun restartEngine() {
+        Log.i(TAG, "restarting engine for config change")
+        sendToService(EngineService.ACTION_RESTART)
     }
 
     /** Opens the system folder picker. The result arrives in the activity. */

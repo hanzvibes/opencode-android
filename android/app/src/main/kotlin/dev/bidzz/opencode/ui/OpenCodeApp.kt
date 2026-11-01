@@ -82,7 +82,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         DiffViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
     val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory {
-        ProvidersViewModel(app.engineApi)
+        ProvidersViewModel(
+            api = app.engineApi,
+            configStore = dev.bidzz.opencode.engine.EngineConfigStore(app.engineEnvironment.configHome),
+            restartEngine = app::restartEngine,
+        )
     })
 
     val explorerState by explorerViewModel.state.collectAsState()
@@ -221,6 +225,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onBack = { screen = Screen.Settings },
                 onRefresh = providersViewModel::refresh,
                 onSaveKey = providersViewModel::saveKey,
+                onSaveCustom = providersViewModel::saveCustomProvider,
             )
 
             Screen.Diagnostics -> DiagnosticsScreen(
