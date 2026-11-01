@@ -20,13 +20,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -75,6 +82,7 @@ fun ChatScreen(
             .imePadding(),
     ) {
         ChatHeader(
+            title = headerTitle(state.workspacePath),
             engineState = state.engineState,
             busy = state.busy,
             onStatusClick = onStatusClick,
@@ -166,6 +174,7 @@ fun ChatScreen(
 
 @Composable
 private fun ChatHeader(
+    title: String,
     engineState: dev.bidzz.opencode.core.engine.EngineState,
     busy: Boolean,
     onStatusClick: () -> Unit,
@@ -178,6 +187,8 @@ private fun ChatHeader(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
+    var menuOpen by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -185,10 +196,15 @@ private fun ChatHeader(
             .padding(horizontal = spacing.lg, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // The folder the agent works in is the thing worth reading here; the product
+        // name is already implied by the app being open.
         Text(
-            text = "OpenCode",
+            text = title,
             style = OpenCodeTypography.title,
             color = colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
 
         StatusChip(
@@ -198,13 +214,48 @@ private fun ChatHeader(
             modifier = Modifier.padding(start = spacing.md),
         )
 
-        Box(Modifier.weight(1f))
-
-        HeaderAction("Project", onProjectClick)
-        HeaderAction("Files", onFilesClick, Modifier.padding(start = spacing.sm))
-        HeaderAction("History", onSessionsClick, Modifier.padding(start = spacing.sm))
-        HeaderAction("⋯", onSettingsClick, Modifier.padding(start = spacing.sm))
+        Box(contentAlignment = Alignment.TopEnd) {
+            HeaderAction(text = "☰", onClick = { menuOpen = !menuOpen })
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text("New session") },
+                    onClick = {
+                        menuOpen = false
+                        onNewSession()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Files") },
+                    onClick = {
+                        menuOpen = false
+                        onFilesClick()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("History") },
+                    onClick = {
+                        menuOpen = false
+                        onSessionsClick()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Project…") },
+                    onClick = {
+                        menuOpen = false
+                        onProjectClick()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Settings") },
+                    onClick = {
+                        menuOpen = false
+                        onSettingsClick()
+                    },
+                )
+            }
+        }
     }
+
     Box(
         Modifier
             .fillMaxWidth()

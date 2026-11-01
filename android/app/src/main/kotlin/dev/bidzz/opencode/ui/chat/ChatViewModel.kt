@@ -122,6 +122,9 @@ class ChatViewModel(
         val attachedHandle = api.attach(credentials)
         handle = attachedHandle
         attached = credentials
+        // The header names the folder the engine just started in, so this is the moment
+        // to record it: earlier than this the value would be a guess.
+        _state.value = _state.value.copy(workspacePath = workspace())
         val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope)
         repository = repo
 
