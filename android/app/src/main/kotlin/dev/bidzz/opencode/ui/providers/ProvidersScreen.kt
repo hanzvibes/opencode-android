@@ -521,7 +521,12 @@ private fun CustomProviderDialog(
                 FormField("Display name", name, singleLine = true) { name = it }
                 FormField("Base URL, e.g. https://api.example.com/v1", baseURL, singleLine = true) { baseURL = it }
                 FormField("API key", apiKey, singleLine = true, secret = true) { apiKey = it }
-                FormField("Model ids, comma or line separated", models, singleLine = false) { models = it }
+                FormField(
+                    label = "Models, comma or line separated",
+                    placeholder = "model-id = name shown in the picker",
+                    value = models,
+                    singleLine = false,
+                ) { models = it }
             }
         },
         confirmButton = {
@@ -540,6 +545,7 @@ private fun FormField(
     label: String,
     value: String,
     singleLine: Boolean,
+    placeholder: String = label,
     secret: Boolean = false,
     onValueChange: (String) -> Unit,
 ) {
@@ -569,7 +575,7 @@ private fun FormField(
                 .padding(spacing.sm),
             decorationBox = { inner ->
                 if (value.isEmpty()) {
-                    Text(label, style = OpenCodeTypography.input, color = colors.onSurfaceFaint)
+                    Text(placeholder, style = OpenCodeTypography.input, color = colors.onSurfaceFaint)
                 }
                 inner()
             },

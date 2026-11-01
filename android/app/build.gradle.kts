@@ -99,6 +99,12 @@ android {
             jniLibs.srcDirs("src/main/jniLibs")
         }
     }
+
+    // Unit tests in this module exercise code that calls `android.util.Log`; without
+    // this the stub throws "Method i not mocked" instead of returning.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -122,4 +128,9 @@ dependencies {
     // The API DTOs are @Serializable; decoding them in a test needs the runtime on
     // the test classpath, which `implementation` in :core:api does not expose.
     testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // `EngineConfigStore` writes through `org.json`, which is a stub in the mockable
+    // android.jar. The mockable jar sits last on the test classpath, so the real
+    // implementation here is what runs — otherwise every assertion about the file
+    // the app wrote would be vacuous.
+    testImplementation("org.json:json:20240303")
 }

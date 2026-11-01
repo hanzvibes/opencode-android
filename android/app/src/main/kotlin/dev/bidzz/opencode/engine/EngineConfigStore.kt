@@ -29,6 +29,15 @@ class EngineConfigStore(configHome: File) {
     /** One custom provider as stored in the config file. Never carries the key. */
     data class CustomProvider(val id: String, val name: String, val baseURL: String, val models: List<String>)
 
+    /**
+     * A model the user listed: its id, and the name to show for it.
+     *
+     * [name] ends up in `models[id].name`, which the engine copies onto the model record
+     * (`config/plugin/provider.ts`: `if (config.name) model.name = config.name`) and the
+     * chat picker reads. Without it the picker falls back to the raw, namespaced id.
+     */
+    data class ModelSpec(val id: String, val name: String? = null)
+
     /** Outcome of a write, so the UI can distinguish success from a shadowed file. */
     sealed interface WriteResult {
         data class Saved(val providerID: String) : WriteResult
@@ -69,7 +78,7 @@ class EngineConfigStore(configHome: File) {
         name: String,
         baseURL: String,
         apiKey: String,
-        models: List<String>,
+        models: List<ModelSpec>,
     ): WriteResult {
         val root = readRoot() ?: JSONObject()
         val providers = root.optJSONObject("providers") ?: JSONObject().also { root.put("providers", it) }
@@ -82,10 +91,13 @@ class EngineConfigStore(configHome: File) {
             JSONObject().put("baseURL", baseURL.trimEnd('/')).put("apiKey", apiKey),
         )
         val modelMap = JSONObject()
-        models.forEach { modelID ->
-            // An empty object means "inherit whatever the provider knows about this
-            // model"; naming one explicitly is only needed to override a field.
-            modelMap.put(modelID, JSONObject())
+        models.forEach { spec ->
+            // A bare `{}` means "inherit whatever the provider knows about this model";
+            // `name` is only written when the user gave one, so an unnamed model keeps
+            // the engine's own answer instead of being pinned to an empty string.
+            val model = JSONObject()
+            spec.name?.let { model.put("name", it) }
+            modelMap.put(spec.id, model)
         }
         entry.put("models", modelMap)
         providers.put(id, entry)
@@ -134,8 +146,26 @@ class EngineConfigStore(configHome: File) {
             return base.ifEmpty { "custom" }
         }
 
-        /** Parses a user-supplied model list: one per line or comma-separated. */
-        fun parseModels(text: String): List<String> =
-            text.split(',', '\n').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        /**
+         * Parses a user-supplied model list: one per line or comma-separated, each item
+         * either `id` or `id = Name`.
+         *
+         * Only the first `=` splits, so a name may contain one. Repeating an id keeps its
+         * first position and the last name given for it — and a bare repeat does not erase
+         * a name already supplied, because typing the same model twice again is a likelier
+         * typo than a deliberate way to un-name it.
+         */
+        fun parseModels(text: String): List<ModelSpec> {
+            val names = LinkedHashMap<String, String?>()
+            for (item in text.split(',', '\n')) {
+                val piece = item.trim()
+                if (piece.isEmpty()) continue
+                val id = piece.substringBefore('=', piece).trim()
+                if (id.isEmpty()) continue
+                val given = piece.substringAfter('=', "").trim()
+                names[id] = if (given.isNotEmpty()) given else names[id]
+            }
+            return names.map { (id, name) -> ModelSpec(id, name) }
+        }
     }
 }
