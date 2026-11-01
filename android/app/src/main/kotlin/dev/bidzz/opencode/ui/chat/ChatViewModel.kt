@@ -47,6 +47,10 @@ data class ChatMessage(
     val text: String,
     val streaming: Boolean = false,
     val tools: List<dev.bidzz.opencode.core.api.dto.ToolCall> = emptyList(),
+    /** Raw identity the engine recorded for this reply; labelled at render time so a
+     * catalog that arrives late still produces human names. See [provenanceLabel]. */
+    val agent: String? = null,
+    val model: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
 )
 
 /**
@@ -386,17 +390,23 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                 text = message.text.orEmpty(),
             )
             // A failed run with nothing to show would otherwise be an empty bubble.
+            // The model that failed is named too: "which model errored" is the first
+            // thing the transcript has to answer after a switch goes wrong.
             message.isAssistant && message.error != null && message.content.isEmpty() ->
                 result += ChatMessage(
                     id = message.id,
                     role = Role.ERROR,
                     text = message.error?.message ?: message.error?.type ?: "The agent failed",
+                    agent = message.agent,
+                    model = message.model,
                 )
             message.isAssistant -> result += ChatMessage(
                 id = message.id,
                 role = Role.ASSISTANT,
                 text = message.plainText,
                 tools = message.content.mapNotNull { it.toToolCall() },
+                agent = message.agent,
+                model = message.model,
             )
             // `idle` markers are engine bookkeeping, not conversation.
         }

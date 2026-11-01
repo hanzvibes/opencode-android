@@ -40,6 +40,8 @@ fun MessageBubble(
     modifier: Modifier = Modifier,
     streaming: Boolean = false,
     tools: List<dev.bidzz.opencode.core.api.dto.ToolCall> = emptyList(),
+    /** Mode and model that produced this reply, when known. Empty when absent. */
+    provenance: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -74,6 +76,14 @@ fun MessageBubble(
                     style = OpenCodeTypography.label,
                     color = colors.onSurfaceFaint,
                 )
+                provenance?.let {
+                    Text(
+                        text = "· $it",
+                        style = OpenCodeTypography.label,
+                        color = colors.onSurfaceFaint,
+                        modifier = Modifier.padding(start = spacing.xs),
+                    )
+                }
                 if (streaming) {
                     CircularProgressIndicator(
                         modifier = Modifier
@@ -111,11 +121,21 @@ fun MessageBubble(
                     .background(colors.surfaceSunken, RoundedCornerShape(radius.sm))
                     .padding(horizontal = spacing.md, vertical = spacing.sm),
             ) {
-                Text(
-                    text = markdown,
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.danger,
-                )
+                Column {
+                    Text(
+                        text = markdown,
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.danger,
+                    )
+                    provenance?.let {
+                        Text(
+                            text = it,
+                            style = OpenCodeTypography.label,
+                            color = colors.onSurfaceFaint,
+                            modifier = Modifier.padding(top = spacing.xs),
+                        )
+                    }
+                }
             }
         }
     }

@@ -105,11 +105,19 @@ fun ChatScreen(
                     verticalArrangement = Arrangement.spacedBy(spacing.lg),
                 ) {
                     items(state.messages, key = { it.id }) { message ->
+                        // Computed here, not when the repository emitted, so the label
+                        // upgrades to human names as soon as the catalog loads.
                         MessageBubble(
                             role = message.role,
                             markdown = message.text,
                             streaming = message.streaming,
                             tools = message.tools,
+                            provenance = provenanceLabel(
+                                message.agent,
+                                message.model,
+                                state.agents,
+                                state.models,
+                            ),
                         )
                     }
                     if (state.error != null) {
