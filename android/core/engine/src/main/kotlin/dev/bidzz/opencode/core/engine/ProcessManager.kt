@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -128,6 +129,9 @@ class ProcessManager(
         private const val MAX_OUTPUT_LINES = 200
         private const val PASSWORD_PREFIX = "server password"
 
+        /** Covers the gap between fork and the child's exec when looking up its pid. */
+        private const val PID_LOOKUP_ATTEMPTS = 20
+
         /** One retry covers a port stolen between allocation and bind. */
         private const val MAX_START_ATTEMPTS = 3
     }
@@ -236,7 +240,7 @@ class ProcessManager(
             val proc = builder.start()
             started = proc
             process.set(proc)
-            val pid = readPid(proc)
+            val pid = readPid()
             transition(EngineState.STARTING, pid = pid, port = port)
 
             val credentials = awaitReady(proc, port)
@@ -385,17 +389,41 @@ class ProcessManager(
     }
 
     /**
-     * Reads the child's PID.
+     * The engine's pid, located by reading `/proc`.
      *
-     * `Process.pid()` is a Java 9+ method and is not present in the Android API 29
-     * java.lang.Process stub, so it is resolved reflectively. A missing PID only
-     * affects diagnostics, never supervision, so failure returns null.
+     * Android's `java.lang.Process` has no `pid()`: the method is desktop Java 9 and
+     * is not part of the platform, so the reflective lookup that used to live here
+     * found nothing and the diagnostics screen printed a dash while the engine ran.
+     * The child shares this app's uid, so its `/proc` entry is readable, and `argv[0]`
+     * is the exact binary path `buildCommand` execed.
      */
-    private fun readPid(proc: Process): Int? =
-        runCatching {
-            val method = proc.javaClass.getMethod("pid")
-            (method.invoke(proc) as Long).toInt()
-        }.getOrNull()
+    private suspend fun readPid(): Int? {
+        val executable = binary.executable.absolutePath
+        // start() returns on fork, before the child's exec lands, so its cmdline still
+        // reads as this process's name for a few milliseconds. Poll instead of giving
+        // up and reporting a dash next to a running engine.
+        repeat(PID_LOOKUP_ATTEMPTS) {
+            val found = scanForEnginePid(executable)
+            if (found != null) return found
+            delay(50)
+        }
+        return null
+    }
+
+    private fun scanForEnginePid(executable: String): Int? {
+        val entries = File("/proc").listFiles() ?: return null
+        for (entry in entries) {
+            val pid = entry.name.toIntOrNull() ?: continue
+            if (pid == android.os.Process.myPid()) continue
+            val argv = runCatching {
+                File(entry, "cmdline").readBytes()
+                    .toString(Charsets.UTF_8)
+                    .split('\u0000')
+            }.getOrNull() ?: continue
+            if (argv[0] == executable && argv.getOrNull(1) == "serve") return pid
+        }
+        return null
+    }
 
     /** True when the engine's own output says it could not bind the port. */
     private fun looksLikePortConflict(output: String): Boolean = isPortConflict(output)
