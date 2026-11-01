@@ -152,6 +152,9 @@ class EngineService : Service() {
     private val stopping = AtomicBoolean(false)
     private var consecutiveFailures = 0
 
+    /** Guards against two resurrection attempts overlapping while one is in flight. */
+    private val resurrecting = AtomicBoolean(false)
+
     private val manager: ProcessManager?
         get() = (application as OpenCodeApplication).processManager
 
@@ -261,7 +264,38 @@ class EngineService : Service() {
                 if (stopping.get()) return@collectLatest
                 val notificationManager = getSystemService(NotificationManager::class.java)
                 notificationManager?.notify(NOTIFICATION_ID, buildNotification(this@EngineService, status))
+                // A run that got this far earns a fresh retry budget: the limit counts
+                // consecutive failed *resurrections*, not lifetime failures.
+                if (status.state == EngineState.RUNNING) consecutiveFailures = 0
+                if (shouldResurrect(status.state, stopping.get(), resurrecting.get(), consecutiveFailures, RESTART_FAILURE_LIMIT)) {
+                    resurrect(supervisor)
+                }
             }
+        }
+    }
+
+    /**
+     * Starts the engine again after it exited on its own.
+     *
+     * Deliberately does not `stopSelf()` when the limit is reached, unlike the
+     * start-at-launch path: the service being alive is what keeps the user's next
+     * action — switching project, sending a message — able to reach a supervisor that
+     * can try again. Stopping here would trade a visible failure for a dead end.
+     */
+    private fun resurrect(supervisor: ProcessManager) {
+        if (!resurrecting.compareAndSet(false, true)) return
+        consecutiveFailures++
+        Log.w(TAG, "engine failed; resurrecting (attempt $consecutiveFailures/$RESTART_FAILURE_LIMIT)")
+        scope.launch {
+            val result = supervisor.start()
+            resurrecting.set(false)
+            result.onSuccess { Log.i(TAG, "engine resurrected at ${it.baseUrl}") }
+                .onFailure { e ->
+                    Log.e(TAG, "resurrect failed: ${e.message}")
+                    if (consecutiveFailures >= RESTART_FAILURE_LIMIT) {
+                        postFailureNotification(e.message ?: "Engine failed to restart")
+                    }
+                }
         }
     }
 

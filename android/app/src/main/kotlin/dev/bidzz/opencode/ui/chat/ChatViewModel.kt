@@ -69,7 +69,7 @@ class ChatViewModel(
 
     private var repository: ChatRepository? = null
     private var collector: Job? = null
-    private var attachedBaseUrl: String? = null
+    private var attached: dev.bidzz.opencode.core.engine.EngineCredentials? = null
 
     /** The attached handle, or null until the engine reports credentials. */
     private var handle: dev.bidzz.opencode.api.EngineApi.Handle? = null
@@ -87,7 +87,7 @@ class ChatViewModel(
                     repository?.close()
                     repository = null
                     handle = null
-                    attachedBaseUrl = null
+                    attached = null
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
@@ -104,21 +104,21 @@ class ChatViewModel(
     }
 
     /**
-     * Builds the API handle and repository once the engine is reachable.
+     * Builds the API handle and repository whenever the credentials move.
      *
-     * The base URL changes on every engine restart (dynamic port) and the password
-     * is re-printed to stdout, so a handle is only reusable while the URL matches.
-     * Credentials come from the engine status rather than from [EngineApi.handle],
-     * which is empty until this method runs.
+     * The base URL and the password both change on every engine restart, so a handle
+     * is only reusable while the whole credential matches. Credentials come from the
+     * engine status rather than from [EngineApi.handle], which is empty until this
+     * method runs.
      */
     private fun attachIfNeeded(credentials: dev.bidzz.opencode.core.engine.EngineCredentials) {
-        if (attachedBaseUrl == credentials.baseUrl && repository != null) return
+        if (!isStale(attached, credentials) && repository != null) return
 
         repository?.close()
-        val attached = api.attach(credentials)
-        handle = attached
-        attachedBaseUrl = credentials.baseUrl
-        val repo = ChatRepository(attached.sessions, attached.stream, viewModelScope)
+        val attachedHandle = api.attach(credentials)
+        handle = attachedHandle
+        attached = credentials
+        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope)
         repository = repo
 
         collector?.cancel()
@@ -351,8 +351,8 @@ class ChatViewModel(
      */
     fun onResume(lastSessionID: String?) {
         val repo = repository ?: return
-        if (_state.value.messages.isNotEmpty()) return
         val target = lastSessionID ?: return
+        if (_state.value.messages.isNotEmpty()) return
         repo.open(target)
     }
 
