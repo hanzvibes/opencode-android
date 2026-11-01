@@ -31,6 +31,13 @@ data class ChatUiState(
     val draft: String = "",
     /** Active permission request; the agent is blocked until it is answered. */
     val pendingPermission: dev.bidzz.opencode.core.api.dto.PendingPermission? = null,
+    /** Selectable agents — the CLI's modes (build, plan, and user-defined ones). */
+    val agents: List<dev.bidzz.opencode.core.api.dto.AgentInfo> = emptyList(),
+    val activeAgent: String? = null,
+    val models: List<dev.bidzz.opencode.core.api.dto.ModelInfo> = emptyList(),
+    val activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
+    /** Slash commands offered by the engine and the project's `commands/` folder. */
+    val commands: List<dev.bidzz.opencode.core.api.dto.CommandInfo> = emptyList(),
 )
 
 /** A single rendered message. */
@@ -126,6 +133,70 @@ class ChatViewModel(
                 )
             }
         }
+        loadControls()
+    }
+
+    /**
+     * Fetches the control lists for a freshly attached engine.
+     *
+     * These describe the engine, not the session, so one fetch per attach is enough —
+     * an engine restart is the only thing that changes them, and that rebuilds the
+     * handle anyway. Failures are reported but not fatal: chat works without them.
+     */
+    private fun loadControls() {
+        val h = handle ?: return
+        viewModelScope.launch {
+            h.agents.list().let { r ->
+                when (r) {
+                    is ApiResult.Success -> _state.value = _state.value.copy(
+                        agents = dev.bidzz.opencode.core.api.AgentApi.selectable(r.value),
+                    )
+                    is ApiResult.Failure -> _state.value = _state.value.copy(error = r.describe())
+                }
+            }
+            h.models.list().let { r ->
+                when (r) {
+                    is ApiResult.Success -> _state.value = _state.value.copy(models = r.value)
+                    is ApiResult.Failure -> _state.value = _state.value.copy(error = r.describe())
+                }
+            }
+            h.commands.list().let { r ->
+                when (r) {
+                    is ApiResult.Success -> _state.value = _state.value.copy(commands = r.value)
+                    is ApiResult.Failure -> Unit // commands are optional; an empty set is normal
+                }
+            }
+        }
+    }
+
+    /** Switches the session's agent (mode). Applies to the next prompt. */
+    fun selectAgent(agentID: String) {
+        val sessionID = _state.value.sessionID
+        val h = handle ?: return
+        _state.value = _state.value.copy(activeAgent = agentID)
+        // A mode chosen before the first message has no session to bind to yet;
+        // createSession picks it up from activeAgent when the session is made.
+        if (sessionID == null) return
+        viewModelScope.launch {
+            when (val result = h.agents.set(sessionID, agentID)) {
+                is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+                is ApiResult.Success -> Unit
+            }
+        }
+    }
+
+    /** Switches the session's model. */
+    fun selectModel(model: dev.bidzz.opencode.core.api.dto.ModelRef) {
+        val sessionID = _state.value.sessionID
+        val h = handle ?: return
+        _state.value = _state.value.copy(activeModel = model)
+        if (sessionID == null) return
+        viewModelScope.launch {
+            when (val result = h.sessions.setModel(sessionID, model)) {
+                is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+                is ApiResult.Success -> Unit
+            }
+        }
     }
 
     fun onDraftChange(text: String) {
@@ -146,7 +217,17 @@ class ChatViewModel(
             if (repository?.state?.value?.sessionID != sessionID) {
                 repo.open(sessionID)
             }
-            when (val result = repo.send(text)) {
+            // A leading slash is a command, not a prompt. The engine runs it and answers
+            // 204; the output arrives over the event stream exactly like a normal turn.
+            val result = if (text.startsWith("/")) {
+                val name = text.substring(1).substringBefore(' ')
+                val args = text.substringAfter(' ', "").trim()
+                handle?.commands?.run(sessionID, name, args)
+                    ?: ApiResult.Failure(code = -1, message = "Engine is not running")
+            } else {
+                repo.send(text)
+            }
+            when (result) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
                 is ApiResult.Success -> clearSentDraft(text)
             }
@@ -166,6 +247,13 @@ class ChatViewModel(
         }
     }
 
+    /** Surfaces a control-API failure instead of swallowing it. */
+    private fun reportFailure(result: ApiResult<*>) {
+        if (result is ApiResult.Failure) {
+            _state.value = _state.value.copy(error = result.describe())
+        }
+    }
+
     private suspend fun createSession(repo: ChatRepository): String? {
         val h = handle ?: return null
         _state.value = _state.value.copy(connecting = true, error = null)
@@ -174,6 +262,16 @@ class ChatViewModel(
         return when (result) {
             is ApiResult.Success -> {
                 repo.open(result.value.id)
+                // A mode or model picked before the first message has no session to bind
+                // to at the time it is chosen, so it is applied here instead. Failures are
+                // reported: a silently rejected selection would look like it worked while
+                // the agent ran on the engine default.
+                _state.value.activeAgent?.let {
+                    reportFailure(h.agents.set(result.value.id, it))
+                }
+                _state.value.activeModel?.let {
+                    reportFailure(h.sessions.setModel(result.value.id, it))
+                }
                 result.value.id
             }
             is ApiResult.Failure -> {

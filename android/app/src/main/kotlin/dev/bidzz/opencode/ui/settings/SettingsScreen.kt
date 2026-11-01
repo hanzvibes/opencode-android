@@ -35,6 +35,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onDiagnostics: () -> Unit,
     onProjects: () -> Unit,
+    onProviders: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -58,6 +59,13 @@ fun SettingsScreen(
             SectionLabel("Project")
             ActionRow("Project folder", app.workspaceStore.resolve().absolutePath, onProjects)
             InfoRow("All-files access", if (app.workspaceStore.hasAllFilesAccess()) "Granted" else "Not granted")
+
+            SectionLabel("Provider")
+            ActionRow(
+                "Connect a provider",
+                "Add an API key. Without one the agent is limited to opencode's free tier.",
+                onProviders,
+            )
 
             SectionLabel("Engine")
             InfoRow("State", status.state.name.lowercase().replaceFirstChar { it.uppercase() })

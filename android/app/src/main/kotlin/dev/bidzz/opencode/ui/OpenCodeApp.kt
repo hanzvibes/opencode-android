@@ -26,6 +26,8 @@ import dev.bidzz.opencode.ui.files.FileViewScreen
 import dev.bidzz.opencode.ui.files.FileViewViewModel
 import dev.bidzz.opencode.ui.projects.ProjectOption
 import dev.bidzz.opencode.ui.projects.ProjectPickerScreen
+import dev.bidzz.opencode.ui.providers.ProvidersScreen
+import dev.bidzz.opencode.ui.providers.ProvidersViewModel
 import dev.bidzz.opencode.ui.sessions.SessionListScreen
 import dev.bidzz.opencode.ui.sessions.SessionListViewModel
 import dev.bidzz.opencode.ui.sessions.SessionRow
@@ -48,6 +50,7 @@ private sealed interface Screen {
     data object DiffList : Screen
     data class Diff(val file: String) : Screen
     data object Settings : Screen
+    data object Providers : Screen
     data object Diagnostics : Screen
 }
 
@@ -78,10 +81,14 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory {
         DiffViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
+    val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory {
+        ProvidersViewModel(app.engineApi)
+    })
 
     val explorerState by explorerViewModel.state.collectAsState()
     val fileState by fileViewModel.state.collectAsState()
     val diffState by diffViewModel.state.collectAsState()
+    val providersState by providersViewModel.state.collectAsState()
 
     // Feed engine state into the view model; it decides when to attach the API.
     LaunchedEffect(engineStatus.state, engineStatus.credentials?.baseUrl) {
@@ -130,6 +137,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onSend = chatViewModel::send,
                 onStop = chatViewModel::stop,
                 onPermissionReply = chatViewModel::replyPermission,
+                onAgent = chatViewModel::selectAgent,
+                onModel = chatViewModel::selectModel,
                 onStatusClick = { screen = Screen.Diagnostics },
                 onNewSession = chatViewModel::newSession,
                 onSessionsClick = { screen = Screen.Sessions },
@@ -204,6 +213,14 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onBack = { screen = Screen.Chat },
                 onDiagnostics = { screen = Screen.Diagnostics },
                 onProjects = { screen = Screen.Projects },
+                onProviders = { screen = Screen.Providers },
+            )
+
+            Screen.Providers -> ProvidersScreen(
+                state = providersState,
+                onBack = { screen = Screen.Settings },
+                onRefresh = providersViewModel::refresh,
+                onSaveKey = providersViewModel::saveKey,
             )
 
             Screen.Diagnostics -> DiagnosticsScreen(

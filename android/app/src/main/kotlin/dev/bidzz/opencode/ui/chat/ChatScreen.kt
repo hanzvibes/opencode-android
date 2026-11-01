@@ -46,6 +46,8 @@ fun ChatScreen(
     onSend: () -> Unit,
     onStop: () -> Unit,
     onPermissionReply: (String) -> Unit,
+    onAgent: (String) -> Unit,
+    onModel: (dev.bidzz.opencode.core.api.dto.ModelRef) -> Unit,
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
     onSessionsClick: () -> Unit,
@@ -119,6 +121,15 @@ fun ChatScreen(
             }
         }
 
+        ChatControls(
+            agents = state.agents,
+            activeAgent = state.activeAgent,
+            models = state.models,
+            activeModel = state.activeModel,
+            onAgent = onAgent,
+            onModel = onModel,
+        )
+
         state.pendingPermission?.let { request ->
             PermissionPrompt(
                 request = request,
@@ -126,6 +137,12 @@ fun ChatScreen(
                 modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
             )
         }
+
+        CommandSuggestions(
+            commands = state.commands,
+            draft = state.draft,
+            onPick = { name -> onDraftChange("/$name ") },
+        )
 
         Composer(
             value = state.draft,

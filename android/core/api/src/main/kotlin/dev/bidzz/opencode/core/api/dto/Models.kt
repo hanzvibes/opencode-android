@@ -193,7 +193,20 @@ data class ModelInfo(
     val status: String? = null,
     val enabled: Boolean? = null,
     val limit: ModelLimit? = null,
-)
+) {
+    /**
+     * The pair `POST /api/session/{id}/model` expects.
+     *
+     * The engine's own answer for the free `big-pickle` model used the bare model id,
+     * not the composite record id, so `modelID` wins when present. Verified against a
+     * live engine rather than inferred — if switching models ever starts returning 400,
+     * this is the first thing to re-test.
+     */
+    fun ref(): ModelRef = ModelRef(id = modelID ?: id, providerID = providerID)
+
+    /** Label for the picker: the human name, falling back to the identifiers. */
+    fun label(): String = name?.takeIf { it.isNotBlank() } ?: modelID ?: id
+}
 
 @Serializable
 data class ModelLimit(
@@ -205,6 +218,13 @@ data class ModelLimit(
 @Serializable
 data class ModelsResponse(
     val data: List<ModelInfo> = emptyList(),
+    val location: LocationRef? = null,
+)
+
+/** `GET /api/model/default` answers `data: null` when the engine has no default. */
+@Serializable
+data class ModelDefaultResponse(
+    val data: ModelInfo? = null,
     val location: LocationRef? = null,
 )
 
