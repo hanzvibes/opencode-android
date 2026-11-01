@@ -58,7 +58,7 @@ jobs:
       # it proves the version the build script downloads is pinned and reachable.
       - name: Check the git source tarball is fetchable
         run: |
-          version=$(sed -n 's/^\$GitVersion = "\([0-9.]*\)".*/\1/p' ../script/android/build-tools.ps1)
+          version=$(sed -n 's/^\$GitVersion = "\([0-9.]*\)".*/\1/p' script/android/build-tools.ps1)
           test -n "$version" || { echo "Could not read GitVersion from build-tools.ps1" >&2; exit 1; }
           url="https://mirrors.edge.kernel.org/pub/software/scm/git/git-$version.tar.gz"
           curl --fail --silent --head --output /dev/null "$url"
