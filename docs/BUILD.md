@@ -222,7 +222,10 @@ python .cache\elfcheck.py android\app\src\main\jniLibs\arm64-v8a\libgit.so
 Expect: `e_machine=0xB7`, `ET_DYN`, interpreter `/system/bin/linker64`, all
 `PT_LOAD` `p_align >= 0x4000`.
 
-On the device, after the app has started the engine once:
+On the device, after the app has started the engine once. **These `run-as` commands
+only work on a debug build** — a release APK is not debuggable, so `run-as` fails with
+`run-as: package not debuggable: dev.bidzz.opencode`. On a release install, use the
+in-app Diagnostics screen instead:
 
 ```powershell
 adb shell run-as dev.bidzz.opencode ls -l files/engine/tools/bin
