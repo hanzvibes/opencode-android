@@ -22,11 +22,16 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # ubuntu-latest already ships an Android SDK, so setup-android is not needed —
+      # and v3 is broken anyway: it installs the obsolete `tools` package, which the
+      # current repository no longer publishes.
       - name: Install required SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          sdkmanager="$(command -v sdkmanager || echo "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | tr ' ' '\n' | head -1)"
+          echo "using $sdkmanager"
+          yes | "$sdkmanager" --sdk_root="$ANDROID_HOME" --licenses > /dev/null
+          yes | "$sdkmanager" --sdk_root="$ANDROID_HOME" \
+            "platforms;android-35" "build-tools;35.0.0" | tail -2
 
       - name: Unit tests
         working-directory: android
