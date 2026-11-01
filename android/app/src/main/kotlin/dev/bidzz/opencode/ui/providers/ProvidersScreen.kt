@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +51,8 @@ fun ProvidersScreen(
     onRefresh: () -> Unit,
     onSaveKey: (String, String) -> Unit,
     onSaveCustom: (String, String, String, String) -> Unit,
+    onDeleteCredential: (String, String) -> Unit,
+    onReplaceCredential: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -57,6 +60,9 @@ fun ProvidersScreen(
     val radius = OpenCodeTheme.tokens.radius
 
     var keyFor by remember { mutableStateOf<IntegrationInfo?>(null) }
+    var manageFor by remember { mutableStateOf<IntegrationInfo?>(null) }
+    var replaceFor by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
+    var confirmDelete by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
     var showCustomForm by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { onRefresh() }
@@ -110,6 +116,22 @@ fun ProvidersScreen(
                 )
             }
 
+            state.notice?.let {
+                Text(
+                    text = it,
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+            }
+
+            state.connected?.let {
+                Text(
+                    text = "Connected to $it",
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.success,
+                )
+            }
+
             Text("CUSTOM ENDPOINT", style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
             state.customProviders.forEach { provider ->
                 ProviderRow(
@@ -124,27 +146,102 @@ fun ProvidersScreen(
 
             Text("CATALOG", style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
             state.integrations.forEach { integration ->
+                val stored = rowsFor(state.credentials, integration.id)
                 ProviderRow(
                     name = integration.name,
                     detail = when {
+                        integration.connected && stored.isNotEmpty() ->
+                            (if (stored.size == 1) "1 key" else "${stored.size} keys") + " · tap to manage"
                         integration.connected -> "connected"
                         integration.acceptsKey -> "tap to add an API key"
                         else -> "no API-key method"
                     },
                     connected = integration.connected,
-                    onClick = if (integration.acceptsKey) ({ keyFor = integration }) else null,
+                    onClick = when {
+                        // A provider with keys listed is managed, not re-keyed: adding a
+                        // second key without showing the first hides which one the engine uses.
+                        integration.connected && stored.isNotEmpty() -> ({ manageFor = integration })
+                        integration.acceptsKey -> ({ keyFor = integration })
+                        else -> null
+                    },
                 )
             }
         }
     }
 
     keyFor?.let { integration ->
-        KeyDialog(
-            name = integration.name,
+        KeyPrompt(
+            title = "API key for ${integration.name}",
+            body = "Stored by the engine in its own database, inside the app's private " +
+                "storage. It is not written to any config file.",
+            submitLabel = "Save",
             onDismiss = { keyFor = null },
             onSubmit = { key ->
                 onSaveKey(integration.id, key)
                 keyFor = null
+            },
+        )
+    }
+
+    manageFor?.let { integration ->
+        ManageCredentialsDialog(
+            integration = integration,
+            rows = rowsFor(state.credentials, integration.id),
+            onDismiss = { manageFor = null },
+            onAddKey = {
+                manageFor = null
+                keyFor = integration
+            },
+            onReplace = { row -> replaceFor = integration to row },
+            onDelete = { row -> confirmDelete = integration to row },
+        )
+    }
+
+    replaceFor?.let { (integration, row) ->
+        KeyPrompt(
+            title = "New key for ${integration.name}",
+            body = "The new key is stored first and the old one is only removed after it " +
+                "is accepted, so a rejected key cannot leave the provider without one.",
+            submitLabel = "Replace",
+            onDismiss = { replaceFor = null },
+            onSubmit = { key ->
+                onReplaceCredential(integration.id, row.id, key)
+                replaceFor = null
+                manageFor = null
+            },
+        )
+    }
+
+    confirmDelete?.let { (integration, row) ->
+        val last = rowsFor(state.credentials, integration.id).size == 1
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("Delete this key?", style = OpenCodeTypography.title, color = colors.onSurface) },
+            text = {
+                Text(
+                    text = buildString {
+                        append("${row.title} (${row.detail}) will be removed from the engine's database. ")
+                        if (last) {
+                            append("It is the only key for ${integration.name}, which will stop working until another is added.")
+                        }
+                    },
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteCredential(integration.id, row.id)
+                        confirmDelete = null
+                        manageFor = null
+                    },
+                ) { Text("Delete", color = colors.danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = null }) {
+                    Text("Cancel", color = colors.onSurfaceMuted)
+                }
             },
         )
     }
@@ -223,8 +320,21 @@ private fun PrimaryButton(text: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Single-field API key prompt, used both to add a key and to replace one.
+ *
+ * The submit button stays disabled while the field is blank: a credential with an
+ * empty key would be stored and then fail every request with a provider-side error
+ * that does not point back here.
+ */
 @Composable
-private fun KeyDialog(name: String, onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
+private fun KeyPrompt(
+    title: String,
+    body: String,
+    submitLabel: String,
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit,
+) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
@@ -232,12 +342,11 @@ private fun KeyDialog(name: String, onDismiss: () -> Unit, onSubmit: (String) ->
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("API key for $name", style = OpenCodeTypography.title, color = colors.onSurface) },
+        title = { Text(title, style = OpenCodeTypography.title, color = colors.onSurface) },
         text = {
             Column {
                 Text(
-                    text = "Stored by the engine in its own database, inside the app's private " +
-                        "storage. It is not written to any config file.",
+                    text = body,
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
@@ -266,11 +375,113 @@ private fun KeyDialog(name: String, onDismiss: () -> Unit, onSubmit: (String) ->
         },
         confirmButton = {
             TextButton(onClick = { onSubmit(value) }, enabled = value.isNotBlank()) {
-                Text("Save", color = colors.accent)
+                Text(submitLabel, color = colors.accent)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel", color = colors.onSurfaceMuted) }
+        },
+    )
+}
+
+/**
+ * The keys stored for one provider, with the actions that change them.
+ *
+ * The secret itself is not shown and cannot be: `Credential.Entry.value` is left off
+ * the DTO on purpose, so the app never holds the key after storing it. Rows are
+ * therefore labelled by their engine id — enough to tell two keys apart without
+ * putting either on screen.
+ */
+@Composable
+private fun ManageCredentialsDialog(
+    integration: IntegrationInfo,
+    rows: List<CredentialRow>,
+    onDismiss: () -> Unit,
+    onAddKey: () -> Unit,
+    onReplace: (CredentialRow) -> Unit,
+    onDelete: (CredentialRow) -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val radius = OpenCodeTheme.tokens.radius
+    val spacing = OpenCodeTheme.tokens.spacing
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Keys for ${integration.name}", style = OpenCodeTypography.title, color = colors.onSurface)
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                Text(
+                    text = "The engine keeps these in its own database. The key itself is " +
+                        "never read back into the app, so rows are identified by their id.",
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+                rows.forEach { row ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(radius.sm))
+                            .background(colors.surfaceSunken)
+                            .padding(spacing.sm),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = row.title,
+                                style = OpenCodeTypography.body,
+                                color = colors.onSurface,
+                                modifier = Modifier.weight(1f),
+                            )
+                            if (row.inUse) {
+                                Box(
+                                    Modifier
+                                        .clip(RoundedCornerShape(radius.full))
+                                        .background(colors.surfaceRaised)
+                                        .padding(horizontal = spacing.sm, vertical = spacing.xxs),
+                                ) {
+                                    Text("IN USE", style = OpenCodeTypography.label, color = colors.success)
+                                }
+                            }
+                        }
+                        Text(row.detail, style = OpenCodeTypography.bodySmall, color = colors.onSurfaceFaint)
+                        Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+                            Text(
+                                text = "Replace",
+                                style = OpenCodeTypography.label,
+                                color = colors.accent,
+                                modifier = Modifier
+                                    .clickable { onReplace(row) }
+                                    .padding(top = spacing.xs, bottom = spacing.xs),
+                            )
+                            Text(
+                                text = "Delete",
+                                style = OpenCodeTypography.label,
+                                color = colors.danger,
+                                modifier = Modifier
+                                    .clickable { onDelete(row) }
+                                    .padding(top = spacing.xs, bottom = spacing.xs),
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = "Add another key",
+                    style = OpenCodeTypography.label,
+                    color = colors.accent,
+                    modifier = Modifier
+                        .clickable(onClick = onAddKey)
+                        .padding(vertical = spacing.xs),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done", color = colors.accent) }
         },
     )
 }

@@ -226,6 +226,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onRefresh = providersViewModel::refresh,
                 onSaveKey = providersViewModel::saveKey,
                 onSaveCustom = providersViewModel::saveCustomProvider,
+                onDeleteCredential = providersViewModel::deleteCredential,
+                onReplaceCredential = providersViewModel::replaceCredential,
             )
 
             Screen.Diagnostics -> DiagnosticsScreen(
