@@ -25,7 +25,7 @@ data class ChatUiState(
     val busy: Boolean = false,
     val connecting: Boolean = false,
     val error: String? = null,
-    /** True once a project directory is known. */
+    /** True while the engine answers requests — `DEGRADED` counts, it keeps its credentials. */
     val workspaceReady: Boolean = false,
     val workspacePath: String? = null,
     val draft: String = "",
@@ -72,7 +72,7 @@ class ChatViewModel(
         val previous = _state.value.engineState
         _state.value = _state.value.copy(
             engineState = status.state,
-            workspaceReady = status.state == EngineState.RUNNING,
+            workspaceReady = status.credentials != null,
         )
         if (status.state != previous) {
             when (status.state) {
@@ -140,7 +140,6 @@ class ChatViewModel(
             _state.value = _state.value.copy(error = "Engine is not running")
             return
         }
-        _state.value = _state.value.copy(draft = "")
 
         viewModelScope.launch {
             val sessionID = _state.value.sessionID ?: createSession(repo) ?: return@launch
@@ -149,8 +148,21 @@ class ChatViewModel(
             }
             when (val result = repo.send(text)) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
-                is ApiResult.Success -> Unit
+                is ApiResult.Success -> clearSentDraft(text)
             }
+        }
+    }
+
+    /**
+     * Empties the composer after the engine accepted the prompt.
+     *
+     * The draft survives the round trip because the user's bubble only appears once the
+     * message comes back from the engine — clearing first made a slow send look like the
+     * message had been thrown away. Typing during the send wins instead of being erased.
+     */
+    private fun clearSentDraft(sent: String) {
+        if (_state.value.draft.trim() == sent) {
+            _state.value = _state.value.copy(draft = "")
         }
     }
 

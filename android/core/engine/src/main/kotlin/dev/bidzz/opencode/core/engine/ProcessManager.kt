@@ -123,7 +123,7 @@ class ProcessManager(
 
         private const val STARTUP_TIMEOUT_MS = 60_000L
         private const val HEALTH_INTERVAL_MS = 2_000L
-        private const val HEALTH_FAILURE_LIMIT = 3
+        private const val HEALTH_FAILURE_LIMIT = 5
         private const val SHUTDOWN_GRACE_MS = 5_000L
         private const val MAX_OUTPUT_LINES = 200
         private const val PASSWORD_PREFIX = "server password"
@@ -486,9 +486,15 @@ internal fun isPortConflict(output: String): Boolean {
     return lower.contains("failed to start server") && lower.contains("in use")
 }
 
-/** Calls `GET /api/info` with Basic auth, matching the engine's actual contract. */
+/**
+ * Calls `GET /api/info` with Basic auth, matching the engine's actual contract.
+ *
+ * The timeout is deliberately long: while an agent run is streaming from the provider the
+ * engine stops answering this request for tens of seconds. A dead process is detected by
+ * `isAlive` in [ProcessManager.monitor], so the probe does not need to be impatient.
+ */
 class HttpHealthCheck(
-    private val timeoutMs: Int = 3_000,
+    private val timeoutMs: Int = 10_000,
 ) : HealthCheck {
     override suspend fun isHealthy(credentials: EngineCredentials): Boolean = withContext(Dispatchers.IO) {
         withTimeoutOrNull(timeoutMs.toLong()) {
