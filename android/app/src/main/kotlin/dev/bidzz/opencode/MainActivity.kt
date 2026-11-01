@@ -66,9 +66,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             app.workspaceFolderRequest.collect { token ->
                 if (token == 0L) return@collect
-                if (!app.workspaceStore.hasAllFilesAccess() &&
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                ) {
+                // hasAllFilesAccess() already answers for both API bands, so this must not
+                // add its own SDK gate: doing so skipped the legacy runtime request on
+                // Android 10 and left the picker with only `Downloads` to show.
+                if (!app.workspaceStore.hasAllFilesAccess()) {
                     requestStorageIfNeeded()
                 } else {
                     pickDirectory.launch(null)

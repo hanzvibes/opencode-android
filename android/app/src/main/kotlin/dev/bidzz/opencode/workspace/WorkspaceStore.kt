@@ -1,6 +1,8 @@
 package dev.bidzz.opencode.workspace
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import java.io.File
@@ -74,8 +76,7 @@ class WorkspaceStore(private val context: Context) {
     fun resolve(): File {
         val stored = selectedPath ?: return internalWorkspace(context)
         val dir = File(stored)
-        val usable = dir.isDirectory && dir.canWrite() &&
-            (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || hasAllFilesAccess())
+        val usable = dir.isDirectory && dir.canWrite() && hasAllFilesAccess()
         if (!usable) {
             selectedPath = null
             return internalWorkspace(context)
@@ -86,10 +87,17 @@ class WorkspaceStore(private val context: Context) {
     /** The app-private workspace path, which needs no permission. */
     fun internalPath(): String = internalWorkspace(context).absolutePath
 
-    /** True when the app may read and write shared storage directly. */
+    /**
+     * True when the app may read and write shared storage directly.
+     *
+     * Below API 30 there is no all-files-access concept, so this reports the legacy runtime
+     * permission. Returning `true` unconditionally here hid the grant button on Android 10 and
+     * left the folder picker with nothing but `Downloads` to offer.
+     */
     fun hasAllFilesAccess(): Boolean = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> Environment.isExternalStorageManager()
-        else -> true // API 29 uses the legacy storage model; checked at runtime instead.
+        else -> context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
     }
 
     /**
