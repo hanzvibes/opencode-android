@@ -97,7 +97,11 @@ fun MessageBubble(
                     MarkdownText(markdown = markdown)
                 }
             }
-            tools.forEach { ToolRow(it, Modifier.padding(top = spacing.sm)) }
+            ToolTrace(
+                tools = tools,
+                streaming = streaming,
+                modifier = Modifier.padding(top = spacing.xs),
+            )
         }
 
         Role.ERROR -> Row(modifier = modifier.fillMaxWidth()) {

@@ -123,6 +123,8 @@ fun MarkdownText(
                         )
 
                         is MdBlock.Code -> CodeBlock(language = block.language, code = block.code)
+
+                        is MdBlock.Table -> TableBlock(block)
                     }
                 }
             }
@@ -181,6 +183,59 @@ private fun CodeBlock(language: String?, code: String) {
                 softWrap = false,
                 modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
             )
+        }
+    }
+}
+
+/**
+ * A pipe table.
+ *
+ * Columns share the width equally and wrap. That is a deliberate limit: horizontal
+ * scrolling would fight `fillMaxWidth` inside a scroll container and leave narrow
+ * tables floating, and models almost never emit more than a handful of columns here.
+ * A six-column table is therefore cramped rather than broken, which is the cheaper
+ * failure.
+ */
+@Composable
+private fun TableBlock(table: MdBlock.Table) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.surfaceSunken, RoundedCornerShape(radius.sm))
+            .border(0.5.dp, colors.outline, RoundedCornerShape(radius.sm))
+            .padding(horizontal = spacing.xs, vertical = spacing.xs),
+    ) {
+        Row(Modifier.fillMaxWidth()) {
+            table.header.forEach { cell ->
+                Text(
+                    text = cell.toAnnotated(),
+                    style = OpenCodeTypography.label,
+                    color = colors.onSurfaceMuted,
+                    modifier = Modifier.weight(1f).padding(spacing.xs),
+                )
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.xs)
+                .border(0.5.dp, colors.outline),
+        )
+        table.rows.forEach { row ->
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { cell ->
+                    Text(
+                        text = cell.toAnnotated(),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurface,
+                        modifier = Modifier.weight(1f).padding(spacing.xs),
+                    )
+                }
+            }
         }
     }
 }

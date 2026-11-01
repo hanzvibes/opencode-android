@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,6 +24,81 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.ToolCall
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+
+/**
+ * The whole tool trace for one message, collapsed to a single summary line.
+ *
+ * A real coding run calls fifteen to thirty tools. Rendering every one as a
+ * permanent row buried the answer under a wall of log, so the trace is folded and
+ * the operator opens it on demand. Two things stay visible while it is folded:
+ * the step currently running, so progress is still legible, and any failure, so a
+ * red dot is never hidden behind a tap.
+ *
+ * It starts open while the message streams and closes itself when the run ends —
+ * watch it work, then read what it produced.
+ */
+@Composable
+fun ToolTrace(
+    tools: List<ToolCall>,
+    streaming: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (tools.isEmpty()) return
+
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    var open by rememberSaveable { mutableStateOf(streaming) }
+
+    val running = tools.filter { it.status == "running" || it.status == "streaming" }
+    val failed = tools.count { it.status == "error" }
+
+    LaunchedEffect(streaming) { if (!streaming) open = false }
+
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { open = !open }
+                .padding(vertical = spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (open) "▾" else "▸",
+                style = OpenCodeTypography.label,
+                color = colors.onSurfaceFaint,
+            )
+            Text(
+                text = "${tools.size} ${if (tools.size == 1) "step" else "steps"}",
+                style = OpenCodeTypography.label,
+                color = colors.onSurfaceMuted,
+                modifier = Modifier.padding(start = spacing.sm),
+            )
+            if (failed > 0) {
+                Text(
+                    text = "· $failed failed",
+                    style = OpenCodeTypography.label,
+                    color = colors.danger,
+                    modifier = Modifier.padding(start = spacing.sm),
+                )
+            }
+            if (running.isNotEmpty()) {
+                Text(
+                    text = "· working",
+                    style = OpenCodeTypography.label,
+                    color = colors.warning,
+                    modifier = Modifier.padding(start = spacing.sm),
+                )
+            }
+        }
+
+        if (open) {
+            tools.forEach { ToolRow(it, Modifier.padding(top = spacing.xs)) }
+        } else {
+            (running + tools.filter { it.status == "error" })
+                .forEach { ToolRow(it, Modifier.padding(top = spacing.xs)) }
+        }
+    }
+}
 
 /** One-line tool call: status dot, name, input gist. Tap toggles input and output. */
 @Composable

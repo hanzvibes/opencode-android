@@ -12,11 +12,12 @@ package dev.bidzz.opencode.ui.chat
  * - headings (# .. ###)
  * - unordered and ordered lists
  * - links ([text](url))
+ * - pipe tables with a `| --- | --- |` separator row
  *
- * What it deliberately does **not** handle: tables, images, nested lists, HTML,
- * footnotes, task lists. Pretending otherwise would be worse than the limit: the
- * model will occasionally emit a table, and it must degrade to readable plain text
- * rather than render as broken markup.
+ * What it deliberately does **not** handle: images, nested lists, HTML, footnotes,
+ * task lists, cell alignment, merged cells. A table needs a header row plus a
+ * separator row; anything less is left as literal text, because rendering a
+ * half-recognised table is worse than showing the pipes.
  *
  * Parsing is line-oriented, which is enough for the subset above and keeps the
  * renderer free of a second AST pass.
@@ -35,6 +36,17 @@ sealed interface MdBlock {
 
     /** A horizontal rule. */
     data object Rule : MdBlock
+
+    /**
+     * A pipe table. Every row holds exactly [columns] cells; short rows are padded
+     * rather than rejected, since models drop trailing pipes constantly.
+     */
+    data class Table(
+        val header: List<List<MdSpan>>,
+        val rows: List<List<List<MdSpan>>>,
+    ) : MdBlock {
+        val columns: Int get() = header.size
+    }
 }
 
 /** Inline formatting inside a block. */
@@ -120,6 +132,29 @@ object Markdown {
                 continue
             }
 
+            // Table: a piped header row followed by a `| --- | --- |` separator.
+            // Checked before the paragraph path so the header is not swallowed as prose.
+            if (line.contains('|') && i + 1 < lines.size && isTableSeparator(lines[i + 1])) {
+                flushParagraph()
+                val header = splitCells(line)
+                val width = header.size
+                i += 2
+                val rows = mutableListOf<List<String>>()
+                while (i < lines.size && lines[i].contains('|') && lines[i].isNotBlank()) {
+                    rows += splitCells(lines[i])
+                    i++
+                }
+                blocks += MdBlock.Table(
+                    header = header.map { inline(it) },
+                    rows = rows.map { row ->
+                        // Pad or trim so every row has the header's width; the renderer
+                        // relies on it to keep columns square.
+                        (0 until width).map { inline(row.getOrElse(it) { "" }) }
+                    },
+                )
+                continue
+            }
+
             // Lists: gather consecutive items of the same kind.
             if (bullet.containsMatchIn(line)) {
                 flushParagraph()
@@ -151,6 +186,23 @@ object Markdown {
         flushParagraph()
         return blocks
     }
+
+    /**
+     * True when [line] is a table separator such as `| --- | :-: |`.
+     *
+     * Requiring a pipe keeps a bare `---` a horizontal rule, which is what the
+     * `rule` pattern already claims.
+     */
+    private fun isTableSeparator(line: String): Boolean {
+        val trimmed = line.trim()
+        if (!trimmed.contains('|') || !trimmed.contains('-')) return false
+        val cells = splitCells(trimmed)
+        return cells.isNotEmpty() && cells.all { it.matches(Regex(":?-+:?")) }
+    }
+
+    /** Splits a table row into trimmed cells, dropping the optional outer pipes. */
+    private fun splitCells(line: String): List<String> =
+        line.trim().removePrefix("|").removeSuffix("|").split('|').map { it.trim() }
 
     /**
      * Splits one line of prose into inline spans.

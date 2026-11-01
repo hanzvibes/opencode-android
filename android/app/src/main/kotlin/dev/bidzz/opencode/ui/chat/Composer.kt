@@ -81,8 +81,14 @@ fun Composer(
                     if (value.isEmpty()) {
                         // The placeholder must not swallow taps: it sits behind the
                         // field's own text area, and `inner()` is drawn on top.
+                        // While the agent runs, the button is Stop and send() refuses,
+                        // so the field only accumulates a draft for after the run.
                         Text(
-                            text = if (enabled) "Ask anything about this project" else "Engine is not ready",
+                            text = when {
+                                !enabled -> "Engine is not ready"
+                                busy -> "Agent is working…"
+                                else -> "Ask anything about this project"
+                            },
                             style = OpenCodeTypography.input,
                             color = colors.onSurfaceFaint,
                             modifier = Modifier.fillMaxWidth(),
