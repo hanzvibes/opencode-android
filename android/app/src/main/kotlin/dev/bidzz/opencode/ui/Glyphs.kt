@@ -21,7 +21,10 @@ import androidx.compose.ui.unit.dp
  * library would add a dependency for them, and font glyphs (`☰`, `✎`) render
  * differently on every device. One stroke weight keeps them reading as a family.
  */
-enum class Glyph { Menu, NewChat, ArrowUp, ChevronDown, File, Folder, Pencil, Terminal, Search, Globe, Sliders }
+enum class Glyph {
+    Menu, NewChat, ArrowUp, ArrowDown, ArrowLeft, ChevronDown, ChevronRight,
+    File, Folder, Pencil, Terminal, Search, Globe, Sliders,
+}
 
 @Composable
 fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp = 20.dp) {
@@ -53,6 +56,15 @@ fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp
             Glyph.ArrowUp -> {
                 line(12f, 19f, 12f, 6f)
                 shape(6f to 12f, 12f to 6f, 18f to 12f)
+            }
+            Glyph.ArrowDown -> {
+                line(12f, 5f, 12f, 18f)
+                shape(6f to 12f, 12f to 18f, 18f to 12f)
+            }
+            Glyph.ChevronRight -> shape(9f to 6f, 15f to 12f, 9f to 18f)
+            Glyph.ArrowLeft -> {
+                line(19f, 12f, 5f, 12f)
+                shape(11f to 6f, 5f to 12f, 11f to 18f)
             }
             Glyph.ChevronDown -> shape(7f to 10f, 12f to 15f, 17f to 10f)
             Glyph.File -> {
