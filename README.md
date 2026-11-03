@@ -7,7 +7,9 @@ Native Android port of [OpenCode](https://github.com/anomalyco/opencode) — the
 
 ## Status
 
-Pre-implementation. Phase 0 (runtime feasibility audit) complete; no APK available yet.
+Working app: the upstream engine runs on-device with a Compose UI (sessions, streaming chat,
+providers, files, diffs, diagnostics). Not yet available: MCP, terminal, session fork/revert,
+git over https. APKs are published on GitHub Releases; see `handoff.md` for detailed status.
 
 ## Goal
 
@@ -18,7 +20,7 @@ Kotlin is the Android host.
 - **UI** — Jetpack Compose, Material 3, native navigation for phone / tablet / foldable
 - **Engine** — upstream `@opencode/*` v2.2.2, unmodified except documented Android patches
 - **Transport** — HTTP + SSE over loopback (`127.0.0.1`), paired via upstream `/api/pair`
-- **Target** — Android 10+ (API 29), arm64-v8a
+- **Target** — Android 10+ (API 29), arm64-v8a and x86_64
 
 ## Distribution
 
@@ -36,8 +38,7 @@ store is a distribution channel for this project. Install via GitHub Releases or
 
 ## Building
 
-Build instructions will be added in `docs/BUILD.md` once Phase 1 lands.
-Upstream build system: `bun install && bun run build` inside the upstream monorepo.
+See [docs/BUILD.md](docs/BUILD.md).
 
 ## License
 
