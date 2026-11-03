@@ -67,10 +67,17 @@ fun ChatScreen(
     val spacing = OpenCodeTheme.tokens.spacing
     val listState = rememberLazyListState()
 
-    // Follow the conversation as it grows, including while text streams in.
+    // Follow the conversation as it grows, but only while the reader is already at the bottom,
+    // so scrolling up during a stream is not yanked back down.
+    val nearBottom by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val info = listState.layoutInfo
+            (info.visibleItemsInfo.lastOrNull()?.index ?: -1) >= info.totalItemsCount - 2
+        }
+    }
     LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.text?.length) {
-        if (state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.lastIndex)
+        if (state.messages.isNotEmpty() && nearBottom) {
+            listState.scrollToItem(state.messages.lastIndex)
         }
     }
 
