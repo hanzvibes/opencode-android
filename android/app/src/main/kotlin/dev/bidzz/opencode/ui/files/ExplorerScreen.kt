@@ -1,17 +1,13 @@
 package dev.bidzz.opencode.ui.files
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +21,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.Glyph
+import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.TextAction
 
 /**
  * Project file browser.
@@ -47,33 +47,17 @@ fun ExplorerScreen(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .statusBarsPadding(),
+    val atRoot = state.currentPath.isEmpty()
+    ScreenScaffold(
+        title = "Files",
+        // Inside a folder the arrow goes up one level; only at the root does it leave the screen.
+        onBack = { if (atRoot) onBack() else onUp() },
+        backLabel = if (atRoot) "Back" else "Up one folder",
+        actions = {
+            if (state.changed.isNotEmpty()) TextAction("Diff (${state.changed.size})", onDiff)
+            TextAction("Refresh", onRefresh)
+        },
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(colors.surface)
-                .padding(horizontal = spacing.lg, vertical = spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            HeaderAction(if (state.currentPath.isEmpty()) "Back" else "Up") { if (state.currentPath.isEmpty()) onBack() else onUp() }
-            Text(
-                text = "Files",
-                style = OpenCodeTypography.title,
-                color = colors.onSurface,
-                modifier = Modifier.padding(start = spacing.lg),
-            )
-            Box(Modifier.weight(1f))
-            if (state.changed.isNotEmpty()) {
-                HeaderAction("Diff (${state.changed.size})") { onDiff() }
-            }
-            HeaderAction("Refresh", Modifier.padding(start = spacing.sm)) { onRefresh() }
-        }
-
         if (state.breadcrumbs.isNotEmpty()) {
             Breadcrumbs(state.breadcrumbs, onBreadcrumb)
         }
@@ -82,8 +66,8 @@ fun ExplorerScreen(
             Text(
                 text = note,
                 style = OpenCodeTypography.label,
-                color = colors.onSurfaceFaint,
-                modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.xs),
+                color = colors.onSurfaceMuted,
+                modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm),
             )
         }
 
@@ -118,10 +102,10 @@ private fun Breadcrumbs(crumbs: List<ExplorerUiState.Crumb>, onBreadcrumb: (Stri
             .padding(horizontal = spacing.lg, vertical = spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeaderAction("root") { onBreadcrumb("") }
+        TextAction("root", { onBreadcrumb("") })
         crumbs.forEach { crumb ->
             Text("/", style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
-            HeaderAction(crumb.label) { onBreadcrumb(crumb.path) }
+            TextAction(crumb.label, { onBreadcrumb(crumb.path) })
         }
     }
 }
@@ -140,22 +124,24 @@ private fun FileRowItem(row: FileRow, onClick: () -> Unit) {
             .padding(horizontal = spacing.sm, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // A leading glyph rather than an icon font: no asset to ship, and the
-        // distinction that matters (folder vs file) is unambiguous.
-        Text(
-            text = if (row.isDirectory) "/" else "·",
-            style = OpenCodeTypography.code,
-            color = colors.onSurfaceFaint,
-            modifier = Modifier.width(spacing.lg),
+        // Folder vs file is the one distinction that matters when scanning, so it is an icon.
+        GlyphIcon(
+            glyph = if (row.isDirectory) Glyph.Folder else Glyph.File,
+            tint = if (row.isDirectory) colors.accent else colors.onSurfaceMuted,
+            size = 20.dp,
+            modifier = Modifier.padding(end = spacing.md),
         )
         Text(
             text = row.name,
             style = OpenCodeTypography.body,
-            color = if (row.isDirectory) colors.onSurface else colors.onSurface,
+            color = colors.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (row.isDirectory) {
+            GlyphIcon(Glyph.ChevronRight, tint = colors.onSurfaceFaint, size = 18.dp)
+        }
         if (row.gitStatus != null) {
             Text(
                 text = row.gitStatus.first().uppercase(),
@@ -174,26 +160,6 @@ private fun FileRowItem(row: FileRow, onClick: () -> Unit) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun HeaderAction(
-    text: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(radius.sm))
-            .clickable(onClick = onClick)
-            .padding(horizontal = spacing.sm, vertical = spacing.xs),
-    ) {
-        Text(text, style = OpenCodeTypography.label, color = colors.accent)
     }
 }
 

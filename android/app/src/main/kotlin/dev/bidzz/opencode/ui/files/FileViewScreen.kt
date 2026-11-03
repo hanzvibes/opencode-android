@@ -1,8 +1,5 @@
 package dev.bidzz.opencode.ui.files
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,9 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -24,14 +19,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.TextAction
 
 /** State of one open file. */
 data class FileViewState(
@@ -74,62 +69,31 @@ fun FileViewScreen(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
 
     val shown = if (state.editing) state.draft else state.content
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .statusBarsPadding(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(colors.surface)
-                .padding(horizontal = spacing.lg, vertical = spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(radius.sm))
-                    .clickable(onClick = onBack)
-                    .padding(horizontal = spacing.sm, vertical = spacing.xs),
-            ) {
-                Text("Back", style = OpenCodeTypography.label, color = colors.accent)
-            }
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = spacing.md),
-            ) {
-                Text(
-                    text = state.path.substringAfterLast('/'),
-                    style = OpenCodeTypography.title,
-                    color = colors.onSurface,
-                )
-                if (shown.isNotEmpty()) {
-                    Text(
-                        text = shown.lines().size.toString() + " lines" +
-                            if (state.dirty) " · unsaved" else "",
-                        style = OpenCodeTypography.label,
-                        color = if (state.dirty) colors.accent else colors.onSurfaceFaint,
-                    )
-                }
-            }
+    ScreenScaffold(
+        title = state.path.substringAfterLast('/'),
+        onBack = onBack,
+        subtitle = if (shown.isNotEmpty()) {
+            shown.lines().size.toString() + " lines" + if (state.dirty) " · unsaved" else ""
+        } else {
+            null
+        },
+        subtitleColor = if (state.dirty) colors.accent else null,
+        actions = {
             if (state.editing) {
-                HeaderAction(
-                    text = if (state.saving) "Saving…" else "Save",
-                    enabled = state.dirty && !state.saving,
+                TextAction(
+                    label = if (state.saving) "Saving…" else "Save",
                     onClick = onSave,
+                    enabled = state.dirty && !state.saving,
                 )
-                HeaderAction(text = "Cancel", enabled = !state.saving, onClick = onCancelEdit)
+                TextAction(label = "Cancel", onClick = onCancelEdit, enabled = !state.saving)
             } else if (!state.loading && state.error == null) {
-                HeaderAction(text = "Edit", enabled = true, onClick = onStartEdit)
+                TextAction(label = "Edit", onClick = onStartEdit)
             }
-        }
-
+        },
+    ) {
         when {
             state.loading -> Centered("Reading file…")
             state.editing -> Column(Modifier.fillMaxSize()) {
@@ -210,28 +174,6 @@ fun FileViewScreen(
                     TextButton(onClick = onDismissConflict) { Text("Keep editing", color = colors.accent) }
                 }
             },
-        )
-    }
-}
-
-@Composable
-private fun HeaderAction(text: String, enabled: Boolean, onClick: () -> Unit) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(radius.sm))
-            .background(if (enabled) colors.surfaceSunken else colors.surface)
-            .border(0.5.dp, colors.outline, RoundedCornerShape(radius.sm))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = spacing.md, vertical = spacing.xs),
-    ) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.label,
-            color = if (enabled) colors.accent else colors.onSurfaceFaint,
         )
     }
 }
