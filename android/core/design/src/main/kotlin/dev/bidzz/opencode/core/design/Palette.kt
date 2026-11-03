@@ -35,8 +35,8 @@ object Palette {
     /** Secondary text: timestamps, hints, metadata. */
     val darkOnSurfaceMuted = Color(0xFF9AA3B0)
 
-    /** Disabled text and icons. */
-    val darkOnSurfaceFaint = Color(0xFF5D6672)
+    /** Placeholders and small labels. 4.9:1 on the surface, so it stays readable (WCAG AA). */
+    val darkOnSurfaceFaint = Color(0xFF7C8594)
 
     /** Hairline separators. Low contrast by design; borders should whisper. */
     val darkOutline = Color(0xFF232830)
@@ -62,7 +62,8 @@ object Palette {
 
     val lightOnSurface = Color(0xFF14181F)
     val lightOnSurfaceMuted = Color(0xFF5A6575)
-    val lightOnSurfaceFaint = Color(0xFF8E98A8)
+    /** 5.5:1 on white and 4.8:1 on the tinted background; the previous value was under 3:1. */
+    val lightOnSurfaceFaint = Color(0xFF5F6A7A)
 
     val lightOutline = Color(0xFFDCE2EC)
 
