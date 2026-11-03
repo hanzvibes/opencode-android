@@ -29,6 +29,9 @@ import dev.bidzz.opencode.core.api.dto.ModelInfo
 import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.Glyph
+import dev.bidzz.opencode.ui.GlyphIcon
+import androidx.compose.foundation.layout.widthIn
 
 /**
  * Session controls — mode and model — sitting between the transcript and the composer.
@@ -50,10 +53,9 @@ fun ChatControls(
 
     val spacing = OpenCodeTheme.tokens.spacing
 
+    // Lives inside the composer, which supplies the padding.
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.md, vertical = spacing.xs),
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         if (agents.isNotEmpty()) {
@@ -95,10 +97,10 @@ private fun ChoiceChip(
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(radius.full))
-                .background(if (chosen) colors.surfaceRaised else colors.surfaceSunken)
+                // Outline only: the chip sits on the composer's own surface.
                 .border(0.5.dp, colors.outline, RoundedCornerShape(radius.full))
                 .clickable { expanded = true }
-                .padding(horizontal = spacing.md, vertical = spacing.xs),
+                .padding(start = spacing.md, end = spacing.sm, top = spacing.xs, bottom = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
@@ -108,8 +110,9 @@ private fun ChoiceChip(
                 color = if (chosen) colors.onSurface else colors.onSurfaceFaint,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 140.dp),
             )
-            Text(text = "▾", style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
+            GlyphIcon(Glyph.ChevronDown, tint = colors.onSurfaceFaint, size = 14.dp)
         }
 
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
