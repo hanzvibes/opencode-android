@@ -36,6 +36,9 @@ import okhttp3.Request
  * A library that silently reconnects would hide exactly the gap the server warns
  * about.
  */
+/** The engine rejected this stream's credentials; retrying cannot help. */
+class EventStreamAuthException(val code: Int) : Exception("event stream rejected with HTTP $code")
+
 class EventStream(private val client: EngineClient) {
 
     companion object {
@@ -76,6 +79,8 @@ class EventStream(private val client: EngineClient) {
                 Log.i(TAG, "stream ended after $received events")
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: EventStreamAuthException) {
+                throw e
             } catch (e: IOException) {
                 Log.w(TAG, "stream disconnected: ${e.message}")
             } catch (e: Exception) {
@@ -95,9 +100,12 @@ class EventStream(private val client: EngineClient) {
             .build()
 
         client.streaming().newCall(request).await().use { response ->
+            if (response.code == 401 || response.code == 403) {
+                // A 401 will never fix itself: credentials are fixed per client and change
+                // on every engine restart, so this stream is stale for good.
+                throw EventStreamAuthException(response.code)
+            }
             if (!response.isSuccessful) {
-                // Surface auth failures instead of reconnecting forever: a 401 will
-                // never fix itself, and the caller needs to know the password moved.
                 throw IOException("event stream rejected with HTTP ${response.code}")
             }
             val source = response.body?.source() ?: throw IOException("event stream had no body")

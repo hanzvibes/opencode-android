@@ -88,10 +88,17 @@ class ChatRepository(
 
         streamJob = scope.launch {
             resync()
-            eventStream.events(onReconnect = { resync() }).collect { event ->
-                if (event.type == EventTypes.SERVER_CONNECTED) return@collect
-                if (event.sessionIDOf() != sessionID) return@collect
-                handle(event)
+            try {
+                eventStream.events(onReconnect = { resync() }).collect { event ->
+                    if (event.type == EventTypes.SERVER_CONNECTED) return@collect
+                    if (event.sessionIDOf() != sessionID) return@collect
+                    handle(event)
+                }
+            } catch (e: EventStreamAuthException) {
+                // Uncaught, this would take down the whole scope instead of one chat.
+                _state.value = _state.value.copy(
+                    lastError = "Lost connection to the engine (HTTP ${e.code}). Reopen the session.",
+                )
             }
         }
     }

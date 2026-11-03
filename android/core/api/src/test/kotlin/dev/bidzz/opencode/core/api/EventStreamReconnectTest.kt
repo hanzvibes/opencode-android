@@ -75,6 +75,43 @@ class EventStreamReconnectTest {
         }
     }
 
+    @Test
+    fun `a rejected password ends the stream instead of retrying forever`() {
+        val socket = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        val accepts = AtomicInteger()
+        val listener = Thread {
+            while (true) {
+                val connection = try { socket.accept() } catch (e: IOException) { break }
+                accepts.incrementAndGet()
+                connection.use {
+                    runCatching { it.getInputStream().bufferedReader().readLine() }
+                    it.getOutputStream().write(
+                        "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".encodeToByteArray(),
+                    )
+                }
+            }
+        }.apply { isDaemon = true; start() }
+
+        try {
+            val client = EngineClient("http://127.0.0.1:${socket.localPort}", "Basic dXNlcjp4")
+            val code = runBlocking {
+                withTimeoutOrNull(20_000) {
+                    try {
+                        EventStream(client).events().toList()
+                        null
+                    } catch (e: EventStreamAuthException) {
+                        e.code
+                    }
+                }
+            }
+            assertEquals(401, code)
+            assertEquals(1, accepts.get())
+        } finally {
+            runCatching { socket.close() }
+            listener.interrupt()
+        }
+    }
+
     /**
      * Minimal HTTP endpoint that streams one SSE event per connection and closes.
      *
