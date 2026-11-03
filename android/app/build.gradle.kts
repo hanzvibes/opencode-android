@@ -48,7 +48,11 @@ android {
             isMinifyEnabled = false
         }
         release {
-            isMinifyEnabled = false
+            // Shrinks the Kotlin/Java side only; the ~217 MB engine is a native library
+            // and is untouched, so expect a few MB off the APK, not tens.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (hasReleaseKey) signingConfig = signingConfigs.getByName("release")
         }
     }
