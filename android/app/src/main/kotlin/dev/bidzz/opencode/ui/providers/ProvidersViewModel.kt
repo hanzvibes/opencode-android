@@ -166,7 +166,7 @@ class ProvidersViewModel(
             busyFor = null,
             connected = trimmedName,
             error = if (written is EngineConfigStore.WriteResult.Shadowed) {
-                "Saved, but an `opencode.jsonc` beside it takes precedence — the engine " +
+                "Saved, but an `opencode.jsonc` beside it takes precedence. The engine " +
                     "will read that file instead of this one."
             } else {
                 null

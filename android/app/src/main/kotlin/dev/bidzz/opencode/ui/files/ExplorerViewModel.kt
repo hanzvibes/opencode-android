@@ -109,7 +109,7 @@ class ExplorerViewModel(
                 changed = changed,
                 isRepository = isRepo,
                 vcsNote = when {
-                    !isRepo -> "Not a git repository — changes are not tracked."
+                    !isRepo -> "Not a git repository. Changes are not tracked."
                     changed.isEmpty() -> "Git repository with no uncommitted changes."
                     else -> null
                 },

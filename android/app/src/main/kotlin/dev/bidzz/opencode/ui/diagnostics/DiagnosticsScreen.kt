@@ -91,16 +91,16 @@ fun DiagnosticsScreen(
                     .padding(spacing.lg),
             ) {
                 Line("state", status.state.name)
-                Line("pid", status.pid?.toString() ?: "—")
-                Line("port", status.port?.toString() ?: "—")
-                Line("baseUrl", status.credentials?.baseUrl ?: "—")
+                Line("pid", status.pid?.toString() ?: "none")
+                Line("port", status.port?.toString() ?: "none")
+                Line("baseUrl", status.credentials?.baseUrl ?: "none")
                 Box(Modifier.clickable { showPassword = !showPassword }) {
                     Line(
                         "password",
-                        status.credentials?.password?.let { if (showPassword) it else "•••••• (tap to reveal)" } ?: "—",
+                        status.credentials?.password?.let { if (showPassword) it else "•••••• (tap to reveal)" } ?: "none",
                     )
                 }
-                Line("error", status.lastError ?: "—")
+                Line("error", status.lastError ?: "none")
                 Line("nativeLibraryDir", app.applicationInfo.nativeLibraryDir)
                 Line("filesDir", app.filesDir.absolutePath)
                 Line("workspace", app.workspaceStore.resolve().absolutePath)
@@ -151,7 +151,7 @@ fun DiagnosticsScreen(
                 }
                 Body(
                     text = "A probe failing with exit 126 / Permission denied means the " +
-                        "SELinux label on the linked binary rejects exec — the tool must be " +
+                        "SELinux label on the linked binary rejects exec. The tool must be " +
                         "reached through the symlink in toolBin, never copied into filesDir.",
                     color = colors.onSurfaceFaint,
                 )
@@ -168,7 +168,7 @@ fun DiagnosticsScreen(
 
                 Section("ENGINE LOG (on disk)")
                 if (logLines.isEmpty()) {
-                    Body("(nothing read — the file may not exist yet)", colors.onSurfaceMuted)
+                    Body("(nothing read, the file may not exist yet)", colors.onSurfaceMuted)
                 } else {
                     Body("${logLines.size} lines, newest last", colors.onSurfaceFaint)
                     logLines.takeLast(120).forEach { line -> Mono(line) }

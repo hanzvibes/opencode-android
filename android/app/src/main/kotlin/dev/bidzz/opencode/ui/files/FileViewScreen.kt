@@ -157,8 +157,8 @@ fun FileViewScreen(
             },
             text = {
                 Text(
-                    text = "The file on disk is no longer the version this editor was opened with — " +
-                        "the agent has probably written it. Nothing has been saved yet.\n\n" +
+                    text = "The file on disk is no longer the version this editor was opened with. " +
+                        "The agent has probably written it. Nothing has been saved yet.\n\n" +
                         "Overwriting replaces the file with what is typed here. Reloading shows what is " +
                         "on disk and discards what is typed here.",
                     style = OpenCodeTypography.bodySmall,
