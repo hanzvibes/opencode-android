@@ -41,7 +41,7 @@ import java.io.File
  * deep links, no back stack beyond "return to chat". A graph would be machinery
  * without a job.
  */
-private sealed interface Screen {
+internal sealed interface Screen {
     data object Chat : Screen
     data object Sessions : Screen
     data object Projects : Screen
@@ -52,6 +52,20 @@ private sealed interface Screen {
     data object Settings : Screen
     data object Providers : Screen
     data object Diagnostics : Screen
+}
+
+/**
+ * Where back goes from [this]: the screen it was opened from.
+ *
+ * The same targets as each screen's own back arrow, so the arrow and the system gesture
+ * agree. A single "always Chat" handler skipped the parent: back from a file jumped past
+ * the file list, back from Providers past Settings.
+ */
+internal fun Screen.parent(): Screen = when (this) {
+    is Screen.FileView, Screen.DiffList -> Screen.Files
+    is Screen.Diff -> Screen.DiffList
+    Screen.Providers -> Screen.Settings
+    else -> Screen.Chat
 }
 
 @Composable
@@ -130,8 +144,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         }
     }
 
-    // Back always returns to the conversation.
-    BackHandler(enabled = screen !is Screen.Chat) { screen = Screen.Chat }
+    // Back returns to the screen this one was opened from; from Chat it leaves the app.
+    BackHandler(enabled = screen !is Screen.Chat) { screen = screen.parent() }
 
     OpenCodeTheme {
         when (screen) {
