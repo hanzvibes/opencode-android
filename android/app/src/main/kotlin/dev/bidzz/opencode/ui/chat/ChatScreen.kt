@@ -178,6 +178,15 @@ fun ChatScreen(
                             }
                         }
                     }
+                    // Following stops when the reader scrolls up, so give them the way back.
+                    if (!nearBottom) {
+                        JumpToLatest(
+                            onClick = { scope.launch { listState.animateScrollToItem(state.messages.lastIndex) } },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = spacing.lg, bottom = spacing.md),
+                        )
+                    }
                 }
             }
 
@@ -419,6 +428,25 @@ private fun DrawerItem(label: String, glyph: Glyph, onClick: () -> Unit, accent:
 }
 
 private const val DRAWER_SESSIONS = 20
+
+/** A small round button that returns to the newest message. */
+@Composable
+private fun JumpToLatest(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = OpenCodeTheme.colors
+
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .background(colors.surface, CircleShape)
+            .border(0.5.dp, colors.outline, CircleShape)
+            .clip(CircleShape)
+            .semantics { contentDescription = "Jump to latest message" }
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        GlyphIcon(Glyph.ArrowDown, tint = colors.onSurface, size = 20.dp)
+    }
+}
 
 /**
  * Shown before the first message: says what to do, and offers starting points.
