@@ -124,12 +124,24 @@ class EngineConfigStore(configHome: File) {
     private fun write(root: JSONObject) {
         if (!dir.exists() && !dir.mkdirs()) throw IOException("Could not create ${dir.absolutePath}")
         val tmp = File(dir, "opencode.json.tmp")
+        // The file holds provider API keys, so keep it owner-only before any content lands.
+        // ponytail: plaintext at rest in app-private storage; the engine reads `settings.apiKey`
+        // from this file, so encrypting needs engine support (env/file substitution) first.
+        tmp.createNewFile()
+        tmp.setReadable(false, false); tmp.setReadable(true, true)
+        tmp.setWritable(false, false); tmp.setWritable(true, true)
         tmp.writeText(root.toString(INDENT) + "\n")
-        if (!tmp.renameTo(file)) {
-            // Rename across filesystems fails; fall back to a copy but keep the
-            // temp file out of the way either way.
-            file.writeText(tmp.readText())
+        try {
+            // Same directory, so the atomic replace holds; a failure leaves the old file intact
+            // instead of truncating it mid-write.
+            java.nio.file.Files.move(
+                tmp.toPath(), file.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (e: java.io.IOException) {
             tmp.delete()
+            throw e
         }
     }
 
