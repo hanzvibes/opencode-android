@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.Glyph
+import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.ScreenScaffold
 
 /**
@@ -123,7 +125,26 @@ fun ProvidersScreen(
             PrimaryButton("Add a custom endpoint…") { showCustomForm = true }
 
             Text("CATALOG", style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
-            state.integrations.forEach { integration ->
+            if (state.integrations.isEmpty() && state.loading) {
+                Text("Loading providers…", style = OpenCodeTypography.bodySmall, color = colors.onSurfaceMuted)
+            }
+            // The catalog is a few hundred providers; without a filter the one you want is a long scroll away.
+            if (state.integrations.isNotEmpty()) {
+                SearchField(query = query, onChange = { query = it })
+            }
+            val shown = if (query.isBlank()) {
+                state.integrations
+            } else {
+                state.integrations.filter { it.name.contains(query.trim(), ignoreCase = true) }
+            }
+            if (state.integrations.isNotEmpty() && shown.isEmpty()) {
+                Text(
+                    text = "No provider matches \"${query.trim()}\".",
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+            }
+            shown.forEach { integration ->
                 val stored = rowsFor(state.credentials, integration.id)
                 ProviderRow(
                     name = integration.name,
@@ -230,6 +251,43 @@ fun ProvidersScreen(
             onSubmit = { name, baseURL, key, models ->
                 onSaveCustom(name, baseURL, key, models)
                 showCustomForm = false
+            },
+        )
+    }
+}
+
+/** Filters the catalog as you type. */
+@Composable
+private fun SearchField(query: String, onChange: (String) -> Unit) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val shape = RoundedCornerShape(OpenCodeTheme.tokens.radius.lg)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.surface, shape)
+            .border(0.5.dp, colors.outline, shape)
+            .padding(horizontal = spacing.md, vertical = spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 18.dp)
+        BasicTextField(
+            value = query,
+            onValueChange = onChange,
+            singleLine = true,
+            textStyle = OpenCodeTypography.input.copy(color = colors.onSurface),
+            cursorBrush = SolidColor(colors.accent),
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.sm),
+            decorationBox = { inner ->
+                Box {
+                    if (query.isEmpty()) {
+                        Text("Search providers", style = OpenCodeTypography.input, color = colors.onSurfaceFaint)
+                    }
+                    inner()
+                }
             },
         )
     }
@@ -496,14 +554,35 @@ private fun CustomProviderDialog(
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
-                FormField("Display name", name, singleLine = true) { name = it }
-                FormField("Base URL, e.g. https://api.example.com/v1", baseURL, singleLine = true) { baseURL = it }
-                FormField("API key", apiKey, singleLine = true, secret = true) { apiKey = it }
+                // The label names the field and the placeholder shows an example, so the two
+                // never repeat each other.
+                FormField(
+                    label = "Display name",
+                    placeholder = "My provider",
+                    value = name,
+                    singleLine = true,
+                    keyboard = KeyboardType.Text,
+                ) { name = it }
+                FormField(
+                    label = "Base URL",
+                    placeholder = "https://api.example.com/v1",
+                    value = baseURL,
+                    singleLine = true,
+                    keyboard = KeyboardType.Uri,
+                ) { baseURL = it }
+                FormField(
+                    label = "API key",
+                    placeholder = "Paste your key",
+                    value = apiKey,
+                    singleLine = true,
+                    secret = true,
+                ) { apiKey = it }
                 FormField(
                     label = "Models, comma or line separated",
                     placeholder = "model-id = name shown in the picker",
                     value = models,
                     singleLine = false,
+                    keyboard = KeyboardType.Text,
                 ) { models = it }
             }
         },
@@ -523,8 +602,9 @@ private fun FormField(
     label: String,
     value: String,
     singleLine: Boolean,
-    placeholder: String = label,
+    placeholder: String,
     secret: Boolean = false,
+    keyboard: KeyboardType = KeyboardType.Text,
     onValueChange: (String) -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -540,11 +620,7 @@ private fun FormField(
             textStyle = OpenCodeTypography.input.copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.accent),
             visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = if (secret) {
-                KeyboardOptions(keyboardType = KeyboardType.Password)
-            } else {
-                KeyboardOptions(keyboardType = KeyboardType.Uri)
-            },
+            keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = spacing.xxs)
