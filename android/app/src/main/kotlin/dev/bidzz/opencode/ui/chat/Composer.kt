@@ -3,6 +3,9 @@ package dev.bidzz.opencode.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -118,7 +121,8 @@ private fun ActionButton(busy: Boolean, canSend: Boolean, onClick: () -> Unit) {
             .size(dims.minTouchTarget)
             .clip(CircleShape)
             .background(if (active) colors.accent else colors.surfaceSunken)
-            .clickable(enabled = active, onClick = onClick),
+            .semantics { contentDescription = if (busy) "Stop" else "Send" }
+            .clickable(enabled = active, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (busy) {
