@@ -2,14 +2,12 @@ package dev.bidzz.opencode.ui.projects
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -19,9 +17,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.ScreenScaffold
 
 /** One selectable project directory. */
 data class ProjectOption(
@@ -53,31 +51,8 @@ fun ProjectPickerScreen(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .statusBarsPadding(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(colors.surface)
-                .padding(horizontal = spacing.lg, vertical = spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .clickable(onClick = onBack)
-                    .padding(end = spacing.lg, top = spacing.xs, bottom = spacing.xs),
-            ) {
-                Text("Back", style = OpenCodeTypography.label, color = colors.accent)
-            }
-            Text("Project", style = OpenCodeTypography.title, color = colors.onSurface)
-        }
-
+    ScreenScaffold(title = "Project", onBack = onBack) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -85,11 +60,17 @@ fun ProjectPickerScreen(
                 .padding(spacing.lg),
         ) {
             Text("CURRENT", style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
+            // The folder's name is what you recognise; the full path is reference.
             Text(
-                text = currentPath,
-                style = OpenCodeTypography.code,
+                text = currentPath.trimEnd('/').substringAfterLast('/').ifEmpty { currentPath },
+                style = OpenCodeTypography.title,
                 color = colors.onSurface,
                 modifier = Modifier.padding(top = spacing.xs),
+            )
+            Text(
+                text = currentPath,
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
             )
 
             if (!hasAllFilesAccess) {

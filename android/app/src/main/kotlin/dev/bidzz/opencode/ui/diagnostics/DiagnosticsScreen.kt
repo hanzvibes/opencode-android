@@ -1,6 +1,5 @@
 package dev.bidzz.opencode.ui.diagnostics
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -22,13 +20,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.engine.EngineDiagnostics
+import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.TextAction
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -79,42 +78,11 @@ fun DiagnosticsScreen(
     }
     LaunchedEffect(Unit) { refresh() }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .statusBarsPadding(),
+    ScreenScaffold(
+        title = "Diagnostics",
+        onBack = onBack,
+        actions = { TextAction(if (running) "Running…" else "Refresh", refresh, enabled = !running) },
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(colors.surface)
-                .padding(horizontal = spacing.lg, vertical = spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .clickable(onClick = onBack)
-                    .padding(end = spacing.lg, top = spacing.xs, bottom = spacing.xs),
-            ) {
-                Text("Back", style = OpenCodeTypography.label, color = colors.accent)
-            }
-            Text("Diagnostics", style = OpenCodeTypography.title, color = colors.onSurface)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = refresh)
-                    .padding(vertical = spacing.xs),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Text(
-                    text = if (running) "running…" else "Refresh",
-                    style = OpenCodeTypography.label,
-                    color = if (running) colors.onSurfaceFaint else colors.accent,
-                )
-            }
-        }
-
         SelectionContainer {
             Column(
                 modifier = Modifier

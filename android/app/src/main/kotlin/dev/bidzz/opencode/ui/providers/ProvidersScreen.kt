@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.ScreenScaffold
 
 /**
  * Provider catalog and API-key entry.
@@ -57,40 +58,17 @@ fun ProvidersScreen(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
 
     var keyFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var manageFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var replaceFor by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
     var confirmDelete by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
     var showCustomForm by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { onRefresh() }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .padding(top = spacing.md),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(colors.surface)
-                .padding(horizontal = spacing.lg, vertical = spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Back",
-                style = OpenCodeTypography.label,
-                color = colors.accent,
-                modifier = Modifier
-                    .clickable(onClick = onBack)
-                    .padding(end = spacing.lg, top = spacing.xs, bottom = spacing.xs),
-            )
-            Text("Providers", style = OpenCodeTypography.title, color = colors.onSurface)
-        }
-
+    ScreenScaffold(title = "Providers", onBack = onBack, modifier = modifier) {
         Column(
             modifier = Modifier
                 .fillMaxSize()

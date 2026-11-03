@@ -45,6 +45,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.Status
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import kotlinx.coroutines.launch
 
@@ -242,7 +243,7 @@ private fun ChatHeader(
             .fillMaxWidth()
             .padding(horizontal = spacing.sm, vertical = spacing.xs),
     ) {
-        HeaderAction(
+        IconAction(
             glyph = Glyph.Menu,
             description = "Menu",
             onClick = onMenu,
@@ -283,29 +284,12 @@ private fun ChatHeader(
             }
         }
 
-        HeaderAction(
+        IconAction(
             glyph = Glyph.NewChat,
             description = "New session",
             onClick = onNewSession,
             modifier = Modifier.align(Alignment.CenterEnd),
         )
-    }
-}
-
-@Composable
-private fun HeaderAction(glyph: Glyph, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val colors = OpenCodeTheme.colors
-    val dims = OpenCodeTheme.tokens.dimensions
-
-    Box(
-        modifier = modifier
-            .size(dims.minTouchTarget)
-            .clip(CircleShape)
-            .semantics { contentDescription = description }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        GlyphIcon(glyph, tint = colors.onSurface, size = 22.dp)
     }
 }
 

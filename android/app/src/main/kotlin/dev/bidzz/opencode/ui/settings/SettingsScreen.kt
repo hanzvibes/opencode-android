@@ -1,15 +1,12 @@
 package dev.bidzz.opencode.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -22,6 +19,9 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.Glyph
+import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.ScreenScaffold
 
 /**
  * Settings.
@@ -37,18 +37,10 @@ fun SettingsScreen(
     onProjects: () -> Unit,
     onProviders: () -> Unit,
 ) {
-    val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val status by app.engineStatus.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.background)
-            .statusBarsPadding(),
-    ) {
-        ScreenHeader(title = "Settings", onBack = onBack)
-
+    ScreenScaffold(title = "Settings", onBack = onBack) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -67,39 +59,16 @@ fun SettingsScreen(
                 onProviders,
             )
 
+            // Port and base URL are engine internals; they live in Diagnostics, which already
+            // lists them, so this screen shows only the one-word state a user can act on.
             SectionLabel("Engine")
-            InfoRow("State", status.state.name.lowercase().replaceFirstChar { it.uppercase() })
-            InfoRow("Port", status.port?.toString() ?: "—")
-            InfoRow("Base URL", status.credentials?.baseUrl ?: "—")
-
-            SectionLabel("Advanced")
-            ActionRow("Diagnostics", "Engine log, credentials, runtime paths", onDiagnostics)
+            ActionRow(
+                title = "Diagnostics",
+                subtitle = "Engine is " + status.state.name.lowercase() + ". Log, credentials, runtime paths.",
+                onClick = onDiagnostics,
+            )
         }
     }
-}
-
-@Composable
-private fun ScreenHeader(title: String, onBack: () -> Unit) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.surface)
-            .padding(horizontal = spacing.lg, vertical = spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .clickable(onClick = onBack)
-                .padding(end = spacing.lg, top = spacing.xs, bottom = spacing.xs),
-        ) {
-            Text("Back", style = OpenCodeTypography.label, color = colors.accent)
-        }
-        Text(title, style = OpenCodeTypography.title, color = colors.onSurface)
-    }
-    Box(Modifier.fillMaxWidth().background(colors.outline).padding(top = 0.5.dp))
 }
 
 @Composable
@@ -139,13 +108,18 @@ private fun ActionRow(title: String, subtitle: String, onClick: () -> Unit) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
             .padding(horizontal = spacing.lg, vertical = spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, style = OpenCodeTypography.body, color = colors.onSurface)
-        Text(subtitle, style = OpenCodeTypography.bodySmall, color = colors.onSurfaceMuted)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = OpenCodeTypography.body, color = colors.onSurface)
+            Text(subtitle, style = OpenCodeTypography.bodySmall, color = colors.onSurfaceMuted)
+        }
+        // The chevron is what says this row opens something, rather than just showing a value.
+        GlyphIcon(Glyph.ChevronRight, tint = colors.onSurfaceFaint, size = 18.dp, modifier = Modifier.padding(start = spacing.md))
     }
 }
