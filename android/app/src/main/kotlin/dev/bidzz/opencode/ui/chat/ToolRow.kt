@@ -4,12 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.ToolCall
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.GlyphIcon
 
 /**
  * The whole tool trace for one message, collapsed to a single summary line.
@@ -91,57 +95,85 @@ fun ToolTrace(
             }
         }
 
-        if (open) {
-            tools.forEach { ToolRow(it, Modifier.padding(top = spacing.xs)) }
-        } else {
-            (running + tools.filter { it.status == "error" })
-                .forEach { ToolRow(it, Modifier.padding(top = spacing.xs)) }
+        // A vertical timeline: a dot per step on a rail, joined by a line to the next.
+        val visible = if (open) tools else running + tools.filter { it.status == "error" }
+        visible.forEachIndexed { index, call ->
+            ToolStep(call, isLast = index == visible.lastIndex)
         }
     }
 }
 
-/** One-line tool call: status dot, name, input gist. Tap toggles input and output. */
+/**
+ * One step on the timeline: status dot on the rail, name and input gist beside it.
+ * The step currently running reads in the accent colour; tap toggles input and output.
+ */
 @Composable
-fun ToolRow(call: ToolCall, modifier: Modifier = Modifier) {
+fun ToolStep(call: ToolCall, isLast: Boolean, modifier: Modifier = Modifier) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
     var open by rememberSaveable(call.id) { mutableStateOf(false) }
 
-    val dot = when (call.status) {
-        "completed" -> colors.success
-        "error" -> colors.danger
-        else -> colors.warning
+    val active = call.status == "running" || call.status == "streaming"
+    val dot = when {
+        call.status == "completed" -> colors.success
+        call.status == "error" -> colors.danger
+        else -> colors.accent
     }
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.surfaceSunken, RoundedCornerShape(radius.sm))
-            .clickable { open = !open }
-            .padding(horizontal = spacing.md, vertical = spacing.sm),
+            .height(IntrinsicSize.Min)
+            .clickable { open = !open },
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(8.dp).background(dot, CircleShape))
-            Text(
-                text = call.name.ifEmpty { "tool" },
-                style = OpenCodeTypography.label,
-                color = colors.onSurface,
-                modifier = Modifier.padding(start = spacing.sm),
+        Column(
+            modifier = Modifier.width(20.dp).fillMaxHeight(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                Modifier
+                    .padding(top = spacing.sm)
+                    .size(if (active) 10.dp else 8.dp)
+                    .background(dot, CircleShape),
             )
-            Text(
-                text = call.summary,
-                style = OpenCodeTypography.codeInline,
-                color = colors.onSurfaceMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = spacing.sm),
-            )
+            if (!isLast) {
+                Box(
+                    Modifier
+                        .padding(top = spacing.xs)
+                        .width(1.5.dp)
+                        .weight(1f)
+                        // `outline` is a hairline colour and vanishes at this width; the faint
+                        // text colour keeps the rail readable in both themes.
+                        .background(colors.onSurfaceFaint.copy(alpha = 0.45f)),
+                )
+            }
         }
-        if (open) {
-            call.inputText?.let { Detail("INPUT", it) }
-            call.output?.let { Detail("OUTPUT", it.take(MAX_OUTPUT)) }
-            call.error?.let { Detail("ERROR", it, colors.danger) }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.sm, bottom = spacing.sm),
+        ) {
+            val label = stepLabel(call.name, call.summary, call.status)
+            Row(
+                modifier = Modifier.padding(top = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GlyphIcon(label.glyph, tint = if (active) colors.accent else colors.onSurfaceMuted, size = 14.dp)
+                Text(
+                    text = label.text,
+                    style = OpenCodeTypography.bodySmall,
+                    color = if (active) colors.accent else colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = spacing.sm),
+                )
+            }
+            if (open) {
+                call.inputText?.let { Detail("INPUT", it) }
+                call.output?.let { Detail("OUTPUT", it.take(MAX_OUTPUT)) }
+                call.error?.let { Detail("ERROR", it, colors.danger) }
+            }
         }
     }
 }

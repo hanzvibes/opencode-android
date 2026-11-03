@@ -64,34 +64,32 @@ fun MessageBubble(
                 Text(
                     text = markdown,
                     style = OpenCodeTypography.body,
-                    color = colors.onSurface,
+                    color = colors.onUserBubble,
                 )
             }
         }
 
         Role.ASSISTANT -> Column(modifier = modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "OPENCODE",
-                    style = OpenCodeTypography.label,
-                    color = colors.onSurfaceFaint,
-                )
-                provenance?.let {
-                    Text(
-                        text = "· $it",
-                        style = OpenCodeTypography.label,
-                        color = colors.onSurfaceFaint,
-                        modifier = Modifier.padding(start = spacing.xs),
-                    )
-                }
-                if (streaming) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(start = spacing.sm)
-                            .size(dims.statusDotSize),
-                        strokeWidth = 1.5.dp,
-                        color = colors.accent,
-                    )
+            // Which mode and model answered, small and quiet: it is reference, not content.
+            // Nothing at all when there is nothing to say, instead of a label on every reply.
+            if (!provenance.isNullOrBlank() || streaming) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!provenance.isNullOrBlank()) {
+                        Text(
+                            text = provenance,
+                            style = OpenCodeTypography.label,
+                            color = colors.onSurfaceFaint,
+                        )
+                    }
+                    if (streaming) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(start = if (provenance.isNullOrBlank()) 0.dp else spacing.sm)
+                                .size(dims.statusDotSize),
+                            strokeWidth = 1.5.dp,
+                            color = colors.accent,
+                        )
+                    }
                 }
             }
             Box(Modifier.padding(top = spacing.xs)) {

@@ -52,21 +52,29 @@ object Palette {
 
     // ---- Light ----
 
-    val lightBackground = Color(0xFFF7F8FA)
+    // Light follows the soft grey-blue look of the Mika app: a tinted background with
+    // white surfaces on top, and a solid blue user bubble.
+
+    val lightBackground = Color(0xFFEEF1F7)
     val lightSurface = Color(0xFFFFFFFF)
     val lightSurfaceRaised = Color(0xFFFFFFFF)
-    val lightSurfaceSunken = Color(0xFFF1F3F6)
+    val lightSurfaceSunken = Color(0xFFE3E8F1)
 
-    val lightOnSurface = Color(0xFF11151A)
-    val lightOnSurfaceMuted = Color(0xFF5C6672)
-    val lightOnSurfaceFaint = Color(0xFF9BA4B0)
+    val lightOnSurface = Color(0xFF14181F)
+    val lightOnSurfaceMuted = Color(0xFF5A6575)
+    val lightOnSurfaceFaint = Color(0xFF8E98A8)
 
-    val lightOutline = Color(0xFFE2E6EB)
+    val lightOutline = Color(0xFFDCE2EC)
 
-    val lightAccent = Color(0xFF1F6FEB)
+    val lightAccent = Color(0xFF2F6BEB)
     val lightOnAccent = Color(0xFFFFFFFF)
 
-    val lightUserBubble = Color(0xFFE8F0FE)
+    /** Solid blue, white text on top. */
+    val lightUserBubble = Color(0xFF2F6BEB)
+    val lightOnUserBubble = Color(0xFFFFFFFF)
+
+    /** Dark keeps its tinted bubble, so text stays the normal body colour. */
+    val darkOnUserBubble = Color(0xFFE6E9EF)
 
     // ---- Status. Muted, same hue logic in both themes. ----
 

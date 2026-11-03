@@ -137,6 +137,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         when (screen) {
             Screen.Chat -> ChatScreen(
                 state = chatState,
+                sessions = sessionsState.rows,
+                onOpenSession = chatViewModel::openSession,
+                onDrawerOpen = { sessionViewModel.load(sessionScopeToProject) },
                 onDraftChange = chatViewModel::onDraftChange,
                 onSend = chatViewModel::send,
                 onStop = chatViewModel::stop,
