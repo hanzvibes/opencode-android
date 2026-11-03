@@ -60,6 +60,7 @@ fun DiagnosticsScreen(
     var probes by remember { mutableStateOf<List<EngineDiagnostics.ProbeResult>>(emptyList()) }
     var logLines by remember { mutableStateOf<List<String>>(emptyList()) }
     var running by remember { mutableStateOf(false) }
+    var showPassword by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     val refresh: () -> Unit = {
@@ -125,7 +126,12 @@ fun DiagnosticsScreen(
                 Line("pid", status.pid?.toString() ?: "—")
                 Line("port", status.port?.toString() ?: "—")
                 Line("baseUrl", status.credentials?.baseUrl ?: "—")
-                Line("password", status.credentials?.password ?: "—")
+                Box(Modifier.clickable { showPassword = !showPassword }) {
+                    Line(
+                        "password",
+                        status.credentials?.password?.let { if (showPassword) it else "•••••• (tap to reveal)" } ?: "—",
+                    )
+                }
                 Line("error", status.lastError ?: "—")
                 Line("nativeLibraryDir", app.applicationInfo.nativeLibraryDir)
                 Line("filesDir", app.filesDir.absolutePath)
