@@ -35,6 +35,11 @@ data class OpenCodeColors(
     val warning: Color,
     val danger: Color,
     val neutral: Color,
+    /** Code block tokens. Separate from the status roles, which mean something else. */
+    val syntaxKeyword: Color,
+    val syntaxString: Color,
+    val syntaxNumber: Color,
+    val syntaxComment: Color,
 ) {
     /** Text colour for a status role. */
     fun statusColor(status: Status): Color = when (status) {
@@ -64,6 +69,10 @@ private val DarkColors = OpenCodeColors(
     warning = Palette.warning,
     danger = Palette.danger,
     neutral = Palette.neutral,
+    syntaxKeyword = Palette.darkSyntaxKeyword,
+    syntaxString = Palette.darkSyntaxString,
+    syntaxNumber = Palette.darkSyntaxNumber,
+    syntaxComment = Palette.darkSyntaxComment,
 )
 
 private val LightColors = OpenCodeColors(
@@ -82,6 +91,10 @@ private val LightColors = OpenCodeColors(
     warning = Palette.warningLight,
     danger = Palette.dangerLight,
     neutral = Palette.neutral,
+    syntaxKeyword = Palette.lightSyntaxKeyword,
+    syntaxString = Palette.lightSyntaxString,
+    syntaxNumber = Palette.lightSyntaxNumber,
+    syntaxComment = Palette.lightSyntaxComment,
 )
 
 private val LocalColors = staticCompositionLocalOf { DarkColors }

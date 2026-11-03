@@ -84,4 +84,20 @@ object Palette {
 
     /** Neutral status: stopped. */
     val neutral = Color(0xFF6E7681)
+
+    // ---- Syntax roles for code blocks. ----
+    //
+    // Kept separate from the status colours on purpose: a green `success` dot and green
+    // string literal would read as one signal. These follow the token colours of the
+    // editors this audience already uses, so keyword/string/number never collide.
+
+    val darkSyntaxKeyword = Color(0xFF569CD6)
+    val darkSyntaxString = Color(0xFFCE9178)
+    val darkSyntaxNumber = Color(0xFFB5CEA8)
+    val darkSyntaxComment = Color(0xFF6A9955)
+
+    val lightSyntaxKeyword = Color(0xFF0000FF)
+    val lightSyntaxString = Color(0xFFA31515)
+    val lightSyntaxNumber = Color(0xFF098658)
+    val lightSyntaxComment = Color(0xFF008000)
 }

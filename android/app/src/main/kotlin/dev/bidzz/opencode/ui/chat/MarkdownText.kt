@@ -177,12 +177,43 @@ private fun CodeBlock(language: String?, code: String) {
                 .horizontalScroll(rememberScrollState()),
         ) {
             Text(
-                text = code,
+                text = highlightedCode(language, code),
                 style = OpenCodeTypography.code,
-                color = colors.onSurface,
                 softWrap = false,
                 modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
             )
+        }
+    }
+}
+
+/**
+ * A code block as coloured text.
+ *
+ * Only the colour changes: the underlying characters are the source verbatim, so the
+ * copy button and text selection still hand out exactly what the model emitted.
+ */
+@Composable
+private fun highlightedCode(language: String?, code: String): AnnotatedString {
+    val colors = OpenCodeTheme.colors
+    val tokens = remember(code, language) { highlight(language, code) }
+    return remember(tokens, colors) {
+        buildAnnotatedString {
+            tokens.forEach { token ->
+                withStyle(
+                    SpanStyle(
+                        color = when (token.kind) {
+                            TokenKind.Keyword -> colors.syntaxKeyword
+                            TokenKind.String -> colors.syntaxString
+                            TokenKind.Number -> colors.syntaxNumber
+                            TokenKind.Comment -> colors.syntaxComment
+                            TokenKind.Plain -> colors.onSurface
+                        },
+                        fontStyle = if (token.kind == TokenKind.Comment) FontStyle.Italic else FontStyle.Normal,
+                    ),
+                ) {
+                    append(token.text)
+                }
+            }
         }
     }
 }
