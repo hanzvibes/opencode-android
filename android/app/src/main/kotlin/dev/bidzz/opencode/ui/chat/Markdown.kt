@@ -104,7 +104,9 @@ object Markdown {
                 }
                 // Skip the closing fence when present.
                 if (i < lines.size) i++
-                blocks += MdBlock.Code(lang, body.toString())
+                // Models often open a fence with a blank line; shown, copied and saved it is noise.
+                val code = body.toString().lines().dropWhile { it.isBlank() }.dropLastWhile { it.isBlank() }
+                blocks += MdBlock.Code(lang, code.joinToString("\n"))
                 continue
             }
 
