@@ -74,6 +74,9 @@ class ChatRepository(
     /** Text received per assistant message id, for the message being streamed. */
     private val buffers = mutableMapOf<String, StringBuilder>()
 
+    /** Prompt text by message id, for user messages the engine returns without text. */
+    private val sentText = mutableMapOf<String, String>()
+
     /**
      * Attaches to [sessionID]: loads history, then follows the stream.
      *
@@ -118,7 +121,10 @@ class ChatRepository(
                 // The engine returns history newest-first (idle, assistant, user...).
                 // Reversing here means the UI and every consumer can assume
                 // oldest-first, which is the only order a chat transcript can use.
-                val chronological = result.value.reversed()
+                val chronological = result.value.reversed().map { m ->
+                    // A user entry that comes back without text keeps what we sent.
+                    if (m.isUser && m.text.isNullOrBlank()) sentText[m.id]?.let { m.copy(text = it) } ?: m else m
+                }
                 val newest = result.value.firstOrNull()
                 buffers.clear()
                 _state.value = _state.value.copy(
@@ -151,9 +157,13 @@ class ChatRepository(
         val id = sessionID ?: return ApiResult.Failure(code = -1, message = "No session open")
         val result = sessionApi.prompt(id, text)
         if (result is ApiResult.Success) {
+            // The admit response may carry no text; what the user typed is known here, so
+            // the bubble never renders empty. Remembered by id for later resyncs too.
+            val shown = if (result.value.text.isNullOrBlank()) result.value.copy(text = text) else result.value
+            sentText[shown.id] = text
             // History is stored oldest-first here, so the new user message goes last.
             _state.value = _state.value.copy(
-                messages = _state.value.messages + result.value,
+                messages = _state.value.messages + shown,
                 busy = true,
                 lastError = null,
             )
