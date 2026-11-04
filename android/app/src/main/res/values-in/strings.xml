@@ -40,6 +40,22 @@
     <string name="settings_section_engine">Mesin</string>
     <string name="settings_diag_title">Diagnostik</string>
     <string name="settings_diag_body">Mesin %1$s. Log, kredensial, jalur runtime.</string>
+    <string name="settings_section_about">Tentang</string>
+    <string name="settings_about_title">Tentang pengembang</string>
+    <string name="settings_about_body">Portofolio dan cara menghubungi.</string>
+
+    <!-- About the developer -->
+    <string name="about_title">Tentang pengembang</string>
+    <string name="about_role">Pelajar · Penjelajah · Pembangun</string>
+    <string name="about_bio">Pelajar yang menekuni pengembangan web, OSINT, keamanan digital, dan reverse engineering, didorong rasa ingin tahu tentang cara kerja sistem yang sebenarnya.</string>
+    <string name="about_section_links">Temukan saya</string>
+    <string name="about_portfolio">Portofolio</string>
+    <string name="about_telegram">Telegram</string>
+    <string name="about_instagram">Instagram</string>
+    <string name="about_github">GitHub</string>
+    <string name="about_email">Email</string>
+    <string name="about_open_failed">Tidak ada aplikasi di perangkat ini yang bisa membuka tautan itu.</string>
+    <string name="about_version">OpenCode Android %1$s</string>
 
     <!-- Chat -->
     <string name="chat_menu">Menu</string>
@@ -203,4 +219,39 @@
     <string name="diag_section_paths">Path</string>
     <string name="diag_section_output">Keluaran engine (proses ini)</string>
     <string name="diag_section_log">Log engine (di disk)</string>
+
+    <!-- Kata kerja timeline tool. Bentuk sekarang saat tool berjalan, lampau setelah selesai.
+         "step_target" menyambung kata kerja dengan nama berkas atau perintah; bahasa yang
+         menaruh sasaran di depan cukup menukar argumennya di sini, bukan di kode. -->
+    <string name="step_target">%1$s %2$s</string>
+    <string name="step_read_present">Membaca</string>
+    <string name="step_read_past">Membaca</string>
+    <string name="step_write_present">Menulis</string>
+    <string name="step_write_past">Menulis</string>
+    <string name="step_edit_present">Mengubah</string>
+    <string name="step_edit_past">Mengubah</string>
+    <string name="step_run_present">Menjalankan</string>
+    <string name="step_run_past">Menjalankan</string>
+    <string name="step_search_present">Mencari</string>
+    <string name="step_search_past">Mencari</string>
+    <string name="step_list_present">Mendaftar</string>
+    <string name="step_list_past">Mendaftar</string>
+    <string name="step_fetch_present">Mengambil</string>
+    <string name="step_fetch_past">Mengambil</string>
+
+    <!-- Kegagalan engine dan API. Ditampilkan di layar tempat kegagalan itu terjadi. -->
+    <string name="error_engine_not_running">Engine belum berjalan</string>
+    <string name="error_no_session">Tidak ada sesi yang terbuka</string>
+    <string name="error_no_pending_permission">Tidak ada permintaan izin yang tertunda</string>
+    <string name="error_lost_connection">Koneksi ke engine terputus (HTTP %1$d). Buka ulang sesi.</string>
+    <string name="error_unauthorized">Engine menolak kredensial</string>
+    <string name="error_location_missing">Folder proyek sudah tidak tersedia</string>
+    <string name="error_session_missing">Sesi sudah tidak ada</string>
+    <string name="error_unreachable">Tidak bisa menjangkau engine</string>
+    <string name="error_request_failed">Permintaan gagal (%1$d)</string>
+    <string name="error_binary_file">Berkas biner (%1$d byte)</string>
+    <string name="error_reread_failed">Berkas tidak bisa dibaca ulang untuk memeriksa perubahannya, jadi tidak ada yang ditimpa.</string>
+    <string name="providers_config_write_failed">Berkas konfigurasi tidak bisa ditulis</string>
+    <string name="providers_config_shadowed">Tersimpan, tetapi `opencode.jsonc` di sebelahnya lebih diutamakan. Engine akan membaca berkas itu, bukan yang ini.</string>
+    <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
 </resources>

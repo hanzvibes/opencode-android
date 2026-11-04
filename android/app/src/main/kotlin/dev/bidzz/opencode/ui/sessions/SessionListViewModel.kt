@@ -3,7 +3,7 @@ package dev.bidzz.opencode.ui.sessions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
-import dev.bidzz.opencode.api.describe
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +31,10 @@ data class SessionRow(
 data class SessionListUiState(
     val loading: Boolean = true,
     val rows: List<SessionRow> = emptyList(),
-    val error: String? = null,
+    /** What went wrong, as a value; the screen words it in the app’s language. */
+    val failure: ApiResult.Failure? = null,
+    /** A message with no failure behind it, e.g. the engine never started. */
+    val failureKey: Int? = null,
     /** Only sessions for this directory, when filtering. */
     val filterDirectory: String? = null,
 )
@@ -54,11 +57,11 @@ class SessionListViewModel(
     /** @param scopedToWorkspace when true, only the current project's sessions. */
     fun load(scopedToWorkspace: Boolean) {
         val handle = api.handle() ?: run {
-            _state.value = _state.value.copy(loading = false, error = "Engine is not running")
+            _state.value = _state.value.copy(loading = false, failureKey = R.string.error_engine_not_running)
             return
         }
         val directory = if (scopedToWorkspace) workspace() else null
-        _state.value = _state.value.copy(loading = true, error = null, filterDirectory = directory)
+        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, filterDirectory = directory)
 
         viewModelScope.launch {
             when (val result = handle.sessions.list(directory = directory, limit = 50)) {
@@ -66,11 +69,11 @@ class SessionListViewModel(
                     _state.value = _state.value.copy(
                         loading = false,
                         rows = result.value.map { it.toRow() },
-                        error = null,
+                        failure = null, failureKey = null,
                     )
                 }
                 is ApiResult.Failure -> {
-                    _state.value = _state.value.copy(loading = false, error = result.describe())
+                    _state.value = _state.value.copy(loading = false, failure = result)
                 }
             }
         }

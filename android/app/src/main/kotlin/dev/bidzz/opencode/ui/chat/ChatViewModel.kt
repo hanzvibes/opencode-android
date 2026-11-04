@@ -2,8 +2,8 @@ package dev.bidzz.opencode.ui.chat
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.api.EngineApi
-import dev.bidzz.opencode.api.describe
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.ChatState
@@ -24,7 +24,10 @@ data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val busy: Boolean = false,
     val connecting: Boolean = false,
-    val error: String? = null,
+    /** What went wrong, as a value; the screen words it in the app’s language. */
+    val failure: ApiResult.Failure? = null,
+    /** A message with no failure behind it, e.g. the engine never started. */
+    val failureKey: Int? = null,
     /** True while the engine answers requests — `DEGRADED` counts, it keeps its credentials. */
     val workspaceReady: Boolean = false,
     val workspacePath: String? = null,
@@ -95,7 +98,11 @@ class ChatViewModel(
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
-                        error = if (status.state == EngineState.FAILED) status.lastError else null,
+                        failureKey = if (status.state == EngineState.FAILED) {
+                            R.string.error_engine_not_running
+                        } else {
+                            null
+                        },
                     )
                 }
                 else -> Unit
@@ -135,7 +142,7 @@ class ChatViewModel(
                     sessionID = chat.sessionID,
                     messages = chat.toUiMessages(),
                     busy = chat.busy,
-                    error = chat.lastError,
+                    failure = chat.lastFailure,
                     pendingPermission = chat.pendingPermission,
                 )
             }
@@ -158,13 +165,13 @@ class ChatViewModel(
                     is ApiResult.Success -> _state.value = _state.value.copy(
                         agents = dev.bidzz.opencode.core.api.AgentApi.selectable(r.value),
                     )
-                    is ApiResult.Failure -> _state.value = _state.value.copy(error = r.describe())
+                    is ApiResult.Failure -> _state.value = _state.value.copy(failure = r)
                 }
             }
             h.models.list().let { r ->
                 when (r) {
                     is ApiResult.Success -> _state.value = _state.value.copy(models = r.value)
-                    is ApiResult.Failure -> _state.value = _state.value.copy(error = r.describe())
+                    is ApiResult.Failure -> _state.value = _state.value.copy(failure = r)
                 }
             }
             h.commands.list().let { r ->
@@ -186,7 +193,7 @@ class ChatViewModel(
         if (sessionID == null) return
         viewModelScope.launch {
             when (val result = h.agents.set(sessionID, agentID)) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
                 is ApiResult.Success -> Unit
             }
         }
@@ -200,7 +207,7 @@ class ChatViewModel(
         if (sessionID == null) return
         viewModelScope.launch {
             when (val result = h.sessions.setModel(sessionID, model)) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
                 is ApiResult.Success -> Unit
             }
         }
@@ -218,7 +225,7 @@ class ChatViewModel(
         // in-flight flag is set synchronously on the main thread to close that window.
         if (text.isEmpty() || _state.value.busy || sendInFlight) return
         val repo = repository ?: run {
-            _state.value = _state.value.copy(error = "Engine is not running")
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
             return
         }
 
@@ -250,7 +257,7 @@ class ChatViewModel(
             repo.send(text)
         }
         when (result) {
-            is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+            is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
             is ApiResult.Success -> clearSentDraft(text)
         }
     }
@@ -271,13 +278,13 @@ class ChatViewModel(
     /** Surfaces a control-API failure instead of swallowing it. */
     private fun reportFailure(result: ApiResult<*>) {
         if (result is ApiResult.Failure) {
-            _state.value = _state.value.copy(error = result.describe())
+            _state.value = _state.value.copy(failure = result)
         }
     }
 
     private suspend fun createSession(repo: ChatRepository): String? {
         val h = handle ?: return null
-        _state.value = _state.value.copy(connecting = true, error = null)
+        _state.value = _state.value.copy(connecting = true, failure = null, failureKey = null)
         val result = h.sessions.create(workspace())
         _state.value = _state.value.copy(connecting = false)
         return when (result) {
@@ -296,7 +303,7 @@ class ChatViewModel(
                 result.value.id
             }
             is ApiResult.Failure -> {
-                _state.value = _state.value.copy(error = result.describe())
+                _state.value = _state.value.copy(failure = result)
                 null
             }
         }
@@ -306,7 +313,7 @@ class ChatViewModel(
         val repo = repository ?: return
         viewModelScope.launch {
             when (val result = repo.interrupt()) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
                 is ApiResult.Success -> _state.value = _state.value.copy(busy = false)
             }
         }
@@ -323,7 +330,7 @@ class ChatViewModel(
         val repo = repository ?: return
         viewModelScope.launch {
             when (val result = repo.replyPermission(decision)) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
                 is ApiResult.Success -> Unit
             }
         }
@@ -343,13 +350,13 @@ class ChatViewModel(
                         sessionID = chat.sessionID,
                         messages = chat.toUiMessages(),
                         busy = chat.busy,
-                        error = chat.lastError,
+                        failure = chat.lastFailure,
                         pendingPermission = chat.pendingPermission,
                     )
                 }
             }
         }
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), error = null)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null)
     }
 
     /** Loads an existing session. */
@@ -381,7 +388,7 @@ class ChatViewModel(
     fun currentSessionID(): String? = _state.value.sessionID
 
     fun dismissError() {
-        _state.value = _state.value.copy(error = null)
+        _state.value = _state.value.copy(failure = null, failureKey = null)
     }
 
     override fun onCleared() {

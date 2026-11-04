@@ -3,7 +3,7 @@ package dev.bidzz.opencode.ui.providers
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
-import dev.bidzz.opencode.api.describe
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.CredentialEntry
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
@@ -22,7 +22,12 @@ data class ProvidersUiState(
     val loading: Boolean = false,
     /** Provider currently being saved, so only its row shows progress. */
     val busyFor: String? = null,
-    val error: String? = null,
+    /** What went wrong, as a value; the screen words it in the app’s language. */
+    val failure: ApiResult.Failure? = null,
+    /** A message with no failure behind it, e.g. a config file that would be shadowed. */
+    val failureKey: Int? = null,
+    /** The new key saved but the old one could not be removed. */
+    val staleKeyRemains: Boolean = false,
     /** Name of the provider most recently connected, for a transient confirmation. */
     val connected: String? = null,
     /** Transient result of deleting a key, which may have disconnected the provider. */
@@ -56,7 +61,7 @@ class ProvidersViewModel(
             customProviders = runCatching { configStore.customProviders() }.getOrDefault(emptyList()),
         )
         val h = api.handle() ?: return
-        _state.value = _state.value.copy(loading = true, error = null)
+        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null)
         viewModelScope.launch { reload(h) }
     }
 
@@ -64,12 +69,12 @@ class ProvidersViewModel(
     fun saveKey(integrationID: String, key: String) {
         if (key.isBlank()) return
         val h = api.handle() ?: return
-        _state.value = _state.value.copy(busyFor = integrationID, error = null, connected = null, notice = null)
+        _state.value = _state.value.copy(busyFor = integrationID, failure = null, failureKey = null, connected = null, notice = null)
         viewModelScope.launch {
             when (val result = h.credentialStore.createKey(integrationID, key.trim())) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
                     busyFor = null,
-                    error = result.describe(),
+                    failure = result,
                 )
                 is ApiResult.Success -> {
                     val name = providerName(integrationID)
@@ -90,12 +95,12 @@ class ProvidersViewModel(
     fun deleteCredential(integrationID: String, credentialID: String) {
         val h = api.handle() ?: return
         val name = providerName(integrationID)
-        _state.value = _state.value.copy(busyFor = credentialID, error = null, connected = null, notice = null)
+        _state.value = _state.value.copy(busyFor = credentialID, failure = null, failureKey = null, connected = null, notice = null)
         viewModelScope.launch {
             when (val result = h.credentialStore.remove(credentialID)) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
                     busyFor = null,
-                    error = result.describe(),
+                    failure = result,
                 )
                 is ApiResult.Success -> {
                     reload(h)
@@ -118,21 +123,23 @@ class ProvidersViewModel(
         if (key.isBlank()) return
         val h = api.handle() ?: return
         val name = providerName(integrationID)
-        _state.value = _state.value.copy(busyFor = credentialID, error = null, connected = null, notice = null)
+        _state.value = _state.value.copy(busyFor = credentialID, failure = null, failureKey = null, connected = null, notice = null)
         viewModelScope.launch {
             when (val created = h.credentialStore.createKey(integrationID, key.trim())) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
                     busyFor = null,
-                    error = created.describe(),
+                    failure = created,
                 )
                 is ApiResult.Success -> {
+                    // The old key outliving the new one is a warning, not a failure: the new
+                    // key did save. Remembered separately so the screen can say both.
                     val stale = (h.credentialStore.remove(credentialID) as? ApiResult.Failure)
-                        ?.let { "New key saved for $name, but the old one is still stored: ${it.describe()}" }
                     reload(h)
                     _state.value = _state.value.copy(
                         busyFor = null,
                         connected = name,
-                        error = stale ?: _state.value.error,
+                        failure = _state.value.failure,
+                        staleKeyRemains = stale != null,
                     )
                 }
             }
@@ -149,7 +156,7 @@ class ProvidersViewModel(
         val trimmedName = name.trim()
         val id = EngineConfigStore.slug(trimmedName)
         val models = EngineConfigStore.parseModels(modelsText)
-        _state.value = _state.value.copy(busyFor = id, error = null, connected = null, notice = null)
+        _state.value = _state.value.copy(busyFor = id, failure = null, failureKey = null, connected = null, notice = null)
 
         val outcome = runCatching {
             configStore.putOpenAICompatible(id, trimmedName, baseURL.trim(), apiKey.trim(), models)
@@ -158,16 +165,15 @@ class ProvidersViewModel(
         if (written == null) {
             _state.value = _state.value.copy(
                 busyFor = null,
-                error = outcome.exceptionOrNull()?.message ?: "Could not write the config file",
+                failureKey = R.string.providers_config_write_failed,
             )
             return
         }
         _state.value = _state.value.copy(
             busyFor = null,
             connected = trimmedName,
-            error = if (written is EngineConfigStore.WriteResult.Shadowed) {
-                "Saved, but an `opencode.jsonc` beside it takes precedence. The engine " +
-                    "will read that file instead of this one."
+            failureKey = if (written is EngineConfigStore.WriteResult.Shadowed) {
+                R.string.providers_config_shadowed
             } else {
                 null
             },
@@ -194,15 +200,15 @@ class ProvidersViewModel(
             )
             is ApiResult.Failure -> _state.value = _state.value.copy(
                 loading = false,
-                error = result.describe(),
+                failure = result,
             )
         }
         when (val result = h.credentialStore.list()) {
             is ApiResult.Success -> _state.value = _state.value.copy(credentials = result.value, loading = false)
             // Only reported when it is the first failure, so it does not hide the
             // catalog error that already explains an unreachable engine.
-            is ApiResult.Failure -> if (_state.value.error == null) {
-                _state.value = _state.value.copy(loading = false, error = result.describe())
+            is ApiResult.Failure -> if (_state.value.failure == null && _state.value.failureKey == null) {
+                _state.value = _state.value.copy(loading = false, failure = result)
             }
         }
     }

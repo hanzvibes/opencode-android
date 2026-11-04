@@ -22,6 +22,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.files.DiffUiState
 
 /**
@@ -48,7 +49,8 @@ fun DiffScreen(
         when {
             state.loading -> Centered(stringResource(R.string.diff_loading))
             state.gitUnavailable -> Centered(stringResource(R.string.diff_git_unavailable))
-            state.error != null -> Centered(state.error)
+            state.failure != null -> Centered(state.failure.message())
+            state.failureKey != null -> Centered(stringResource(state.failureKey))
             state.hunks.isEmpty() -> Centered(stringResource(R.string.diff_none))
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),

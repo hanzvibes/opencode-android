@@ -82,7 +82,8 @@ class EngineApi(private val workspaceDirectory: () -> String) {
 
 /** Formats an API failure for the diagnostics screen. */
 fun ApiResult.Failure.describe(): String = buildString {
-    append(display)
+    append(reason.name)
     if (code != 0) append(" [HTTP $code]")
     if (tag != null) append(" [").append(tag).append(']')
+    if (!message.isNullOrBlank()) append(" ").append(message)
 }

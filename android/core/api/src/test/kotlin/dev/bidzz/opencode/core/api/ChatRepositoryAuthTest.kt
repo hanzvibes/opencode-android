@@ -51,15 +51,18 @@ class ChatRepositoryAuthTest {
             val repository = ChatRepository(SessionApi(client), EventStream(client), scope)
             repository.open("s1")
 
-            val error = runBlocking {
+            // A rejected stream is reported as a failure value, not as a sentence: the
+            // screen words it, and this layer has no Context to know the language.
+            val failure = runBlocking {
                 withTimeoutOrNull(20_000) {
-                    while (repository.state.value.lastError == null) delay(25)
-                    repository.state.value.lastError
+                    while (repository.state.value.lastFailure == null) delay(25)
+                    repository.state.value.lastFailure
                 }
             }
 
-            assertNotNull(error)
-            assertTrue(error!!, "401" in error)
+            assertNotNull(failure)
+            assertEquals(FailureReason.LOST_CONNECTION, failure!!.reason)
+            assertEquals(401, failure.code)
             assertEquals(true, scope.coroutineContext[Job]?.isActive)
         } finally {
             scope.cancel()

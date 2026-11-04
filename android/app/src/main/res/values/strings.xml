@@ -41,6 +41,22 @@
     <string name="settings_section_engine">Engine</string>
     <string name="settings_diag_title">Diagnostics</string>
     <string name="settings_diag_body">Engine is %1$s. Log, credentials, runtime paths.</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_about_title">About the developer</string>
+    <string name="settings_about_body">Portfolio and ways to get in touch.</string>
+
+    <!-- About the developer -->
+    <string name="about_title">About the developer</string>
+    <string name="about_role">Student · Explorer · Builder</string>
+    <string name="about_bio">A student exploring web development, OSINT, digital security, and reverse engineering, driven by curiosity for how systems really work.</string>
+    <string name="about_section_links">Find me</string>
+    <string name="about_portfolio">Portfolio</string>
+    <string name="about_telegram">Telegram</string>
+    <string name="about_instagram">Instagram</string>
+    <string name="about_github">GitHub</string>
+    <string name="about_email">Email</string>
+    <string name="about_open_failed">Nothing on this device can open that link.</string>
+    <string name="about_version">OpenCode Android %1$s</string>
 
     <!-- Chat -->
     <string name="chat_menu">Menu</string>
@@ -204,4 +220,39 @@
     <string name="diag_section_paths">Paths</string>
     <string name="diag_section_output">Engine output (this process)</string>
     <string name="diag_section_log">Engine log (on disk)</string>
+
+    <!-- Tool timeline verbs. Present while the tool runs, past once it has finished.
+         "step_target" joins a verb to a file name or command; a language that needs the
+         target first reorders the arguments here, not in the code. -->
+    <string name="step_target">%1$s %2$s</string>
+    <string name="step_read_present">Reading</string>
+    <string name="step_read_past">Read</string>
+    <string name="step_write_present">Writing</string>
+    <string name="step_write_past">Wrote</string>
+    <string name="step_edit_present">Editing</string>
+    <string name="step_edit_past">Edited</string>
+    <string name="step_run_present">Running</string>
+    <string name="step_run_past">Ran</string>
+    <string name="step_search_present">Searching</string>
+    <string name="step_search_past">Searched</string>
+    <string name="step_list_present">Listing</string>
+    <string name="step_list_past">Listed</string>
+    <string name="step_fetch_present">Fetching</string>
+    <string name="step_fetch_past">Fetched</string>
+
+    <!-- Engine and API failures. Shown inline in the screen that hit them. -->
+    <string name="error_engine_not_running">Engine is not running</string>
+    <string name="error_no_session">No session open</string>
+    <string name="error_no_pending_permission">No pending permission request</string>
+    <string name="error_lost_connection">Lost connection to the engine (HTTP %1$d). Reopen the session.</string>
+    <string name="error_unauthorized">Engine rejected the credentials</string>
+    <string name="error_location_missing">Project folder is no longer available</string>
+    <string name="error_session_missing">Session no longer exists</string>
+    <string name="error_unreachable">Cannot reach the engine</string>
+    <string name="error_request_failed">Request failed (%1$d)</string>
+    <string name="error_binary_file">Binary file (%1$d bytes)</string>
+    <string name="error_reread_failed">Could not re-read the file to check whether it changed, so nothing was overwritten.</string>
+    <string name="providers_config_write_failed">Could not write the config file</string>
+    <string name="providers_config_shadowed">Saved, but an `opencode.jsonc` beside it takes precedence. The engine will read that file instead of this one.</string>
+    <string name="providers_stale_key">New key saved for %1$s, but the old one is still stored.</string>
 </resources>

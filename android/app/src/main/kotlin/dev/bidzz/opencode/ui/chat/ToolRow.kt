@@ -166,7 +166,7 @@ fun ToolStep(call: ToolCall, isLast: Boolean, modifier: Modifier = Modifier) {
             ) {
                 GlyphIcon(label.glyph, tint = if (active) colors.accent else colors.onSurfaceMuted, size = 14.dp)
                 Text(
-                    text = label.text,
+                    text = label.text(),
                     style = OpenCodeTypography.bodySmall,
                     color = if (active) colors.accent else colors.onSurface,
                     maxLines = 1,

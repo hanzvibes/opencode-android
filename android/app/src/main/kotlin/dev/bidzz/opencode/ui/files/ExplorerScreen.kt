@@ -37,6 +37,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconBadge
+import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
@@ -105,7 +106,8 @@ fun ExplorerScreen(
 
         when {
             state.loading -> Centered(stringResource(R.string.common_loading))
-            state.error != null -> Centered(state.error, isError = true)
+            state.failure != null -> Centered(state.failure.message(), isError = true)
+            state.failureKey != null -> Centered(stringResource(state.failureKey), isError = true)
             state.rows.isEmpty() -> EmptyFolder()
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),

@@ -49,6 +49,7 @@ import dev.bidzz.opencode.core.design.Status
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
+import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import kotlinx.coroutines.launch
 
@@ -188,9 +189,13 @@ fun ChatScreen(
                                 )
                             }
                         }
-                        if (state.error != null) {
+                        if (state.failure != null || state.failureKey != null) {
                             item(key = "error") {
-                                MessageBubble(role = Role.ERROR, markdown = state.error)
+                                MessageBubble(
+                                    role = Role.ERROR,
+                                    markdown = state.failure?.message()
+                                        ?: stringResource(state.failureKey!!),
+                                )
                             }
                         }
                     }

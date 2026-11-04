@@ -39,7 +39,8 @@ data class ChatState(
     /** Text of the assistant message currently streaming, keyed by message id. */
     val streaming: Map<String, String> = emptyMap(),
     val busy: Boolean = false,
-    val lastError: String? = null,
+    /** What went wrong, as a value: the screen words it in the app's language. */
+    val lastFailure: ApiResult.Failure? = null,
     /** Active permission request waiting for the operator to reply. */
     val pendingPermission: PendingPermission? = null,
     /** Tool calls seen on the stream this run, keyed by call id. Cleared on resync. */
@@ -100,7 +101,11 @@ class ChatRepository(
             } catch (e: EventStreamAuthException) {
                 // Uncaught, this would take down the whole scope instead of one chat.
                 _state.value = _state.value.copy(
-                    lastError = "Lost connection to the engine (HTTP ${e.code}). Reopen the session.",
+                    lastFailure = ApiResult.Failure(
+                        code = e.code,
+                        tag = "LostConnection",
+                        message = null,
+                    ),
                 )
             }
         }
@@ -136,12 +141,12 @@ class ChatRepository(
                     // a rejected permission aborts the run without ever writing an
                     // `idle` message, so an idle-only check spins "Working" forever.
                     busy = newest != null && !newest.isIdle && newest.time?.completed == null,
-                    lastError = null,
+                    lastFailure = null,
                 )
             }
             is ApiResult.Failure -> {
-                Log.w(TAG, "resync failed: ${result.display}")
-                _state.value = _state.value.copy(lastError = result.display)
+                Log.w(TAG, "resync failed: ${result.message}")
+                _state.value = _state.value.copy(lastFailure = result)
             }
         }
     }
@@ -154,7 +159,7 @@ class ChatRepository(
      * screen responds immediately.
      */
     suspend fun send(text: String): ApiResult<Unit> {
-        val id = sessionID ?: return ApiResult.Failure(code = -1, message = "No session open")
+        val id = sessionID ?: return ApiResult.Failure(code = -1, tag = "NoSession")
         val result = sessionApi.prompt(id, text)
         if (result is ApiResult.Success) {
             // The admit response may carry no text; what the user typed is known here, so
@@ -165,10 +170,10 @@ class ChatRepository(
             _state.value = _state.value.copy(
                 messages = _state.value.messages + shown,
                 busy = true,
-                lastError = null,
+                lastFailure = null,
             )
         } else if (result is ApiResult.Failure) {
-            _state.value = _state.value.copy(lastError = result.display)
+            _state.value = _state.value.copy(lastFailure = result)
         }
         return when (result) {
             is ApiResult.Success -> ApiResult.Success(Unit)
@@ -177,12 +182,12 @@ class ChatRepository(
     }
 
     suspend fun setModel(model: ModelRef): ApiResult<Unit> {
-        val id = sessionID ?: return ApiResult.Failure(code = -1, message = "No session open")
+        val id = sessionID ?: return ApiResult.Failure(code = -1, tag = "NoSession")
         return sessionApi.setModel(id, model)
     }
 
     suspend fun interrupt(): ApiResult<Unit> {
-        val id = sessionID ?: return ApiResult.Failure(code = -1, message = "No session open")
+        val id = sessionID ?: return ApiResult.Failure(code = -1, tag = "NoSession")
         return sessionApi.interrupt(id)
     }
 
@@ -196,14 +201,14 @@ class ChatRepository(
      */
     suspend fun replyPermission(decision: String, message: String? = null): ApiResult<Unit> {
         val pending = _state.value.pendingPermission
-            ?: return ApiResult.Failure(code = -1, message = "No pending permission request")
+            ?: return ApiResult.Failure(code = -1, tag = "NoPendingPermission")
         return when (val result = sessionApi.replyPermission(pending.sessionID, pending.id, decision, message)) {
             is ApiResult.Success -> {
                 _state.value = _state.value.copy(pendingPermission = null)
                 ApiResult.Success(Unit)
             }
             is ApiResult.Failure -> {
-                _state.value = _state.value.copy(lastError = result.display)
+                _state.value = _state.value.copy(lastFailure = result)
                 result
             }
         }
@@ -250,7 +255,7 @@ class ChatRepository(
                     ?.toSet()
                     .orEmpty()
                 _state.value = _state.value.copy(
-                    lastError = null,
+                    lastFailure = null,
                     // Stored so the UI can render the prompt and the operator can reply.
                     // The engine blocks the tool until this is answered.
                     pendingPermission = PendingPermission(

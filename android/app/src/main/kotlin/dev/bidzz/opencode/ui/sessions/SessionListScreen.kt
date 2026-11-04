@@ -32,6 +32,7 @@ import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
+import dev.bidzz.opencode.ui.message
 
 /**
  * Conversation history.
@@ -77,7 +78,8 @@ fun SessionListScreen(
 
         when {
             state.loading -> CenteredMessage(stringResource(R.string.history_loading))
-            state.error != null -> CenteredMessage(state.error, isError = true)
+            state.failure != null -> CenteredMessage(state.failure.message(), isError = true)
+            state.failureKey != null -> CenteredMessage(stringResource(state.failureKey), isError = true)
             state.rows.isEmpty() -> CenteredMessage(stringResource(R.string.history_empty))
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),

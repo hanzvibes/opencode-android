@@ -2,8 +2,8 @@ package dev.bidzz.opencode.ui.files
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.api.EngineApi
-import dev.bidzz.opencode.api.describe
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.FileApi
 import dev.bidzz.opencode.core.api.VcsApi
@@ -36,7 +36,10 @@ data class ExplorerUiState(
     val currentPath: String = "",
     /** Breadcrumb segments, each with the path it navigates to. */
     val breadcrumbs: List<Crumb> = emptyList(),
-    val error: String? = null,
+    /** What went wrong, as a value; the screen words it in the app’s language. */
+    val failure: ApiResult.Failure? = null,
+    /** A message with no failure behind it, e.g. the engine never started. */
+    val failureKey: Int? = null,
     /** Files changed in the working tree, by relative path. */
     val changed: Map<String, VcsFileStatus> = emptyMap(),
     /** True when the project is a git repository the engine can read. */
@@ -71,7 +74,7 @@ class ExplorerViewModel(
 
     fun load() {
         val handle = api.handle() ?: run {
-            _state.value = _state.value.copy(loading = false, error = "Engine is not running")
+            _state.value = _state.value.copy(loading = false, failureKey = R.string.error_engine_not_running)
             return
         }
         val directory = workspace()
@@ -80,7 +83,7 @@ class ExplorerViewModel(
 
         _state.value = _state.value.copy(
             loading = true,
-            error = null,
+            failure = null, failureKey = null,
             currentPath = currentPath,
             breadcrumbs = buildCrumbs(currentPath),
         )
@@ -89,7 +92,7 @@ class ExplorerViewModel(
             val entries = when (val result = files.list(directory, currentPath)) {
                 is ApiResult.Success -> result.value
                 is ApiResult.Failure -> {
-                    _state.value = _state.value.copy(loading = false, error = result.describe())
+                    _state.value = _state.value.copy(loading = false, failure = result)
                     return@launch
                 }
             }
@@ -116,7 +119,7 @@ class ExplorerViewModel(
                     changed.isEmpty() -> VcsNote.NO_CHANGES
                     else -> null
                 },
-                error = null,
+                failure = null, failureKey = null,
             )
         }
     }
@@ -179,7 +182,7 @@ class FileViewViewModel(
 
     fun load(path: String) {
         val handle = api.handle() ?: run {
-            _state.value = FileViewState(loading = false, path = path, error = "Engine is not running")
+            _state.value = FileViewState(loading = false, path = path, failureKey = R.string.error_engine_not_running)
             return
         }
         _state.value = FileViewState(loading = true, path = path)
@@ -194,7 +197,7 @@ class FileViewViewModel(
                 is ApiResult.Failure -> _state.value = FileViewState(
                     loading = false,
                     path = path,
-                    error = result.describe(),
+                    failure = result,
                 )
             }
         }
@@ -202,7 +205,7 @@ class FileViewViewModel(
 
     fun startEditing() {
         val s = _state.value
-        if (s.loading || s.error != null || s.editing) return
+        if (s.loading || s.failure != null || s.failureKey != null || s.editing) return
         _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false)
     }
 
@@ -226,11 +229,11 @@ class FileViewViewModel(
         val s = _state.value
         if (!s.editing || s.saving) return
         val handle = api.handle() ?: run {
-            _state.value = s.copy(error = "Engine is not running")
+            _state.value = s.copy(failureKey = R.string.error_engine_not_running)
             return
         }
         val directory = workspace()
-        _state.value = s.copy(saving = true, error = null, conflict = false)
+        _state.value = s.copy(saving = true, failure = null, failureKey = null, conflict = false)
 
         viewModelScope.launch {
             val files = FileApi(handle.client)
@@ -245,8 +248,7 @@ class FileViewViewModel(
 
                 SaveAction.Unverifiable -> _state.value = _state.value.copy(
                     saving = false,
-                    error = "Could not re-read the file to check whether it changed, so nothing was " +
-                        "written. Your text is still here.",
+                    failureKey = R.string.error_reread_failed,
                 )
 
                 SaveAction.Conflict -> _state.value = _state.value.copy(
@@ -259,7 +261,7 @@ class FileViewViewModel(
                     // error would be worse than the error itself.
                     is ApiResult.Failure -> _state.value = _state.value.copy(
                         saving = false,
-                        error = result.describe(),
+                        failure = result,
                     )
                     is ApiResult.Success -> _state.value = _state.value.copy(
                         saving = false,
@@ -296,7 +298,10 @@ data class DiffUiState(
     val additions: Int = 0,
     val deletions: Int = 0,
     val truncated: Boolean = false,
-    val error: String? = null,
+    /** What went wrong, as a value; the screen words it in the app’s language. */
+    val failure: ApiResult.Failure? = null,
+    /** A message with no failure behind it, e.g. the engine never started. */
+    val failureKey: Int? = null,
     /** True when the engine has no git, so no diff can be produced. */
     val gitUnavailable: Boolean = false,
 )
@@ -311,7 +316,7 @@ class DiffViewModel(
 
     fun load(file: String) {
         val handle = api.handle() ?: run {
-            _state.value = _state.value.copy(loading = false, error = "Engine is not running")
+            _state.value = _state.value.copy(loading = false, failureKey = R.string.error_engine_not_running)
             return
         }
         _state.value = DiffUiState(loading = true, file = file)
@@ -329,7 +334,7 @@ class DiffViewModel(
                         _state.value = _state.value.copy(
                             loading = false,
                             gitUnavailable = !isRepo,
-                            error = if (isRepo) "No changes in $file" else null,
+                            failureKey = if (isRepo) R.string.diff_none else null,
                         )
                         return@launch
                     }
@@ -341,13 +346,13 @@ class DiffViewModel(
                         additions = info.additions,
                         deletions = info.deletions,
                         truncated = info.more == true,
-                        error = null,
+                        failure = null, failureKey = null,
                     )
                 }
                 is ApiResult.Failure -> {
                     _state.value = _state.value.copy(
                         loading = false,
-                        error = result.describe(),
+                        failure = result,
                         gitUnavailable = result.code == 404,
                     )
                 }

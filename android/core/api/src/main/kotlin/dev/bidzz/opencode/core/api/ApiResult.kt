@@ -28,23 +28,59 @@ sealed interface ApiResult<out T> {
         val isNetwork: Boolean get() = code == 0
 
         /**
-         * Short, user-facing description. Never leaks a stack trace.
+         * What went wrong, as a value the screen can word in the app's language.
          *
-         * The tag is checked before the status code because both
-         * `SessionNotFoundError` and `LocationNotFoundError` arrive as 404: routing
-         * on the code alone would tell the user their session vanished when in fact
+         * This used to be an English sentence, which forced every caller to show English no
+         * matter what language the app was set to. The tag is checked before the status code
+         * because both `SessionNotFoundError` and `LocationNotFoundError` arrive as 404:
+         * routing on the code alone would tell the user their session vanished when in fact
          * their project folder moved.
          */
-        val display: String
+        val reason: FailureReason
             get() = when {
-                isUnauthorized -> "Engine rejected the credentials"
-                isLocationMissing -> "Project folder is no longer available"
-                isSessionMissing -> "Session no longer exists"
-                isNetwork -> "Cannot reach the engine"
-                message != null -> message!!
-                else -> "Request failed ($code)"
+                // An explicit tag is more specific than the status code: a stream that was
+                // rejected mid-session is a lost connection, not a stale password.
+                isLostConnection -> FailureReason.LOST_CONNECTION
+                isBinaryFile -> FailureReason.BINARY_FILE
+                isNoSession -> FailureReason.NO_SESSION
+                isNoPendingPermission -> FailureReason.NO_PENDING_PERMISSION
+                isUnauthorized -> FailureReason.UNAUTHORIZED
+                isLocationMissing -> FailureReason.LOCATION_MISSING
+                isSessionMissing -> FailureReason.SESSION_MISSING
+                isNetwork -> FailureReason.UNREACHABLE
+                !message.isNullOrBlank() -> FailureReason.SERVER_MESSAGE
+                else -> FailureReason.REQUEST_FAILED
             }
+
+        /** The event stream rejected us mid-session; the socket is gone until it is reopened. */
+        val isLostConnection: Boolean get() = tag == "LostConnection"
+
+        /** Called before a session existed. The caller's bug, but the user sees it. */
+        val isNoSession: Boolean get() = tag == "NoSession"
+
+        /** A permission reply arrived with no request outstanding. */
+        val isNoPendingPermission: Boolean get() = tag == "NoPendingPermission"
+
+        /** The file is not text; [message] carries its size in bytes. */
+        val isBinaryFile: Boolean get() = tag == "BinaryFile"
     }
+}
+
+/** Why a call failed, without the words. The screen turns this into a sentence. */
+enum class FailureReason {
+    UNAUTHORIZED,
+    LOCATION_MISSING,
+    SESSION_MISSING,
+    UNREACHABLE,
+    /** The engine sent its own message; show it verbatim. */
+    SERVER_MESSAGE,
+    REQUEST_FAILED,
+    /** The event stream rejected us; the session has to be reopened. */
+    LOST_CONNECTION,
+    /** Nothing was open to act on. */
+    NO_SESSION,
+    NO_PENDING_PERMISSION,
+    BINARY_FILE,
 }
 
 /** Server error body: `{"_tag":"...","message":"..."}`. */

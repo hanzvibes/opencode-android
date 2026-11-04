@@ -61,9 +61,12 @@ class FileApi(private val client: EngineClient) {
                 }
                 val bytes = response.body?.bytes() ?: ByteArray(0)
                 if (looksBinary(bytes)) {
+                    // Tagged rather than worded: the screen knows the language, and the byte
+                    // count still reaches it through `code`'s sibling field.
                     return@withContext ApiResult.Failure(
                         code = -2,
-                        message = "Binary file (${bytes.size} bytes)",
+                        tag = "BinaryFile",
+                        message = bytes.size.toString(),
                     )
                 }
                 ApiResult.Success(bytes.toString(Charsets.UTF_8))

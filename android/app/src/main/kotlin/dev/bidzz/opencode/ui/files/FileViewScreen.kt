@@ -24,18 +24,23 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
+import dev.bidzz.opencode.ui.message
 
 /** State of one open file. */
 data class FileViewState(
     val loading: Boolean = true,
     val path: String = "",
     val content: String = "",
-    val error: String? = null,
+    /** What went wrong, as a value; the screen words it in the app's language. */
+    val failure: ApiResult.Failure? = null,
+    /** A message with no failure behind it, e.g. the engine never started. */
+    val failureKey: Int? = null,
     /** True while the content is in an editable field. */
     val editing: Boolean = false,
     /** What is in the field. Only meaningful while [editing]. */
@@ -98,7 +103,7 @@ fun FileViewScreen(
                     onClick = onCancelEdit,
                     enabled = !state.saving,
                 )
-            } else if (!state.loading && state.error == null) {
+            } else if (!state.loading && state.failure == null && state.failureKey == null) {
                 TextAction(label = stringResource(R.string.fileview_edit), onClick = onStartEdit)
             }
         },
@@ -106,9 +111,17 @@ fun FileViewScreen(
         when {
             state.loading -> Centered(stringResource(R.string.fileview_reading))
             state.editing -> Column(Modifier.fillMaxSize()) {
-                state.error?.let {
+                state.failure?.let {
                     Text(
-                        text = it,
+                        text = it.message(),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.danger,
+                        modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm),
+                    )
+                }
+                state.failureKey?.let {
+                    Text(
+                        text = stringResource(it),
                         style = OpenCodeTypography.bodySmall,
                         color = colors.danger,
                         modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm),
@@ -131,7 +144,8 @@ fun FileViewScreen(
                 )
             }
 
-            state.error != null -> Centered(state.error)
+            state.failure != null -> Centered(state.failure.message())
+            state.failureKey != null -> Centered(stringResource(state.failureKey))
             else -> SelectionContainer {
                 Column(
                     modifier = Modifier

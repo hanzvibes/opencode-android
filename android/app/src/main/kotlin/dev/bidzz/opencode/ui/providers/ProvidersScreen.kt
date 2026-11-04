@@ -42,6 +42,7 @@ import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.message
 
 /**
  * Provider catalog and API-key entry.
@@ -88,11 +89,27 @@ fun ProvidersScreen(
                 )
             }
 
-            state.error?.let {
+            state.failure?.let {
                 Text(
-                    text = it,
+                    text = it.message(),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.danger,
+                )
+            }
+
+            state.failureKey?.let {
+                Text(
+                    text = stringResource(it),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.danger,
+                )
+            }
+
+            if (state.staleKeyRemains) {
+                Text(
+                    text = stringResource(R.string.providers_stale_key, state.connected.orEmpty()),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.warning,
                 )
             }
 

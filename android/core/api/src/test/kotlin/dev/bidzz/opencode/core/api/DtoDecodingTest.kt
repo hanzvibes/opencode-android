@@ -128,7 +128,7 @@ class DtoDecodingTest {
 
         val failure = ApiResult.Failure(code = 404, tag = parsed.tag, message = parsed.message)
         assertTrue(failure.isLocationMissing)
-        assertEquals("Project folder is no longer available", failure.display)
+        assertEquals(FailureReason.LOCATION_MISSING, failure.reason)
     }
 
     @Test
