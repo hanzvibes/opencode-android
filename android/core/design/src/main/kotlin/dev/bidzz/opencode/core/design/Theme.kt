@@ -24,6 +24,8 @@ data class OpenCodeColors(
     val surfaceRaised: Color,
     /** Recedes instead of raising: code blocks, inline code. */
     val surfaceSunken: Color,
+    /** Neutral fill a step above [surfaceRaised]: inactive chips, the user bubble. */
+    val surfaceVariant: Color,
     val onSurface: Color,
     val onSurfaceMuted: Color,
     val onSurfaceFaint: Color,
@@ -31,7 +33,7 @@ data class OpenCodeColors(
     val accent: Color,
     val onAccent: Color,
     val userBubble: Color,
-    /** Text on [userBubble]; differs by theme because the light bubble is solid blue. */
+    /** Text on [userBubble]. */
     val onUserBubble: Color,
     val success: Color,
     val warning: Color,
@@ -60,6 +62,7 @@ private val DarkColors = OpenCodeColors(
     surface = Palette.darkSurface,
     surfaceRaised = Palette.darkSurfaceRaised,
     surfaceSunken = Palette.darkSurfaceSunken,
+    surfaceVariant = Palette.darkSurfaceVariant,
     onSurface = Palette.darkOnSurface,
     onSurfaceMuted = Palette.darkOnSurfaceMuted,
     onSurfaceFaint = Palette.darkOnSurfaceFaint,
@@ -83,6 +86,7 @@ private val LightColors = OpenCodeColors(
     surface = Palette.lightSurface,
     surfaceRaised = Palette.lightSurfaceRaised,
     surfaceSunken = Palette.lightSurfaceSunken,
+    surfaceVariant = Palette.lightSurfaceVariant,
     onSurface = Palette.lightOnSurface,
     onSurfaceMuted = Palette.lightOnSurfaceMuted,
     onSurfaceFaint = Palette.lightOnSurfaceFaint,

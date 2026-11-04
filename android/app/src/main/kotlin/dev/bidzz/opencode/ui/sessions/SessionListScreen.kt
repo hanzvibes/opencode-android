@@ -193,7 +193,7 @@ private fun ScopeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(radius.full))
-            .background(if (selected) colors.accent.copy(alpha = 0.16f) else colors.surfaceSunken)
+            .background(if (selected) colors.accent.copy(alpha = 0.16f) else colors.surfaceVariant)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = spacing.md, vertical = spacing.xs + spacing.xxs),
     ) {

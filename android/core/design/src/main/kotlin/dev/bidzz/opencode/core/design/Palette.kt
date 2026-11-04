@@ -3,79 +3,88 @@ package dev.bidzz.opencode.core.design
 import androidx.compose.ui.graphics.Color
 
 /**
- * Colour palette.
+ * Colour palette: the single place a raw colour value is allowed to appear.
  *
- * Dark and light are designed separately, not inverted. `plan.md` §12 requires
- * this: inverting produces surfaces that sit at the wrong elevation and text that
- * passes contrast in one theme but not the other.
+ * The brand is three colours sampled from the logo: Graphite, Ivory, and Electric Lime.
+ * Everything else is a neutral ramp built from them. Screens read semantic roles from
+ * `OpenCodeTheme.colors`, never from here.
  *
- * The palette is restrained on purpose. One accent carries all interactive meaning;
- * everything else is a neutral ramp. Status colours are muted — a developer tool
- * should not look like a dashboard with traffic lights.
+ * Dark is the primary brand experience. Light is designed separately, not inverted: it
+ * puts Ivory under white cards, and swaps the lime for a deeper green wherever the accent
+ * is used as text or an icon, because lime on a light surface is unreadable.
+ *
+ * Electric Lime is used selectively (primary actions, selection, the active step) and never
+ * as a large fill or a glow. Status colours are muted: a developer tool should not look like
+ * a dashboard with traffic lights.
  */
 object Palette {
 
-    // ---- Dark: the default. A coding tool is used in low light. ----
+    // ---- Brand ----
 
-    /** App background, furthest back. Not pure black: pure black makes borders invisible. */
-    val darkBackground = Color(0xFF0B0D10)
+    val graphite = Color(0xFF08090D)
+    val ivory = Color(0xFFF6F2EE)
+    val electricLime = Color(0xFFB3F834)
 
-    /** Default surface: message area, sheets. */
-    val darkSurface = Color(0xFF12151A)
+    // ---- Dark: the primary experience. ----
 
-    /** Raised surface: top bar, composer, cards. One step above [darkSurface]. */
-    val darkSurfaceRaised = Color(0xFF181C22)
+    /** App background, furthest back. The logo's own field. */
+    val darkBackground = graphite
 
-    /** Inset surface: code blocks, inline code. Recedes rather than raises. */
-    val darkSurfaceSunken = Color(0xFF0E1116)
+    /** Default surface: cards, top bar. */
+    val darkSurface = Color(0xFF111318)
 
-    /** Primary text. Off-white, not #FFFFFF, to avoid halation on dark backgrounds. */
-    val darkOnSurface = Color(0xFFE6E9EF)
+    /** Elevated surface: sheets, menus, the composer. One step above [darkSurface]. */
+    val darkSurfaceRaised = Color(0xFF1B1E24)
 
-    /** Secondary text: timestamps, hints, metadata. */
-    val darkOnSurfaceMuted = Color(0xFF9AA3B0)
+    /** Inset surface: code blocks, fields. Sits between the background and [darkSurface]. */
+    val darkSurfaceSunken = Color(0xFF0D0F13)
 
-    /** Placeholders and small labels. 4.9:1 on the surface, so it stays readable (WCAG AA). */
-    val darkOnSurfaceFaint = Color(0xFF7C8594)
+    /** Chips and the user bubble: a neutral step above [darkSurfaceRaised]. */
+    val darkSurfaceVariant = Color(0xFF252932)
 
-    /** Hairline separators. Low contrast by design; borders should whisper. */
-    val darkOutline = Color(0xFF232830)
+    /** Primary text. */
+    val darkOnSurface = ivory
 
-    /** Accent: the only saturated colour in the UI. */
-    val darkAccent = Color(0xFF4C8DFF)
+    /** Secondary text. */
+    val darkOnSurfaceMuted = Color(0xFFB8B8B5)
 
-    /** Text/icon on top of [darkAccent]. */
-    val darkOnAccent = Color(0xFF06121F)
+    /** Placeholders and small labels. Nudged from the brand's #777D86 to clear 4.5:1 (WCAG AA) on the surface. */
+    val darkOnSurfaceFaint = Color(0xFF7A808A)
 
-    /** User message bubble fill. A tint of the accent, dark enough for body text. */
-    val darkUserBubble = Color(0xFF1B2735)
+    /** Hairline separators. */
+    val darkOutline = Color(0xFF30343D)
+
+    /** The accent: the only saturated colour in the UI. */
+    val darkAccent = electricLime
+
+    /** Text and icons on top of [darkAccent]. */
+    val darkOnAccent = graphite
+
+    /** User message bubble: neutral, so lime stays reserved for actions. */
+    val darkUserBubble = darkSurfaceVariant
+    val darkOnUserBubble = ivory
 
     // ---- Light ----
 
-    // Light follows the soft grey-blue look of the Mika app: a tinted background with
-    // white surfaces on top, and a solid blue user bubble.
-
-    val lightBackground = Color(0xFFEEF1F7)
+    val lightBackground = ivory
     val lightSurface = Color(0xFFFFFFFF)
     val lightSurfaceRaised = Color(0xFFFFFFFF)
-    val lightSurfaceSunken = Color(0xFFE3E8F1)
+    val lightSurfaceSunken = Color(0xFFECE8E2)
+    val lightSurfaceVariant = Color(0xFFE6E2DB)
 
-    val lightOnSurface = Color(0xFF14181F)
-    val lightOnSurfaceMuted = Color(0xFF5A6575)
-    /** 5.5:1 on white and 4.8:1 on the tinted background; the previous value was under 3:1. */
-    val lightOnSurfaceFaint = Color(0xFF5F6A7A)
+    val lightOnSurface = graphite
+    val lightOnSurfaceMuted = Color(0xFF55585E)
+    /** 4.6:1 on Ivory, 5.4:1 on white. */
+    val lightOnSurfaceFaint = Color(0xFF6A6E75)
 
-    val lightOutline = Color(0xFFDCE2EC)
+    val lightOutline = Color(0xFFDAD5CD)
 
-    val lightAccent = Color(0xFF2F6BEB)
+    /** Electric Lime darkened until it reads as text and icons on Ivory and white (5:1 on white). */
+    val lightAccent = Color(0xFF4F7A00)
     val lightOnAccent = Color(0xFFFFFFFF)
 
-    /** Solid blue, white text on top. */
-    val lightUserBubble = Color(0xFF2F6BEB)
-    val lightOnUserBubble = Color(0xFFFFFFFF)
-
-    /** Dark keeps its tinted bubble, so text stays the normal body colour. */
-    val darkOnUserBubble = Color(0xFFE6E9EF)
+    val lightUserBubble = lightSurfaceVariant
+    val lightOnUserBubble = graphite
 
     // ---- Status. Muted, same hue logic in both themes. ----
 
