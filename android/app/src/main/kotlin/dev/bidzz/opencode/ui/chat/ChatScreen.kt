@@ -172,6 +172,19 @@ fun ChatScreen(
                                 ),
                             )
                         }
+                        // Until the first reply token arrives, the only sign of life is this line
+                        // under the user's own bubble; once the reply streams it has its spinner.
+                        if (state.busy && state.messages.lastOrNull()?.role == Role.USER) {
+                            item(key = "working") {
+                                Text(
+                                    text = "Working…",
+                                    style = OpenCodeTypography.label,
+                                    color = colors.onSurfaceMuted,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
                         if (state.error != null) {
                             item(key = "error") {
                                 MessageBubble(role = Role.ERROR, markdown = state.error)
