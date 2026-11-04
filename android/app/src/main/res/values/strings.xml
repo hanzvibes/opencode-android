@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Common -->
+    <string name="common_back">Back</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_save">Save</string>
+    <string name="common_refresh">Refresh</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_done">Done</string>
+    <string name="common_loading">Loading…</string>
+
+    <!-- Language names are written in their own language in every locale. -->
+    <string name="language_system">System default</string>
+    <string name="language_english">English</string>
+    <string name="language_indonesian">Bahasa Indonesia</string>
+
+    <!-- Engine state, lower case for use inside a sentence -->
+    <string name="engine_state_running">running</string>
+    <string name="engine_state_preparing">preparing</string>
+    <string name="engine_state_starting">starting</string>
+    <string name="engine_state_unhealthy">unhealthy</string>
+    <string name="engine_state_stopping">stopping</string>
+    <string name="engine_state_failed">failed</string>
+    <string name="engine_state_stopped">stopped</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_project">Project</string>
+    <string name="settings_project_folder">Project folder</string>
+    <string name="settings_all_files">All-files access</string>
+    <string name="settings_all_files_granted_hint">Folders outside the app can be used as a project.</string>
+    <string name="settings_all_files_missing_hint">Tap to grant. Needed to use folders outside the app.</string>
+    <string name="settings_granted">Granted</string>
+    <string name="settings_not_granted">Not granted</string>
+    <string name="settings_section_language">Language</string>
+    <string name="settings_language">App language</string>
+    <string name="settings_language_dialog_title">Choose language</string>
+    <string name="settings_section_provider">Provider</string>
+    <string name="settings_provider_title">Connect a provider</string>
+    <string name="settings_provider_body">Add an API key. Without one the agent is limited to opencode\'s free tier.</string>
+    <string name="settings_section_engine">Engine</string>
+    <string name="settings_diag_title">Diagnostics</string>
+    <string name="settings_diag_body">Engine is %1$s. Log, credentials, runtime paths.</string>
+
+    <!-- Chat -->
+    <string name="chat_menu">Menu</string>
+    <string name="chat_new_session">New session</string>
+    <string name="chat_jump_latest">Jump to latest message</string>
+    <string name="chat_working">Working…</string>
+    <string name="chat_status_working">Working</string>
+    <string name="chat_status_ready">Ready</string>
+    <string name="chat_status_preparing">Preparing</string>
+    <string name="chat_status_starting">Starting</string>
+    <string name="chat_status_unhealthy">Unhealthy</string>
+    <string name="chat_status_stopping">Stopping</string>
+    <string name="chat_status_failed">Failed</string>
+    <string name="chat_status_stopped">Stopped</string>
+    <string name="empty_title_ready">What are we working on?</string>
+    <string name="empty_title_starting">Starting engine…</string>
+    <string name="empty_starting_body">The local engine is starting. This takes a few seconds.</string>
+    <string name="suggestion_structure">Explain how this project is structured</string>
+    <string name="suggestion_bug">Find the cause of a bug</string>
+    <string name="suggestion_review">Review the latest changes</string>
+    <string name="suggestion_tests">Write tests for a file</string>
+    <string name="drawer_files">Files</string>
+    <string name="drawer_project">Project</string>
+    <string name="drawer_recent">Recent</string>
+    <string name="drawer_no_sessions">No sessions yet</string>
+    <string name="drawer_untitled">Untitled</string>
+    <string name="drawer_all_sessions">All sessions</string>
+    <string name="composer_not_ready">Engine is not ready</string>
+    <string name="composer_busy">Agent is working…</string>
+    <string name="composer_hint">Ask anything about this project</string>
+    <string name="composer_send">Send</string>
+    <string name="composer_stop">Stop</string>
+    <string name="permission_title">Permission required</string>
+    <string name="permission_allow_once">Allow once</string>
+    <string name="permission_always">Always</string>
+    <string name="permission_reject">Reject</string>
+    <string name="bubble_thinking">Thinking…</string>
+    <string name="tool_steps_one">%1$d step</string>
+    <string name="tool_steps_other">%1$d steps</string>
+    <string name="tool_failed">· %1$d failed</string>
+    <string name="tool_working">· working</string>
+    <string name="tool_input">Input</string>
+    <string name="tool_output">Output</string>
+    <string name="tool_error">Error</string>
+    <string name="code_label">code</string>
+    <string name="code_download">Download</string>
+    <string name="code_saved">Saved</string>
+    <string name="code_copy">Copy</string>
+    <string name="code_copied">Copied</string>
+
+    <!-- Project -->
+    <string name="project_current">Current</string>
+    <string name="project_grant_text">To work on a folder outside the app, grant all-files access. The engine needs a real file path, which only works with that permission.</string>
+    <string name="project_grant_button">Grant file access</string>
+    <string name="project_choose">Choose another folder…</string>
+    <string name="project_internal_note">The app\'s own folder (%1$s) is always available and needs no permission.</string>
+    <string name="project_unavailable">%1$s (unavailable)</string>
+
+    <!-- Files -->
+    <string name="files_up">Up one folder</string>
+    <string name="files_diff">Diff (%1$d)</string>
+    <string name="files_empty">This folder is empty.</string>
+    <string name="files_root">Root</string>
+    <string name="files_note_not_repo">Not a git repository. Changes are not tracked.</string>
+    <string name="files_note_clean">Git repository with no uncommitted changes.</string>
+    <string name="age_now">just now</string>
+    <string name="age_minutes">%1$dm ago</string>
+    <string name="age_hours">%1$dh ago</string>
+    <string name="age_days">%1$dd ago</string>
+    <string name="age_months">%1$dmo ago</string>
+    <string name="files_status_added">Added</string>
+    <string name="files_status_modified">Modified</string>
+    <string name="files_status_deleted">Deleted</string>
+    <string name="fileview_lines">%1$d lines</string>
+    <string name="fileview_lines_unsaved">%1$d lines · unsaved</string>
+    <string name="fileview_saving">Saving…</string>
+    <string name="fileview_edit">Edit</string>
+    <string name="fileview_reading">Reading file…</string>
+    <string name="conflict_title">File changed while editing</string>
+    <string name="conflict_body">The file on disk is no longer the version this editor was opened with. The agent has probably written it. Nothing has been saved yet.\n\nOverwriting replaces the file with what is typed here. Reloading shows what is on disk and discards what is typed here.</string>
+    <string name="conflict_overwrite">Overwrite</string>
+    <string name="conflict_reload">Reload</string>
+    <string name="conflict_keep">Keep editing</string>
+
+    <!-- Diff -->
+    <string name="diff_loading">Loading diff…</string>
+    <string name="diff_git_unavailable">Git is not available in this build, so changes cannot be shown as a diff.\n\nThe file contents are still readable from the file list.</string>
+    <string name="diff_none">No changes to show.</string>
+    <string name="diff_truncated">Diff truncated by the engine.</string>
+    <string name="difflist_title">Changes (%1$d)</string>
+    <string name="difflist_empty">No changes in the working tree.\n\nEither the agent has not edited anything yet, or git is not available.</string>
+
+    <!-- History -->
+    <string name="history_title">History</string>
+    <string name="history_new">New</string>
+    <string name="history_this_project">This project</string>
+    <string name="history_all_projects">All projects</string>
+    <string name="history_loading">Loading conversations…</string>
+    <string name="history_empty">No conversations yet.\nSend a message to start one.</string>
+
+    <!-- Providers -->
+    <string name="providers_title">Providers</string>
+    <string name="providers_none_connected">No provider connected. Until one is, the agent runs on opencode\'s free tier, which stops after a short while. Add an API key below to use your own account.</string>
+    <string name="providers_connected_to">Connected to %1$s</string>
+    <string name="providers_custom_section">Custom endpoint</string>
+    <string name="providers_models_suffix"> · %1$d models</string>
+    <string name="providers_add_custom">Add a custom endpoint…</string>
+    <string name="providers_catalog">Catalog</string>
+    <string name="providers_loading">Loading providers…</string>
+    <string name="providers_no_match">No provider matches \"%1$s\".</string>
+    <string name="providers_keys_one">%1$d key · tap to manage</string>
+    <string name="providers_keys_other">%1$d keys · tap to manage</string>
+    <string name="providers_state_connected">connected</string>
+    <string name="providers_state_add_key">tap to add an API key</string>
+    <string name="providers_state_no_method">no API-key method</string>
+    <string name="providers_search">Search providers</string>
+    <string name="providers_badge_on">ON</string>
+    <string name="providers_key_title">API key for %1$s</string>
+    <string name="providers_key_body">Stored by the engine in its own database, inside the app\'s private storage. It is not written to any config file.</string>
+    <string name="providers_new_key_title">New key for %1$s</string>
+    <string name="providers_new_key_body">The new key is stored first and the old one is only removed after it is accepted, so a rejected key cannot leave the provider without one.</string>
+    <string name="providers_replace">Replace</string>
+    <string name="providers_paste_key">paste key</string>
+    <string name="providers_delete_title">Delete this key?</string>
+    <string name="providers_delete_body">%1$s (%2$s) will be removed from the engine\'s database.</string>
+    <string name="providers_delete_last">It is the only key for %1$s, which will stop working until another is added.</string>
+    <string name="providers_keys_for">Keys for %1$s</string>
+    <string name="providers_manage_body">The engine keeps these in its own database. The key itself is never read back into the app, so rows are identified by their id.</string>
+    <string name="providers_in_use">IN USE</string>
+    <string name="providers_add_another">Add another key</string>
+    <string name="providers_custom_title">Custom endpoint</string>
+    <string name="providers_custom_body">For any OpenAI-compatible API. The engine reads this at startup, so it restarts when you save.</string>
+    <string name="providers_field_name">Display name</string>
+    <string name="providers_field_name_hint">My provider</string>
+    <string name="providers_field_url">Base URL</string>
+    <string name="providers_field_key">API key</string>
+    <string name="providers_field_key_hint">Paste your key</string>
+    <string name="providers_field_models">Models, comma or line separated</string>
+    <string name="providers_field_models_hint">model-id = name shown in the picker</string>
+    <string name="providers_save_restart">Save &amp; restart</string>
+
+    <!-- Diagnostics. Field names (pid, baseUrl, filesDir) stay as they are: they are what a
+         value is called in a bug report, and translating them makes the report unsearchable. -->
+    <string name="diag_running">Running…</string>
+    <string name="diag_none">none</string>
+    <string name="diag_password_hidden">•••••• (tap to reveal)</string>
+    <string name="diag_linked">linked</string>
+    <string name="diag_missing">MISSING</string>
+    <string name="diag_no_so">(no .so in APK)</string>
+    <string name="diag_missing_suffix">(missing)</string>
+    <string name="diag_timeout">TIMEOUT after %1$d s</string>
+    <string name="diag_exit">exit %1$d: %2$s</string>
+    <string name="diag_no_output">no output</string>
+    <string name="diag_no_tools">(no tools declared)</string>
+    <string name="diag_tap_refresh">tap Refresh to run git --version and rg --version</string>
+    <string name="diag_probe_note">A probe failing with exit 126 / Permission denied means the SELinux label on the linked binary rejects exec. The tool must be reached through the symlink in toolBin, never copied into filesDir.</string>
+    <string name="diag_no_output_yet">(no output yet)</string>
+    <string name="diag_nothing_read">(nothing read, the file may not exist yet)</string>
+    <string name="diag_lines_newest_last">%1$d lines, newest last</string>
+    <string name="diag_section_tools">Tools</string>
+    <string name="diag_section_paths">Paths</string>
+    <string name="diag_section_output">Engine output (this process)</string>
+    <string name="diag_section_log">Engine log (on disk)</string>
+</resources>

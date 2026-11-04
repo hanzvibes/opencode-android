@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Common -->
+    <string name="common_back">Kembali</string>
+    <string name="common_cancel">Batal</string>
+    <string name="common_save">Simpan</string>
+    <string name="common_refresh">Segarkan</string>
+    <string name="common_delete">Hapus</string>
+    <string name="common_done">Selesai</string>
+    <string name="common_loading">Memuat…</string>
+
+    <string name="language_system">Ikuti sistem</string>
+    <string name="language_english">English</string>
+    <string name="language_indonesian">Bahasa Indonesia</string>
+
+    <!-- Engine state, lower case for use inside a sentence -->
+    <string name="engine_state_running">berjalan</string>
+    <string name="engine_state_preparing">bersiap</string>
+    <string name="engine_state_starting">sedang dimulai</string>
+    <string name="engine_state_unhealthy">bermasalah</string>
+    <string name="engine_state_stopping">sedang berhenti</string>
+    <string name="engine_state_failed">gagal</string>
+    <string name="engine_state_stopped">berhenti</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Pengaturan</string>
+    <string name="settings_section_project">Proyek</string>
+    <string name="settings_project_folder">Folder proyek</string>
+    <string name="settings_all_files">Akses semua file</string>
+    <string name="settings_all_files_granted_hint">Folder di luar aplikasi bisa dipakai sebagai proyek.</string>
+    <string name="settings_all_files_missing_hint">Ketuk untuk memberikan. Diperlukan untuk memakai folder di luar aplikasi.</string>
+    <string name="settings_granted">Diberikan</string>
+    <string name="settings_not_granted">Belum diberikan</string>
+    <string name="settings_section_language">Bahasa</string>
+    <string name="settings_language">Bahasa aplikasi</string>
+    <string name="settings_language_dialog_title">Pilih bahasa</string>
+    <string name="settings_section_provider">Penyedia</string>
+    <string name="settings_provider_title">Hubungkan penyedia</string>
+    <string name="settings_provider_body">Tambahkan kunci API. Tanpa kunci, agen hanya bisa memakai paket gratis opencode.</string>
+    <string name="settings_section_engine">Mesin</string>
+    <string name="settings_diag_title">Diagnostik</string>
+    <string name="settings_diag_body">Mesin %1$s. Log, kredensial, jalur runtime.</string>
+
+    <!-- Chat -->
+    <string name="chat_menu">Menu</string>
+    <string name="chat_new_session">Sesi baru</string>
+    <string name="chat_jump_latest">Ke pesan terbaru</string>
+    <string name="chat_working">Sedang bekerja…</string>
+    <string name="chat_status_working">Bekerja</string>
+    <string name="chat_status_ready">Siap</string>
+    <string name="chat_status_preparing">Bersiap</string>
+    <string name="chat_status_starting">Memulai</string>
+    <string name="chat_status_unhealthy">Bermasalah</string>
+    <string name="chat_status_stopping">Menghentikan</string>
+    <string name="chat_status_failed">Gagal</string>
+    <string name="chat_status_stopped">Berhenti</string>
+    <string name="empty_title_ready">Apa yang ingin dikerjakan?</string>
+    <string name="empty_title_starting">Memulai mesin…</string>
+    <string name="empty_starting_body">Mesin lokal sedang dimulai. Ini butuh beberapa detik.</string>
+    <string name="suggestion_structure">Jelaskan struktur proyek ini</string>
+    <string name="suggestion_bug">Cari penyebab sebuah bug</string>
+    <string name="suggestion_review">Tinjau perubahan terbaru</string>
+    <string name="suggestion_tests">Tulis tes untuk sebuah file</string>
+    <string name="drawer_files">File</string>
+    <string name="drawer_project">Proyek</string>
+    <string name="drawer_recent">Terbaru</string>
+    <string name="drawer_no_sessions">Belum ada sesi</string>
+    <string name="drawer_untitled">Tanpa judul</string>
+    <string name="drawer_all_sessions">Semua sesi</string>
+    <string name="composer_not_ready">Mesin belum siap</string>
+    <string name="composer_busy">Agen sedang bekerja…</string>
+    <string name="composer_hint">Tanyakan apa saja tentang proyek ini</string>
+    <string name="composer_send">Kirim</string>
+    <string name="composer_stop">Berhenti</string>
+    <string name="permission_title">Izin diperlukan</string>
+    <string name="permission_allow_once">Izinkan sekali</string>
+    <string name="permission_always">Selalu</string>
+    <string name="permission_reject">Tolak</string>
+    <string name="bubble_thinking">Berpikir…</string>
+    <string name="tool_steps_one">%1$d langkah</string>
+    <string name="tool_steps_other">%1$d langkah</string>
+    <string name="tool_failed">· %1$d gagal</string>
+    <string name="tool_working">· bekerja</string>
+    <string name="tool_input">Masukan</string>
+    <string name="tool_output">Keluaran</string>
+    <string name="tool_error">Galat</string>
+    <string name="code_label">kode</string>
+    <string name="code_download">Unduh</string>
+    <string name="code_saved">Tersimpan</string>
+    <string name="code_copy">Salin</string>
+    <string name="code_copied">Tersalin</string>
+
+    <!-- Project -->
+    <string name="project_current">Saat ini</string>
+    <string name="project_grant_text">Untuk mengerjakan folder di luar aplikasi, berikan akses semua file. Mesin membutuhkan jalur file yang sebenarnya, dan itu hanya bisa dengan izin tersebut.</string>
+    <string name="project_grant_button">Berikan akses file</string>
+    <string name="project_choose">Pilih folder lain…</string>
+    <string name="project_internal_note">Folder milik aplikasi (%1$s) selalu tersedia dan tidak membutuhkan izin.</string>
+    <string name="project_unavailable">%1$s (tidak tersedia)</string>
+
+    <!-- Files -->
+    <string name="files_up">Naik satu folder</string>
+    <string name="files_diff">Diff (%1$d)</string>
+    <string name="files_empty">Folder ini kosong.</string>
+    <string name="files_root">Root</string>
+    <string name="files_note_not_repo">Bukan repositori git. Perubahan tidak dilacak.</string>
+    <string name="files_note_clean">Repositori git tanpa perubahan yang belum di-commit.</string>
+    <string name="age_now">baru saja</string>
+    <string name="age_minutes">%1$d mnt lalu</string>
+    <string name="age_hours">%1$d jam lalu</string>
+    <string name="age_days">%1$d hari lalu</string>
+    <string name="age_months">%1$d bln lalu</string>
+    <string name="files_status_added">Ditambahkan</string>
+    <string name="files_status_modified">Diubah</string>
+    <string name="files_status_deleted">Dihapus</string>
+    <string name="fileview_lines">%1$d baris</string>
+    <string name="fileview_lines_unsaved">%1$d baris · belum disimpan</string>
+    <string name="fileview_saving">Menyimpan…</string>
+    <string name="fileview_edit">Ubah</string>
+    <string name="fileview_reading">Membaca file…</string>
+    <string name="conflict_title">File berubah saat diedit</string>
+    <string name="conflict_body">File di penyimpanan sudah bukan versi yang dibuka di editor ini. Kemungkinan agen telah menulisnya. Belum ada yang disimpan.\n\nMenimpa akan mengganti file dengan teks yang Anda ketik di sini. Memuat ulang akan menampilkan isi file di penyimpanan dan membuang teks yang Anda ketik di sini.</string>
+    <string name="conflict_overwrite">Timpa</string>
+    <string name="conflict_reload">Muat ulang</string>
+    <string name="conflict_keep">Lanjut mengedit</string>
+
+    <!-- Diff -->
+    <string name="diff_loading">Memuat diff…</string>
+    <string name="diff_git_unavailable">Git tidak tersedia di build ini, sehingga perubahan tidak bisa ditampilkan sebagai diff.\n\nIsi file tetap bisa dibaca dari daftar file.</string>
+    <string name="diff_none">Tidak ada perubahan untuk ditampilkan.</string>
+    <string name="diff_truncated">Diff dipotong oleh mesin.</string>
+    <string name="difflist_title">Perubahan (%1$d)</string>
+    <string name="difflist_empty">Tidak ada perubahan di working tree.\n\nAgen belum mengedit apa pun, atau git tidak tersedia.</string>
+
+    <!-- History -->
+    <string name="history_title">Riwayat</string>
+    <string name="history_new">Baru</string>
+    <string name="history_this_project">Proyek ini</string>
+    <string name="history_all_projects">Semua proyek</string>
+    <string name="history_loading">Memuat percakapan…</string>
+    <string name="history_empty">Belum ada percakapan.\nKirim pesan untuk memulai.</string>
+
+    <!-- Providers -->
+    <string name="providers_title">Penyedia</string>
+    <string name="providers_none_connected">Belum ada penyedia yang terhubung. Sebelum itu, agen memakai paket gratis opencode, yang berhenti setelah beberapa saat. Tambahkan kunci API di bawah untuk memakai akun Anda sendiri.</string>
+    <string name="providers_connected_to">Terhubung ke %1$s</string>
+    <string name="providers_custom_section">Endpoint kustom</string>
+    <string name="providers_models_suffix"> · %1$d model</string>
+    <string name="providers_add_custom">Tambah endpoint kustom…</string>
+    <string name="providers_catalog">Katalog</string>
+    <string name="providers_loading">Memuat penyedia…</string>
+    <string name="providers_no_match">Tidak ada penyedia yang cocok dengan \"%1$s\".</string>
+    <string name="providers_keys_one">%1$d kunci · ketuk untuk mengelola</string>
+    <string name="providers_keys_other">%1$d kunci · ketuk untuk mengelola</string>
+    <string name="providers_state_connected">terhubung</string>
+    <string name="providers_state_add_key">ketuk untuk menambah kunci API</string>
+    <string name="providers_state_no_method">tidak ada metode kunci API</string>
+    <string name="providers_search">Cari penyedia</string>
+    <string name="providers_badge_on">AKTIF</string>
+    <string name="providers_key_title">Kunci API untuk %1$s</string>
+    <string name="providers_key_body">Disimpan oleh mesin di databasenya sendiri, di dalam penyimpanan pribadi aplikasi. Tidak ditulis ke file konfigurasi mana pun.</string>
+    <string name="providers_new_key_title">Kunci baru untuk %1$s</string>
+    <string name="providers_new_key_body">Kunci baru disimpan lebih dulu, dan kunci lama baru dihapus setelah kunci baru diterima, sehingga kunci yang ditolak tidak membuat penyedia tanpa kunci.</string>
+    <string name="providers_replace">Ganti</string>
+    <string name="providers_paste_key">tempel kunci</string>
+    <string name="providers_delete_title">Hapus kunci ini?</string>
+    <string name="providers_delete_body">%1$s (%2$s) akan dihapus dari database mesin.</string>
+    <string name="providers_delete_last">Ini satu-satunya kunci untuk %1$s, yang akan berhenti berfungsi sampai kunci lain ditambahkan.</string>
+    <string name="providers_keys_for">Kunci untuk %1$s</string>
+    <string name="providers_manage_body">Mesin menyimpan kunci ini di databasenya sendiri. Isi kuncinya tidak pernah dibaca kembali ke aplikasi, jadi tiap baris dikenali dari id-nya.</string>
+    <string name="providers_in_use">DIPAKAI</string>
+    <string name="providers_add_another">Tambah kunci lain</string>
+    <string name="providers_custom_title">Endpoint kustom</string>
+    <string name="providers_custom_body">Untuk API apa pun yang kompatibel dengan OpenAI. Mesin membaca ini saat mulai, jadi mesin dimulai ulang saat Anda menyimpan.</string>
+    <string name="providers_field_name">Nama tampilan</string>
+    <string name="providers_field_name_hint">Penyedia saya</string>
+    <string name="providers_field_url">URL dasar</string>
+    <string name="providers_field_key">Kunci API</string>
+    <string name="providers_field_key_hint">Tempel kunci Anda</string>
+    <string name="providers_field_models">Model, dipisah koma atau baris baru</string>
+    <string name="providers_field_models_hint">id-model = nama yang tampil di pemilih</string>
+    <string name="providers_save_restart">Simpan &amp; mulai ulang</string>
+
+    <!-- Diagnostik. Nama field (pid, baseUrl, filesDir) dibiarkan: itulah sebutan nilai di
+         laporan bug, dan menerjemahkannya membuat laporan tidak bisa dicari. -->
+    <string name="diag_running">Berjalan…</string>
+    <string name="diag_none">tidak ada</string>
+    <string name="diag_password_hidden">•••••• (ketuk untuk lihat)</string>
+    <string name="diag_linked">tertaut</string>
+    <string name="diag_missing">HILANG</string>
+    <string name="diag_no_so">(tidak ada .so di APK)</string>
+    <string name="diag_missing_suffix">(tidak ada)</string>
+    <string name="diag_timeout">TIMEOUT setelah %1$d dtk</string>
+    <string name="diag_exit">keluar %1$d: %2$s</string>
+    <string name="diag_no_output">tanpa keluaran</string>
+    <string name="diag_no_tools">(tidak ada tool dideklarasikan)</string>
+    <string name="diag_tap_refresh">ketuk Segarkan untuk menjalankan git --version dan rg --version</string>
+    <string name="diag_probe_note">Probe yang gagal dengan exit 126 / Permission denied berarti label SELinux pada biner tertaut menolak exec. Tool harus dijangkau lewat symlink di toolBin, tidak pernah disalin ke filesDir.</string>
+    <string name="diag_no_output_yet">(belum ada keluaran)</string>
+    <string name="diag_nothing_read">(belum terbaca, berkasnya mungkin belum ada)</string>
+    <string name="diag_lines_newest_last">%1$d baris, terbaru di akhir</string>
+    <string name="diag_section_tools">Alat</string>
+    <string name="diag_section_paths">Path</string>
+    <string name="diag_section_output">Keluaran engine (proses ini)</string>
+    <string name="diag_section_log">Log engine (di disk)</string>
+</resources>

@@ -2,7 +2,11 @@ package dev.bidzz.opencode.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import dev.bidzz.opencode.LanguageStore
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -147,6 +151,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // Back returns to the screen this one was opened from; from Chat it leaves the app.
     BackHandler(enabled = screen !is Screen.Chat) { screen = screen.parent() }
 
+    // The chosen language is applied here, over the whole tree, so switching it in Settings
+    // redraws every screen in place instead of restarting the activity.
+    val hostContext = LocalContext.current
+    var language by remember { mutableStateOf(LanguageStore.get(hostContext)) }
+    val localized = remember(language) { LanguageStore.wrap(hostContext, language) }
+
+    CompositionLocalProvider(
+        LocalContext provides localized,
+        LocalConfiguration provides localized.resources.configuration,
+        LocalAppContext provides localized,
+    ) {
     OpenCodeTheme {
         when (screen) {
             Screen.Chat -> ChatScreen(
@@ -238,6 +253,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
             Screen.Settings -> SettingsScreen(
                 app = app,
+                language = language,
+                onLanguageChange = { chosen ->
+                    LanguageStore.set(hostContext, chosen)
+                    language = chosen
+                },
                 onBack = { screen = Screen.Chat },
                 onDiagnostics = { screen = Screen.Diagnostics },
                 onProjects = { screen = Screen.Projects },
@@ -259,6 +279,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onBack = { screen = Screen.Chat },
             )
         }
+    }
     }
 }
 
