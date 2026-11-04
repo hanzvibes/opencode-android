@@ -22,7 +22,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import dev.bidzz.opencode.OpenCodeApplication
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.engine.EngineDiagnostics
@@ -79,9 +81,15 @@ fun DiagnosticsScreen(
     LaunchedEffect(Unit) { refresh() }
 
     ScreenScaffold(
-        title = "Diagnostics",
+        title = stringResource(R.string.settings_diag_title),
         onBack = onBack,
-        actions = { TextAction(if (running) "Running…" else "Refresh", refresh, enabled = !running) },
+        actions = {
+            TextAction(
+                stringResource(if (running) R.string.diag_running else R.string.common_refresh),
+                refresh,
+                enabled = !running,
+            )
+        },
     ) {
         SelectionContainer {
             Column(
@@ -91,47 +99,56 @@ fun DiagnosticsScreen(
                     .padding(spacing.lg),
             ) {
                 Line("state", status.state.name)
-                Line("pid", status.pid?.toString() ?: "none")
-                Line("port", status.port?.toString() ?: "none")
-                Line("baseUrl", status.credentials?.baseUrl ?: "none")
+                Line("pid", status.pid?.toString() ?: stringResource(R.string.diag_none))
+                Line("port", status.port?.toString() ?: stringResource(R.string.diag_none))
+                Line("baseUrl", status.credentials?.baseUrl ?: stringResource(R.string.diag_none))
                 Box(Modifier.clickable { showPassword = !showPassword }) {
                     Line(
                         "password",
-                        status.credentials?.password?.let { if (showPassword) it else "•••••• (tap to reveal)" } ?: "none",
+                        status.credentials?.password?.let {
+                            if (showPassword) it else stringResource(R.string.diag_password_hidden)
+                        } ?: stringResource(R.string.diag_none),
                     )
                 }
-                Line("error", status.lastError ?: "none")
+                Line("error", status.lastError ?: stringResource(R.string.diag_none))
                 Line("nativeLibraryDir", app.applicationInfo.nativeLibraryDir)
                 Line("filesDir", app.filesDir.absolutePath)
                 Line("workspace", app.workspaceStore.resolve().absolutePath)
                 Line("all-files", app.workspaceStore.hasAllFilesAccess().toString())
                 app.startupFailure?.let { Line("startupFailure", it) }
 
-                Section("TOOLS")
+                Section(stringResource(R.string.diag_section_tools))
                 if (tools.isEmpty()) {
-                    Body("(no tools declared)", colors.onSurfaceFaint)
+                    Body(stringResource(R.string.diag_no_tools), colors.onSurfaceFaint)
                 } else {
                     tools.forEach { tool ->
                         Line(
                             tool.name,
                             buildString {
-                                append(if (tool.resolves) "linked" else "MISSING")
+                                append(
+                                    stringResource(
+                                        if (tool.resolves) R.string.diag_linked else R.string.diag_missing,
+                                    ),
+                                )
                                 append(" -> ")
                                 append(tool.target)
-                                if (!tool.sourcePresent) append("  (no .so in APK)")
+                                if (!tool.sourcePresent) {
+                                    append("  ")
+                                    append(stringResource(R.string.diag_no_so))
+                                }
                             },
                             ok = tool.resolves,
                         )
                     }
                 }
                 if (probes.isEmpty() && !running) {
-                    Body("tap Refresh to run git --version and rg --version", colors.onSurfaceFaint)
+                    Body(stringResource(R.string.diag_tap_refresh), colors.onSurfaceFaint)
                 }
                 probes.forEach { probe ->
                     Line(
                         probe.command.substringAfterLast('/').substringBefore(' '),
                         when {
-                            probe.timedOut -> "TIMEOUT after 8s"
+                            probe.timedOut -> stringResource(R.string.diag_timeout, PROBE_TIMEOUT_SECONDS)
                             probe.exitCode == 0 ->
                                 // --version prints a block; the first line is the version, and
                                 // the rest only matters when something is missing.
@@ -143,40 +160,54 @@ fun DiagnosticsScreen(
                                         ?.trim()
                                     if (extra == null) head else "$head  ·  $extra"
                                 }
-                            else -> "exit ${probe.exitCode}: " +
-                                probe.output.trim().ifEmpty { "no output" }.replace('\n', ' ')
+                            else -> stringResource(
+                                R.string.diag_exit,
+                                probe.exitCode ?: 0,
+                                probe.output.trim().ifEmpty { stringResource(R.string.diag_no_output) }
+                                    .replace('\n', ' '),
+                            )
                         },
                         ok = probe.ok,
                     )
                 }
                 Body(
-                    text = "A probe failing with exit 126 / Permission denied means the " +
-                        "SELinux label on the linked binary rejects exec. The tool must be " +
-                        "reached through the symlink in toolBin, never copied into filesDir.",
+                    text = stringResource(R.string.diag_probe_note),
                     color = colors.onSurfaceFaint,
                 )
 
-                Section("PATHS")
-                diagnostics.paths().forEach { (label, value) -> Line(label, value) }
+                Section(stringResource(R.string.diag_section_paths))
+                diagnostics.paths().forEach { (label, value) ->
+                    // The engine reports a path, not whether the file is there; saying "(missing)"
+                    // is the screen's job, in the app's language.
+                    val suffix = if (label == "engineLog" && !diagnostics.engineLogFile.isFile) {
+                        " " + stringResource(R.string.diag_missing_suffix)
+                    } else {
+                        ""
+                    }
+                    Line(label, value + suffix)
+                }
 
-                Section("ENGINE OUTPUT (this process)")
+                Section(stringResource(R.string.diag_section_output))
                 if (status.recentOutput.isEmpty()) {
-                    Body("(no output yet)", colors.onSurfaceMuted)
+                    Body(stringResource(R.string.diag_no_output_yet), colors.onSurfaceMuted)
                 } else {
                     status.recentOutput.takeLast(40).forEach { line -> Mono(line) }
                 }
 
-                Section("ENGINE LOG (on disk)")
+                Section(stringResource(R.string.diag_section_log))
                 if (logLines.isEmpty()) {
-                    Body("(nothing read, the file may not exist yet)", colors.onSurfaceMuted)
+                    Body(stringResource(R.string.diag_nothing_read), colors.onSurfaceMuted)
                 } else {
-                    Body("${logLines.size} lines, newest last", colors.onSurfaceFaint)
+                    Body(stringResource(R.string.diag_lines_newest_last, logLines.size), colors.onSurfaceFaint)
                     logLines.takeLast(120).forEach { line -> Mono(line) }
                 }
             }
         }
     }
 }
+
+/** The probe's own timeout, so the message and the run cannot disagree about it. */
+private const val PROBE_TIMEOUT_SECONDS = 8
 
 @Composable
 private fun Section(title: String) {

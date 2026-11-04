@@ -48,7 +48,8 @@ class EngineDiagnostics(
 
     val toolBin: File = File(environment.root, "tools/bin")
 
-    private val engineLogFile: File =
+    /** The engine's log file. Public so a screen can say whether it exists yet, in its own language. */
+    val engineLogFile: File =
         File(File(File(environment.dataHome, "opencode"), "log"), "opencode.log")
 
     /** Which tools the APK was supposed to ship, and what is actually linked. */
@@ -134,7 +135,7 @@ class EngineDiagnostics(
         "engineHome" to environment.home.absolutePath,
         "configDir" to File(environment.configHome, "opencode").absolutePath,
         "dataDir" to File(environment.dataHome, "opencode").absolutePath,
-        "engineLog" to engineLogFile.absolutePath + if (engineLogFile.isFile) "" else " (missing)",
+        "engineLog" to engineLogFile.absolutePath,
         "toolBin" to toolBin.absolutePath,
         "workspace" to environment.workspace.absolutePath,
         "tmp" to environment.tmp.absolutePath,

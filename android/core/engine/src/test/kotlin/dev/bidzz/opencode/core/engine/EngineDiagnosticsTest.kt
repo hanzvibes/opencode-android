@@ -71,12 +71,16 @@ class EngineDiagnosticsTest {
     }
 
     @Test
-    fun pathsFlagALogThatDoesNotExistYet() {
+    fun pathsReportTheLogPathAndWhetherItExists() {
         val fixture = fixture()
         val reported = fixture.diagnostics.paths().first { it.first == "engineLog" }.second
-        assertTrue("expected a missing marker, got $reported", reported.endsWith("(missing)"))
+        // The path alone: whether to say "(missing)" is wording, and wording belongs to the
+        // screen, which knows the app's language. The fact the screen needs is `isFile`.
+        assertEquals(fixture.log.absolutePath, reported)
+        assertFalse(fixture.diagnostics.engineLogFile.isFile)
 
         fixture.log.writeText("hello\n")
+        assertTrue(fixture.diagnostics.engineLogFile.isFile)
         val present = fixture.diagnostics.paths().first { it.first == "engineLog" }.second
         assertEquals(fixture.log.absolutePath, present)
     }
