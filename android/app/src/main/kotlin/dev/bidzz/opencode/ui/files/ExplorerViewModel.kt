@@ -26,6 +26,9 @@ data class FileRow(
     val deletions: Int = 0,
 )
 
+/** Why the listing carries no change markers; the screen words it in the user's language. */
+enum class VcsNote { NOT_A_REPOSITORY, NO_CHANGES }
+
 data class ExplorerUiState(
     val loading: Boolean = true,
     val rows: List<FileRow> = emptyList(),
@@ -38,8 +41,8 @@ data class ExplorerUiState(
     val changed: Map<String, VcsFileStatus> = emptyMap(),
     /** True when the project is a git repository the engine can read. */
     val isRepository: Boolean = false,
-    /** Set when git is unavailable, so the UI can explain rather than show "clean". */
-    val vcsNote: String? = null,
+    /** Set when git says nothing useful, so the UI can explain rather than show "clean". */
+    val vcsNote: VcsNote? = null,
 ) {
     data class Crumb(val label: String, val path: String)
 }
@@ -109,8 +112,8 @@ class ExplorerViewModel(
                 changed = changed,
                 isRepository = isRepo,
                 vcsNote = when {
-                    !isRepo -> "Not a git repository. Changes are not tracked."
-                    changed.isEmpty() -> "Git repository with no uncommitted changes."
+                    !isRepo -> VcsNote.NOT_A_REPOSITORY
+                    changed.isEmpty() -> VcsNote.NO_CHANGES
                     else -> null
                 },
                 error = null,

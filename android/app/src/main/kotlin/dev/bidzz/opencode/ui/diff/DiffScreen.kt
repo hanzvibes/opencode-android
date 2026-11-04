@@ -16,7 +16,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.ScreenScaffold
@@ -44,13 +46,10 @@ fun DiffScreen(
         subtitle = if (state.hunks.isNotEmpty()) "+${state.additions} −${state.deletions}" else null,
     ) {
         when {
-            state.loading -> Centered("Loading diff…")
-            state.gitUnavailable -> Centered(
-                "Git is not available in this build, so changes cannot be shown as a diff.\n\n" +
-                    "The file contents are still readable from the file list.",
-            )
+            state.loading -> Centered(stringResource(R.string.diff_loading))
+            state.gitUnavailable -> Centered(stringResource(R.string.diff_git_unavailable))
             state.error != null -> Centered(state.error)
-            state.hunks.isEmpty() -> Centered("No changes to show.")
+            state.hunks.isEmpty() -> Centered(stringResource(R.string.diff_none))
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = spacing.sm),
@@ -75,7 +74,7 @@ fun DiffScreen(
                 if (state.truncated) {
                     item(key = "truncated") {
                         Text(
-                            text = "Diff truncated by the engine.",
+                            text = stringResource(R.string.diff_truncated),
                             style = OpenCodeTypography.label,
                             color = colors.onSurfaceFaint,
                             modifier = Modifier.padding(spacing.md),

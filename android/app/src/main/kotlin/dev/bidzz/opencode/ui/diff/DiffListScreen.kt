@@ -16,8 +16,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.VcsFileStatus
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -38,12 +40,11 @@ fun DiffListScreen(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    ScreenScaffold(title = "Changes (${changed.size})", onBack = onBack) {
+    ScreenScaffold(title = stringResource(R.string.difflist_title, changed.size), onBack = onBack) {
         if (changed.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    text = "No changes in the working tree.\n\n" +
-                        "Either the agent has not edited anything yet, or git is not available.",
+                    text = stringResource(R.string.difflist_empty),
                     style = OpenCodeTypography.body,
                     color = colors.onSurfaceMuted,
                     textAlign = TextAlign.Center,

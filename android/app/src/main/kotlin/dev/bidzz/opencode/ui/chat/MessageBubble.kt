@@ -15,7 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 
@@ -97,7 +99,7 @@ fun MessageBubble(
                     // Nothing yet: say so instead of showing an empty gap that looks
                     // like a broken message.
                     Text(
-                        text = "Thinking…",
+                        text = stringResource(R.string.bubble_thinking),
                         style = OpenCodeTypography.body,
                         color = colors.onSurfaceMuted,
                     )

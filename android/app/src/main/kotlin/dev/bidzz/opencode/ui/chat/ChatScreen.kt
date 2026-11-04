@@ -37,7 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import dev.bidzz.opencode.R
+import dev.bidzz.opencode.ui.sessions.label
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -177,7 +180,7 @@ fun ChatScreen(
                         if (state.busy && state.messages.lastOrNull()?.role == Role.USER) {
                             item(key = "working") {
                                 Text(
-                                    text = "Working…",
+                                    text = stringResource(R.string.chat_working),
                                     style = OpenCodeTypography.label,
                                     color = colors.onSurfaceMuted,
                                     textAlign = TextAlign.End,
@@ -267,7 +270,7 @@ private fun ChatHeader(
     ) {
         IconAction(
             glyph = Glyph.Menu,
-            description = "Menu",
+            description = stringResource(R.string.chat_menu),
             onClick = onMenu,
             modifier = Modifier.align(Alignment.CenterStart),
         )
@@ -308,7 +311,7 @@ private fun ChatHeader(
 
         IconAction(
             glyph = Glyph.NewChat,
-            description = "New session",
+            description = stringResource(R.string.chat_new_session),
             onClick = onNewSession,
             modifier = Modifier.align(Alignment.CenterEnd),
         )
@@ -357,10 +360,10 @@ private fun ChatDrawer(
                 modifier = Modifier.padding(horizontal = spacing.xl, vertical = spacing.xs),
             )
 
-            DrawerItem("New session", Glyph.NewChat, onNewSession, accent = true)
-            DrawerItem("Files", Glyph.File, onFiles)
-            DrawerItem("Project", Glyph.Folder, onProject)
-            DrawerItem("Settings", Glyph.Sliders, onSettings)
+            DrawerItem(stringResource(R.string.chat_new_session), Glyph.NewChat, onNewSession, accent = true)
+            DrawerItem(stringResource(R.string.drawer_files), Glyph.File, onFiles)
+            DrawerItem(stringResource(R.string.drawer_project), Glyph.Folder, onProject)
+            DrawerItem(stringResource(R.string.settings_title), Glyph.Sliders, onSettings)
 
             Box(
                 Modifier
@@ -371,14 +374,14 @@ private fun ChatDrawer(
             )
 
             Text(
-                text = "RECENT",
+                text = stringResource(R.string.drawer_recent).uppercase(),
                 style = OpenCodeTypography.label,
                 color = colors.onSurfaceFaint,
                 modifier = Modifier.padding(horizontal = spacing.xl, vertical = spacing.xs),
             )
             if (sessions.isEmpty()) {
                 Text(
-                    text = "No sessions yet",
+                    text = stringResource(R.string.drawer_no_sessions),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                     modifier = Modifier.padding(horizontal = spacing.xl, vertical = spacing.sm),
@@ -398,22 +401,24 @@ private fun ChatDrawer(
                         .padding(horizontal = spacing.xl, vertical = spacing.sm),
                 ) {
                     Text(
-                        text = row.title.ifBlank { "Untitled" },
+                        text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
                         style = OpenCodeTypography.body,
                         color = colors.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        text = row.age,
-                        style = OpenCodeTypography.label,
-                        color = colors.onSurfaceFaint,
-                    )
+                    row.age?.let { age ->
+                        Text(
+                            text = age.label(),
+                            style = OpenCodeTypography.label,
+                            color = colors.onSurfaceFaint,
+                        )
+                    }
                 }
             }
         }
 
-        DrawerItem("All sessions", Glyph.Search, onAllSessions)
+        DrawerItem(stringResource(R.string.drawer_all_sessions), Glyph.Search, onAllSessions)
     }
 }
 
@@ -446,6 +451,7 @@ private const val DRAWER_SESSIONS = 20
 @Composable
 private fun JumpToLatest(onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = OpenCodeTheme.colors
+    val label = stringResource(R.string.chat_jump_latest)
 
     Box(
         modifier = modifier
@@ -453,7 +459,7 @@ private fun JumpToLatest(onClick: () -> Unit, modifier: Modifier = Modifier) {
             .background(colors.surface, CircleShape)
             .border(0.5.dp, colors.outline, CircleShape)
             .clip(CircleShape)
-            .semantics { contentDescription = "Jump to latest message" }
+            .semantics { contentDescription = label }
             .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -481,14 +487,14 @@ private fun EmptyChat(engineReady: Boolean, onSuggestion: (String) -> Unit, modi
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = if (engineReady) "What are we working on?" else "Starting engine…",
+            text = stringResource(if (engineReady) R.string.empty_title_ready else R.string.empty_title_starting),
             style = OpenCodeTypography.title,
             color = colors.onSurface,
             textAlign = TextAlign.Center,
         )
         if (!engineReady) {
             Text(
-                text = "The local engine is starting. This takes a few seconds.",
+                text = stringResource(R.string.empty_starting_body),
                 style = OpenCodeTypography.body,
                 color = colors.onSurfaceMuted,
                 textAlign = TextAlign.Center,
@@ -499,7 +505,8 @@ private fun EmptyChat(engineReady: Boolean, onSuggestion: (String) -> Unit, modi
                 modifier = Modifier.padding(top = spacing.xl),
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
-                SUGGESTIONS.forEach { suggestion ->
+                SUGGESTIONS.forEach { suggestionRes ->
+                    val suggestion = stringResource(suggestionRes)
                     Text(
                         text = suggestion,
                         style = OpenCodeTypography.body,
@@ -519,10 +526,10 @@ private fun EmptyChat(engineReady: Boolean, onSuggestion: (String) -> Unit, modi
 }
 
 private val SUGGESTIONS = listOf(
-    "Explain how this project is structured",
-    "Find the cause of a bug",
-    "Review the latest changes",
-    "Write tests for a file",
+    R.string.suggestion_structure,
+    R.string.suggestion_bug,
+    R.string.suggestion_review,
+    R.string.suggestion_tests,
 )
 
 private fun dev.bidzz.opencode.core.engine.EngineState.toStatus(busy: Boolean): Status = when (this) {
@@ -535,12 +542,16 @@ private fun dev.bidzz.opencode.core.engine.EngineState.toStatus(busy: Boolean): 
     dev.bidzz.opencode.core.engine.EngineState.STOPPED -> Status.IDLE
 }
 
-private fun dev.bidzz.opencode.core.engine.EngineState.statusLabel(busy: Boolean): String = when (this) {
-    dev.bidzz.opencode.core.engine.EngineState.RUNNING -> if (busy) "Working" else "Ready"
-    dev.bidzz.opencode.core.engine.EngineState.INITIALIZING -> "Preparing"
-    dev.bidzz.opencode.core.engine.EngineState.STARTING -> "Starting"
-    dev.bidzz.opencode.core.engine.EngineState.DEGRADED -> "Unhealthy"
-    dev.bidzz.opencode.core.engine.EngineState.STOPPING -> "Stopping"
-    dev.bidzz.opencode.core.engine.EngineState.FAILED -> "Failed"
-    dev.bidzz.opencode.core.engine.EngineState.STOPPED -> "Stopped"
-}
+@Composable
+private fun dev.bidzz.opencode.core.engine.EngineState.statusLabel(busy: Boolean): String = stringResource(
+    when (this) {
+        dev.bidzz.opencode.core.engine.EngineState.RUNNING ->
+            if (busy) R.string.chat_status_working else R.string.chat_status_ready
+        dev.bidzz.opencode.core.engine.EngineState.INITIALIZING -> R.string.chat_status_preparing
+        dev.bidzz.opencode.core.engine.EngineState.STARTING -> R.string.chat_status_starting
+        dev.bidzz.opencode.core.engine.EngineState.DEGRADED -> R.string.chat_status_unhealthy
+        dev.bidzz.opencode.core.engine.EngineState.STOPPING -> R.string.chat_status_stopping
+        dev.bidzz.opencode.core.engine.EngineState.FAILED -> R.string.chat_status_failed
+        dev.bidzz.opencode.core.engine.EngineState.STOPPED -> R.string.chat_status_stopped
+    },
+)

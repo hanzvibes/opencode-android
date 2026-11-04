@@ -22,8 +22,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.ToolCall
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -72,14 +74,17 @@ fun ToolTrace(
                 color = colors.onSurfaceFaint,
             )
             Text(
-                text = "${tools.size} ${if (tools.size == 1) "step" else "steps"}",
+                text = stringResource(
+                    if (tools.size == 1) R.string.tool_steps_one else R.string.tool_steps_other,
+                    tools.size,
+                ),
                 style = OpenCodeTypography.label,
                 color = colors.onSurfaceMuted,
                 modifier = Modifier.padding(start = spacing.sm),
             )
             if (failed > 0) {
                 Text(
-                    text = "· $failed failed",
+                    text = stringResource(R.string.tool_failed, failed),
                     style = OpenCodeTypography.label,
                     color = colors.danger,
                     modifier = Modifier.padding(start = spacing.sm),
@@ -87,7 +92,7 @@ fun ToolTrace(
             }
             if (running.isNotEmpty()) {
                 Text(
-                    text = "· working",
+                    text = stringResource(R.string.tool_working),
                     style = OpenCodeTypography.label,
                     color = colors.warning,
                     modifier = Modifier.padding(start = spacing.sm),
@@ -170,9 +175,9 @@ fun ToolStep(call: ToolCall, isLast: Boolean, modifier: Modifier = Modifier) {
                 )
             }
             if (open) {
-                call.inputText?.let { Detail("INPUT", it) }
-                call.output?.let { Detail("OUTPUT", it.take(MAX_OUTPUT)) }
-                call.error?.let { Detail("ERROR", it, colors.danger) }
+                call.inputText?.let { Detail(stringResource(R.string.tool_input).uppercase(), it) }
+                call.output?.let { Detail(stringResource(R.string.tool_output).uppercase(), it.take(MAX_OUTPUT)) }
+                call.error?.let { Detail(stringResource(R.string.tool_error).uppercase(), it, colors.danger) }
             }
         }
     }

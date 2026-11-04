@@ -11,14 +11,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/** How long ago something happened, as a unit and a count; the screen words it in the user's language. */
+enum class AgeUnit { NOW, MINUTES, HOURS, DAYS, MONTHS }
+
+data class SessionAge(val unit: AgeUnit, val value: Int = 0)
+
 /** A session as the history list presents it. */
 data class SessionRow(
     val id: String,
+    /** Blank when the engine has not named the session yet; the screen shows a placeholder. */
     val title: String,
     /** Directory the session belongs to. */
     val directory: String?,
-    /** Human-readable age, e.g. "2h ago". */
-    val age: String,
+    /** Null when the engine has not stamped the session. */
+    val age: SessionAge?,
     val cost: String?,
 )
 
@@ -73,25 +79,25 @@ class SessionListViewModel(
 
 private fun SessionInfo.toRow(): SessionRow = SessionRow(
     id = id,
-    title = title?.takeIf { it.isNotBlank() } ?: "Untitled session",
+    title = title.orEmpty().trim(),
     directory = location?.directory,
     age = formatAge(time?.updated ?: time?.created),
     cost = cost?.takeIf { it > 0 }?.let { formatCost(it) },
 )
 
 /** Relative age from an epoch-millis timestamp. Coarse on purpose: exact seconds do not help. */
-internal fun formatAge(epochMillis: Long?, now: Long = System.currentTimeMillis()): String {
-    if (epochMillis == null || epochMillis <= 0) return ""
+internal fun formatAge(epochMillis: Long?, now: Long = System.currentTimeMillis()): SessionAge? {
+    if (epochMillis == null || epochMillis <= 0) return null
     val delta = (now - epochMillis).coerceAtLeast(0)
     val minutes = delta / 60_000
     val hours = minutes / 60
     val days = hours / 24
     return when {
-        minutes < 1 -> "just now"
-        minutes < 60 -> "${minutes}m ago"
-        hours < 24 -> "${hours}h ago"
-        days < 30 -> "${days}d ago"
-        else -> "${days / 30}mo ago"
+        minutes < 1 -> SessionAge(AgeUnit.NOW)
+        minutes < 60 -> SessionAge(AgeUnit.MINUTES, minutes.toInt())
+        hours < 24 -> SessionAge(AgeUnit.HOURS, hours.toInt())
+        days < 30 -> SessionAge(AgeUnit.DAYS, days.toInt())
+        else -> SessionAge(AgeUnit.MONTHS, (days / 30).toInt())
     }
 }
 

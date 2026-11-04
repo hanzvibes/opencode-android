@@ -30,6 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import dev.bidzz.opencode.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -168,15 +170,21 @@ private fun CodeBlock(language: String?, code: String) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = language ?: "code",
+                text = language ?: stringResource(R.string.code_label),
                 style = OpenCodeTypography.label,
                 color = colors.onSurfaceFaint,
                 modifier = Modifier.weight(1f),
             )
-            BlockAction(if (saved) "Saved" else "Download", done = saved) {
+            BlockAction(
+                stringResource(if (saved) R.string.code_saved else R.string.code_download),
+                done = saved,
+            ) {
                 saveAs.launch(suggestedFileName(language))
             }
-            BlockAction(if (copied) "Copied" else "Copy", done = copied) {
+            BlockAction(
+                stringResource(if (copied) R.string.code_copied else R.string.code_copy),
+                done = copied,
+            ) {
                 copyToClipboard(context, code)
                 copied = true
             }

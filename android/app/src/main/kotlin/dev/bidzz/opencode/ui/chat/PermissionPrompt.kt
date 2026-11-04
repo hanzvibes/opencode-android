@@ -15,7 +15,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -52,7 +54,7 @@ fun PermissionPrompt(
         verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         Text(
-            text = "Permission required",
+            text = stringResource(R.string.permission_title),
             style = OpenCodeTypography.label,
             color = colors.warning,
         )
@@ -78,21 +80,21 @@ fun PermissionPrompt(
             horizontalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
             PermissionAction(
-                label = "Allow once",
+                label = stringResource(R.string.permission_allow_once),
                 color = colors.accent,
                 onSurface = colors.onAccent,
                 onClick = { onReply("once") },
                 modifier = Modifier.weight(1f),
             )
             PermissionAction(
-                label = "Always",
+                label = stringResource(R.string.permission_always),
                 color = colors.surfaceSunken,
                 onSurface = colors.onSurface,
                 onClick = { onReply("always") },
                 modifier = Modifier.weight(1f),
             )
             PermissionAction(
-                label = "Reject",
+                label = stringResource(R.string.permission_reject),
                 color = colors.surfaceSunken,
                 onSurface = colors.danger,
                 onClick = { onReply("reject") },

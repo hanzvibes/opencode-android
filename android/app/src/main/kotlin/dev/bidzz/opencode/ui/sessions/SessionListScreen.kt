@@ -9,29 +9,37 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.Glyph
+import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
 
 /**
  * Conversation history.
  *
- * Each row shows what distinguishes it: the title the engine generated, how long
- * ago it ran, and its cost when non-zero. The directory is only shown when the
- * list is not already scoped to one project, otherwise every row repeats the same
- * path.
+ * The rows sit on one card, like the file listing, so the list reads as one group.
+ * Each row has the title the engine generated, and a quiet meta line with how long
+ * ago it ran, its directory (only when the list is not already scoped to one project),
+ * and its cost when non-zero.
  */
 @Composable
 fun SessionListScreen(
@@ -44,9 +52,9 @@ fun SessionListScreen(
     val spacing = OpenCodeTheme.tokens.spacing
 
     ScreenScaffold(
-        title = "History",
+        title = stringResource(R.string.history_title),
         onBack = onBack,
-        actions = { TextAction("New", onNewSession) },
+        actions = { TextAction(stringResource(R.string.history_new), onNewSession) },
     ) {
         // Scope toggle: the two useful views are "this project" and "everything".
         Row(
@@ -56,32 +64,36 @@ fun SessionListScreen(
             horizontalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
             ScopeChip(
-                label = "This project",
+                label = stringResource(R.string.history_this_project),
                 selected = state.filterDirectory != null,
                 onClick = onToggleScope,
             )
             ScopeChip(
-                label = "All projects",
+                label = stringResource(R.string.history_all_projects),
                 selected = state.filterDirectory == null,
                 onClick = onToggleScope,
             )
         }
 
         when {
-            state.loading -> CenteredMessage("Loading conversations…")
+            state.loading -> CenteredMessage(stringResource(R.string.history_loading))
             state.error != null -> CenteredMessage(state.error, isError = true)
-            state.rows.isEmpty() -> CenteredMessage(
-                "No conversations yet.\nSend a message to start one.",
-            )
+            state.rows.isEmpty() -> CenteredMessage(stringResource(R.string.history_empty))
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = spacing.lg, vertical = spacing.sm),
-                verticalArrangement = Arrangement.spacedBy(spacing.xxs),
+                contentPadding = PaddingValues(
+                    start = spacing.lg,
+                    end = spacing.lg,
+                    top = spacing.xs,
+                    bottom = spacing.xxl,
+                ),
             ) {
-                items(state.rows, key = { it.id }) { row ->
+                itemsIndexed(state.rows, key = { _, row -> row.id }) { index, row ->
                     SessionRowItem(
                         row = row,
                         showDirectory = state.filterDirectory == null,
+                        isFirst = index == 0,
+                        isLast = index == state.rows.lastIndex,
                         onClick = { onOpen(row) },
                     )
                 }
@@ -90,45 +102,82 @@ fun SessionListScreen(
     }
 }
 
+/** "5m ago" / "5 mnt lalu", worded in the app's current language. */
 @Composable
-private fun SessionRowItem(row: SessionRow, showDirectory: Boolean, onClick: () -> Unit) {
+fun SessionAge.label(): String = when (unit) {
+    AgeUnit.NOW -> stringResource(R.string.age_now)
+    AgeUnit.MINUTES -> stringResource(R.string.age_minutes, value)
+    AgeUnit.HOURS -> stringResource(R.string.age_hours, value)
+    AgeUnit.DAYS -> stringResource(R.string.age_days, value)
+    AgeUnit.MONTHS -> stringResource(R.string.age_months, value)
+}
+
+/** One session. First and last round the card's corners; the rest are square. */
+@Composable
+private fun SessionRowItem(
+    row: SessionRow,
+    showDirectory: Boolean,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onClick: () -> Unit,
+) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
+    val r = OpenCodeTheme.tokens.radius.lg
+    val shape = RoundedCornerShape(
+        topStart = if (isFirst) r else 0.dp,
+        topEnd = if (isFirst) r else 0.dp,
+        bottomStart = if (isLast) r else 0.dp,
+        bottomEnd = if (isLast) r else 0.dp,
+    )
+
+    val age = if (row.age != null) row.age.label() else null
+    val directory = row.directory
+        ?.takeIf { showDirectory }
+        ?.substringAfterLast('/')
+        ?.takeIf { it.isNotEmpty() }
+    val meta = listOfNotNull(age, directory, row.cost).joinToString(" · ")
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(radius.sm))
-            .clickable(onClick = onClick)
-            .padding(horizontal = spacing.sm, vertical = spacing.md),
+            .clip(shape)
+            .background(colors.surface),
     ) {
-        Text(
-            text = row.title,
-            style = OpenCodeTypography.body,
-            color = colors.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (!isFirst) RowDivider(inset = spacing.md)
         Row(
-            modifier = Modifier.padding(top = spacing.xxs),
-            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = spacing.md, vertical = spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (row.age.isNotEmpty()) {
-                Text(row.age, style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
-            }
-            if (showDirectory && row.directory != null) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = row.directory.substringAfterLast('/').ifEmpty { row.directory },
-                    style = OpenCodeTypography.label,
-                    color = colors.onSurfaceFaint,
-                    maxLines = 1,
+                    text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
+                    style = OpenCodeTypography.body,
+                    color = colors.onSurface,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (meta.isNotEmpty()) {
+                    Text(
+                        text = meta,
+                        style = OpenCodeTypography.label,
+                        color = colors.onSurfaceFaint,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = spacing.xxs),
+                    )
+                }
             }
-            if (row.cost != null) {
-                Text(row.cost, style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
-            }
+            GlyphIcon(
+                Glyph.ChevronRight,
+                tint = colors.onSurfaceFaint,
+                size = 18.dp,
+                modifier = Modifier.padding(start = spacing.sm),
+            )
         }
     }
 }
@@ -142,9 +191,9 @@ private fun ScopeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(radius.full))
-            .background(if (selected) colors.userBubble else colors.surfaceSunken)
-            .clickable(onClick = onClick)
-            .padding(horizontal = spacing.md, vertical = spacing.xs),
+            .background(if (selected) colors.accent.copy(alpha = 0.16f) else colors.surfaceSunken)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = spacing.md, vertical = spacing.xs + spacing.xxs),
     ) {
         Text(
             text = label,

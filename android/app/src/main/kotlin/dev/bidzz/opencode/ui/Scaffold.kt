@@ -24,12 +24,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 
@@ -48,7 +50,7 @@ fun ScreenScaffold(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     subtitleColor: Color? = null,
-    backLabel: String = "Back",
+    backLabel: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -69,7 +71,7 @@ fun ScreenScaffold(
                 .padding(horizontal = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconAction(Glyph.ArrowLeft, backLabel, onBack)
+            IconAction(Glyph.ArrowLeft, backLabel ?: stringResource(R.string.common_back), onBack)
             Column(
                 modifier = Modifier
                     .weight(1f)

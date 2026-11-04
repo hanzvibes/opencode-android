@@ -13,18 +13,20 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
 
@@ -76,7 +78,10 @@ fun FileViewScreen(
         title = state.path.substringAfterLast('/'),
         onBack = onBack,
         subtitle = if (shown.isNotEmpty()) {
-            shown.lines().size.toString() + " lines" + if (state.dirty) " · unsaved" else ""
+            stringResource(
+                if (state.dirty) R.string.fileview_lines_unsaved else R.string.fileview_lines,
+                shown.lines().size,
+            )
         } else {
             null
         },
@@ -84,18 +89,22 @@ fun FileViewScreen(
         actions = {
             if (state.editing) {
                 TextAction(
-                    label = if (state.saving) "Saving…" else "Save",
+                    label = stringResource(if (state.saving) R.string.fileview_saving else R.string.common_save),
                     onClick = onSave,
                     enabled = state.dirty && !state.saving,
                 )
-                TextAction(label = "Cancel", onClick = onCancelEdit, enabled = !state.saving)
+                TextAction(
+                    label = stringResource(R.string.common_cancel),
+                    onClick = onCancelEdit,
+                    enabled = !state.saving,
+                )
             } else if (!state.loading && state.error == null) {
-                TextAction(label = "Edit", onClick = onStartEdit)
+                TextAction(label = stringResource(R.string.fileview_edit), onClick = onStartEdit)
             }
         },
     ) {
         when {
-            state.loading -> Centered("Reading file…")
+            state.loading -> Centered(stringResource(R.string.fileview_reading))
             state.editing -> Column(Modifier.fillMaxSize()) {
                 state.error?.let {
                     Text(
@@ -132,7 +141,7 @@ fun FileViewScreen(
                 ) {
                     if (state.saved) {
                         Text(
-                            text = "Saved",
+                            text = stringResource(R.string.code_saved),
                             style = OpenCodeTypography.label,
                             color = colors.success,
                             modifier = Modifier.padding(bottom = spacing.sm),
@@ -150,28 +159,33 @@ fun FileViewScreen(
     }
 
     if (state.conflict && state.editing) {
-        AlertDialog(
+        LocalizedAlertDialog(
             onDismissRequest = onDismissConflict,
             title = {
-                Text("File changed while editing", style = OpenCodeTypography.title, color = colors.onSurface)
+                Text(
+                    stringResource(R.string.conflict_title),
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                )
             },
             text = {
                 Text(
-                    text = "The file on disk is no longer the version this editor was opened with. " +
-                        "The agent has probably written it. Nothing has been saved yet.\n\n" +
-                        "Overwriting replaces the file with what is typed here. Reloading shows what is " +
-                        "on disk and discards what is typed here.",
+                    text = stringResource(R.string.conflict_body),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
             },
             confirmButton = {
-                TextButton(onClick = onOverwrite) { Text("Overwrite", color = colors.danger) }
+                TextButton(onClick = onOverwrite) { Text(stringResource(R.string.conflict_overwrite), color = colors.danger) }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    TextButton(onClick = onReloadFromDisk) { Text("Reload", color = colors.onSurfaceMuted) }
-                    TextButton(onClick = onDismissConflict) { Text("Keep editing", color = colors.accent) }
+                    TextButton(onClick = onReloadFromDisk) {
+                        Text(stringResource(R.string.conflict_reload), color = colors.onSurfaceMuted)
+                    }
+                    TextButton(onClick = onDismissConflict) {
+                        Text(stringResource(R.string.conflict_keep), color = colors.accent)
+                    }
                 }
             },
         )

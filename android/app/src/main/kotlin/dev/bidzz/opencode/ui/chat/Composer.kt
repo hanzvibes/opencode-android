@@ -19,10 +19,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
@@ -83,11 +85,13 @@ fun Composer(
                         // While the agent runs the button is Stop and send() refuses, so the
                         // field only accumulates a draft for after the run.
                         Text(
-                            text = when {
-                                !enabled -> "Engine is not ready"
-                                busy -> "Agent is working…"
-                                else -> "Ask anything about this project"
-                            },
+                            text = stringResource(
+                                when {
+                                    !enabled -> R.string.composer_not_ready
+                                    busy -> R.string.composer_busy
+                                    else -> R.string.composer_hint
+                                },
+                            ),
                             style = OpenCodeTypography.input,
                             color = colors.onSurfaceFaint,
                         )
@@ -117,6 +121,7 @@ fun Composer(
 private fun ActionButton(busy: Boolean, canSend: Boolean, onClick: () -> Unit) {
     val colors = OpenCodeTheme.colors
     val active = busy || canSend
+    val label = stringResource(if (busy) R.string.composer_stop else R.string.composer_send)
 
     Box(
         modifier = Modifier
@@ -124,7 +129,7 @@ private fun ActionButton(busy: Boolean, canSend: Boolean, onClick: () -> Unit) {
             .clip(CircleShape)
             // The strongest neutral of the theme: near-black on light, near-white on dark.
             .background(if (active) colors.onSurface else colors.surfaceSunken)
-            .semantics { contentDescription = if (busy) "Stop" else "Send" }
+            .semantics { contentDescription = label }
             .clickable(enabled = active, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
