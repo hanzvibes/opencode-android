@@ -66,6 +66,7 @@ fun SettingsScreen(
     onDiagnostics: () -> Unit,
     onProjects: () -> Unit,
     onProviders: () -> Unit,
+    onAbout: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -128,6 +129,15 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_diag_title),
                     subtitle = stringResource(R.string.settings_diag_body, engineStateWord(status.state)),
                     onClick = onDiagnostics,
+                )
+            }
+
+            Section(R.string.settings_section_about) {
+                SettingsRow(
+                    glyph = Glyph.Info,
+                    title = stringResource(R.string.settings_about_title),
+                    subtitle = stringResource(R.string.settings_about_body),
+                    onClick = onAbout,
                 )
             }
         }

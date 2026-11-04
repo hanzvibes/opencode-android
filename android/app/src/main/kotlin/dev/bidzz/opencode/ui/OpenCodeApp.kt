@@ -18,6 +18,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.engine.EngineState
+import dev.bidzz.opencode.ui.about.AboutScreen
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatViewModel
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
@@ -56,6 +57,7 @@ internal sealed interface Screen {
     data object Settings : Screen
     data object Providers : Screen
     data object Diagnostics : Screen
+    data object About : Screen
 }
 
 /**
@@ -68,7 +70,7 @@ internal sealed interface Screen {
 internal fun Screen.parent(): Screen = when (this) {
     is Screen.FileView, Screen.DiffList -> Screen.Files
     is Screen.Diff -> Screen.DiffList
-    Screen.Providers -> Screen.Settings
+    Screen.Providers, Screen.About -> Screen.Settings
     else -> Screen.Chat
 }
 
@@ -262,6 +264,15 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onDiagnostics = { screen = Screen.Diagnostics },
                 onProjects = { screen = Screen.Projects },
                 onProviders = { screen = Screen.Providers },
+                onAbout = { screen = Screen.About },
+            )
+
+            Screen.About -> AboutScreen(
+                versionName = remember {
+                    runCatching { hostContext.packageManager.getPackageInfo(hostContext.packageName, 0).versionName }
+                        .getOrNull().orEmpty()
+                },
+                onBack = { screen = Screen.Settings },
             )
 
             Screen.Providers -> ProvidersScreen(

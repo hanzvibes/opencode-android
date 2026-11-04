@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 enum class Glyph {
     Menu, NewChat, ArrowUp, ArrowDown, ArrowLeft, ChevronDown, ChevronRight,
     File, Folder, Pencil, Terminal, Search, Globe, Sliders,
+    Send, Camera, Code, Mail, External, Info,
 }
 
 @Composable
@@ -96,6 +97,41 @@ fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp
                 drawCircle(tint, radius = 2.2f * u, center = Offset(9f * u, 7f * u))
                 drawCircle(tint, radius = 2.2f * u, center = Offset(15f * u, 12f * u))
                 drawCircle(tint, radius = 2.2f * u, center = Offset(8f * u, 17f * u))
+            }
+            // Paper plane: Telegram.
+            Glyph.Send -> {
+                shape(21f to 3f, 3f to 10.5f, 10f to 13.5f, close = true)
+                shape(21f to 3f, 10f to 13.5f, 13f to 21f, close = true)
+            }
+            Glyph.Camera -> {
+                drawRoundRect(
+                    tint, Offset(3.5f * u, 3.5f * u), Size(17f * u, 17f * u),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(5f * u), style = stroke,
+                )
+                drawCircle(tint, radius = 4f * u, center = Offset(12f * u, 12f * u), style = stroke)
+                drawCircle(tint, radius = 0.9f * u, center = Offset(17f * u, 7f * u))
+            }
+            Glyph.Code -> {
+                shape(8f to 7f, 3f to 12f, 8f to 17f)
+                shape(16f to 7f, 21f to 12f, 16f to 17f)
+                line(13.5f, 5f, 10.5f, 19f)
+            }
+            Glyph.Mail -> {
+                drawRoundRect(
+                    tint, Offset(3f * u, 5f * u), Size(18f * u, 14f * u),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5f * u), style = stroke,
+                )
+                shape(3.5f to 7f, 12f to 13f, 20.5f to 7f)
+            }
+            // Arrow leaving a box: "opens outside the app".
+            Glyph.External -> {
+                line(8f, 16f, 17f, 7f)
+                shape(9f to 7f, 17f to 7f, 17f to 15f)
+            }
+            Glyph.Info -> {
+                drawCircle(tint, radius = 9f * u, center = Offset(12f * u, 12f * u), style = stroke)
+                line(12f, 11f, 12f, 16.5f)
+                drawCircle(tint, radius = 0.9f * u, center = Offset(12f * u, 7.8f * u))
             }
         }
     }
