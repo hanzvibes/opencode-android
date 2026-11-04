@@ -213,31 +213,45 @@ class ChatViewModel(
     /** Sends the draft, creating a session first if there is none. */
     fun send() {
         val text = _state.value.draft.trim()
-        if (text.isEmpty() || _state.value.busy) return
+        // `busy` only flips once the engine reports it over the stream, and the draft is
+        // cleared after the reply, so rapid taps would each start their own send. The
+        // in-flight flag is set synchronously on the main thread to close that window.
+        if (text.isEmpty() || _state.value.busy || sendInFlight) return
         val repo = repository ?: run {
             _state.value = _state.value.copy(error = "Engine is not running")
             return
         }
 
+        sendInFlight = true
         viewModelScope.launch {
-            val sessionID = _state.value.sessionID ?: createSession(repo) ?: return@launch
-            if (repository?.state?.value?.sessionID != sessionID) {
-                repo.open(sessionID)
+            try {
+                sendNow(repo, text)
+            } finally {
+                sendInFlight = false
             }
-            // A leading slash is a command, not a prompt. The engine runs it and answers
-            // 204; the output arrives over the event stream exactly like a normal turn.
-            val result = if (text.startsWith("/")) {
-                val name = text.substring(1).substringBefore(' ')
-                val args = text.substringAfter(' ', "").trim()
-                handle?.commands?.run(sessionID, name, args)
-                    ?: ApiResult.Failure(code = -1, message = "Engine is not running")
-            } else {
-                repo.send(text)
-            }
-            when (result) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
-                is ApiResult.Success -> clearSentDraft(text)
-            }
+        }
+    }
+
+    private var sendInFlight = false
+
+    private suspend fun sendNow(repo: ChatRepository, text: String) {
+        val sessionID = _state.value.sessionID ?: createSession(repo) ?: return
+        if (repository?.state?.value?.sessionID != sessionID) {
+            repo.open(sessionID)
+        }
+        // A leading slash is a command, not a prompt. The engine runs it and answers
+        // 204; the output arrives over the event stream exactly like a normal turn.
+        val result = if (text.startsWith("/")) {
+            val name = text.substring(1).substringBefore(' ')
+            val args = text.substringAfter(' ', "").trim()
+            handle?.commands?.run(sessionID, name, args)
+                ?: ApiResult.Failure(code = -1, message = "Engine is not running")
+        } else {
+            repo.send(text)
+        }
+        when (result) {
+            is ApiResult.Failure -> _state.value = _state.value.copy(error = result.describe())
+            is ApiResult.Success -> clearSentDraft(text)
         }
     }
 
