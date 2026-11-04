@@ -3,6 +3,8 @@ package dev.bidzz.opencode.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -145,6 +149,11 @@ private fun CodeBlock(language: String?, code: String) {
     val radius = OpenCodeTheme.tokens.radius
     val context = LocalContext.current
     var copied by remember(code) { mutableStateOf(false) }
+    var saved by remember(code) { mutableStateOf(false) }
+    // The system "save as" screen picks the place; the app needs no storage permission.
+    val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        if (uri != null) saved = writeText(context, uri, code)
+    }
 
     Column(
         modifier = Modifier
@@ -164,7 +173,10 @@ private fun CodeBlock(language: String?, code: String) {
                 color = colors.onSurfaceFaint,
                 modifier = Modifier.weight(1f),
             )
-            CopyButton(copied = copied) {
+            BlockAction(if (saved) "Saved" else "Download", done = saved) {
+                saveAs.launch(suggestedFileName(language))
+            }
+            BlockAction(if (copied) "Copied" else "Copy", done = copied) {
                 copyToClipboard(context, code)
                 copied = true
             }
@@ -272,7 +284,7 @@ private fun TableBlock(table: MdBlock.Table) {
 }
 
 @Composable
-private fun CopyButton(copied: Boolean, onClick: () -> Unit) {
+private fun BlockAction(label: String, done: Boolean, onClick: () -> Unit) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
@@ -280,15 +292,24 @@ private fun CopyButton(copied: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(radius.xs))
-            .clickable(onClick = onClick)
-            .padding(horizontal = spacing.sm, vertical = spacing.xxs),
+            .clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 40.dp)
+            .padding(horizontal = spacing.sm),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = if (copied) "Copied" else "Copy",
+            text = label,
             style = OpenCodeTypography.label,
-            color = if (copied) colors.success else colors.onSurfaceMuted,
+            color = if (done) colors.success else colors.onSurfaceMuted,
         )
     }
+}
+
+/** Writes [text] to a document the user chose; false when it could not be written. */
+private fun writeText(context: Context, uri: android.net.Uri, text: String): Boolean = try {
+    context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) } != null
+} catch (_: java.io.IOException) {
+    false
 }
 
 private fun copyToClipboard(context: Context, text: String) {
