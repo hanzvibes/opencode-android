@@ -18,3 +18,6 @@ android/keystore.properties
 android/app/src/main/jniLibs/
 *.apk
 *.aab
+
+# uncompressed diagram source — README links the smaller .webp next to it
+logo/Arsitektur Proses Aplikasi OpenCode Android.png

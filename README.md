@@ -98,20 +98,9 @@ APKs are large (about 99 MB for arm64) because the engine is a self-contained bi
 
 ## How it works
 
-```
-┌──────────────────────────── Android app process ────────────────────────────┐
-│                                                                             │
-│   Jetpack Compose UI  ──►  core:api  ──HTTP + SSE (127.0.0.1)──┐            │
-│   chat · files · diffs     typed client, event stream          │            │
-│   providers · settings                                         ▼            │
-│          ▲                                          ┌───────────────────┐   │
-│          │                                          │  OpenCode engine  │   │
-│   EngineService (foreground)                        │  Bun, compiled to │   │
-│          │                                          │  android-arm64    │   │
-│          └──► core:engine · ProcessManager ────────►│  + git · ripgrep  │   │
-│               state machine, health, restart        └───────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+<img src="logo/Arsitektur%20Proses%20Aplikasi%20OpenCode%20Android.webp"
+     alt="Android app process: Jetpack Compose UI → core:api → HTTP + SSE on 127.0.0.1 → OpenCode engine (Bun, compiled to android-arm64, plus git and ripgrep), supervised by core:engine ProcessManager through the foreground EngineService"
+     width="900" />
 
 - **Engine.** Upstream `@opencode/*` **v2.2.2**, cross-compiled with Bun for
   `linux-arm64-android` and `linux-x64-android`, with a small set of documented
