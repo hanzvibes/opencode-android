@@ -54,24 +54,28 @@ jobs:
       - name: Configure for android-arm
         working-directory: ${{ github.workspace }}/node-v${{ env.NODE_VERSION }}
         run: |
+          # pipefail matters: `cmd | tail` reports tail's status, so a configure
+          # that fails would otherwise pass silently and the build would then fail
+          # 40 minutes later with an unrelated error.
+          set -o pipefail
           ./android-configure "$NDK_ROOT" "$ANDROID_API" arm 2>&1 | tail -30
           echo "--- configure result ---"
           # config.gypi holds the variables that actually drive the build. Checking
           # them is the difference between "the script printed Info: Configuring"
           # and "the build is really targeting arm".
+          #
+          # Only keys config.gypi actually contains are asserted. `v8_target_arch`
+          # and `host_os` are GYP_DEFINES consumed during generation; they are not
+          # written back, so requiring them here fails a configure that worked.
           python3 - <<'PY'
           import ast, sys
           raw = open('config.gypi', encoding='utf-8').read()
           cfg = ast.literal_eval(raw)['variables']
-          want = {
-              'target_arch': 'arm',
-              'v8_target_arch': 'arm',
-              'host_os': 'linux',
-              'OS': 'android',
-          }
+          want = {'target_arch': 'arm', 'OS': 'android'}
           bad = {k: cfg.get(k) for k, v in want.items() if cfg.get(k) != v}
           for k, v in want.items():
               print(f'{k} = {cfg.get(k)!r} (want {v!r})')
+          print('all keys present:', sorted(cfg))
           if bad:
               print('FAIL: configure did not target android-arm:', bad, file=sys.stderr)
               sys.exit(1)
