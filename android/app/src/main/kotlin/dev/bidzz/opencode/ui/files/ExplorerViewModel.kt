@@ -131,13 +131,16 @@ class ExplorerViewModel(
      * with many files hard to scan.
      */
     private fun sortEntries(entries: List<FsEntry>, changed: Map<String, VcsFileStatus>): List<FileRow> {
-        // Status paths are relative to the repository root, while entries are
-        // relative to the directory being shown.
-        val prefix = if (currentPath.isEmpty()) "" else "$currentPath/"
+        // `fs/list` returns each entry's `path` relative to the project root even when a
+        // `path=` subdirectory was requested — `?path=src` answers with `src/index.js`,
+        // not `index.js`. Prepending `currentPath` here therefore produced
+        // `src/src/index.js` and every file below the root failed to open (§2.66).
+        //
+        // Status paths are relative to the repository root, which is the same frame the
+        // entries are already in, so the lookup needs no adjustment either.
         return entries
             .map { entry ->
-                val relative = if (currentPath.isEmpty()) entry.path.trimEnd('/')
-                else "$prefix${entry.path.trimEnd('/')}"
+                val relative = entry.path.trimEnd('/')
                 val status = changed[relative]
                 FileRow(
                     path = relative,
