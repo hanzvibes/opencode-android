@@ -75,7 +75,20 @@ current list of known gaps.
 
 APKs are large (about 99 MB for arm64) because the engine is a self-contained binary.
 
-**Requirements:** Android 10 (API 29) or newer, and network access for cloud model providers.
+### What your phone needs
+
+| | Requirement | Why |
+|---|---|---|
+| **Android** | 10 (API 29) or newer | `minSdk` 29. Older releases are not supported. |
+| **CPU** | **arm64-v8a** | The arm64 APK is the one for phones. `x86_64` exists for emulators and x86 Chromebooks. |
+| **32-bit phones** | **Not supported** | There is no `armeabi-v7a` build, so a 32-bit-only device cannot install this at all. |
+| **Free space** | **About 350 MB** | 98.5 MB APK plus 225.8 MB of native libraries the installer extracts. The installer needs temporary space on top of that. |
+| **RAM** | **Not yet measured** | The engine is a 217 MB binary running a JIT runtime. Small-RAM phones are the likely cause of crashes, but we have no number yet, so we will not invent one. |
+| **Storage access** | All-files access | Required only if you want the agent to work on folders outside the app. |
+
+Android 15+ devices with 16 KB memory pages work: every bundled binary is 16 KB aligned.
+
+> **If the install fails,** the usual causes are the wrong APK (`x86_64` instead of `arm64-v8a`), not enough free space, or a custom ROM blocking the package installer. The exact error message is what identifies which one it is — please include it in a bug report.
 
 > **Why not Google Play or F-Droid?** The engine needs real filesystem paths for your project
 > folder, which requires `MANAGE_EXTERNAL_STORAGE`. Neither store accepts that permission for this
