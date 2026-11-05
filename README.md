@@ -59,6 +59,26 @@ MCP servers, an interactive terminal, LSP, session fork/revert, `git` over https
 `fetch`), and adaptive tablet layouts. See [`docs/BUILD.md`](docs/BUILD.md#known-gaps) for the
 current list of known gaps.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="logo/screenshots/01-chat.webp" width="270" alt="Empty chat screen showing the Ready status and four suggested prompts" /><br/><sub><b>Chat</b> — one composer, model and mode in reach</sub></td>
+    <td align="center"><img src="logo/screenshots/02-files.webp" width="270" alt="File explorer listing a project folder with directories first" /><br/><sub><b>Files</b> — the real project tree, folders first</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="logo/screenshots/03-file.webp" width="270" alt="File viewer showing Python source with syntax highlighting" /><br/><sub><b>Source</b> — read files with syntax highlighting</sub></td>
+    <td align="center"><img src="logo/screenshots/04-project.webp" width="270" alt="Project screen showing the current folder and recently used folders" /><br/><sub><b>Project</b> — any folder, recent ones remembered</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="logo/screenshots/05-settings.webp" width="270" alt="Settings screen with project, language, provider and engine sections" /><br/><sub><b>Settings</b> — project, language, provider, engine</sub></td>
+    <td align="center"><img src="logo/screenshots/06-diagnostics.webp" width="270" alt="Diagnostics screen reporting engine state, git and ripgrep versions and runtime paths" /><br/><sub><b>Diagnostics</b> — state, <code>git</code>/<code>rg</code> checks, paths</sub></td>
+  </tr>
+</table>
+
+Captured from the app running on a device, dark theme. A conversation screenshot is deliberately
+missing: every screen above needs no API key, and a transcript would have to be staged to look real.
+
 ## Install
 
 1. Open the [**Releases**](https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases) page.
