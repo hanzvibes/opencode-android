@@ -23,6 +23,15 @@ jobs:
       # decided by this, not by flags (handoff.md §2.32).
       NDK_VERSION: "29.0.13113456"
       ANDROID_API: "29"
+      # Host toolchain, kept apart from the Android cross-compiler. Job-level on
+      # purpose: configure.py reads CC_host for its host-arch probe, and gyp bakes
+      # the value into out/Makefile. Setting it only in the build step is too late
+      # for the former and unreliable for the latter.
+      #
+      # Without this, gyp's GetEnvironFallback(("CC_host", "CC")) falls back to the
+      # Android cross-compiler that android_configure.py exports as CC.
+      CC_host: "gcc"
+      CXX_host: "g++"
 
     steps:
       - uses: actions/checkout@v4
@@ -81,22 +90,36 @@ jobs:
               sys.exit(1)
           PY
 
-      # The expensive step. The compiler paths are re-derived rather than inherited:
-      # `android_configure.py` sets CC/CXX in its own process only, so nothing
-      # survives into this step. Writing `CC="ccache $CC"` against an empty $CC
-      # would produce `CC="ccache "` and break the build in a confusing way.
+      # `android_configure.py` sets CC/CXX only, and nothing sets CC_host/CXX_host.
+      # gyp's make generator then resolves the host toolchain as
+      #   CC_host = GetEnvironFallback(("CC_host", "CC"), "gcc")
+      # (tools/gyp/pylib/gyp/generator/make.py:2481), so host tools silently
+      # inherited the Android cross-compiler. They then failed on
+      # deps/v8/src/base/debug/stack_trace_posix.cc, because bionic only declares
+      # backtrace()/backtrace_symbols() from API 33 and we target API 29. That was
+      # a host-tooling mistake, not evidence that V8 cannot target armv7.
       #
-      # ccache is on because a re-run after a late failure should not start from
-      # zero; this build takes 40-70 minutes.
+      # These must be exported in BOTH the configure and build steps: configure.py
+      # reads CC_host for its host-arch probe, and the value is baked into
+      # out/Makefile when make regenerates it through gyp.
+      #
+      # No `| tail` and no swallowed exit code: the previous run reported this step
+      # green while make had failed, and the real error only surfaced two steps
+      # later as "no binary at ...".
       - name: Build node (this is the 40-70 minute step)
         working-directory: ${{ github.workspace }}/node-v${{ env.NODE_VERSION }}
         run: |
+          set -o pipefail
           tc="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
           export CC="ccache $tc/armv7a-linux-androideabi$ANDROID_API-clang"
           export CXX="ccache $tc/armv7a-linux-androideabi$ANDROID_API-clang++"
           export CCACHE_DIR="$HOME/.ccache"
+          # CC_host/CXX_host come from job env so configure and make agree.
           echo "CC=$CC"
-          make -j"$(nproc)" 2>&1 | tail -40
+          echo "CXX=$CXX"
+          echo "CC_host=$CC_host"
+          echo "CXX_host=$CXX_host"
+          make -j"$(nproc)"
 
       - name: Verify the ELF is really 32-bit Android ARM
         run: |
