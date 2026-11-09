@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 enum class Glyph {
     Menu, NewChat, ArrowUp, ArrowDown, ArrowLeft, ChevronDown, ChevronRight,
     File, Folder, Pencil, Terminal, Search, Globe, Sliders,
-    Send, Camera, Code, Mail, External, Info,
+    Send, Camera, Code, Mail, External, Info, Copy,
 }
 
 @Composable
@@ -132,6 +132,13 @@ fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp
                 drawCircle(tint, radius = 9f * u, center = Offset(12f * u, 12f * u), style = stroke)
                 line(12f, 11f, 12f, 16.5f)
                 drawCircle(tint, radius = 0.9f * u, center = Offset(12f * u, 7.8f * u))
+            }
+            Glyph.Copy -> {
+                shape(8f to 4f, 19f to 4f, 19f to 15f)
+                drawRoundRect(
+                    tint, Offset(5f * u, 8f * u), Size(11f * u, 12f * u),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f * u), style = stroke,
+                )
             }
         }
     }
