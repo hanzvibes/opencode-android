@@ -520,7 +520,7 @@ private fun EmptyChat(engineReady: Boolean, onSuggestion: (String) -> Unit, modi
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(radius.lg))
                             .background(colors.surface)
-                            .border(0.5.dp, colors.outline, RoundedCornerShape(radius.lg))
+                            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.lg))
                             .clickable { onSuggestion(suggestion) }
                             .padding(horizontal = spacing.lg, vertical = spacing.md),
                     )
