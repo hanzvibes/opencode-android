@@ -66,7 +66,7 @@ fun ScreenScaffold(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(colors.surface)
+                .background(colors.background)
                 .height(56.dp)
                 .padding(horizontal = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
@@ -102,7 +102,7 @@ fun ScreenScaffold(
             Modifier
                 .fillMaxWidth()
                 .height(0.5.dp)
-                .background(colors.outline),
+                .background(colors.hairline),
         )
 
         Column(

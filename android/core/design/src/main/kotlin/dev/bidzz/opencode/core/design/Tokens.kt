@@ -48,7 +48,7 @@ data class Radius(
     val xs: Dp = 4.dp,
     val sm: Dp = 8.dp,
     val md: Dp = 12.dp,
-    val lg: Dp = 14.dp,
+    val lg: Dp = 16.dp,
     /** Pills: chips, send button. */
     val full: Dp = 999.dp,
 )
@@ -85,7 +85,7 @@ data class Dimensions(
     /** Content column cap, so text does not stretch unreadably on tablets. */
     val contentMaxWidth: Dp = 720.dp,
     /** Assistant output uses the full column; user bubbles stay narrower. */
-    val userBubbleMaxWidthFraction: Float = 0.85f,
+    val userBubbleMaxWidthFraction: Float = 0.80f,
 )
 
 /** All tokens, passed through CompositionLocal so previews can override them. */

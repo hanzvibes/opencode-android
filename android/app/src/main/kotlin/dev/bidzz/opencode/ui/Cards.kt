@@ -2,24 +2,32 @@ package dev.bidzz.opencode.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
+import dev.bidzz.opencode.core.design.OpenCodeTypography
 
-/** Rows grouped on one rounded surface with a hairline edge: the shared "card" of the app. */
+/** Rows grouped on one rounded surface with a hairline edge (matching AppGroup in cross-platform-llm-client). */
 @Composable
 fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val colors = OpenCodeTheme.colors
@@ -29,27 +37,57 @@ fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.()
             .fillMaxWidth()
             .clip(shape)
             .background(colors.surface)
-            .border(0.5.dp, colors.outline, shape),
+            .border(0.5.dp, colors.hairline, shape),
         content = content,
     )
 }
 
-/** A glyph on a softly tinted rounded square; the leading mark of a list row. */
+/** Rounded neutral surface card. */
+@Composable
+fun AppCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    outlined: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val shape = RoundedCornerShape(OpenCodeTheme.tokens.radius.lg)
+    val baseModifier = modifier
+        .clip(shape)
+        .background(if (outlined) Color.Transparent else colors.surface)
+        .border(
+            width = if (outlined) 1.dp else 0.5.dp,
+            color = if (outlined) colors.outline else colors.hairline,
+            shape = shape,
+        )
+    val clickableModifier = if (onClick != null) {
+        baseModifier.clickable(role = Role.Button, onClick = onClick)
+    } else {
+        baseModifier
+    }
+    Box(modifier = clickableModifier.padding(16.dp)) {
+        content()
+    }
+}
+
+/** Neutral circular icon holder (matching IconBadge in cross-platform-llm-client). */
 @Composable
 fun IconBadge(
     glyph: Glyph,
     modifier: Modifier = Modifier,
-    tint: Color = OpenCodeTheme.colors.accent,
-    size: Dp = 36.dp,
+    tint: Color? = null,
+    size: Dp = 32.dp,
 ) {
+    val colors = OpenCodeTheme.colors
+    val fg = tint ?: colors.onSurface.copy(alpha = 0.85f)
     Box(
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.sm))
-            .background(tint.copy(alpha = 0.14f)),
+            .clip(CircleShape)
+            .background(colors.fill),
         contentAlignment = Alignment.Center,
     ) {
-        GlyphIcon(glyph, tint = tint, size = size * 0.55f)
+        GlyphIcon(glyph, tint = fg, size = size * 0.53f)
     }
 }
 
@@ -61,6 +99,73 @@ fun RowDivider(inset: Dp = 0.dp) {
             .padding(start = inset)
             .fillMaxWidth()
             .height(0.5.dp)
-            .background(OpenCodeTheme.colors.outline),
+            .background(OpenCodeTheme.colors.hairline),
     )
+}
+
+/** Tonal button: clean modern touch button matching cross-platform-llm-client. */
+@Composable
+fun TonalButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    color: Color = OpenCodeTheme.colors.onSurface,
+    fill: Color = OpenCodeTheme.colors.fill,
+) {
+    Box(
+        modifier = modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
+            .background(fill)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = OpenCodeTypography.label.copy(fontSize = 15.sp),
+            color = color,
+        )
+    }
+}
+
+/** Status indicator dot. */
+@Composable
+fun StatusDot(color: Color, modifier: Modifier = Modifier, size: Dp = 6.dp) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(color),
+    )
+}
+
+/** Compact label badge / tag. */
+@Composable
+fun AppTag(
+    label: String,
+    modifier: Modifier = Modifier,
+    color: Color? = null,
+    glyph: Glyph? = null,
+) {
+    val colors = OpenCodeTheme.colors
+    val fg = color ?: colors.onSurfaceMuted
+    val bg = if (color == null) colors.fill else color.copy(alpha = 0.12f)
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        if (glyph != null) {
+            GlyphIcon(glyph, tint = fg, size = 11.dp)
+        }
+        Text(
+            text = label,
+            style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+            color = fg,
+        )
+    }
 }

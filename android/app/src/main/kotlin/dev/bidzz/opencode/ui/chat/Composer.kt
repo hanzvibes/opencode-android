@@ -64,7 +64,7 @@ fun Composer(
             .fillMaxWidth()
             .padding(horizontal = spacing.md, vertical = spacing.sm)
             .background(colors.surface, shape)
-            .border(0.5.dp, colors.outline, shape)
+            .border(0.5.dp, colors.hairline, shape)
             .padding(start = spacing.lg, end = spacing.sm, top = spacing.md, bottom = spacing.sm),
     ) {
         // `decorationBox` rather than a sibling Text: the field itself must own the
@@ -127,24 +127,28 @@ private fun ActionButton(busy: Boolean, canSend: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .size(36.dp)
             .clip(CircleShape)
-            // The strongest neutral of the theme: near-black on light, near-white on dark.
-            .background(if (active) colors.onSurface else colors.surfaceSunken)
+            .background(
+                when {
+                    busy -> colors.danger
+                    canSend -> colors.accent
+                    else -> colors.fill
+                },
+            )
             .semantics { contentDescription = label }
             .clickable(enabled = active, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (busy) {
-            // A filled square reads as "stop" without needing an icon.
             Box(
                 Modifier
                     .size(11.dp)
-                    .background(colors.background, RoundedCornerShape(2.dp)),
+                    .background(androidx.compose.ui.graphics.Color.White, RoundedCornerShape(2.dp)),
             )
         } else {
             GlyphIcon(
                 glyph = Glyph.ArrowUp,
-                tint = if (canSend) colors.background else colors.onSurfaceFaint,
-                size = 20.dp,
+                tint = if (canSend) androidx.compose.ui.graphics.Color.White else colors.onSurfaceFaint,
+                size = 18.dp,
             )
         }
     }

@@ -11,11 +11,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * Semantic colours the app reads.
- *
- * Separate from Material3's `ColorScheme` because the app needs roles Material
- * does not name: a sunken code surface, a user-bubble fill, and status colours.
- * Material's scheme is still provided underneath so stock components look right.
+ * Semantic colours based on the cross-platform-llm-client design system.
  */
 @androidx.compose.runtime.Immutable
 data class OpenCodeColors(
@@ -24,12 +20,15 @@ data class OpenCodeColors(
     val surfaceRaised: Color,
     /** Recedes instead of raising: code blocks, inline code. */
     val surfaceSunken: Color,
-    /** Neutral fill a step above [surfaceRaised]: inactive chips, the user bubble. */
+    /** Neutral fill for chips, pills, badges: small neutral surfaces. */
     val surfaceVariant: Color,
     val onSurface: Color,
     val onSurfaceMuted: Color,
     val onSurfaceFaint: Color,
     val outline: Color,
+    val hairline: Color,
+    val fill: Color,
+    val surfacePressed: Color,
     val accent: Color,
     val onAccent: Color,
     val userBubble: Color,
@@ -67,6 +66,9 @@ private val DarkColors = OpenCodeColors(
     onSurfaceMuted = Palette.darkOnSurfaceMuted,
     onSurfaceFaint = Palette.darkOnSurfaceFaint,
     outline = Palette.darkOutline,
+    hairline = Palette.darkHairline,
+    fill = Palette.darkFill,
+    surfacePressed = Palette.darkSurfacePressed,
     accent = Palette.darkAccent,
     onAccent = Palette.darkOnAccent,
     userBubble = Palette.darkUserBubble,
@@ -91,6 +93,9 @@ private val LightColors = OpenCodeColors(
     onSurfaceMuted = Palette.lightOnSurfaceMuted,
     onSurfaceFaint = Palette.lightOnSurfaceFaint,
     outline = Palette.lightOutline,
+    hairline = Palette.lightHairline,
+    fill = Palette.lightFill,
+    surfacePressed = Palette.lightSurfacePressed,
     accent = Palette.lightAccent,
     onAccent = Palette.lightOnAccent,
     userBubble = Palette.lightUserBubble,
@@ -98,7 +103,7 @@ private val LightColors = OpenCodeColors(
     success = Palette.successLight,
     warning = Palette.warningLight,
     danger = Palette.dangerLight,
-    neutral = Palette.neutral,
+    neutral = Palette.neutralLight,
     syntaxKeyword = Palette.lightSyntaxKeyword,
     syntaxString = Palette.lightSyntaxString,
     syntaxNumber = Palette.lightSyntaxNumber,
@@ -119,17 +124,12 @@ object OpenCodeTheme {
 
 /**
  * Applies the design system.
- *
- * Dark is the default because the app is a coding tool used in low light; light is
- * a deliberate alternative, not the starting point.
  */
 @Composable
 fun OpenCodeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    // Dark is the default when the system has no opinion, so a fresh install looks
-    // like the intended product rather than a washed-out light screen.
     val colors = if (darkTheme) DarkColors else LightColors
     val tokens = OpenCodeTokens()
 
@@ -143,7 +143,7 @@ fun OpenCodeTheme(
             onSurface = colors.onSurface,
             surfaceVariant = colors.surfaceRaised,
             onSurfaceVariant = colors.onSurfaceMuted,
-            outline = colors.outline,
+            outline = colors.hairline,
             error = colors.danger,
         )
     } else {
@@ -156,7 +156,7 @@ fun OpenCodeTheme(
             onSurface = colors.onSurface,
             surfaceVariant = colors.surfaceRaised,
             onSurfaceVariant = colors.onSurfaceMuted,
-            outline = colors.outline,
+            outline = colors.hairline,
             error = colors.danger,
         )
     }

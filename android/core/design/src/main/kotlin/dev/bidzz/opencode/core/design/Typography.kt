@@ -31,31 +31,51 @@ object OpenCodeTypography {
         fontSize = 15.sp,
         lineHeight = 22.sp,
         fontWeight = FontWeight.Normal,
-        letterSpacing = 0.1.sp,
+        letterSpacing = (-0.15).sp,
+    )
+
+    /** Body bold / strong. */
+    val bodyStrong: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 15.sp,
+        lineHeight = 22.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.2).sp,
     )
 
     /** Slightly denser, for secondary labels and metadata. */
-    val bodySmall: TextStyle = body.copy(
+    val bodySmall: TextStyle = TextStyle(
+        fontFamily = ui,
         fontSize = 13.sp,
         lineHeight = 18.sp,
+        fontWeight = FontWeight.Normal,
     )
 
     /** Message author, section labels. */
     val label: TextStyle = TextStyle(
         fontFamily = ui,
-        fontSize = 12.sp,
+        fontSize = 13.sp,
         lineHeight = 16.sp,
-        fontWeight = FontWeight.Medium,
-        letterSpacing = 0.4.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.08).sp,
     )
 
-    /** Screen titles. Deliberately modest: the top bar is chrome, not a poster. */
+    /** Screen titles. Apple style modest title. */
     val title: TextStyle = TextStyle(
         fontFamily = ui,
         fontSize = 17.sp,
         lineHeight = 22.sp,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.sp,
+        letterSpacing = (-0.3).sp,
+    )
+
+    /** Large header. */
+    val titleLarge: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.6).sp,
     )
 
     /** Code inside a fenced block. */

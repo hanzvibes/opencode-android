@@ -7,13 +7,13 @@
 **The real [OpenCode](https://github.com/anomalyco/opencode) AI coding agent, running on your phone.**<br/>
 Not a remote control. Not a WebView. Not a chatbot mockup.
 
-[![CI](https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/actions/workflows/ci.yml/badge.svg)](https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/BIDZZ-RAWR/OPENCODE-ANDROID?include_prereleases&label=release)](https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases)
+[![CI](https://github.com/hanzvibes/opencode-android/actions/workflows/ci.yml/badge.svg)](https://github.com/hanzvibes/opencode-android/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/hanzvibes/opencode-android?include_prereleases&label=release)](https://github.com/hanzvibes/opencode-android/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-b3f834)](LICENSE)
 ![Android 10+](https://img.shields.io/badge/Android-10%2B-b3f834)
 ![ABIs](https://img.shields.io/badge/ABI-arm64--v8a%20%7C%20x86__64-b3f834)
 
-[Download](https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases) ·
+[Download](https://github.com/hanzvibes/opencode-android/releases) ·
 [Features](#features) ·
 [How it works](#how-it-works) ·
 [Build](#building-from-source) ·
@@ -81,7 +81,7 @@ missing: every screen above needs no API key, and a transcript would have to be 
 
 ## Install
 
-1. Open the [**Releases**](https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases) page.
+1. Open the [**Releases**](https://github.com/hanzvibes/opencode-android/releases) page.
 2. Download the APK for your device:
 
    | APK | For |
@@ -179,13 +179,9 @@ docs/           Build guide and API reference
 
 ## About the developer
 
-Made by **Muhammad Abid** (*Bidzz*), a student exploring web development, OSINT, digital security,
-and reverse engineering.
+Maintained by **Raihan Ramadhani** (*hanzvibes*).
 
-[Portfolio](https://bidzzofc.my.id/) ·
-[GitHub](https://github.com/BIDZZ-RAWR) ·
-[Telegram](https://t.me/bidzz7) ·
-[Instagram](https://instagram.com/muhammad.abid857)
+[GitHub](https://github.com/hanzvibes)
 
 The same details are inside the app under **Settings → About the developer**.
 
@@ -224,7 +220,7 @@ control desktop, bukan WebView.
 - `git` dan `ripgrep` sudah dibundel. Engine tetap hidup walau aplikasi di-swipe.
 - Bahasa Indonesia dan Inggris, tema gelap dan terang.
 
-**Pasang:** unduh APK dari halaman [Releases](https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases)
+**Pasang:** unduh APK dari halaman [Releases](https://github.com/hanzvibes/opencode-android/releases)
 (`arm64-v8a` untuk hampir semua HP), pasang, lalu berikan *Akses semua file*. Butuh Android 10
 atau lebih baru. Tidak tersedia di Google Play atau F-Droid karena izin akses semua file.
 

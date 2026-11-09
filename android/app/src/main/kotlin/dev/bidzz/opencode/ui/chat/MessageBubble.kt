@@ -1,6 +1,10 @@
 package dev.bidzz.opencode.ui.chat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,32 +12,27 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.Glyph
+import dev.bidzz.opencode.ui.GlyphIcon
 
 /**
- * One chat message.
- *
- * Layout is asymmetric on purpose, following how reading actually works here:
- *
- * - The user's own message is a compact bubble on the right. It is short, already
- *   known, and does not need width.
- * - The assistant's message is full-width with no bubble. Model output contains
- *   code and tables, and a bubble would steal horizontal space from exactly the
- *   content that needs it.
- *
- * That asymmetry is the single biggest reason a chat reads as a coding tool rather
- * than a messaging app.
+ * One chat message styled after cross-platform-llm-client (PrivateLM):
+ * - User message: compact system blue bubble on the right with smooth rounded corners.
+ * - Assistant message: clean full-width markdown with quiet copy button and tool traces.
  */
 @Composable
 fun MessageBubble(
@@ -58,8 +57,11 @@ fun MessageBubble(
             Box(
                 modifier = Modifier
                     .fillMaxWidth(dims.userBubbleMaxWidthFraction)
-                    .background(colors.userBubble, RoundedCornerShape(radius.lg))
-                    .padding(horizontal = spacing.md, vertical = spacing.sm),
+                    .background(
+                        colors.userBubble,
+                        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 4.dp),
+                    )
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
                 // User text is plain: markdown the user typed is not rendered as
                 // formatting, so what they see is what they sent.
@@ -96,8 +98,6 @@ fun MessageBubble(
             }
             Box(Modifier.padding(top = spacing.xs)) {
                 if (markdown.isEmpty() && streaming) {
-                    // Nothing yet: say so instead of showing an empty gap that looks
-                    // like a broken message.
                     Text(
                         text = stringResource(R.string.bubble_thinking),
                         style = OpenCodeTypography.body,
@@ -112,13 +112,43 @@ fun MessageBubble(
                 streaming = streaming,
                 modifier = Modifier.padding(top = spacing.xs),
             )
+            if (!streaming && markdown.isNotEmpty()) {
+                val context = LocalContext.current
+                Row(
+                    modifier = Modifier.padding(top = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.sm))
+                            .clickable {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                cm?.setPrimaryClip(ClipData.newPlainText("OpenCode", markdown))
+                            }
+                            .padding(horizontal = spacing.xs, vertical = spacing.xxs),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        ) {
+                            GlyphIcon(Glyph.Copy, tint = colors.onSurfaceFaint, size = 13.dp)
+                            Text(
+                                text = stringResource(R.string.code_copy),
+                                style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                                color = colors.onSurfaceFaint,
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         Role.ERROR -> Row(modifier = modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(dims.userBubbleMaxWidthFraction)
-                    .background(colors.surfaceSunken, RoundedCornerShape(radius.sm))
+                    .background(colors.surfaceSunken, RoundedCornerShape(radius.md))
+                    .border(0.5.dp, colors.danger.copy(alpha = 0.3f), RoundedCornerShape(radius.md))
                     .padding(horizontal = spacing.md, vertical = spacing.sm),
             ) {
                 Column {

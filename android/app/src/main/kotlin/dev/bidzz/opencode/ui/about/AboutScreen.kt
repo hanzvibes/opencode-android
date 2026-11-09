@@ -39,24 +39,14 @@ import dev.bidzz.opencode.ui.IconBadge
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 
-// Taken from https://bidzzofc.my.id/ . The site shows its email only through Cloudflare's
-// obfuscation; this is the address that obfuscation decodes to.
-private const val NAME = "Muhammad Abid"
-private const val HANDLE = "Bidzz"
-private const val PORTFOLIO_URL = "https://bidzzofc.my.id/"
-private const val TELEGRAM_URL = "https://t.me/bidzz7"
-private const val INSTAGRAM_URL = "https://instagram.com/muhammad.abid857"
-private const val GITHUB_URL = "https://github.com/BIDZZ-RAWR"
-private const val EMAIL = "support@bidzzofc.my.id"
+private const val NAME = "Raihan Ramadhani"
+private const val HANDLE = "hanzvibes"
+private const val GITHUB_URL = "https://github.com/hanzvibes"
 
 private data class Link(val glyph: Glyph, val titleRes: Int, val shown: String, val url: String)
 
 private val LINKS = listOf(
-    Link(Glyph.Globe, R.string.about_portfolio, "bidzzofc.my.id", PORTFOLIO_URL),
-    Link(Glyph.Send, R.string.about_telegram, "@bidzz7", TELEGRAM_URL),
-    Link(Glyph.Camera, R.string.about_instagram, "muhammad.abid857", INSTAGRAM_URL),
-    Link(Glyph.Code, R.string.about_github, "BIDZZ-RAWR", GITHUB_URL),
-    Link(Glyph.Mail, R.string.about_email, EMAIL, "mailto:$EMAIL"),
+    Link(Glyph.Code, R.string.about_github, "hanzvibes", GITHUB_URL),
 )
 
 /**
