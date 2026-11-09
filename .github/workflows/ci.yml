@@ -45,6 +45,13 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
 
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
+
       - name: Fail if the engine binary ever lands in git
         run: |
           if git ls-files | grep -qE 'jniLibs/.*\.so$'; then
