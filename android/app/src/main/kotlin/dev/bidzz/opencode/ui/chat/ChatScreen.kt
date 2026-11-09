@@ -375,7 +375,7 @@ private fun ChatDrawer(
                     .padding(vertical = spacing.sm)
                     .fillMaxWidth()
                     .size(0.5.dp)
-                    .background(colors.outline),
+                    .background(colors.hairline),
             )
 
             Text(
@@ -462,7 +462,7 @@ private fun JumpToLatest(onClick: () -> Unit, modifier: Modifier = Modifier) {
         modifier = modifier
             .size(40.dp)
             .background(colors.surface, CircleShape)
-            .border(0.5.dp, colors.outline, CircleShape)
+            .border(0.5.dp, colors.hairline, CircleShape)
             .clip(CircleShape)
             .semantics { contentDescription = label }
             .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick),

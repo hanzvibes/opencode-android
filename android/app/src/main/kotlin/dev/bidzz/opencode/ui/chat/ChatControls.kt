@@ -97,8 +97,8 @@ private fun ChoiceChip(
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(radius.full))
-                // Outline only: the chip sits on the composer's own surface.
-                .border(0.5.dp, colors.outline, RoundedCornerShape(radius.full))
+                .background(colors.fill)
+                .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
                 .clickable { expanded = true }
                 .padding(start = spacing.md, end = spacing.sm, top = spacing.xs, bottom = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
