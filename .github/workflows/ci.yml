@@ -47,6 +47,7 @@ jobs:
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: opencode-android-debug
           path: android/app/build/outputs/apk/debug/*.apk
