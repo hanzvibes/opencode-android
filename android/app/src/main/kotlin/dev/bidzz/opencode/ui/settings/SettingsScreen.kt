@@ -188,11 +188,11 @@ private fun SettingsRow(
     val spacing = OpenCodeTheme.tokens.spacing
 
     // Starts under the text, not under the icon, so the icons read as one column.
-    if (divider) RowDivider(inset = spacing.md + 36.dp + spacing.md)
+    if (divider) RowDivider(inset = spacing.md + 32.dp + spacing.md)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 60.dp)
+            .heightIn(min = 52.dp)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(horizontal = spacing.md, vertical = spacing.md),
         verticalAlignment = Alignment.CenterVertically,

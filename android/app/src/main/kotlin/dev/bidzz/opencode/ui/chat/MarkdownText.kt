@@ -125,7 +125,8 @@ fun MarkdownText(
                             Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = spacing.xs)
-                                .border(0.5.dp, colors.outline),
+                                .height(0.5.dp)
+                                .background(colors.hairline),
                         )
 
                         is MdBlock.Code -> CodeBlock(language = block.language, code = block.code)
@@ -141,8 +142,7 @@ fun MarkdownText(
 /**
  * A fenced code block: sunken surface, monospace, copy button.
  *
- * The surface recedes (`surfaceSunken`) rather than raises: code is quoted material,
- * and a raised card would compete with the message it belongs to.
+ * Matching cross-platform-llm-client code blocks with 12dp radius and hairline border.
  */
 @Composable
 private fun CodeBlock(language: String?, code: String) {
@@ -160,8 +160,9 @@ private fun CodeBlock(language: String?, code: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surfaceSunken, RoundedCornerShape(radius.sm))
-            .border(0.5.dp, colors.outline, RoundedCornerShape(radius.sm)),
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surfaceSunken)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md)),
     ) {
         Row(
             modifier = Modifier
@@ -256,8 +257,9 @@ private fun TableBlock(table: MdBlock.Table) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surfaceSunken, RoundedCornerShape(radius.sm))
-            .border(0.5.dp, colors.outline, RoundedCornerShape(radius.sm))
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surfaceSunken)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
             .padding(horizontal = spacing.xs, vertical = spacing.xs),
     ) {
         Row(Modifier.fillMaxWidth()) {
@@ -274,7 +276,8 @@ private fun TableBlock(table: MdBlock.Table) {
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = spacing.xs)
-                .border(0.5.dp, colors.outline),
+                .height(0.5.dp)
+                .background(colors.hairline),
         )
         table.rows.forEach { row ->
             Row(Modifier.fillMaxWidth()) {

@@ -139,7 +139,7 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
             )
             CardGroup {
                 LINKS.forEachIndexed { index, link ->
-                    if (index > 0) RowDivider(inset = spacing.md + 36.dp + spacing.md)
+                    if (index > 0) RowDivider(inset = spacing.md + 32.dp + spacing.md)
                     LinkRow(link, onClick = { open(link.url) })
                 }
             }

@@ -170,7 +170,8 @@ private fun Crumb(label: String, current: Boolean, glyph: Glyph? = null, onClick
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.full))
-                .background(if (current) colors.accent.copy(alpha = 0.16f) else colors.surfaceVariant)
+                .background(if (current) colors.accent.copy(alpha = 0.16f) else colors.fill)
+                .border(0.5.dp, if (current) colors.accent else colors.hairline, RoundedCornerShape(OpenCodeTheme.tokens.radius.full))
                 .padding(horizontal = spacing.md, vertical = spacing.xs + spacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
         ) {

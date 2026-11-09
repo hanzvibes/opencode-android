@@ -304,7 +304,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .background(colors.surface, shape)
-            .border(0.5.dp, colors.outline, shape)
+            .border(0.5.dp, colors.hairline, shape)
             .padding(horizontal = spacing.md, vertical = spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -350,8 +350,8 @@ private fun ProviderRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(radius.md))
-            .background(colors.surfaceRaised)
-            .border(0.5.dp, colors.outline, RoundedCornerShape(radius.md))
+            .background(colors.surface)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = spacing.md, vertical = spacing.md),
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
@@ -371,7 +371,7 @@ private fun ProviderRow(
             Box(
                 Modifier
                     .clip(RoundedCornerShape(radius.full))
-                    .background(colors.surfaceSunken)
+                    .background(colors.success.copy(alpha = 0.12f))
                     .padding(horizontal = spacing.sm, vertical = spacing.xxs),
             ) {
                 Text(stringResource(R.string.providers_badge_on), style = OpenCodeTypography.label, color = colors.success)
@@ -388,10 +388,10 @@ private fun PrimaryButton(text: String, onClick: () -> Unit) {
 
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(radius.sm))
+            .clip(RoundedCornerShape(radius.md))
             .background(colors.accent)
             .clickable(onClick = onClick)
-            .padding(horizontal = spacing.md, vertical = spacing.sm),
+            .padding(horizontal = spacing.lg, vertical = spacing.sm),
     ) {
         Text(text, style = OpenCodeTypography.label, color = colors.onAccent)
     }
@@ -438,8 +438,9 @@ private fun KeyPrompt(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = spacing.md)
-                        .clip(RoundedCornerShape(radius.sm))
+                        .clip(RoundedCornerShape(radius.md))
                         .background(colors.surfaceSunken)
+                        .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
                         .padding(spacing.md),
                     decorationBox = { inner ->
                         if (value.isEmpty()) {

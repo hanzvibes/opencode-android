@@ -85,7 +85,7 @@ fun ProjectPickerScreen(
                 SectionLabel(stringResource(R.string.drawer_recent))
                 CardGroup {
                     others.forEachIndexed { index, option ->
-                        if (index > 0) RowDivider(inset = spacing.md + 36.dp + spacing.md)
+                        if (index > 0) RowDivider(inset = spacing.md + 32.dp + spacing.md)
                         ProjectRow(option = option, onClick = { onSelect(option) })
                     }
                 }

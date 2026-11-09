@@ -48,8 +48,9 @@ fun PermissionPrompt(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.surfaceRaised)
-            .border(0.5.dp, colors.outline, RoundedCornerShape(radius.lg))
+            .clip(RoundedCornerShape(radius.lg))
+            .background(colors.surface)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.lg))
             .padding(spacing.md),
         verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
@@ -88,14 +89,14 @@ fun PermissionPrompt(
             )
             PermissionAction(
                 label = stringResource(R.string.permission_always),
-                color = colors.surfaceSunken,
+                color = colors.fill,
                 onSurface = colors.onSurface,
                 onClick = { onReply("always") },
                 modifier = Modifier.weight(1f),
             )
             PermissionAction(
                 label = stringResource(R.string.permission_reject),
-                color = colors.surfaceSunken,
+                color = colors.danger.copy(alpha = 0.14f),
                 onSurface = colors.danger,
                 onClick = { onReply("reject") },
                 modifier = Modifier.weight(1f),
