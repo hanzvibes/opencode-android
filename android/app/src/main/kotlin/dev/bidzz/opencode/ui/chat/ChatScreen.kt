@@ -97,9 +97,7 @@ import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
 import dev.bidzz.opencode.ui.IconAction
-import dev.bidzz.opencode.ui.IconBadge
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
-import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.sessions.DeleteSessionDialog
 import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
@@ -284,36 +282,50 @@ fun ChatScreen(
                                 val isConsecutiveAssistant = prevMessage?.role == Role.ASSISTANT && message.role == Role.ASSISTANT
                                 val showProvenance = message.role == Role.ASSISTANT && !isConsecutiveAssistant
 
+                                // A new assistant turn gets 16dp (lg) of air above it, up
+                                // from 12dp, so two long assistant turns no longer
+                                // run together. Consecutive assistant parts stay
+                                // tight at 4dp — they are one turn, not two.
                                 val topSpacing = when {
                                     index == 0 -> 0.dp
                                     message.role == Role.USER -> {
                                         if (prevMessage?.role == Role.USER) spacing.sm else spacing.xxl
                                     }
                                     isConsecutiveAssistant -> spacing.xs
-                                    else -> spacing.md
+                                    else -> spacing.lg
                                 }
 
-                                MessageBubble(
-                                    role = message.role,
-                                    markdown = message.text,
-                                    streaming = message.streaming,
-                                    tools = message.tools,
-                                    provenance = provenanceLabel(
-                                        message.agent,
-                                        message.model,
-                                        state.agents,
-                                        state.models,
-                                    ),
-                                    showProvenance = showProvenance,
-                                    model = message.model,
-                                    reasoning = message.reasoning,
-                                    parts = message.parts,
-                                    onAnswerQuestion = { answer ->
-                                        onDraftChange(answer)
-                                        onSend()
-                                    },
-                                    modifier = Modifier.padding(top = topSpacing),
-                                )
+                                Column(modifier = Modifier.padding(top = topSpacing)) {
+                                    // Hairline turn divider above the first part
+                                    // of a new assistant turn (not the first
+                                    // message). No card, no background — the
+                                    // assistant still has no bubble, per plan.md §12.
+                                    if (showProvenance && index > 0) {
+                                        HairlineSeparator(
+                                            modifier = Modifier.padding(bottom = spacing.sm),
+                                        )
+                                    }
+                                    MessageBubble(
+                                        role = message.role,
+                                        markdown = message.text,
+                                        streaming = message.streaming,
+                                        tools = message.tools,
+                                        provenance = provenanceLabel(
+                                            message.agent,
+                                            message.model,
+                                            state.agents,
+                                            state.models,
+                                        ),
+                                        showProvenance = showProvenance,
+                                        model = message.model,
+                                        reasoning = message.reasoning,
+                                        parts = message.parts,
+                                        onAnswerQuestion = { answer ->
+                                            onDraftChange(answer)
+                                            onSend()
+                                        },
+                                    )
+                                }
                             }
                             // When busy right after user message, show assistant's turn beginning immediately
                             if (state.busy && state.messages.lastOrNull()?.role == Role.USER) {
@@ -1464,10 +1476,12 @@ private fun EmptyChat(
                     engineReady = engineReady,
                 )
 
-                Spacer(Modifier.height(spacing.xl))
+                Spacer(Modifier.height(spacing.md))
 
-                // System Environment & Workspace Readiness Card
-                WorkspaceReadinessCard(
+                // One-line readiness status (engine • workspace • git) instead
+                // of the full card: the details are one tap away on this row
+                // and on the header status, so the starters fit above the fold.
+                ReadinessStatusRow(
                     engineState = engineState,
                     busy = busy,
                     workspacePath = workspacePath,
@@ -1485,7 +1499,7 @@ private fun EmptyChat(
                         )
                     }
                 } else {
-                    Spacer(Modifier.height(spacing.xxl))
+                    Spacer(Modifier.height(spacing.lg))
 
                     // Actionable prompt starter cards section
                     Column(
@@ -1506,40 +1520,31 @@ private fun EmptyChat(
                             )
                         }
 
-                        if (isWide) {
-                            STARTER_PROMPTS.chunked(2).forEach { rowPrompts ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                                ) {
-                                    rowPrompts.forEach { item ->
-                                        val title = stringResource(item.titleRes)
-                                        val desc = stringResource(item.descRes)
-                                        val prompt = stringResource(item.promptRes)
-                                        ActionableStarterCard(
-                                            title = title,
-                                            description = desc,
-                                            glyph = item.glyph,
-                                            onClick = { onSuggestion(prompt) },
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                    }
-                                    if (rowPrompts.size == 1) {
-                                        Spacer(Modifier.weight(1f))
-                                    }
+                        // Two-column grid on every width, including phones:
+                        // all four starters are visible without scrolling.
+                        // On a narrow phone the cards are compact (icon +
+                        // title only) so the titles still fit.
+                        STARTER_PROMPTS.chunked(2).forEach { rowPrompts ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                            ) {
+                                rowPrompts.forEach { item ->
+                                    val title = stringResource(item.titleRes)
+                                    val desc = stringResource(item.descRes)
+                                    val prompt = stringResource(item.promptRes)
+                                    ActionableStarterCard(
+                                        title = title,
+                                        description = desc,
+                                        glyph = item.glyph,
+                                        onClick = { onSuggestion(prompt) },
+                                        modifier = Modifier.weight(1f),
+                                        compact = !isWide,
+                                    )
                                 }
-                            }
-                        } else {
-                            STARTER_PROMPTS.forEach { item ->
-                                val title = stringResource(item.titleRes)
-                                val desc = stringResource(item.descRes)
-                                val prompt = stringResource(item.promptRes)
-                                ActionableStarterCard(
-                                    title = title,
-                                    description = desc,
-                                    glyph = item.glyph,
-                                    onClick = { onSuggestion(prompt) },
-                                )
+                                if (rowPrompts.size == 1) {
+                                    Spacer(Modifier.weight(1f))
+                                }
                             }
                         }
                     }
@@ -1558,15 +1563,18 @@ private fun HeroBranding(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
 
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Subtle ambient glowing gradient container behind hero emblem
+        // Subtle ambient glowing gradient container behind hero emblem.
+        // 64dp, not 84dp: the hero is a signpost, not the content — the
+        // starter prompts below it are what a new user actually needs.
         Box(
             modifier = Modifier
-                .size(84.dp)
+                .size(64.dp)
                 .background(
                     brush = Brush.radialGradient(
                         colors = listOf(
@@ -1581,7 +1589,7 @@ private fun HeroBranding(
         ) {
             Box(
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(40.dp)
                     .clip(RoundedCornerShape(radius.lg))
                     .background(colors.surfaceRaised)
                     .border(
@@ -1594,7 +1602,7 @@ private fun HeroBranding(
                 GlyphIcon(
                     glyph = Glyph.Code,
                     tint = colors.accent,
-                    size = 26.dp,
+                    size = dims.iconMedium,
                 )
             }
         }
@@ -1603,9 +1611,8 @@ private fun HeroBranding(
 
         Text(
             text = stringResource(if (engineReady) R.string.empty_title_ready else R.string.empty_title_starting),
+            // The titleLarge token (22sp / 28sp), not a hardcoded 24sp.
             style = OpenCodeTypography.titleLarge.copy(
-                fontSize = 24.sp,
-                lineHeight = 30.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = (-0.5).sp,
             ),
@@ -1628,20 +1635,27 @@ private fun HeroBranding(
     }
 }
 
-/** System environment & workspace readiness card showing Engine, Workspace, and Git status. */
+/** One-line readiness status: engine • workspace • git.
+ *
+ * Replaces the full WorkspaceReadinessCard (three rows plus a section
+ * header). The full diagnostics are still one tap away — this whole row
+ * opens them via [onStatusClick] — and the header status pill does the
+ * same, so nothing is lost, only the vertical space.
+ */
 @Composable
-private fun WorkspaceReadinessCard(
+private fun ReadinessStatusRow(
     engineState: dev.bidzz.opencode.core.engine.EngineState,
     busy: Boolean,
     workspacePath: String?,
     onStatusClick: (() -> Unit)?,
-    onProjectClick: (() -> Unit)?,
+    onProjectClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
-    val shape = RoundedCornerShape(radius.lg)
+    val dims = OpenCodeTheme.tokens.dimensions
+    val shape = RoundedCornerShape(radius.full)
 
     val status = engineState.toStatus(busy)
     val statusLabel = engineState.statusLabel(busy)
@@ -1649,224 +1663,79 @@ private fun WorkspaceReadinessCard(
     val gitBranch = remember(workspacePath) { detectGitBranch(workspacePath) }
     val projectName = headerTitle(workspacePath)
 
-    val infiniteTransition = rememberInfiniteTransition(label = "readiness_dot_pulse")
-    val pulsingAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 700, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "readiness_dot_alpha",
-    )
-    val dotAlpha = if (status == Status.WORKING) pulsingAlpha else 1f
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.surface)
-            .border(0.5.dp, colors.hairline, shape),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = spacing.lg, end = spacing.sm, top = spacing.md, bottom = spacing.xs),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.workspace_readiness_section).uppercase(),
-                style = OpenCodeTypography.caption,
-                color = colors.onSurfaceFaint,
-            )
-
-            if (onStatusClick != null) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(radius.full))
-                        .clickable(
-                            role = SemanticsRole.Button,
-                            onClick = onStatusClick,
-                        )
-                        .padding(horizontal = spacing.sm, vertical = spacing.xxs),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.settings_diag_title),
-                        style = OpenCodeTypography.caption,
-                        color = colors.accent,
+            .background(if (isPressed) colors.surfacePressed else colors.surface)
+            .border(0.5.dp, colors.hairline, shape)
+            .then(
+                if (onStatusClick != null) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = ripple(),
+                        role = SemanticsRole.Button,
+                        onClick = onStatusClick,
                     )
-                    Spacer(Modifier.width(spacing.xxs))
-                    GlyphIcon(Glyph.ChevronRight, tint = colors.accent, size = 10.dp)
-                }
-            }
-        }
-
-        // Engine readiness row
-        ReadinessRow(
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(CircleShape)
-                        .background(statusColor.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(OpenCodeTheme.tokens.dimensions.statusDotSize)
-                            .graphicsLayer { alpha = dotAlpha }
-                            .background(statusColor, CircleShape),
-                    )
-                }
-            },
-            label = stringResource(R.string.workspace_engine_label),
-            value = statusLabel,
-            valueColor = statusColor,
-            onClick = onStatusClick,
-            trailing = {
-                GlyphIcon(
-                    glyph = Glyph.ChevronRight,
-                    tint = colors.onSurfaceFaint,
-                    size = 14.dp,
-                )
-            },
-        )
-
-        RowDivider(inset = 48.dp)
-
-        // Workspace directory row
-        ReadinessRow(
-            icon = {
-                IconBadge(
-                    glyph = Glyph.Folder,
-                    tint = colors.onSurfaceMuted,
-                    size = 26.dp,
-                )
-            },
-            label = stringResource(R.string.workspace_path_label),
-            value = projectName,
-            onClick = onProjectClick,
-            trailing = {
-                GlyphIcon(
-                    glyph = Glyph.ChevronRight,
-                    tint = colors.onSurfaceFaint,
-                    size = 14.dp,
-                )
-            },
-        )
-
-        RowDivider(inset = 48.dp)
-
-        // Git status row
-        ReadinessRow(
-            icon = {
-                IconBadge(
-                    glyph = Glyph.Terminal,
-                    tint = if (gitBranch != null) colors.accent else colors.onSurfaceFaint,
-                    size = 26.dp,
-                )
-            },
-            label = stringResource(R.string.workspace_git_label),
-            value = gitBranch ?: stringResource(R.string.workspace_git_untracked),
-            valueColor = if (gitBranch != null) colors.onSurface else colors.onSurfaceFaint,
-            valueMono = gitBranch != null,
-            onClick = null,
-            trailing = {
-                if (gitBranch != null) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(radius.full))
-                            .background(colors.accent.copy(alpha = 0.10f))
-                            .border(0.5.dp, colors.accent.copy(alpha = 0.22f), RoundedCornerShape(radius.full))
-                            .padding(horizontal = spacing.sm, vertical = spacing.xxs),
-                    ) {
-                        Text(
-                            text = "git",
-                            style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
-                            color = colors.accent,
-                        )
-                    }
-                }
-            },
-        )
-    }
-}
-
-@Composable
-private fun ReadinessRow(
-    icon: @Composable () -> Unit,
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    valueColor: Color = OpenCodeTheme.colors.onSurface,
-    valueMono: Boolean = false,
-    onClick: (() -> Unit)? = null,
-    trailing: (@Composable () -> Unit)? = null,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val isHovered by interactionSource.collectIsHoveredAsState()
-
-    val rowBg by animateColorAsState(
-        targetValue = when {
-            onClick != null && isPressed -> colors.surfacePressed
-            onClick != null && isHovered -> colors.surfaceRaised
-            else -> Color.Transparent
-        },
-        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
-        label = "readinessRowBg",
-    )
-
-    val rowModifier = if (onClick != null) {
-        Modifier
-            .fillMaxWidth()
-            .background(rowBg)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = ripple(),
-                role = SemanticsRole.Button,
-                onClick = onClick,
+                } else {
+                    Modifier
+                },
             )
-            .padding(horizontal = spacing.lg, vertical = spacing.md)
-    } else {
-        Modifier
-            .fillMaxWidth()
-            .background(rowBg)
-            .padding(horizontal = spacing.lg, vertical = spacing.md)
-    }
-
-    Row(
-        modifier = modifier.then(rowModifier),
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
-        icon()
-
-        Spacer(Modifier.width(spacing.md))
-
-        Text(
-            text = label,
-            style = OpenCodeTypography.bodySmall,
-            color = colors.onSurfaceMuted,
-            modifier = Modifier.weight(1f),
+        Box(
+            modifier = Modifier
+                .size(dims.statusDotSize)
+                .background(statusColor, CircleShape),
         )
-
         Text(
-            text = value,
-            style = if (valueMono) OpenCodeTypography.code else OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
-            color = valueColor,
+            text = statusLabel,
+            style = OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
+            color = statusColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(end = if (trailing != null) spacing.sm else 0.dp),
         )
-
-        if (trailing != null) {
-            trailing()
-        }
+        Text(text = "•", style = OpenCodeTypography.bodySmall, color = colors.onSurfaceFaint)
+        // Tapping the project name still switches workspace, as the old
+        // card's workspace row did; tapping anywhere else on the row opens
+        // diagnostics. The inner click wins over the row click in Compose.
+        Text(
+            text = projectName,
+            style = OpenCodeTypography.bodySmall,
+            color = colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .then(
+                    if (onProjectClick != null) {
+                        Modifier.clickable(
+                            role = SemanticsRole.Button,
+                            onClick = onProjectClick,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
+        )
+        Text(text = "•", style = OpenCodeTypography.bodySmall, color = colors.onSurfaceFaint)
+        Text(
+            text = gitBranch ?: stringResource(R.string.workspace_git_untracked),
+            style = if (gitBranch != null) OpenCodeTypography.code else OpenCodeTypography.bodySmall,
+            color = if (gitBranch != null) colors.onSurface else colors.onSurfaceFaint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        GlyphIcon(
+            glyph = Glyph.ChevronRight,
+            tint = colors.onSurfaceFaint,
+            size = 12.dp,
+        )
     }
 }
 
@@ -1878,6 +1747,11 @@ private fun ActionableStarterCard(
     glyph: Glyph,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Compact form for the two-column grid on phones: icon + title only,
+     * no description or chevron, so the title still fits in a ~150dp column.
+     */
+    compact: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -1948,12 +1822,15 @@ private fun ActionableStarterCard(
                 role = SemanticsRole.Button,
                 onClick = onClick,
             )
-            .padding(horizontal = spacing.md + spacing.xxs, vertical = spacing.md),
+            .padding(
+                horizontal = spacing.md + spacing.xxs,
+                vertical = if (compact) spacing.sm else spacing.md,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(if (compact) 28.dp else 36.dp)
                 .clip(RoundedCornerShape(radius.md))
                 .background(iconBg),
             contentAlignment = Alignment.Center,
@@ -1961,11 +1838,11 @@ private fun ActionableStarterCard(
             GlyphIcon(
                 glyph = glyph,
                 tint = iconTint,
-                size = 18.dp,
+                size = if (compact) 14.dp else 18.dp,
             )
         }
 
-        Spacer(Modifier.width(spacing.md))
+        Spacer(Modifier.width(if (compact) spacing.sm else spacing.md))
 
         Column(
             modifier = Modifier.weight(1f),
@@ -1974,14 +1851,14 @@ private fun ActionableStarterCard(
             Text(
                 text = title,
                 style = OpenCodeTypography.bodyStrong.copy(
-                    fontSize = 14.5.sp,
-                    lineHeight = 18.sp,
+                    fontSize = if (compact) 13.sp else 14.5.sp,
+                    lineHeight = if (compact) 17.sp else 18.sp,
                 ),
                 color = colors.onSurface,
-                maxLines = 1,
+                maxLines = if (compact) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (description.isNotBlank()) {
+            if (!compact && description.isNotBlank()) {
                 Spacer(Modifier.height(spacing.xxs))
                 Text(
                     text = description,
@@ -1996,13 +1873,15 @@ private fun ActionableStarterCard(
             }
         }
 
-        Spacer(Modifier.width(spacing.xs))
+        if (!compact) {
+            Spacer(Modifier.width(spacing.xs))
 
-        GlyphIcon(
-            glyph = Glyph.ChevronRight,
-            tint = if (isHovered || isPressed) colors.accent else colors.onSurfaceFaint,
-            size = 14.dp,
-        )
+            GlyphIcon(
+                glyph = Glyph.ChevronRight,
+                tint = if (isHovered || isPressed) colors.accent else colors.onSurfaceFaint,
+                size = 14.dp,
+            )
+        }
     }
 }
 
