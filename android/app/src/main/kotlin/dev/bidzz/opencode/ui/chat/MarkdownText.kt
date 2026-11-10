@@ -87,7 +87,7 @@ fun MarkdownText(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                blocks.forEach { block ->
+                blocks.forEachIndexed { blockIndex, block ->
                     when (block) {
                         is MdBlock.Paragraph -> Text(
                             text = block.spans.toAnnotated(),
@@ -96,11 +96,17 @@ fun MarkdownText(
                         )
 
                         is MdBlock.Heading -> {
+                            val baseTopPadding = if (blockIndex == 0) 0.dp else when (block.level) {
+                                1 -> spacing.md
+                                2 -> spacing.sm + spacing.xxs
+                                3 -> spacing.sm
+                                else -> spacing.xs
+                            }
                             val headingStyle = when (block.level) {
-                                1 -> HeadingStyle(20.sp, 26.sp, FontWeight.Bold, spacing.md, (-0.3).sp)
-                                2 -> HeadingStyle(17.sp, 22.sp, FontWeight.Bold, spacing.sm + spacing.xxs, (-0.25).sp)
-                                3 -> HeadingStyle(15.sp, 20.sp, FontWeight.SemiBold, spacing.sm, (-0.15).sp)
-                                else -> HeadingStyle(14.sp, 18.sp, FontWeight.SemiBold, spacing.xs, (-0.1).sp)
+                                1 -> HeadingStyle(20.sp, 26.sp, FontWeight.Bold, baseTopPadding, (-0.3).sp)
+                                2 -> HeadingStyle(17.sp, 22.sp, FontWeight.Bold, baseTopPadding, (-0.25).sp)
+                                3 -> HeadingStyle(15.sp, 20.sp, FontWeight.SemiBold, baseTopPadding, (-0.15).sp)
+                                else -> HeadingStyle(14.sp, 18.sp, FontWeight.SemiBold, baseTopPadding, (-0.1).sp)
                             }
                             Text(
                                 text = block.spans.toAnnotated(),
@@ -150,27 +156,59 @@ fun MarkdownText(
                             verticalArrangement = Arrangement.spacedBy(spacing.xs + spacing.xxs),
                             modifier = Modifier.padding(start = spacing.xxs),
                         ) {
-                            block.items.forEach { item ->
+                            block.items.forEach { rawItem ->
+                                val firstSpan = rawItem.firstOrNull()
+                                val taskCheck = if (firstSpan is MdSpan.Text) {
+                                    when {
+                                        firstSpan.text.startsWith("[x] ", ignoreCase = true) -> true to firstSpan.text.substring(4)
+                                        firstSpan.text.startsWith("[ ] ") -> false to firstSpan.text.substring(4)
+                                        else -> null
+                                    }
+                                } else null
+
+                                val (isTask, isChecked, item) = if (taskCheck != null) {
+                                    val (checked, newFirst) = taskCheck
+                                    val modifiedSpans = listOf(MdSpan.Text(newFirst)) + rawItem.drop(1)
+                                    Triple(true, checked, modifiedSpans)
+                                } else {
+                                    Triple(false, false, rawItem)
+                                }
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.Top,
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(16.dp)
-                                            .padding(top = 8.dp),
-                                        contentAlignment = Alignment.TopCenter,
-                                    ) {
+                                    if (isTask) {
                                         Box(
                                             modifier = Modifier
-                                                .size(4.5.dp)
-                                                .background(colors.onSurfaceMuted.copy(alpha = 0.75f), CircleShape),
-                                        )
+                                                .width(20.dp)
+                                                .padding(top = 2.dp),
+                                            contentAlignment = Alignment.TopStart,
+                                        ) {
+                                            GlyphIcon(
+                                                glyph = if (isChecked) Glyph.CheckSquare else Glyph.Square,
+                                                tint = if (isChecked) colors.accent else colors.onSurfaceMuted,
+                                                size = 15.dp,
+                                            )
+                                        }
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(16.dp)
+                                                .padding(top = 8.dp),
+                                            contentAlignment = Alignment.TopCenter,
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(4.5.dp)
+                                                    .background(colors.onSurfaceMuted.copy(alpha = 0.75f), CircleShape),
+                                            )
+                                        }
                                     }
                                     Text(
                                         text = item.toAnnotated(),
                                         style = OpenCodeTypography.body.copy(lineHeight = 22.sp),
-                                        color = colors.onSurface,
+                                        color = if (isTask && isChecked) colors.onSurfaceMuted else colors.onSurface,
                                         modifier = Modifier.weight(1f),
                                     )
                                 }

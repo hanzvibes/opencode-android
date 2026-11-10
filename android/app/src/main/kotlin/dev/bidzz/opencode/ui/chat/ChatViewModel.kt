@@ -57,6 +57,7 @@ data class ChatMessage(
     val agent: String? = null,
     val model: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
     val reasoning: String? = null,
+    val parts: List<ChatTurnPart> = emptyList(),
 )
 
 /**
@@ -427,15 +428,34 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                     agent = message.agent,
                     model = message.model,
                 )
-            message.isAssistant -> result += ChatMessage(
-                id = message.id,
-                role = Role.ASSISTANT,
-                text = message.plainText,
-                reasoning = message.reasoningText,
-                tools = message.content.mapNotNull { it.toToolCall() },
-                agent = message.agent,
-                model = message.model,
-            )
+            message.isAssistant -> {
+                val msgLiveTools = liveTools.values.filter { it.messageID == message.id }.map { it.call }
+                val msgStreamingText = streaming[message.id]
+                val isStreamingMsg = streaming.containsKey(message.id) || msgLiveTools.any { it.status == "running" || it.status == "streaming" }
+                val initialTools = message.content.mapNotNull { it.toToolCall() }
+                val allTools = (initialTools + msgLiveTools).distinctBy { it.id }
+
+                val parts = buildTurnParts(
+                    content = message.content,
+                    streamingText = msgStreamingText,
+                    isStreaming = isStreamingMsg,
+                    liveTools = msgLiveTools,
+                    explicitReasoning = message.reasoningText,
+                    fallbackText = message.plainText,
+                )
+
+                result += ChatMessage(
+                    id = message.id,
+                    role = Role.ASSISTANT,
+                    text = msgStreamingText ?: message.plainText,
+                    reasoning = message.reasoningText,
+                    tools = allTools,
+                    parts = parts,
+                    streaming = isStreamingMsg,
+                    agent = message.agent,
+                    model = message.model,
+                )
+            }
             // `idle` markers are engine bookkeeping, not conversation.
         }
     }
@@ -444,9 +464,28 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
     streaming.forEach { (messageID, text) ->
         val existing = result.indexOfFirst { it.id == messageID }
         if (existing >= 0) {
-            result[existing] = result[existing].copy(text = text, streaming = true)
+            val curr = result[existing]
+            val updatedParts = if (curr.parts.isNotEmpty()) {
+                val copy = curr.parts.toMutableList()
+                val last = copy.lastOrNull()
+                if (last is ChatTurnPart.Text) {
+                    copy[copy.lastIndex] = ChatTurnPart.Text(text)
+                } else {
+                    copy += ChatTurnPart.Text(text)
+                }
+                copy
+            } else {
+                listOf(ChatTurnPart.Text(text))
+            }
+            result[existing] = curr.copy(text = text, streaming = true, parts = updatedParts)
         } else {
-            result += ChatMessage(id = messageID, role = Role.ASSISTANT, text = text, streaming = true)
+            result += ChatMessage(
+                id = messageID,
+                role = Role.ASSISTANT,
+                text = text,
+                streaming = true,
+                parts = listOf(ChatTurnPart.Text(text)),
+            )
         }
     }
 
@@ -454,13 +493,32 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
     // that has no text yet still need a message to hang off.
     liveTools.values.groupBy { it.messageID }.forEach { (messageID, live) ->
         var idx = result.indexOfFirst { it.id == messageID }
-        if (idx < 0) {
-            result += ChatMessage(id = messageID, role = Role.ASSISTANT, text = "", streaming = true)
-            idx = result.lastIndex
-        }
         val liveCalls = live.map { it.call }
         val liveIds = liveCalls.map { it.id }.toSet()
-        result[idx] = result[idx].copy(tools = result[idx].tools.filter { it.id !in liveIds } + liveCalls)
+        if (idx < 0) {
+            val parts = buildTurnParts(
+                content = emptyList(),
+                liveTools = liveCalls,
+                isStreaming = true,
+            )
+            result += ChatMessage(
+                id = messageID,
+                role = Role.ASSISTANT,
+                text = "",
+                tools = liveCalls,
+                parts = parts,
+                streaming = true,
+            )
+        } else {
+            val curr = result[idx]
+            val mergedTools = curr.tools.filter { it.id !in liveIds } + liveCalls
+            val parts = if (curr.parts.isEmpty()) {
+                buildTurnParts(content = emptyList(), liveTools = mergedTools, isStreaming = curr.streaming)
+            } else {
+                curr.parts
+            }
+            result[idx] = curr.copy(tools = mergedTools, parts = parts)
+        }
     }
     // Merge contiguous assistant messages into one unified turn
     val merged = mutableListOf<ChatMessage>()
@@ -473,10 +531,12 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
             msg.tools.forEach { tool -> toolMap[tool.id] = tool }
             val orderedIds = (last.tools.map { it.id } + msg.tools.map { it.id }).distinct()
             val mergedTools = orderedIds.mapNotNull { toolMap[it] }
+            val mergedParts = mergeTurnParts(last.parts, msg.parts)
             merged[merged.lastIndex] = last.copy(
                 text = combinedText,
                 reasoning = combinedReasoning,
                 tools = mergedTools,
+                parts = mergedParts,
                 streaming = last.streaming || msg.streaming,
                 agent = msg.agent ?: last.agent,
                 model = msg.model ?: last.model,

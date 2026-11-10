@@ -28,6 +28,7 @@ enum class Glyph {
     Eye, EyeOff, Key, Sparkle, Refresh,
     GitBranch, Sparkles, CheckCircle, Warning, Play, Stop,
     FileCode, Lightning, Pin, Trash, Dots, Pulse, User,
+    Question, Square, CheckSquare,
 }
 
 @Composable
@@ -292,6 +293,24 @@ fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp
             Glyph.User -> {
                 drawCircle(tint, radius = 3.8f * u, center = Offset(12f * u, 7.5f * u), style = stroke)
                 shape(4.5f to 20.5f, 5.5f to 16f, 8.5f to 14.5f, 15.5f to 14.5f, 18.5f to 16f, 19.5f to 20.5f)
+            }
+            Glyph.Question -> {
+                drawCircle(tint, radius = 9f * u, center = Offset(12f * u, 12f * u), style = stroke)
+                shape(9.5f to 8.5f, 10.5f to 7f, 12f to 6.2f, 13.5f to 7f, 14.5f to 8.5f, 13.5f to 10.5f, 12f to 12f, 12f to 13.8f)
+                drawCircle(tint, radius = 0.9f * u, center = Offset(12f * u, 16.5f * u))
+            }
+            Glyph.Square -> {
+                drawRoundRect(
+                    tint, Offset(5f * u, 5f * u), Size(14f * u, 14f * u),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f * u), style = stroke,
+                )
+            }
+            Glyph.CheckSquare -> {
+                drawRoundRect(
+                    tint, Offset(5f * u, 5f * u), Size(14f * u, 14f * u),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f * u), style = stroke,
+                )
+                shape(8.5f to 12f, 11f to 15f, 15.5f to 9f)
             }
         }
     }

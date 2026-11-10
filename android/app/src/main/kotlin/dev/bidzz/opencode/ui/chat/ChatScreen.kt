@@ -305,6 +305,8 @@ fun ChatScreen(
                                     showProvenance = showProvenance,
                                     model = message.model,
                                     reasoning = message.reasoning,
+                                    parts = message.parts,
+                                    onAnswerQuestion = onSend,
                                     modifier = Modifier.padding(top = topSpacing),
                                 )
                             }
@@ -368,12 +370,18 @@ fun ChatScreen(
                 }
             }
 
-            state.pendingPermission?.let { request ->
-                PermissionPrompt(
-                    request = request,
-                    onReply = onPermissionReply,
-                    modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
-                )
+            androidx.compose.animation.AnimatedVisibility(
+                visible = state.pendingPermission != null,
+                enter = fadeIn(tween(180)) + expandVertically(tween(180)),
+                exit = fadeOut(tween(140)) + shrinkVertically(tween(140)),
+            ) {
+                state.pendingPermission?.let { request ->
+                    PermissionPrompt(
+                        request = request,
+                        onReply = onPermissionReply,
+                        modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+                    )
+                }
             }
 
             val paletteState = rememberCommandPaletteState(

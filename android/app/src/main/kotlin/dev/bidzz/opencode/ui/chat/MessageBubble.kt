@@ -132,6 +132,8 @@ fun MessageBubble(
     showProvenance: Boolean = true,
     model: ModelRef? = null,
     reasoning: String? = null,
+    parts: List<ChatTurnPart> = emptyList(),
+    onAnswerQuestion: (String) -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -169,12 +171,20 @@ fun MessageBubble(
         }
 
         Role.ASSISTANT -> Column(modifier = modifier.fillMaxWidth()) {
-            val parsed = remember(markdown, reasoning) {
-                parseThinkingContent(markdown, reasoning)
+            val effectiveParts = remember(parts, markdown, tools, reasoning, streaming) {
+                if (parts.isNotEmpty()) parts
+                else buildTurnParts(
+                    content = emptyList(),
+                    streamingText = markdown,
+                    isStreaming = streaming,
+                    liveTools = tools,
+                    explicitReasoning = reasoning,
+                    fallbackText = markdown,
+                )
             }
-            val hasReasoning = !parsed.reasoning.isNullOrBlank()
-            // Actively thinking only when thought tokens are streaming or reasoning is in progress without text answer yet
-            val isThinkingActive = streaming && (parsed.isActivelyStreamingThoughts || (hasReasoning && parsed.answer.isEmpty()))
+
+            val hasReasoning = effectiveParts.any { it is ChatTurnPart.Reasoning }
+            val isThinkingActive = effectiveParts.any { it is ChatTurnPart.Reasoning && it.isActivelyStreaming }
 
             var elapsedSeconds by remember(streaming) { mutableIntStateOf(0) }
             var recordedDuration by remember { mutableIntStateOf(0) }
@@ -193,11 +203,10 @@ fun MessageBubble(
             }
 
             val finalDuration = if (recordedDuration > 0) recordedDuration else elapsedSeconds
-            // Only show thinking widget if there is actual reasoning content, or if thinking is actively in progress
-            val showThinkingWidget = isThinkingActive || hasReasoning
-            val showStreamingSpinner = streaming && parsed.answer.isNotEmpty()
+            val hasTextContent = effectiveParts.any { it is ChatTurnPart.Text && it.markdown.isNotBlank() }
+            val showStreamingSpinner = streaming && hasTextContent
 
-            // 1. Author Identity Header: Branded provenance badge (e.g. claude-3-7-sonnet, gemini-2.0-flash, gpt-4o)
+            // 1. Author Identity Header: Branded provenance badge
             if (showProvenance) {
                 val labelText = if (!provenance.isNullOrBlank()) provenance else "OpenCode"
                 ProvenanceBadge(
@@ -216,40 +225,63 @@ fun MessageBubble(
                 )
             }
 
-            // 2. Dedicated Thinking Disclosure Widget
-            if (showThinkingWidget) {
-                ThinkingDisclosure(
-                    isThinkingActive = isThinkingActive,
-                    reasoningText = parsed.reasoning,
-                    elapsedSeconds = finalDuration,
-                    modifier = Modifier.padding(
-                        bottom = if (parsed.answer.isNotEmpty() || tools.isNotEmpty()) spacing.sm else 0.dp,
-                    ),
-                )
+            // 2. Chronological turn content: Interleaved Reasoning, Tools, Questions, and Markdown Text
+            effectiveParts.forEachIndexed { partIndex, part ->
+                when (part) {
+                    is ChatTurnPart.Reasoning -> {
+                        ThinkingDisclosure(
+                            isThinkingActive = isThinkingActive,
+                            reasoningText = part.text,
+                            elapsedSeconds = finalDuration,
+                            modifier = Modifier.padding(bottom = spacing.sm),
+                        )
+                    }
+
+                    is ChatTurnPart.ToolGroup -> {
+                        if (part.tools.isNotEmpty()) {
+                            ToolTrace(
+                                tools = part.tools,
+                                streaming = part.streaming,
+                                modifier = Modifier.padding(bottom = spacing.sm),
+                            )
+                        }
+                    }
+
+                    is ChatTurnPart.Question -> {
+                        InlineQuestionCard(
+                            call = part.call,
+                            questions = part.questions,
+                            onAnswer = onAnswerQuestion,
+                            modifier = Modifier.padding(bottom = spacing.sm),
+                        )
+                    }
+
+                    is ChatTurnPart.Text -> {
+                        if (part.markdown.isNotBlank()) {
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                                modifier = Modifier.padding(bottom = spacing.sm),
+                            ) {
+                                MarkdownText(markdown = part.markdown)
+                            }
+                        }
+                    }
+                }
             }
 
-            // 3. Execution Phase: Tool Traces
-            if (tools.isNotEmpty()) {
-                ToolTrace(
-                    tools = tools,
-                    streaming = streaming,
-                    modifier = Modifier.padding(bottom = if (parsed.answer.isNotEmpty()) spacing.md else 0.dp),
-                )
-            }
+            // 3. Response Actions: Quiet copy button when complete
+            val allProse = effectiveParts
+                .filterIsInstance<ChatTurnPart.Text>()
+                .map { it.markdown }
+                .filter { it.isNotBlank() }
+                .joinToString("\n\n")
+                .ifEmpty { markdown }
 
-            // 4. Response Content: Smooth transition into streaming answer markdown
-            AnimatedVisibility(
-                visible = parsed.answer.isNotEmpty(),
-                enter = fadeIn(tween(220)) + expandVertically(tween(220)),
-            ) {
-                MarkdownText(markdown = parsed.answer)
-            }
-
-            // 5. Response Actions: Quiet copy button when complete
-            if (!streaming && parsed.answer.isNotEmpty()) {
+            if (!streaming && allProse.isNotBlank()) {
                 CopyButton(
-                    text = parsed.answer,
-                    modifier = Modifier.padding(top = spacing.sm),
+                    text = allProse,
+                    modifier = Modifier.padding(top = spacing.xs),
                 )
             }
         }

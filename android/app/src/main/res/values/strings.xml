@@ -152,6 +152,13 @@
     <string name="permission_allow_once">Allow once</string>
     <string name="permission_always">Always</string>
     <string name="permission_reject">Reject</string>
+    <string name="question_title">Agent Question</string>
+    <string name="question_single_choice">Select an option</string>
+    <string name="question_multi_choice">Select one or more options</string>
+    <string name="question_other_option">Other (write your own answer)</string>
+    <string name="question_write_in_hint">Type your answer here…</string>
+    <string name="question_submit">Submit answer</string>
+    <string name="question_answered">Answered</string>
     <string name="bubble_thinking">Thinking…</string>
     <string name="tool_steps_one">%1$d step</string>
     <string name="tool_steps_other">%1$d steps</string>

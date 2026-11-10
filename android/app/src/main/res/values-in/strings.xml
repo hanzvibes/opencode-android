@@ -151,6 +151,13 @@
     <string name="permission_allow_once">Izinkan sekali</string>
     <string name="permission_always">Selalu</string>
     <string name="permission_reject">Tolak</string>
+    <string name="question_title">Pertanyaan Agen</string>
+    <string name="question_single_choice">Pilih salah satu opsi</string>
+    <string name="question_multi_choice">Pilih satu atau beberapa opsi</string>
+    <string name="question_other_option">Lainnya (tulis jawaban sendiri)</string>
+    <string name="question_write_in_hint">Ketik jawabanmu di sini…</string>
+    <string name="question_submit">Kirim jawaban</string>
+    <string name="question_answered">Terjawab</string>
     <string name="bubble_thinking">Berpikir…</string>
     <string name="tool_steps_one">%1$d langkah</string>
     <string name="tool_steps_other">%1$d langkah</string>
