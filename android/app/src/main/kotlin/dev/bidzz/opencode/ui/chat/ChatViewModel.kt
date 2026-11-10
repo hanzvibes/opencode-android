@@ -462,5 +462,26 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
         val liveIds = liveCalls.map { it.id }.toSet()
         result[idx] = result[idx].copy(tools = result[idx].tools.filter { it.id !in liveIds } + liveCalls)
     }
-    return result
+    // Merge contiguous assistant messages into one unified turn
+    val merged = mutableListOf<ChatMessage>()
+    result.forEach { msg ->
+        val last = merged.lastOrNull()
+        if (last != null && last.role == Role.ASSISTANT && msg.role == Role.ASSISTANT) {
+            val combinedText = listOf(last.text, msg.text).filter { it.isNotBlank() }.joinToString("\n\n")
+            val combinedReasoning = listOfNotNull(last.reasoning, msg.reasoning).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { null }
+            val existingToolIds = last.tools.map { it.id }.toSet()
+            val newTools = msg.tools.filter { it.id !in existingToolIds }
+            merged[merged.lastIndex] = last.copy(
+                text = combinedText,
+                reasoning = combinedReasoning,
+                tools = last.tools + newTools,
+                streaming = last.streaming || msg.streaming,
+                agent = msg.agent ?: last.agent,
+                model = msg.model ?: last.model,
+            )
+        } else {
+            merged += msg
+        }
+    }
+    return merged
 }

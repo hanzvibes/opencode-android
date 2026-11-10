@@ -192,7 +192,8 @@ fun MessageBubble(
 
             val finalDuration = if (recordedDuration > 0) recordedDuration else elapsedSeconds
             val hasReasoning = !parsed.reasoning.isNullOrBlank()
-            val showThinkingWidget = isThinkingActive || hasReasoning || (finalDuration > 0 && tools.isNotEmpty())
+            // Only show thinking widget if there is actual reasoning content, or if thinking is actively in progress
+            val showThinkingWidget = isThinkingActive || hasReasoning
             val showStreamingSpinner = streaming && parsed.answer.isNotEmpty()
 
             // 1. Author Identity Header: Branded provenance badge (e.g. claude-3-7-sonnet, gemini-2.0-flash, gpt-4o)
