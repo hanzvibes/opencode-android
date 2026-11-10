@@ -53,6 +53,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -145,6 +147,13 @@ fun MessageBubble(
      * the placeholder→turn transition. Null keeps the old local timer.
      */
     thinkingElapsedSeconds: Int? = null,
+    /** Local delivery state (C-B): true once an assistant turn follows
+     * this user message. A local read receipt, not a server status. */
+    delivered: Boolean = false,
+    /** Engine `time.created` of this turn, for the tool-trace start time (C-C). */
+    toolsStartedAtMillis: Long? = null,
+    /** Quote this turn into the composer (C-E). Receives the "> quote" text. */
+    onQuote: (String) -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -193,12 +202,18 @@ fun MessageBubble(
                     }
                 }
                 // Same copy affordance as assistant replies, right-aligned
-                // under the user's own bubble.
+                // under the user's own bubble, next to the delivery mark:
+                // one check while unanswered, two once an assistant turn
+                // follows (C-B). Local only — the engine reports no status.
                 if (markdown.isNotBlank()) {
-                    CopyButton(
-                        text = markdown,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                         modifier = Modifier.padding(top = spacing.xs),
-                    )
+                    ) {
+                        DeliveryCheckmark(delivered = delivered)
+                        CopyButton(text = markdown)
+                    }
                 }
             }
         }
@@ -287,6 +302,7 @@ fun MessageBubble(
                             ToolTrace(
                                 tools = part.tools,
                                 streaming = part.streaming,
+                                startedAtMillis = toolsStartedAtMillis,
                                 modifier = Modifier.padding(bottom = spacing.sm),
                             )
                         }
@@ -318,7 +334,11 @@ fun MessageBubble(
                 }
             }
 
-            // 3. Response Actions: Quiet copy button when complete
+            // 3. Response Actions: Quiet copy button when complete, plus
+            // Reply, which quotes a line of this turn into the composer
+            // (C-E). Long-press quoting is deliberately not added: the
+            // text is already selectable, and a long-press gesture would
+            // fight text selection.
             val allProse = effectiveParts
                 .filterIsInstance<ChatTurnPart.Text>()
                 .map { it.markdown }
@@ -327,10 +347,21 @@ fun MessageBubble(
                 .ifEmpty { markdown }
 
             if (!streaming && allProse.isNotBlank()) {
-                CopyButton(
-                    text = allProse,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                     modifier = Modifier.padding(top = spacing.xs),
-                )
+                ) {
+                    CopyButton(text = allProse)
+                    ReplyButton(
+                        onClick = {
+                            val flat = allProse.replace("\n", " ").trim()
+                            val snippet = flat.take(120)
+                                .let { if (flat.length > 120) "$it…" else it }
+                            onQuote("> $snippet")
+                        },
+                    )
+                }
             }
         }
 
@@ -548,6 +579,78 @@ private fun ThoughtSparkleIcon(
             close()
         }
         drawPath(path, tint)
+    }
+}
+
+/**
+ * Delivery mark under a user bubble (C-B): one faint check while the
+ * message is unanswered, two green checks once an assistant turn follows
+ * it. Local only — the engine reports no delivery status.
+ */
+@Composable
+private fun DeliveryCheckmark(
+    delivered: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val label = stringResource(
+        if (delivered) R.string.message_delivered else R.string.message_sent,
+    )
+    Box(
+        modifier = modifier.semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (delivered) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy((-4).dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GlyphIcon(glyph = Glyph.Check, tint = colors.success, size = 12.dp)
+                GlyphIcon(glyph = Glyph.Check, tint = colors.success, size = 12.dp)
+            }
+        } else {
+            GlyphIcon(glyph = Glyph.Check, tint = colors.onSurfaceFaint, size = 12.dp)
+        }
+    }
+}
+
+/**
+ * Reply pill next to Copy on a finished assistant turn (C-E): quotes the
+ * first 120 characters of the turn into the composer as "> …".
+ */
+@Composable
+private fun ReplyButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val pillShape = RoundedCornerShape(radius.full)
+    Box(
+        modifier = modifier
+            .clip(pillShape)
+            .background(colors.surfaceVariant)
+            .border(0.5.dp, colors.hairline, pillShape)
+            .clickable { onClick() }
+            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            GlyphIcon(
+                glyph = Glyph.ArrowLeft,
+                tint = colors.onSurfaceMuted,
+                size = 12.dp,
+            )
+            Text(
+                text = stringResource(R.string.message_reply),
+                style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                color = colors.onSurfaceMuted,
+            )
+        }
     }
 }
 

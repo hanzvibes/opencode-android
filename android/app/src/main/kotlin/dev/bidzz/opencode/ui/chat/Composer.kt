@@ -42,7 +42,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -94,6 +96,9 @@ fun Composer(
     onAttachFile: (() -> Unit)? = null,
     onKeyEvent: ((androidx.compose.ui.input.key.KeyEvent) -> Boolean)? = null,
     controls: @Composable () -> Unit = {},
+    /** Prompts sent in this session, oldest first, for history navigation (C-F).
+     * In-memory only, owned by the view model; empty means no history yet. */
+    promptHistory: List<String> = emptyList(),
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -102,6 +107,18 @@ fun Composer(
     val motion = OpenCodeTheme.tokens.motion
 
     var isFocused by remember { mutableStateOf(false) }
+
+    // Prompt-history position (C-F): -1 means not navigating. Typing
+    // anything by hand abandons navigation; sending clears the draft,
+    // which resets the position through the effect below.
+    var historyIndex by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(value) {
+        if (value.isEmpty()) historyIndex = -1
+    }
+    val onTextChange: (String) -> Unit = { text ->
+        onValueChange(text)
+        historyIndex = -1
+    }
 
     val canSend = enabled && value.isNotBlank() && !busy
     // Named token, not a hardcoded 22.dp: the composer capsule is a deliberate
@@ -158,7 +175,7 @@ fun Composer(
         // Multi-line text field with comfortable line height
         BasicTextField(
             value = value,
-            onValueChange = onValueChange,
+            onValueChange = onTextChange,
             textStyle = OpenCodeTypography.input.copy(
                 color = if (enabled) colors.onSurface else colors.onSurfaceMuted,
                 lineHeight = 22.sp,
@@ -262,6 +279,43 @@ fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.xs),
             ) {
+                // Prompt history (C-F): Up/Down step through prompts sent
+                // in this session. Up only starts from an empty draft, so
+                // it never overwrites text being typed; Down past the
+                // newest prompt restores an empty draft.
+                if (promptHistory.isNotEmpty() && enabled) {
+                    HistoryNavButton(
+                        glyph = Glyph.ArrowUp,
+                        contentDescription = stringResource(R.string.prompt_history_previous),
+                        enabled = historyIndex != 0 && (historyIndex >= 0 || value.isEmpty()),
+                        onClick = {
+                            if (historyIndex < 0) {
+                                if (value.isNotBlank()) return@HistoryNavButton
+                                historyIndex = promptHistory.lastIndex
+                            } else if (historyIndex > 0) {
+                                historyIndex--
+                            } else {
+                                return@HistoryNavButton
+                            }
+                            onValueChange(promptHistory[historyIndex])
+                        },
+                    )
+                    HistoryNavButton(
+                        glyph = Glyph.ArrowDown,
+                        contentDescription = stringResource(R.string.prompt_history_next),
+                        enabled = historyIndex >= 0,
+                        onClick = {
+                            if (historyIndex < promptHistory.lastIndex) {
+                                historyIndex++
+                                onValueChange(promptHistory[historyIndex])
+                            } else {
+                                historyIndex = -1
+                                onValueChange("")
+                            }
+                        },
+                    )
+                }
+
                 // Clear stays available while the agent works: the draft
                 // is the user's text, and hiding the only way to drop it
                 // mid-run was a trap, not a guard.
@@ -397,6 +451,38 @@ private fun QuickActionChip(
                 color = contentColor,
             )
         }
+    }
+}
+
+/**
+ * Small Up/Down button for prompt-history navigation (C-F): a 40dp touch
+ * target with a 14dp arrow, dimmed when there is nowhere to go.
+ */
+@Composable
+private fun HistoryNavButton(
+    glyph: Glyph,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        GlyphIcon(
+            glyph = glyph,
+            tint = if (enabled) colors.onSurfaceMuted else colors.onSurfaceFaint,
+            size = 14.dp,
+        )
     }
 }
 

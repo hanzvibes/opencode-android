@@ -63,6 +63,9 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 
 /**
@@ -79,6 +82,10 @@ fun ToolTrace(
     tools: List<ToolCall>,
     streaming: Boolean,
     modifier: Modifier = Modifier,
+    /** Engine `time.created` of the turn this trace belongs to (C-C).
+     * The engine records no per-tool timestamps, so the trace shows when
+     * its turn started — a real time, never a faked per-step one. */
+    startedAtMillis: Long? = null,
 ) {
     if (tools.isEmpty()) return
 
@@ -188,6 +195,22 @@ fun ToolTrace(
                     .weight(1f, fill = false)
                     .padding(start = spacing.xs),
             )
+
+            // Turn start time (C-C): "Ran 3 steps · 14:32". Shown once
+            // here, not per step — per-tool timestamps do not exist in
+            // the model, and inventing them would be a lie.
+            if (startedAtMillis != null) {
+                Text(
+                    text = "· ${formatClock(startedAtMillis)}",
+                    style = OpenCodeTypography.caption.copy(
+                        fontFamily = OpenCodeTypography.mono,
+                        fontSize = 11.sp,
+                    ),
+                    color = colors.onSurfaceFaint,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = spacing.xs),
+                )
+            }
 
             Spacer(Modifier.weight(1f))
 
@@ -328,6 +351,11 @@ fun ToolTrace(
     }
 }
 
+/** Short clock time ("14:32") in the device timezone, for the trace header. */
+private fun formatClock(millis: Long): String =
+    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("HH:mm"))
+
 /** The only four timeline filters. Edit covers file writes and edits. */
 private enum class ToolFilter(val labelRes: Int) {
     ALL(R.string.tool_filter_all),
@@ -415,6 +443,18 @@ fun ToolStep(
     val label = stepLabel(call.name, call.summary, call.status)
     val verbText = label.verbText()
     val hasDetails = !call.inputText.isNullOrBlank() || !call.output.isNullOrBlank() || !call.error.isNullOrBlank()
+
+    // Path-copy feedback (C-D): tapping a file step's target copies the
+    // full path and flashes a check for 1.5s. No editor exists in the app,
+    // so copy-to-clipboard is the safe jump-to-file.
+    val clipboardManager = LocalClipboardManager.current
+    var pathCopied by remember(call.id) { mutableStateOf(false) }
+    LaunchedEffect(pathCopied) {
+        if (pathCopied) {
+            delay(1500)
+            pathCopied = false
+        }
+    }
 
     Row(
         modifier = modifier
@@ -589,14 +629,47 @@ fun ToolStep(
                                 )
                             }
                             if (label.target.isNotEmpty()) {
-                                Text(
-                                    text = label.target,
-                                    style = OpenCodeTypography.codeInline.copy(fontSize = 11.5.sp),
-                                    color = if (active) colors.accent else colors.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(start = spacing.xs),
-                                )
+                                // The label shows only the last two path
+                                // segments, so the clipboard gets the full
+                                // input path instead (C-D). Tapping the
+                                // target copies it; the step itself still
+                                // expands on tap elsewhere.
+                                val isFileTool = toolKind == ToolKind.EDIT ||
+                                    toolKind == ToolKind.WRITE || toolKind == ToolKind.READ
+                                val fullPath = call.summary
+                                val canCopyPath = isFileTool && fullPath.isNotBlank()
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .padding(start = spacing.xs)
+                                        .then(
+                                            if (canCopyPath) {
+                                                Modifier.clickable {
+                                                    clipboardManager.setText(AnnotatedString(fullPath))
+                                                    pathCopied = true
+                                                }
+                                            } else {
+                                                Modifier
+                                            }
+                                        ),
+                                ) {
+                                    Text(
+                                        text = label.target,
+                                        style = OpenCodeTypography.codeInline.copy(fontSize = 11.5.sp),
+                                        color = if (pathCopied) colors.success
+                                        else if (active) colors.accent else colors.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (pathCopied) {
+                                        GlyphIcon(
+                                            glyph = Glyph.Check,
+                                            tint = colors.success,
+                                            size = 10.dp,
+                                            modifier = Modifier.padding(start = 3.dp),
+                                        )
+                                    }
+                                }
                             }
                             if (active) {
                                 BlinkingCursor(

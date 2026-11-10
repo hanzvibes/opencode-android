@@ -263,6 +263,15 @@
     <string name="history_search_hint">Cari sesi</string>
     <string name="history_search_no_results">Tidak ada sesi yang cocok dengan "%1$s"</string>
 
+    <!-- Pembatas tanggal, status terkirim, balas, riwayat prompt (audit C) -->
+    <string name="date_today">Hari ini</string>
+    <string name="date_yesterday">Kemarin</string>
+    <string name="message_sent">Terkirim</string>
+    <string name="message_delivered">Diterima</string>
+    <string name="message_reply">Balas</string>
+    <string name="prompt_history_previous">Prompt sebelumnya</string>
+    <string name="prompt_history_next">Prompt berikutnya</string>
+
     <!-- Providers -->
     <string name="providers_title">Penyedia</string>
     <string name="providers_none_connected">Belum ada penyedia yang terhubung. Sebelum itu, agen memakai paket gratis opencode, yang berhenti setelah beberapa saat. Tambahkan kunci API di bawah untuk memakai akun Anda sendiri.</string>

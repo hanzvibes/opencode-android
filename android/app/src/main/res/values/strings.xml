@@ -264,6 +264,15 @@
     <string name="history_search_hint">Search sessions</string>
     <string name="history_search_no_results">No sessions match "%1$s"</string>
 
+    <!-- Date dividers, delivery status, reply, prompt history (audit C) -->
+    <string name="date_today">Today</string>
+    <string name="date_yesterday">Yesterday</string>
+    <string name="message_sent">Sent</string>
+    <string name="message_delivered">Delivered</string>
+    <string name="message_reply">Reply</string>
+    <string name="prompt_history_previous">Previous prompt</string>
+    <string name="prompt_history_next">Next prompt</string>
+
     <!-- Providers -->
     <string name="providers_title">Providers</string>
     <string name="providers_none_connected">No provider connected. Until one is, the agent runs on opencode\'s free tier, which stops after a short while. Add an API key below to use your own account.</string>

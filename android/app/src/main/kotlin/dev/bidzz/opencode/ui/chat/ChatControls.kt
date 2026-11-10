@@ -162,7 +162,7 @@ private fun AgentSelector(
     val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
     val openAbove = anchorTopDp > 0.dp && anchorTopDp > screenHeightDp / 2
     // Header ~36dp plus one ~64dp row per agent, capped like the menu itself.
-    val estimatedMenuHeight = (36.dp + selectableAgents.size * 64.dp).coerceAtMost(380.dp)
+    val estimatedMenuHeight = (36.dp + 64.dp * selectableAgents.size).coerceAtMost(380.dp)
 
     // Selector chips are 40dp tall (the composer touch target), not 28dp:
     // they sit in the same controls row as the composer chips, and a 28dp
@@ -415,7 +415,7 @@ private fun ModelSelector(
     val openAbove = anchorTopDp > 0.dp && anchorTopDp > screenHeightDp / 2
     // Search field ~48dp plus header ~36dp plus one ~56dp row per model,
     // capped like the menu itself.
-    val estimatedMenuHeight = (84.dp + filteredModels.size * 56.dp).coerceAtMost(380.dp)
+    val estimatedMenuHeight = (84.dp + 56.dp * filteredModels.size).coerceAtMost(380.dp)
 
     Box(
         modifier = Modifier.onGloballyPositioned {

@@ -40,6 +40,11 @@ data class ChatUiState(
      * the user did not mean to send. Cleared when the session changes.
      */
     val lastSentText: String? = null,
+    /** Prompts actually sent in this session, oldest first, for the
+     * composer's in-memory history navigation (C-F). In-memory only —
+     * never persisted — and cleared when the session changes, like
+     * [lastSentText]. Capped so a long session cannot grow it without bound. */
+    val sentPrompts: List<String> = emptyList(),
     /** Active permission request; the agent is blocked until it is answered. */
     val pendingPermission: dev.bidzz.opencode.core.api.dto.PendingPermission? = null,
     /** Selectable agents — the CLI's modes (build, plan, and user-defined ones). */
@@ -66,6 +71,10 @@ data class ChatMessage(
     val model: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
     val reasoning: String? = null,
     val parts: List<ChatTurnPart> = emptyList(),
+    /** Engine `time.created` for this message, epoch millis, or null when the
+     * engine sent none. Drives date dividers and the tool-trace start time;
+     * nothing else reads it, so a null simply hides those decorations. */
+    val createdAtMillis: Long? = null,
 )
 
 /**
@@ -260,7 +269,15 @@ class ChatViewModel(
             return
         }
 
-        _state.value = _state.value.copy(lastSentText = text)
+        _state.value = _state.value.copy(
+            lastSentText = text,
+            // Consecutive duplicates add nothing to history navigation.
+            sentPrompts = if (_state.value.sentPrompts.lastOrNull() == text) {
+                _state.value.sentPrompts
+            } else {
+                (_state.value.sentPrompts + text).takeLast(50)
+            },
+        )
         sendInFlight = true
         viewModelScope.launch {
             try {
@@ -418,7 +435,7 @@ class ChatViewModel(
         // A draft belongs to the session it was typed in; it must not follow
         // the user into the fresh session. The last sent text goes with it:
         // retrying it in a new session would send the old session's prompt.
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", lastSentText = null)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", lastSentText = null, sentPrompts = emptyList())
         savedStateHandle?.remove<String>(DRAFT_KEY)
     }
 
@@ -433,7 +450,7 @@ class ChatViewModel(
         // A draft belongs to the session it was typed in; opening another
         // session starts with an empty composer — and no retry target from
         // the previous session.
-        _state.value = _state.value.copy(draft = "", lastSentText = null)
+        _state.value = _state.value.copy(draft = "", lastSentText = null, sentPrompts = emptyList())
         savedStateHandle?.remove<String>(DRAFT_KEY)
         repo.open(sessionID)
     }
@@ -484,6 +501,7 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                 id = message.id,
                 role = Role.USER,
                 text = message.text.orEmpty(),
+                createdAtMillis = message.time?.created,
             )
             // A failed run with nothing to show would otherwise be an empty bubble.
             // The model that failed is named too: "which model errored" is the first
@@ -495,6 +513,7 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                     text = message.error?.message ?: message.error?.type ?: "The agent failed",
                     agent = message.agent,
                     model = message.model,
+                    createdAtMillis = message.time?.created,
                 )
             message.isAssistant -> {
                 val msgLiveTools = liveTools.values.filter { it.messageID == message.id }.map { it.call }
@@ -522,6 +541,7 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                     streaming = isStreamingMsg,
                     agent = message.agent,
                     model = message.model,
+                    createdAtMillis = message.time?.created,
                 )
             }
             // `idle` markers are engine bookkeeping, not conversation.
@@ -553,6 +573,10 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                 text = text,
                 streaming = true,
                 parts = listOf(ChatTurnPart.Text(text)),
+                // No history entry yet, so no engine timestamp: "now" is
+                // the honest value, and it keeps a fresh turn from
+                // inheriting yesterday's divider.
+                createdAtMillis = System.currentTimeMillis(),
             )
         }
     }
@@ -576,6 +600,7 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                 tools = liveCalls,
                 parts = parts,
                 streaming = true,
+                createdAtMillis = System.currentTimeMillis(),
             )
         } else {
             val curr = result[idx]

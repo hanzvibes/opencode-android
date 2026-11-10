@@ -103,6 +103,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.Status
@@ -425,6 +430,22 @@ fun ChatScreen(
                                 }
 
                                 Column(modifier = Modifier.padding(top = topSpacing)) {
+                                    // Date divider (audit C-A): a new day in
+                                    // the transcript gets a labelled hairline
+                                    // ("Today", "Yesterday", or the date).
+                                    // Messages without an engine timestamp
+                                    // never start one — a divider must come
+                                    // from real dates, not from message order.
+                                    val createdAt = message.createdAtMillis
+                                    val prevCreatedAt = prevMessage?.createdAtMillis
+                                    val showDateDivider = createdAt != null &&
+                                        (prevCreatedAt == null || !isSameDay(prevCreatedAt, createdAt))
+                                    if (showDateDivider && createdAt != null) {
+                                        DateDivider(
+                                            millis = createdAt,
+                                            modifier = Modifier.padding(bottom = spacing.sm),
+                                        )
+                                    }
                                     // Hairline turn divider above the first part
                                     // of a new assistant turn (not the first
                                     // message). No card, no background — the
@@ -450,6 +471,24 @@ fun ChatScreen(
                                         reasoning = message.reasoning,
                                         parts = message.parts,
                                         thinkingElapsedSeconds = busyElapsedSeconds,
+                                        // Delivered (C-B): a user message counts
+                                        // as answered once any assistant turn
+                                        // appears after it — a local read
+                                        // receipt, not a server status.
+                                        delivered = message.role == Role.USER &&
+                                            state.messages.drop(index + 1).any { it.role == Role.ASSISTANT },
+                                        // Turn start time for the tool trace
+                                        // (C-C): the engine records no
+                                        // per-tool timestamps, so the trace
+                                        // shows when its turn started.
+                                        toolsStartedAtMillis = message.createdAtMillis,
+                                        // Quote into the composer (C-E): the
+                                        // quote is appended after the draft,
+                                        // never over it.
+                                        onQuote = { quote ->
+                                            val prefix = if (state.draft.isBlank()) "" else state.draft.trimEnd() + "\n"
+                                            onDraftChange(prefix + quote)
+                                        },
                                         onAnswerQuestion = { answer ->
                                             onDraftChange(answer)
                                             onSend()
@@ -633,6 +672,7 @@ fun ChatScreen(
                 onStop = onStop,
                 busy = state.busy,
                 enabled = state.workspaceReady,
+                promptHistory = state.sentPrompts,
                 modifier = Modifier.navigationBarsPadding(),
                 onKeyEvent = { keyEvent ->
                     // Ctrl/Cmd+Enter sends from a physical keyboard; a plain
@@ -664,6 +704,48 @@ fun ChatScreen(
                 },
             )
         }
+    }
+}
+
+private fun isSameDay(aMillis: Long, bMillis: Long): Boolean {
+    val zone = ZoneId.systemDefault()
+    return Instant.ofEpochMilli(aMillis).atZone(zone).toLocalDate() ==
+        Instant.ofEpochMilli(bMillis).atZone(zone).toLocalDate()
+}
+
+/** "Today" / "Yesterday", otherwise the date — in the device locale. */
+@Composable
+private fun dateDividerLabel(millis: Long): String {
+    val zone = ZoneId.systemDefault()
+    val date = Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+    val today = LocalDate.now(zone)
+    return when (date) {
+        today -> stringResource(R.string.date_today)
+        today.minusDays(1) -> stringResource(R.string.date_yesterday)
+        else -> date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))
+    }
+}
+
+/** Centred date pill on a hairline, inserted when the day changes (C-A). */
+@Composable
+private fun DateDivider(
+    millis: Long,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HairlineSeparator(modifier = Modifier.weight(1f))
+        Text(
+            text = dateDividerLabel(millis),
+            style = OpenCodeTypography.caption,
+            color = colors.onSurfaceFaint,
+            modifier = Modifier.padding(horizontal = spacing.sm),
+        )
+        HairlineSeparator(modifier = Modifier.weight(1f))
     }
 }
 
@@ -1805,8 +1887,9 @@ private fun EmptyChat(
     // SharedPreferences, so a dismissed card stays gone across restarts.
     // There is no "recent prompts" list and no reset: the four starters
     // are fixed suggestions, and dismissing one is a per-item choice.
-    val starterPrefs = remember {
-        LocalContext.current.getSharedPreferences("opencode_chat", Context.MODE_PRIVATE)
+    val context = LocalContext.current
+    val starterPrefs = remember(context) {
+        context.getSharedPreferences("opencode_chat", Context.MODE_PRIVATE)
     }
     var dismissedStarterIds by remember {
         mutableStateOf(
