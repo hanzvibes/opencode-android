@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -87,6 +88,7 @@ fun Composer(
     modifier: Modifier = Modifier,
     onVoice: (() -> Unit)? = null,
     onAttachFile: (() -> Unit)? = null,
+    onKeyEvent: ((androidx.compose.ui.input.key.KeyEvent) -> Boolean)? = null,
     controls: @Composable () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
@@ -160,7 +162,8 @@ fun Composer(
                 .fillMaxWidth()
                 .padding(horizontal = spacing.lg)
                 .heightIn(min = 28.dp, max = dims.composerMaxHeight)
-                .onFocusChanged { isFocused = it.isFocused },
+                .onFocusChanged { isFocused = it.isFocused }
+                .then(if (onKeyEvent != null) Modifier.onPreviewKeyEvent(onKeyEvent) else Modifier),
             decorationBox = { inner ->
                 Box(
                     modifier = Modifier.fillMaxWidth(),

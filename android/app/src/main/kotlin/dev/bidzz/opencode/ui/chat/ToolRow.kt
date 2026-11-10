@@ -488,8 +488,9 @@ fun ToolStep(
                                 }
                             }
                             call.status == "completed" -> {
-                                val summaryText = if (!call.output.isNullOrBlank()) {
-                                    val lines = call.output.lines().size
+                                val out = call.output
+                                val summaryText = if (!out.isNullOrBlank()) {
+                                    val lines = out.lines().size
                                     if (lines > 1) {
                                         stringResource(R.string.tool_lines, lines)
                                     } else {

@@ -332,7 +332,7 @@ fun ChatScreen(
                             }
                         }
                         // Floating jump-to-bottom button with badge and smooth animation
-                        AnimatedVisibility(
+                        androidx.compose.animation.AnimatedVisibility(
                             visible = !nearBottom,
                             enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.85f, animationSpec = tween(180)) + slideInVertically(initialOffsetY = { it / 2 }, animationSpec = tween(180)),
                             exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.85f, animationSpec = tween(150)) + slideOutVertically(targetOffsetY = { it / 2 }, animationSpec = tween(150)),
@@ -349,7 +349,7 @@ fun ChatScreen(
                     }
 
                     // Subtle scrim overlay over chat history when command palette is active
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = isCommandPaletteActive(state.draft),
                         enter = fadeIn(tween(OpenCodeTheme.tokens.motion.standard)),
                         exit = fadeOut(tween(OpenCodeTheme.tokens.motion.quick)),
