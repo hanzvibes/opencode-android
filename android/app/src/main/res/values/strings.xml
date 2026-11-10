@@ -137,13 +137,16 @@
     <string name="session_rename_title">Rename chat</string>
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
-    <string name="session_delete_message">Are you sure you want to delete this chat? This action cannot be undone.</string>
+    <string name="session_delete_message">Are you sure you want to delete “%1$s”? This action cannot be undone.</string>
+    <string name="session_actions">Session actions</string>
     <string name="session_action_cancel">Cancel</string>
     <string name="session_action_save">Save</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <string name="composer_hint">Ask anything about this project</string>
     <string name="composer_send">Send</string>
+    <string name="model_search_hint">Search models</string>
+    <string name="model_search_no_results">No models match “%1$s”</string>
     <string name="composer_stop">Stop</string>
     <string name="composer_voice">Voice</string>
     <string name="composer_clear">Clear</string>

@@ -249,10 +249,16 @@ fun ChatScreen(
     // Opening an old session lands at the bottom (latest) once per session,
     // and marks everything read so the jump-to-latest badge never shows a
     // phantom count carried over from the previous session.
-    LaunchedEffect(state.sessionID) {
-        if (state.messages.isNotEmpty()) {
+    // Keyed on messages.size as well as the session: history loads
+    // asynchronously, so an effect keyed only on sessionID fires while
+    // messages are still empty, its guard fails, and the scroll never
+    // happens — the reader lands at the top of the history instead.
+    var scrolledSessionID by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.sessionID, state.messages.size) {
+        if (state.messages.isNotEmpty() && scrolledSessionID != state.sessionID) {
             listState.scrollToItem(targetLastIndex)
             lastReadMessageCount = state.messages.size
+            scrolledSessionID = state.sessionID
         }
     }
 
@@ -557,7 +563,15 @@ fun ChatScreen(
             Composer(
                 value = state.draft,
                 onValueChange = onDraftChange,
-                onSend = onSend,
+                // IME Send must not bypass the command palette: with "/"
+                // open, the soft keyboard's Send key used to submit the
+                // raw draft instead of completing the selected command
+                // (physical Enter is handled separately above and keeps
+                // its Ctrl/Cmd+Enter behaviour).
+                onSend = {
+                    val picked = if (paletteActive) paletteState.currentSelectedCommand() else null
+                    if (picked != null) onDraftChange("/${picked.name} ") else onSend()
+                },
                 onStop = onStop,
                 busy = state.busy,
                 enabled = state.workspaceReady,
@@ -1260,9 +1274,13 @@ private fun ChatDrawer(
                 )
             }
 
+            // 48dp minimum height: the 30dp avatar + xs padding used
+            // to make this row ~40dp tall, shorter than the footer
+            // buttons above it.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .padding(top = spacing.xs)
                     .clip(RoundedCornerShape(radius.md))
                     .clickable(role = SemanticsRole.Button, onClick = onDeveloper)
@@ -1297,14 +1315,16 @@ private fun ChatDrawer(
                     Text(
                         text = "@hanzvibes",
                         style = OpenCodeTypography.caption,
-                        color = colors.onSurfaceFaint,
+                        // onSurfaceMuted (#6E6E73) clears AA at 11sp in
+                        // the light theme; onSurfaceFaint did not.
+                        color = colors.onSurfaceMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
                 GlyphIcon(
                     glyph = Glyph.ChevronRight,
-                    tint = colors.onSurfaceFaint,
+                    tint = colors.onSurfaceMuted,
                     size = 14.dp,
                 )
             }
@@ -1332,7 +1352,9 @@ private fun DrawerFooterButton(
         modifier = modifier
             .height(dims.minTouchTarget)
             .clip(RoundedCornerShape(radius.md))
-            .background(colors.surfaceVariant.copy(alpha = 0.6f))
+            // Opaque surfaceRaised: the 0.6-alpha surfaceVariant washed
+            // out against the drawer background in the light theme.
+            .background(colors.surfaceRaised)
             .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
             .clickable(role = SemanticsRole.Button, onClick = onClick)
             .padding(horizontal = spacing.sm),
@@ -1514,11 +1536,15 @@ private fun SessionDrawerItem(
         Box {
             // Full 48dp hit area: the session "…" used to be a 28dp
             // target, the smallest in the drawer.
+            // Hoisted: stringResource() is @Composable and cannot be
+            // called inside a .semantics {} block.
+            val actionsDescription = stringResource(R.string.session_actions)
             Box(
                 modifier = Modifier
                     .size(dims.minTouchTarget)
                     .clip(RoundedCornerShape(radius.sm))
-                    .clickable(role = SemanticsRole.Button) { menuExpanded = true },
+                    .clickable(role = SemanticsRole.Button) { menuExpanded = true }
+                    .semantics { contentDescription = actionsDescription },
                 contentAlignment = Alignment.Center,
             ) {
                 GlyphIcon(

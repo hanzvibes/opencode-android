@@ -819,6 +819,7 @@ private fun List<MdSpan>.toUppercase(): List<MdSpan> = map { span ->
         is MdSpan.Code -> span
         is MdSpan.Link -> MdSpan.Link(span.text.uppercase(), span.url)
         is MdSpan.Highlight -> MdSpan.Highlight(span.text.uppercase())
+        is MdSpan.Strikethrough -> MdSpan.Strikethrough(span.text.uppercase())
     }
 }
 
@@ -866,6 +867,11 @@ private fun List<MdSpan>.toAnnotated(): AnnotatedString {
                         color = colors.onSurface,
                         fontWeight = FontWeight.Medium,
                     ),
+                ) {
+                    append(span.text)
+                }
+                is MdSpan.Strikethrough -> withStyle(
+                    SpanStyle(textDecoration = TextDecoration.LineThrough),
                 ) {
                     append(span.text)
                 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Text
@@ -30,6 +31,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
+import dev.bidzz.opencode.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -327,6 +331,27 @@ private fun ModelSelector(
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
     var expanded by remember { mutableStateOf(false) }
+    var modelQuery by remember { mutableStateOf("") }
+
+    // Search filters on the rendered name plus the raw identifiers, so
+    // "claude", "anthropic" and "gpt-4o" all match; with an empty query
+    // the list keeps its default order.
+    val filteredModels = remember(models, modelQuery) {
+        val query = modelQuery.trim().lowercase()
+        if (query.isEmpty()) {
+            models
+        } else {
+            models.filter { model ->
+                val presentation = resolveModelPresentation(model)
+                listOf(
+                    presentation.displayName,
+                    presentation.brandTag,
+                    model.providerID,
+                    model.modelID ?: model.id,
+                ).any { it.lowercase().contains(query) }
+            }
+        }
+    }
 
     val currentModel = remember(models, activeModel) {
         models.firstOrNull { it.ref() == activeModel || (activeModel != null && (it.modelID ?: it.id) == activeModel.id) }
@@ -389,7 +414,10 @@ private fun ModelSelector(
 
         DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false },
+            onDismissRequest = {
+                expanded = false
+                modelQuery = ""
+            },
             modifier = Modifier.widthIn(min = 290.dp, max = 340.dp),
             offset = DpOffset(0.dp, spacing.xs),
             shape = RoundedCornerShape(radius.lg),
@@ -425,6 +453,56 @@ private fun ModelSelector(
                     .background(colors.hairline),
             )
 
+            // Search field: long model lists are otherwise scroll-only.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.md, vertical = spacing.xs)
+                    .clip(RoundedCornerShape(radius.sm))
+                    .background(colors.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(horizontal = spacing.sm, vertical = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Search,
+                    tint = colors.onSurfaceMuted,
+                    size = 14.dp,
+                )
+                Box(modifier = Modifier.weight(1f)) {
+                    if (modelQuery.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.model_search_hint),
+                            style = OpenCodeTypography.body,
+                            color = colors.onSurfaceFaint,
+                        )
+                    }
+                    BasicTextField(
+                        value = modelQuery,
+                        onValueChange = { modelQuery = it },
+                        textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
+                        cursorBrush = SolidColor(colors.accent),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (modelQuery.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .clickable(role = Role.Button) { modelQuery = "" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        GlyphIcon(
+                            glyph = Glyph.Close,
+                            tint = colors.onSurfaceMuted,
+                            size = 14.dp,
+                        )
+                    }
+                }
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -432,7 +510,17 @@ private fun ModelSelector(
                     .verticalScroll(rememberScrollState())
                     .padding(vertical = spacing.xxs),
             ) {
-                models.forEach { model ->
+                if (filteredModels.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.model_search_no_results, modelQuery.trim()),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = spacing.md, vertical = spacing.md),
+                    )
+                }
+                filteredModels.forEach { model ->
                     val isSelected = model.ref() == activeModel || (activeModel != null && (model.modelID ?: model.id) == activeModel.id)
                     val presentation = resolveModelPresentation(model)
 
@@ -445,6 +533,7 @@ private fun ModelSelector(
                             .clickable {
                                 onSelect(model.ref())
                                 expanded = false
+                                modelQuery = ""
                             }
                             .padding(horizontal = spacing.md, vertical = spacing.sm),
                     ) {

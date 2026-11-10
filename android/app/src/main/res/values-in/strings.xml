@@ -136,13 +136,16 @@
     <string name="session_rename_title">Ganti nama obrolan</string>
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
-    <string name="session_delete_message">Apakah Anda yakin ingin menghapus obrolan ini? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="session_delete_message">Apakah Anda yakin ingin menghapus “%1$s”? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="session_actions">Tindakan sesi</string>
     <string name="session_action_cancel">Batal</string>
     <string name="session_action_save">Simpan</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <string name="composer_hint">Tanyakan apa saja tentang proyek ini</string>
     <string name="composer_send">Kirim</string>
+    <string name="model_search_hint">Cari model</string>
+    <string name="model_search_no_results">Tidak ada model yang cocok dengan “%1$s”</string>
     <string name="composer_stop">Berhenti</string>
     <string name="composer_voice">Suara</string>
     <string name="composer_clear">Hapus</string>

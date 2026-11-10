@@ -37,7 +37,10 @@ object Palette {
     val darkAccent = systemBlueDark
     val darkOnAccent = Color(0xFFFFFFFF)
 
-    val darkUserBubble = systemBlueDark
+    // Darkened on purpose, accent untouched: white text on system blue
+    // (#0A84FF) is only ~3.9:1, so the user bubble alone is deepened to
+    // #0062D6 (~5.65:1) instead of darkening the shared accent token.
+    val darkUserBubble = Color(0xFF0062D6)
     val darkOnUserBubble = Color(0xFFFFFFFF)
 
     // ---- Light ----
@@ -49,7 +52,10 @@ object Palette {
 
     val lightOnSurface = Color(0xFF0B0B0C)
     val lightOnSurfaceMuted = Color(0xFF6E6E73)
-    val lightOnSurfaceFaint = Color(0xFFAEAEB2)
+    // #6B6B70 is 5.30:1 on white and 4.87:1 on lightSurface (#F5F5F7),
+    // so small light-theme text stays AA. #76767B was not used: it fails
+    // on the surface background.
+    val lightOnSurfaceFaint = Color(0xFF6B6B70)
 
     val lightOutline = Color(0x26000000)      // 15% black
     val lightHairline = Color(0x1F000000)     // 12% black (subtle hairline separator)
@@ -59,7 +65,10 @@ object Palette {
     val lightAccent = systemBlue
     val lightOnAccent = Color(0xFFFFFFFF)
 
-    val lightUserBubble = systemBlue
+    // As dark: white text on system blue (#007AFF) is only ~4.0:1, so the
+    // user bubble alone is deepened to #0066CC (~5.57:1); the shared
+    // accent token is untouched.
+    val lightUserBubble = Color(0xFF0066CC)
     val lightOnUserBubble = Color(0xFFFFFFFF)
 
     // ---- Status (Apple System semantic) ----

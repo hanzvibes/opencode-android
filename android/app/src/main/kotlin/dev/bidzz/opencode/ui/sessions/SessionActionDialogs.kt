@@ -252,10 +252,14 @@ fun DeleteSessionDialog(
             )
         },
         text = {
+            // The title is shown, not just passed in: deleting the wrong
+            // session is one tap away when every dialog reads the same.
             Text(
-                text = stringResource(R.string.session_delete_message),
+                text = stringResource(R.string.session_delete_message, sessionTitle),
                 style = OpenCodeTypography.bodySmall,
                 color = colors.onSurfaceMuted,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         },
         confirmButton = {

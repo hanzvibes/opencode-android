@@ -8,7 +8,7 @@ package dev.bidzz.opencode.ui.chat
  *
  * - fenced code blocks (``` or ~~~), with an optional language tag
  * - inline code (`code`)
- * - bold (**text** or __text__), italic (*text* or _text_)
+ * - bold (**text** or __text__), italic (*text* or _text_), strikethrough (~~text~~)
  * - highlighted text (==text== or <mark>text</mark>)
  * - headings (# .. ######)
  * - blockquotes (> text)
@@ -63,6 +63,7 @@ sealed interface MdSpan {
     data class Code(val text: String) : MdSpan
     data class Link(val text: String, val url: String) : MdSpan
     data class Highlight(val text: String) : MdSpan
+    data class Strikethrough(val text: String) : MdSpan
 }
 
 object Markdown {
@@ -90,7 +91,17 @@ object Markdown {
 
         fun flushParagraph() {
             if (paragraph.isEmpty()) return
-            val joined = paragraph.joinToString("\n").trim()
+            // Soft-wrapped prose joins with a space, like list items
+            // already do; only a line ending in two spaces is a hard
+            // break (its trailing spaces are dropped, the newline kept).
+            val joined = buildString {
+                paragraph.forEachIndexed { idx, line ->
+                    if (idx > 0) {
+                        append(if (paragraph[idx - 1].endsWith("  ")) "\n" else " ")
+                    }
+                    append(if (idx < paragraph.size - 1 && line.endsWith("  ")) line.trimEnd() else line)
+                }
+            }.trim()
             if (joined.isNotEmpty()) blocks += MdBlock.Paragraph(inline(joined))
             paragraph.clear()
         }
@@ -303,6 +314,18 @@ object Markdown {
                     }
                 }
 
+                // Strikethrough: ~~...~~
+                c == '~' && i + 1 < text.length && text[i + 1] == '~' -> {
+                    val end = text.indexOf("~~", i + 2)
+                    if (end > i + 2) {
+                        flushPlain()
+                        spans += MdSpan.Strikethrough(text.substring(i + 2, end))
+                        i = end + 2
+                    } else {
+                        plain.append(c); i++
+                    }
+                }
+
                 // Highlight: ==...== or <mark>...</mark>
                 c == '=' && i + 1 < text.length && text[i + 1] == '=' -> {
                     val end = text.indexOf("==", i + 2)
@@ -362,9 +385,18 @@ object Markdown {
                 }
 
                 // Italic: *...* or _..._
+                // Guarded, or snake_case and arithmetic read as emphasis:
+                // the opener must follow the start, whitespace or
+                // punctuation, the closer must not follow a space, and
+                // `_` must not be flanked by alphanumerics on either side
+                // (my_variable_name and 2 * 3 * 4 stay literal).
                 (c == '*' || c == '_') -> {
+                    val prev = if (i == 0) null else text[i - 1]
+                    val openerOk = prev == null || prev.isWhitespace() || !prev.isLetterOrDigit()
                     val end = text.indexOf(c, i + 1)
-                    if (end > i + 1) {
+                    val closerOk = end > i + 1 && text[end - 1] != ' ' && text[end - 1] != '\n' &&
+                        !(c == '_' && end + 1 < text.length && text[end + 1].isLetterOrDigit())
+                    if (openerOk && closerOk) {
                         flushPlain()
                         spans += MdSpan.Italic(text.substring(i + 1, end))
                         i = end + 1

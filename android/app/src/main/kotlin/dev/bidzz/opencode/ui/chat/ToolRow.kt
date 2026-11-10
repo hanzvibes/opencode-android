@@ -684,6 +684,10 @@ fun ToolStep(
                             TerminalConsoleBlock(
                                 title = stringResource(R.string.tool_stdout),
                                 body = truncated,
+                                // Copy takes the full output: the body
+                                // shown is truncated at MAX_OUTPUT, but
+                                // copying that would silently lose the rest.
+                                copyText = out,
                                 language = outLang,
                                 subtitle = lineSubtitle,
                             )
@@ -720,6 +724,8 @@ private fun TerminalConsoleBlock(
     promptPrefix: String? = null,
     isError: Boolean = false,
     subtitle: String? = null,
+    /** Text the Copy button writes; defaults to [body] (the displayed text). */
+    copyText: String = body,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -824,7 +830,7 @@ private fun TerminalConsoleBlock(
                 modifier = Modifier
                     .clip(RoundedCornerShape(radius.xs))
                     .clickable {
-                        clipboardManager.setText(AnnotatedString(body))
+                        clipboardManager.setText(AnnotatedString(copyText))
                         copied = true
                     }
                     .padding(horizontal = spacing.xs, vertical = 2.dp),

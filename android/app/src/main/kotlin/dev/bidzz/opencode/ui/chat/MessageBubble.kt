@@ -32,10 +32,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -169,12 +172,23 @@ fun MessageBubble(
                         .background(colors.userBubble)
                         .padding(horizontal = spacing.lg, vertical = spacing.md - 2.dp),
                 ) {
-                    SelectionContainer {
-                        Text(
-                            text = markdown,
-                            style = OpenCodeTypography.body,
-                            color = colors.onUserBubble,
-                        )
+                    // White selection on the blue bubble: the default
+                    // accent selection handle/background is unreadable
+                    // against the bubble, so this branch alone gets white
+                    // selection colors. Assistant text keeps the default.
+                    CompositionLocalProvider(
+                        LocalTextSelectionColors provides TextSelectionColors(
+                            handleColor = Color.White,
+                            backgroundColor = Color.White.copy(alpha = 0.35f),
+                        ),
+                    ) {
+                        SelectionContainer {
+                            Text(
+                                text = markdown,
+                                style = OpenCodeTypography.body,
+                                color = colors.onUserBubble,
+                            )
+                        }
                     }
                 }
                 // Same copy affordance as assistant replies, right-aligned

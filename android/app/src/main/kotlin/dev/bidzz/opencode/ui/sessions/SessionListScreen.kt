@@ -30,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -327,12 +329,16 @@ private fun SessionRowItem(
                     )
                 }
             }
+            // Hoisted: stringResource() is @Composable and cannot be
+            // called inside a .semantics {} block.
+            val actionsDescription = stringResource(R.string.session_actions)
             Box(modifier = Modifier.padding(start = spacing.xs)) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(48.dp)
                         .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.sm))
-                        .clickable(role = Role.Button) { menuExpanded = true },
+                        .clickable(role = Role.Button) { menuExpanded = true }
+                        .semantics { contentDescription = actionsDescription },
                     contentAlignment = Alignment.Center,
                 ) {
                     GlyphIcon(

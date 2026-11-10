@@ -22,8 +22,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -33,11 +36,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
@@ -96,9 +103,14 @@ fun InlineQuestionCard(
             // fallback for history reloads, where no per-question answers
             // were recorded.
             val sectionAnswer = submittedAnswers.getOrNull(qIndex)?.takeIf { it.isNotBlank() }
-            val sectionDone = call.isDone || sectionAnswer != null
+            // The old run's output is a fallback for history reloads only
+            // when there is a single question: with several questions the
+            // same output would be stamped on every section.
             val sectionResolved = sectionAnswer
-                ?: call.output?.takeIf { it.isNotBlank() && call.isDone }
+                ?: call.output?.takeIf { questions.size == 1 && it.isNotBlank() && call.isDone }
+            // "Answered" only when there is actually an answer to show;
+            // a finished call with a blank output is not an answered one.
+            val sectionDone = sectionResolved != null
             // Keyed per question: without the key, a section's selected
             // option / write-in state could survive into the next question
             // when the list changes.
@@ -183,6 +195,11 @@ private fun SingleQuestionSection(
                 fontSize = 12.sp,
             ),
             color = colors.accent,
+            // A long header used to push the "1/3" counter and the badge
+            // out of the row; it now ellipsises instead.
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
 
         Spacer(Modifier.weight(1f))
@@ -309,6 +326,11 @@ private fun SingleQuestionSection(
                     }
                 },
                 onValueChange = { writeInText = it },
+                onDone = {
+                    if (writeInText.isNotBlank()) {
+                        submitAnswer(selectedOptionIds, writeInText, true)
+                    }
+                },
             )
         }
 
@@ -450,11 +472,19 @@ private fun WriteInOptionRow(
     isMultiple: Boolean,
     onActiveChange: (Boolean) -> Unit,
     onValueChange: (String) -> Unit,
+    onDone: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val shape = RoundedCornerShape(radius.sm)
+
+    // Tapping "Other" focuses the field and opens the keyboard; without
+    // this the write-in row stayed closed and the field never took focus.
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(isActive) {
+        if (isActive) focusRequester.requestFocus()
+    }
 
     val borderColor = if (isActive) colors.accent else colors.hairline
     val bgColor = if (isActive) colors.accent.copy(alpha = 0.08f) else colors.surfaceVariant.copy(alpha = 0.2f)
@@ -544,7 +574,12 @@ private fun WriteInOptionRow(
                         color = colors.onSurface,
                     ),
                     cursorBrush = SolidColor(colors.accent),
-                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onDone() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
                 )
             }
         }
