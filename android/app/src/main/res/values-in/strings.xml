@@ -46,6 +46,10 @@
     <string name="settings_section_about">Tentang</string>
     <string name="settings_about_title">Tentang pengembang</string>
     <string name="settings_about_body">Portofolio dan cara menghubungi.</string>
+    <string name="settings_saved_permissions">Izin tersimpan</string>
+    <string name="settings_saved_permissions_body">Izin yang disimpan dengan “Selalu”. Cabut salah satu agar ditanya lagi lain kali.</string>
+    <string name="settings_saved_permissions_empty">Belum ada izin tersimpan. Izin tersimpan ada di engine, yang belum menyediakan daftarnya, jadi belum ada yang bisa dicantumkan atau dicabut dari sini.</string>
+    <string name="settings_saved_permissions_revoke">Cabut</string>
 
     <!-- About the developer -->
     <string name="about_title">Tentang pengembang</string>
@@ -64,7 +68,14 @@
     <string name="chat_menu">Menu</string>
     <string name="chat_new_session">Sesi baru</string>
     <string name="chat_jump_latest">Ke pesan terbaru</string>
+    <string name="chat_jump_latest_unread">Ke pesan terbaru, %1$d belum dibaca</string>
+    <string name="chat_new_messages">Pesan baru</string>
     <string name="chat_retry">Coba lagi</string>
+    <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="a11y_run_finished">Proses selesai</string>
+    <string name="a11y_run_failed">Proses gagal</string>
+    <string name="a11y_permission_arrived">Izin diminta</string>
+    <string name="chat_reconnecting">Menghubungkan ulang…</string>
     <string name="chat_question_waiting_one">1 pertanyaan menunggu</string>
     <string name="chat_question_waiting_other">%1$d pertanyaan menunggu</string>
     <string name="chat_working">Sedang bekerja…</string>
@@ -146,9 +157,17 @@
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <string name="composer_hint">Tanyakan apa saja tentang proyek ini</string>
+    <string name="composer_hint_named">Tanya %1$s…</string>
+    <string name="composer_stopping">Menghentikan…</string>
+    <string name="composer_queued">Antrean: %1$s</string>
+    <string name="composer_editing">Mengedit pesan</string>
     <string name="composer_send">Kirim</string>
     <string name="model_search_hint">Cari model</string>
     <string name="model_search_no_results">Tidak ada model yang cocok dengan “%1$s”</string>
+    <string name="agent_search_hint">Cari agen</string>
+    <string name="agent_search_no_results">Tidak ada agen yang cocok dengan “%1$s”</string>
+    <string name="chat_recent">Terbaru</string>
+    <string name="empty_state_provider_model">%1$s · %2$s</string>
     <string name="composer_stop">Berhenti</string>
     <string name="composer_voice">Suara</string>
     <string name="composer_clear">Hapus</string>
@@ -160,6 +179,15 @@
     <string name="permission_reject">Tolak</string>
     <string name="permission_explainer">Selalu menyimpan izin ini untuk proyek ini, jadi tidak ditanya lagi. Tolak membuat agen melanjutkan tanpa tool ini.</string>
     <string name="permission_save_note">Akan disimpan: %1$s</string>
+    <string name="permission_answer_later">Jawab nanti</string>
+    <string name="permission_deferred">Permintaan izin ditunda</string>
+    <string name="permission_deferred_action">Jawab sekarang</string>
+    <string name="permission_risk_high">Risiko tinggi</string>
+    <string name="permission_risk_medium">Risiko sedang</string>
+    <string name="permission_risk_low">Risiko rendah</string>
+    <string name="permission_risk_high_note">Dapat menghapus berkas atau mengubah hal di luar permintaan ini. Periksa dulu sebelum mengizinkan.</string>
+    <string name="permission_risk_medium_note">Mengubah berkas atau menjalankan perintah. Tidak ada yang langsung dihapus.</string>
+    <string name="permission_risk_low_note">Hanya membaca informasi. Tidak ada yang diubah.</string>
     <string name="question_title">Pertanyaan Agen</string>
     <string name="question_single_choice">Pilih salah satu opsi</string>
     <string name="question_multi_choice">Pilih satu atau beberapa opsi</string>
@@ -262,6 +290,7 @@
     <string name="history_empty">Belum ada percakapan.\nKirim pesan untuk memulai.</string>
     <string name="history_search_hint">Cari sesi</string>
     <string name="history_search_no_results">Tidak ada sesi yang cocok dengan "%1$s"</string>
+    <string name="history_showing">Menampilkan %1$d dari %2$d</string>
 
     <!-- Pembatas tanggal, status terkirim, balas, riwayat prompt (audit C) -->
     <string name="date_today">Hari ini</string>
@@ -269,6 +298,13 @@
     <string name="message_sent">Terkirim</string>
     <string name="message_delivered">Diterima</string>
     <string name="message_reply">Balas</string>
+    <string name="message_edit">Edit</string>
+    <string name="message_resend">Kirim ulang</string>
+    <string name="tool_diff_changes">Perubahan</string>
+    <string name="tool_diff_show_full">Tampilkan semua diff</string>
+    <string name="tool_diff_show_less">Tampilkan lebih sedikit</string>
+    <string name="turn_footer_tokens">%1$s token</string>
+    <string name="turn_footer_stop_reason">berhenti: %1$s</string>
     <string name="prompt_history_previous">Prompt sebelumnya</string>
     <string name="prompt_history_next">Prompt berikutnya</string>
 
@@ -336,6 +372,9 @@
     <string name="diag_section_health">Kesehatan Sistem</string>
     <string name="diag_restart_engine">Mulai Ulang Mesin</string>
     <string name="diag_restarting">Memulai ulang…</string>
+    <string name="diag_restart_timeout">Restart kehabisan waktu — mesin tidak mencapai status berjalan.</string>
+    <string name="diag_password_show">Tampilkan sandi</string>
+    <string name="diag_password_hide">Sembunyikan sandi</string>
     <string name="diag_copy_all">Salin Semua</string>
     <string name="diag_copy_logs">Salin Log</string>
     <string name="diag_copied_toast">Disalin ke papan klip</string>

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +51,11 @@ import dev.bidzz.opencode.ui.message
  *
  * Grouped cleanly by date (Pinned, Today, Yesterday, Previous 7 days, Older)
  * with a quick action menu on every session for Rename, Delete, and Pin.
+ *
+ * @param details per-session preview/model/status by session id (see
+ * [SessionDetail]). The engine's list endpoint returns none of these, so
+ * they are supplied separately; when absent a row shows title + age/cost only
+ * and search falls back to matching titles.
  */
 @Composable
 fun SessionListScreen(
@@ -61,6 +67,7 @@ fun SessionListScreen(
     onRename: (SessionRow, String) -> Unit = { _, _ -> },
     onDelete: (SessionRow) -> Unit = {},
     onTogglePin: (SessionRow) -> Unit = {},
+    details: Map<String, SessionDetail> = emptyMap(),
 ) {
     val spacing = OpenCodeTheme.tokens.spacing
     val colors = OpenCodeTheme.colors
@@ -90,12 +97,12 @@ fun SessionListScreen(
         )
     }
 
-    // In-memory title search: the drawer only shows the latest 20, so
+    // Search matches titles and, when supplied, transcript previews,
+    // model names and outcomes — the drawer only shows the latest 20, so
     // anything older was unreachable without scrolling the whole list.
     var query by rememberSaveable { mutableStateOf("") }
-    val filteredRows = remember(state.rows, query) {
-        if (query.isBlank()) state.rows
-        else state.rows.filter { it.title.contains(query, ignoreCase = true) }
+    val filteredRows = remember(state.rows, query, details) {
+        filterSessionRows(state.rows, query, details)
     }
 
     ScreenScaffold(
@@ -107,6 +114,8 @@ fun SessionListScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .widthIn(max = 720.dp)
+                .align(Alignment.CenterHorizontally)
                 .padding(horizontal = spacing.lg, vertical = spacing.sm)
                 .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
                 .background(colors.surface)
@@ -158,6 +167,8 @@ fun SessionListScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .widthIn(max = 720.dp)
+                .align(Alignment.CenterHorizontally)
                 .padding(horizontal = spacing.lg, vertical = spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
@@ -184,8 +195,24 @@ fun SessionListScreen(
             else -> {
                 val grouped = remember(filteredRows) { groupSessions(filteredRows) }
 
+                // The list endpoint caps at 50 with no pagination, so the
+                // count names what was loaded, not the whole history.
+                Text(
+                    text = stringResource(R.string.history_showing, filteredRows.size, state.rows.size),
+                    style = OpenCodeTypography.caption,
+                    color = colors.onSurfaceFaint,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 720.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                )
+
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 720.dp)
+                        .align(Alignment.CenterHorizontally),
                     contentPadding = PaddingValues(
                         start = spacing.lg,
                         end = spacing.lg,
@@ -224,6 +251,7 @@ fun SessionListScreen(
                         itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
                             SessionRowItem(
                                 row = row,
+                                detail = details[row.id],
                                 showDirectory = state.filterDirectory == null,
                                 isFirst = index == 0,
                                 isLast = index == rows.lastIndex,
@@ -261,6 +289,7 @@ private fun SessionRowItem(
     onPinToggle: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    detail: SessionDetail? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -279,7 +308,8 @@ private fun SessionRowItem(
         ?.takeIf { showDirectory }
         ?.substringAfterLast('/')
         ?.takeIf { it.isNotEmpty() }
-    val meta = listOfNotNull(age, directory, row.cost).joinToString(" · ")
+    val meta = listOfNotNull(detail?.model, detail?.status, age, directory, row.cost).joinToString(" · ")
+    val preview = detail?.preview?.trim()?.takeIf { it.isNotEmpty() }
 
     Column(
         modifier = Modifier
@@ -324,6 +354,16 @@ private fun SessionRowItem(
                         style = OpenCodeTypography.label,
                         color = colors.onSurfaceFaint,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = spacing.xxs),
+                    )
+                }
+                if (preview != null) {
+                    Text(
+                        text = preview,
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = spacing.xxs),
                     )
@@ -393,7 +433,9 @@ private fun CenteredMessage(text: String, isError: Boolean = false) {
             style = OpenCodeTypography.body,
             color = if (isError) colors.danger else colors.onSurfaceMuted,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(spacing.xxl),
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .padding(spacing.xxl),
         )
     }
 }

@@ -133,6 +133,8 @@ data class OpenCodeColors(
     val providerGroq: Color = Color(0xFFF55036),
     val providerCohere: Color = Color(0xFF388E6D),
     val providerQwen: Color = Color(0xFF8B5CF6),
+    /** NVIDIA / Nemotron (Phase 2): brand green #76B900. */
+    val providerNvidia: Color = Color(0xFF76B900),
 ) {
     /**
      * Text colour for a status role.
@@ -204,6 +206,7 @@ data class OpenCodeColors(
             p.contains("groq") -> providerGroq
             p.contains("cohere") || p.contains("command") -> providerCohere
             p.contains("qwen") || p.contains("alibaba") -> providerQwen
+            p.contains("nvidia") || p.contains("nemotron") -> providerNvidia
             else -> accent
         }
     }
@@ -275,6 +278,7 @@ private val DarkColors = OpenCodeColors(
     providerGroq = Palette.darkProviderGroq,
     providerCohere = Palette.darkProviderCohere,
     providerQwen = Palette.darkProviderQwen,
+    providerNvidia = Palette.darkProviderNvidia,
 )
 
 private val LightColors = OpenCodeColors(
@@ -342,6 +346,7 @@ private val LightColors = OpenCodeColors(
     providerGroq = Palette.lightProviderGroq,
     providerCohere = Palette.lightProviderCohere,
     providerQwen = Palette.lightProviderQwen,
+    providerNvidia = Palette.lightProviderNvidia,
 )
 
 private val LocalColors = staticCompositionLocalOf { DarkColors }

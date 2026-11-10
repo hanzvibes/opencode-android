@@ -586,9 +586,10 @@ private fun CommandPaletteHeader(
 
                 // Explicit close: dismissing the palette only cancels palette
                 // mode and restores the draft that was there before it.
+                // 48dp hit area around the 12dp close glyph.
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
                         .clickable(role = Role.Button, onClick = onDismiss)
                         .semantics {

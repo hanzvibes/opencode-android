@@ -26,6 +26,9 @@ data class SessionInfo(
     val id: String,
     val projectID: String? = null,
     val title: String? = null,
+    /** The agent (mode) this session runs as, e.g. "build" — the engine's
+     * `Session.Info.agent` (docs/API-REFERENCE.md). Absent on older engines. */
+    val agent: String? = null,
     val model: ModelRef? = null,
     val cost: Double? = null,
     val tokens: TokenUsage? = null,

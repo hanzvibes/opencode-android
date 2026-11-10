@@ -258,4 +258,9 @@ object Palette {
     // #7C3AED (5.70:1 on white, 4.54:1 on raised) for text use.
     val darkProviderQwen = Color(0xFF8B5CF6)
     val lightProviderQwen = Color(0xFF7C3AED)
+
+    // NVIDIA / Nemotron (Phase 2): brand green #76B900. Light variant
+    // darkened to #5C8A00 for text use, like the other providers.
+    val darkProviderNvidia = Color(0xFF76B900)
+    val lightProviderNvidia = Color(0xFF5C8A00)
 }

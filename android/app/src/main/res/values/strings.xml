@@ -47,6 +47,10 @@
     <string name="settings_section_about">About</string>
     <string name="settings_about_title">About the developer</string>
     <string name="settings_about_body">Portfolio and ways to get in touch.</string>
+    <string name="settings_saved_permissions">Saved permissions</string>
+    <string name="settings_saved_permissions_body">Permissions saved with “Always”. Revoke one to be asked again next time.</string>
+    <string name="settings_saved_permissions_empty">No saved permissions yet. Saved permissions live on the engine, which does not expose the list yet, so nothing can be listed or revoked from here.</string>
+    <string name="settings_saved_permissions_revoke">Revoke</string>
 
     <!-- About the developer -->
     <string name="about_title">About the developer</string>
@@ -65,7 +69,14 @@
     <string name="chat_menu">Menu</string>
     <string name="chat_new_session">New session</string>
     <string name="chat_jump_latest">Jump to latest message</string>
+    <string name="chat_jump_latest_unread">Jump to latest message, %1$d unread</string>
+    <string name="chat_new_messages">New messages</string>
     <string name="chat_retry">Retry</string>
+    <string name="chat_rate_limited_guidance">Rate limited — switch model or wait a moment, then send again.</string>
+    <string name="a11y_run_finished">Run finished</string>
+    <string name="a11y_run_failed">Run failed</string>
+    <string name="a11y_permission_arrived">Permission requested</string>
+    <string name="chat_reconnecting">Reconnecting…</string>
     <string name="chat_question_waiting_one">1 question waiting</string>
     <string name="chat_question_waiting_other">%1$d questions waiting</string>
     <string name="chat_working">Working…</string>
@@ -147,9 +158,17 @@
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <string name="composer_hint">Ask anything about this project</string>
+    <string name="composer_hint_named">Ask %1$s…</string>
+    <string name="composer_stopping">Stopping…</string>
+    <string name="composer_queued">Queued: %1$s</string>
+    <string name="composer_editing">Editing message</string>
     <string name="composer_send">Send</string>
     <string name="model_search_hint">Search models</string>
     <string name="model_search_no_results">No models match “%1$s”</string>
+    <string name="agent_search_hint">Search agents</string>
+    <string name="agent_search_no_results">No agents match “%1$s”</string>
+    <string name="chat_recent">Recent</string>
+    <string name="empty_state_provider_model">%1$s · %2$s</string>
     <string name="composer_stop">Stop</string>
     <string name="composer_voice">Voice</string>
     <string name="composer_clear">Clear</string>
@@ -161,6 +180,15 @@
     <string name="permission_reject">Reject</string>
     <string name="permission_explainer">Always saves this permission for this project, so it won\'t be asked again. Reject lets the agent continue without this tool.</string>
     <string name="permission_save_note">Will be saved: %1$s</string>
+    <string name="permission_answer_later">Answer later</string>
+    <string name="permission_deferred">Permission request deferred</string>
+    <string name="permission_deferred_action">Answer now</string>
+    <string name="permission_risk_high">High risk</string>
+    <string name="permission_risk_medium">Medium risk</string>
+    <string name="permission_risk_low">Low risk</string>
+    <string name="permission_risk_high_note">Can delete files or change things outside this request. Check it before allowing.</string>
+    <string name="permission_risk_medium_note">Changes files or runs a command. Nothing is deleted outright.</string>
+    <string name="permission_risk_low_note">Only reads information. Nothing is changed.</string>
     <string name="question_title">Agent Question</string>
     <string name="question_single_choice">Select an option</string>
     <string name="question_multi_choice">Select one or more options</string>
@@ -263,6 +291,7 @@
     <string name="history_empty">No conversations yet.\nSend a message to start one.</string>
     <string name="history_search_hint">Search sessions</string>
     <string name="history_search_no_results">No sessions match "%1$s"</string>
+    <string name="history_showing">Showing %1$d of %2$d</string>
 
     <!-- Date dividers, delivery status, reply, prompt history (audit C) -->
     <string name="date_today">Today</string>
@@ -270,6 +299,13 @@
     <string name="message_sent">Sent</string>
     <string name="message_delivered">Delivered</string>
     <string name="message_reply">Reply</string>
+    <string name="message_edit">Edit</string>
+    <string name="message_resend">Resend</string>
+    <string name="tool_diff_changes">Changes</string>
+    <string name="tool_diff_show_full">Show full diff</string>
+    <string name="tool_diff_show_less">Show less</string>
+    <string name="turn_footer_tokens">%1$s tokens</string>
+    <string name="turn_footer_stop_reason">stop: %1$s</string>
     <string name="prompt_history_previous">Previous prompt</string>
     <string name="prompt_history_next">Next prompt</string>
 
@@ -337,6 +373,9 @@
     <string name="diag_section_health">System Health</string>
     <string name="diag_restart_engine">Restart Engine</string>
     <string name="diag_restarting">Restarting…</string>
+    <string name="diag_restart_timeout">Restart timed out — the engine did not reach a running state.</string>
+    <string name="diag_password_show">Show password</string>
+    <string name="diag_password_hide">Hide password</string>
     <string name="diag_copy_all">Copy All</string>
     <string name="diag_copy_logs">Copy Logs</string>
     <string name="diag_copied_toast">Copied to clipboard</string>

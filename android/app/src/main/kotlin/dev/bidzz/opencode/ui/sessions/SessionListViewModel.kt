@@ -6,6 +6,7 @@ import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.SessionInfo
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +40,10 @@ data class SessionListUiState(
     val failureKey: Int? = null,
     /** Only sessions for this directory, when filtering. */
     val filterDirectory: String? = null,
+    /** Per-session preview/model/status (Phase 2, finding 21), filled by
+     * [SessionListViewModel.loadDetails]. A session with no entry yet shows
+     * title-only until its lookup lands. */
+    val details: Map<String, SessionDetail> = emptyMap(),
 )
 
 /**
@@ -57,6 +62,9 @@ class SessionListViewModel(
     private val _state = MutableStateFlow(SessionListUiState())
     val state: StateFlow<SessionListUiState> = _state.asStateFlow()
 
+    /** In-flight detail lookup, cancelled when a fresh list loads. */
+    private var detailsJob: Job? = null
+
     /** @param scopedToWorkspace when true, only the current project's sessions. */
     fun load(scopedToWorkspace: Boolean) {
         val handle = api.handle() ?: run {
@@ -64,7 +72,8 @@ class SessionListViewModel(
             return
         }
         val directory = if (scopedToWorkspace) workspace() else null
-        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, filterDirectory = directory)
+        detailsJob?.cancel()
+        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, filterDirectory = directory, details = emptyMap())
 
         viewModelScope.launch {
             when (val result = handle.sessions.list(directory = directory, limit = 50)) {
@@ -75,10 +84,57 @@ class SessionListViewModel(
                         rows = result.value.map { it.toRow(isPinned = pinned.contains(it.id)) },
                         failure = null, failureKey = null,
                     )
+                    loadDetails(result.value)
                 }
                 is ApiResult.Failure -> {
                     _state.value = _state.value.copy(loading = false, failure = result)
                 }
+            }
+        }
+    }
+
+    /**
+     * Fills [SessionListUiState.details] (Phase 2, finding 21).
+     *
+     * The list endpoint returns no transcript, so the preview comes from the
+     * messages endpoint and the model/outcome from the [SessionInfo] already
+     * in hand — no extra call for those two. The preview is the session's
+     * first user message; that is the oldest entry, so the full history is
+     * fetched (no limit), newest-first from the engine and reversed here.
+     * Lookups run sequentially in the background and publish incrementally,
+     * so rows fill in as their data lands. A failed lookup leaves that
+     * session's model/status in place with no preview rather than failing
+     * the whole list — and a session whose history is genuinely empty has
+     * no preview at all, which the row already handles.
+     */
+    private fun loadDetails(infos: List<SessionInfo>) {
+        detailsJob?.cancel()
+        detailsJob = viewModelScope.launch {
+            val handle = api.handle() ?: return@launch
+            val filled = mutableMapOf<String, SessionDetail>()
+            for (info in infos) {
+                val modelLabel = info.model?.let { "${it.providerID}/${it.id}" }
+                when (val result = handle.sessions.messages(info.id)) {
+                    is ApiResult.Success -> {
+                        val preview = result.value.reversed()
+                            .firstOrNull { it.isUser }
+                            ?.text?.trim()
+                            ?.takeIf { it.isNotEmpty() }
+                        filled[info.id] = SessionDetail(
+                            preview = preview,
+                            model = modelLabel,
+                            status = info.outcome,
+                        )
+                    }
+                    is ApiResult.Failure -> {
+                        filled[info.id] = SessionDetail(
+                            preview = null,
+                            model = modelLabel,
+                            status = info.outcome,
+                        )
+                    }
+                }
+                _state.value = _state.value.copy(details = filled.toMap())
             }
         }
     }

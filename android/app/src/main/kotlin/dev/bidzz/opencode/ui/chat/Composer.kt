@@ -27,6 +27,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -52,7 +53,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -98,6 +101,20 @@ fun Composer(
     /** Prompts sent in this session, oldest first, for history navigation (C-F).
      * In-memory only, owned by the view model; empty means no history yet. */
     promptHistory: List<String> = emptyList(),
+    /** Follow-up queued while the agent works; sent when the run ends. */
+    queuedText: String? = null,
+    /** True after Stop was tapped until the run actually ends ("Stopping…"). */
+    stopping: Boolean = false,
+    /** True while a user message is being edited; shows the editing header. */
+    isEditing: Boolean = false,
+    onCancelEdit: () -> Unit = {},
+    /** Human labels for the placeholder: model first, agent as fallback. */
+    modelLabel: String? = null,
+    agentLabel: String? = null,
+    /** Focus the field on first composition (entering chat). */
+    autofocus: Boolean = false,
+    /** A timestamp bumped after every send; each bump refocuses the field. */
+    focusRequestSignal: Long = 0,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -106,6 +123,16 @@ fun Composer(
     val motion = OpenCodeTheme.tokens.motion
 
     var isFocused by remember { mutableStateOf(false) }
+
+    // Autofocus on entering chat, and refocus after every send (the signal
+    // is a timestamp so repeated sends re-trigger the effect).
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        if (autofocus) focusRequester.requestFocus()
+    }
+    LaunchedEffect(focusRequestSignal) {
+        if (focusRequestSignal > 0) focusRequester.requestFocus()
+    }
 
     // Prompt-history position (C-F): -1 means not navigating. Typing
     // anything by hand abandons navigation; sending clears the draft,
@@ -175,6 +202,56 @@ fun Composer(
                 .fillMaxWidth()
                 .padding(top = spacing.md, bottom = spacing.sm),
         ) {
+            // Editing header (Phase 2, finding 3): the composer is editing a
+            // sent message, not a new draft — Submit sends the edit, Cancel
+            // restores the draft as it was. The header is the only visible
+            // difference; the field, send and history all behave as usual.
+            if (isEditing) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = spacing.lg, end = spacing.sm, bottom = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.composer_editing),
+                        style = OpenCodeTypography.label,
+                        color = colors.accent,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = dims.minTouchTarget)
+                            .clip(RoundedCornerShape(radius.full))
+                            .clickable(role = Role.Button, onClick = onCancelEdit)
+                            .padding(horizontal = spacing.sm),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.session_action_cancel),
+                            style = OpenCodeTypography.label,
+                            color = colors.onSurfaceMuted,
+                        )
+                    }
+                }
+            }
+
+            // Queued follow-up (Phase 2, finding 10): typed while the agent
+            // works, sent when the run ends. Shown so the queue is never a
+            // silent black box — the text is the user's, verbatim.
+            if (queuedText != null) {
+                Text(
+                    text = stringResource(R.string.composer_queued, queuedText),
+                    style = OpenCodeTypography.caption,
+                    color = colors.onSurfaceMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs),
+                )
+            }
+
             // Multi-line text field with comfortable line height
             BasicTextField(
                 value = value,
@@ -194,6 +271,7 @@ fun Composer(
                     .fillMaxWidth()
                     .padding(horizontal = spacing.lg)
                     .heightIn(min = 28.dp, max = dims.composerMaxHeight)
+                    .focusRequester(focusRequester)
                     .onFocusChanged { isFocused = it.isFocused }
                     .then(if (onKeyEvent != null) Modifier.onPreviewKeyEvent(onKeyEvent) else Modifier),
                 decorationBox = { inner ->
@@ -204,17 +282,23 @@ fun Composer(
                         if (value.isEmpty()) {
                             // Crossfade between the not-ready / busy / hint
                             // states so the placeholder swaps instead of popping.
+                            // The idle hint names the model (or the agent when
+                            // no model is known) so the composer says who will
+                            // answer, not just "ask anything".
+                            val placeholderText = when {
+                                !enabled -> stringResource(R.string.composer_not_ready)
+                                busy -> stringResource(R.string.composer_busy)
+                                modelLabel != null -> stringResource(R.string.composer_hint_named, modelLabel)
+                                agentLabel != null -> stringResource(R.string.composer_hint_named, agentLabel)
+                                else -> stringResource(R.string.composer_hint)
+                            }
                             Crossfade(
-                                targetState = when {
-                                    !enabled -> R.string.composer_not_ready
-                                    busy -> R.string.composer_busy
-                                    else -> R.string.composer_hint
-                                },
+                                targetState = placeholderText,
                                 animationSpec = motion.tweenQuick(),
                                 label = "composer_placeholder",
-                            ) { placeholderRes ->
+                            ) { text ->
                                 Text(
-                                    text = stringResource(placeholderRes),
+                                    text = text,
                                     style = OpenCodeTypography.input.copy(lineHeight = 22.sp),
                                     color = colors.onSurfaceMuted,
                                 )
@@ -340,6 +424,7 @@ fun Composer(
 
                     ActionButton(
                         busy = busy,
+                        stopping = stopping,
                         canSend = canSend,
                         hasVoice = onVoice != null && value.isBlank() && !busy,
                         onClick = {
@@ -563,6 +648,8 @@ private fun ActionButton(
     hasVoice: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** True after Stop was tapped until the run ends: reads "Stopping…". */
+    stopping: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val dims = OpenCodeTheme.tokens.dimensions
@@ -572,6 +659,7 @@ private fun ActionButton(
     val active = busy || canSend || hasVoice
     val label = stringResource(
         when {
+            stopping -> R.string.composer_stopping
             busy -> R.string.composer_stop
             canSend -> R.string.composer_send
             hasVoice -> R.string.composer_voice

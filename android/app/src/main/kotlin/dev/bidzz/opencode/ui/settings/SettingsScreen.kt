@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -73,6 +74,16 @@ fun SettingsScreen(
     var pickingLanguage by remember { mutableStateOf(false) }
     val hasAllFiles = app.workspaceStore.hasAllFilesAccess()
 
+    // PLACEHOLDER data source — there is no saved-permission store or API
+    // to read from yet. Answering "Always" persists the permission on the
+    // engine server, and the API wrapper (SessionApi) exposes no endpoint
+    // to list or revoke saved permissions, so the app cannot show real
+    // entries. The section below renders from this list with a working
+    // revoke affordance per entry; when a list/revoke endpoint (or a
+    // local store) lands, replace this state with that source and wire
+    // onRevoke to it. Do not seed fake entries here.
+    var savedPermissions by remember { mutableStateOf<List<SavedPermission>>(emptyList()) }
+
     // Apple-style categorized badge colors
     val blueBadge = Color(0xFF007AFF)
     val greenBadge = Color(0xFF34C759)
@@ -86,6 +97,8 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .widthIn(max = 720.dp)
+                .align(Alignment.CenterHorizontally)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.lg, vertical = spacing.sm),
         ) {
@@ -113,6 +126,41 @@ fun SettingsScreen(
                     onClick = if (hasAllFiles) null else app::requestAllFilesAccess,
                     divider = true,
                 )
+            }
+
+            // Saved permissions ("Always" answers), each revocable.
+            Section(R.string.settings_saved_permissions) {
+                Text(
+                    text = stringResource(R.string.settings_saved_permissions_body),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                    modifier = Modifier.padding(
+                        horizontal = spacing.md,
+                        vertical = spacing.sm,
+                    ),
+                )
+                if (savedPermissions.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.settings_saved_permissions_empty),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceFaint,
+                        modifier = Modifier.padding(
+                            start = spacing.md,
+                            end = spacing.md,
+                            bottom = spacing.md,
+                        ),
+                    )
+                } else {
+                    savedPermissions.forEachIndexed { index, saved ->
+                        if (index > 0) RowDivider(inset = spacing.md)
+                        SavedPermissionRow(
+                            saved = saved,
+                            onRevoke = {
+                                savedPermissions = savedPermissions - saved
+                            },
+                        )
+                    }
+                }
             }
 
             // Engine & Connectivity
@@ -326,6 +374,58 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
         AppLanguage.Indonesian -> R.string.language_indonesian
     },
 )
+
+/** One permission saved with "Always": what was allowed, and for which scope. */
+data class SavedPermission(
+    /** Tool pattern that was allowed, e.g. "bash" or "read". */
+    val pattern: String,
+    /** Where it applies, e.g. the project path. */
+    val scope: String,
+)
+
+/** One saved permission with a revoke affordance. */
+@Composable
+private fun SavedPermissionRow(
+    saved: SavedPermission,
+    onRevoke: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 54.dp)
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = spacing.xs),
+        ) {
+            Text(
+                text = saved.pattern,
+                style = OpenCodeTypography.body,
+                color = colors.onSurface,
+            )
+            Text(
+                text = saved.scope,
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TextButton(onClick = onRevoke) {
+            Text(
+                text = stringResource(R.string.settings_saved_permissions_revoke),
+                style = OpenCodeTypography.label,
+                color = colors.danger,
+            )
+        }
+    }
+}
 
 /** Language picker dialog. */
 @Composable

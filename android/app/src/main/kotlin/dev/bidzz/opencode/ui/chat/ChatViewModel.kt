@@ -47,6 +47,22 @@ data class ChatUiState(
     val sentPrompts: List<String> = emptyList(),
     /** Active permission request; the agent is blocked until it is answered. */
     val pendingPermission: dev.bidzz.opencode.core.api.dto.PendingPermission? = null,
+    /** A permission request the user deferred ("Answer later"). Kept so it can
+     * be answered later; dropped when the run ends, since the engine no longer
+     * waits for it then. */
+    val deferredPermission: dev.bidzz.opencode.core.api.dto.PendingPermission? = null,
+    /** True when the last permission reply failed, so the prompt re-arms its
+     * buttons instead of staying spent (see [ChatViewModel.replyPermission]). */
+    val permissionReplyFailed: Boolean = false,
+    /** What the banner's single Retry button means for the current failure
+     * ([RetryKind.NONE] hides it — see [ChatViewModel.retryError]). */
+    val retryKind: RetryKind = RetryKind.NONE,
+    /** A follow-up typed while the agent is working, sent when the run ends. */
+    val queuedPrompt: String? = null,
+    /** True after Stop was tapped until the run actually ends. */
+    val stopping: Boolean = false,
+    /** Id of the user message being edited in the composer, or null. */
+    val editingMessageId: String? = null,
     /** Selectable agents — the CLI's modes (build, plan, and user-defined ones). */
     val agents: List<dev.bidzz.opencode.core.api.dto.AgentInfo> = emptyList(),
     val activeAgent: String? = null,
@@ -57,6 +73,21 @@ data class ChatUiState(
     /** Active git branch when inside a version-controlled workspace. */
     val branch: String? = null,
 )
+
+/** What the error banner's Retry button does for the current failure. */
+enum class RetryKind {
+    /** No retry is offered (non-retryable failure, or nothing failed). */
+    NONE,
+    /** Re-send the last sent prompt as-is. */
+    RESEND,
+    /** The engine's credentials rotated: restart the engine to re-auth. */
+    REAUTH,
+    /** HTTP 429: re-sending on the same model would fail again immediately,
+     * so Retry shows switch-model / wait guidance instead of re-sending. */
+    RATE_LIMITED,
+    /** The session is gone server-side: reload (re-open) it. */
+    RELOAD_SESSION,
+}
 
 /** A single rendered message. */
 data class ChatMessage(
@@ -75,6 +106,27 @@ data class ChatMessage(
      * engine sent none. Drives date dividers and the tool-trace start time;
      * nothing else reads it, so a null simply hides those decorations. */
     val createdAtMillis: Long? = null,
+    /** Turn footer (Phase 2, finding 6), from the engine DTO: total tokens
+     * (`tokens.input + tokens.output`; reasoning/cache are subsets of those,
+     * never added on top), cost, turn duration (`time.completed -
+     * time.created`) and the engine `finish` string. All null until the
+     * engine reports them; the footer hides while all four are null. */
+    val usageTokens: Long? = null,
+    val usageCostUsd: Double? = null,
+    val turnDurationMs: Long? = null,
+    val stopReason: String? = null,
+    /** Thinking time for this turn in seconds (Phase 2, finding 7): the
+     * engine's own `time.streamed - time.created` while reasoning was
+     * present, i.e. how long the model thought before its first token. Null
+     * when the engine sent no usable timestamps; the screen then falls back
+     * to its live timer while the turn streams. Stored per turn so a
+     * finished turn never shows the current run's clock (or 0 when idle). */
+    val thinkingSeconds: Int? = null,
+    /** Per-tool durations in milliseconds, keyed by tool id (Phase 2,
+     * finding 20): client-side stamps — the engine sends no per-tool
+     * timestamps — so a tool the client never saw live has no entry here
+     * rather than an invented duration. */
+    val toolDurations: Map<String, Long> = emptyMap(),
 )
 
 /**
@@ -114,6 +166,22 @@ class ChatViewModel(
     /** The attached handle, or null until the engine reports credentials. */
     private var handle: dev.bidzz.opencode.api.EngineApi.Handle? = null
 
+    /** Client-side tool timestamps (Phase 2, finding 20): the engine sends no
+     * per-tool times, so a tool is stamped when its live event first arrives
+     * and when it reaches a terminal status. Both maps are keyed by tool id
+     * and survive resyncs (which clear the repository's live tools); they are
+     * cleared when the session changes, so an id is never reused across
+     * sessions. A tool the client never saw live has no stamps and therefore
+     * no duration — never an invented one. */
+    private val toolStartedAt = mutableMapOf<String, Long>()
+    private val toolCompletedAt = mutableMapOf<String, Long>()
+    private var lastCollectorSessionID: String? = null
+
+    /** Draft as it was before an edit loaded a message into the composer;
+     * cancelling the edit restores it. Not persisted: on process death the
+     * edit is abandoned and the draft stays as typed. */
+    private var draftBeforeEdit: String? = null
+
     /** Called by the screen whenever engine status changes. */
     fun onEngineStatus(status: EngineStatus) {
         val previous = _state.value.engineState
@@ -131,6 +199,10 @@ class ChatViewModel(
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
+                        stopping = false,
+                        queuedPrompt = null,
+                        editingMessageId = null,
+                        retryKind = RetryKind.NONE,
                         failureKey = if (status.state == EngineState.FAILED) {
                             R.string.error_engine_not_running
                         } else {
@@ -168,19 +240,130 @@ class ChatViewModel(
         val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope)
         repository = repo
 
+        collectRepo(repo)
+        loadControls()
+    }
+
+    /** (Re)starts collecting one repository's state into [_state]. */
+    private fun collectRepo(repo: ChatRepository) {
         collector?.cancel()
         collector = viewModelScope.launch {
-            repo.state.collect { chat ->
-                _state.value = _state.value.copy(
-                    sessionID = chat.sessionID,
-                    messages = chat.toUiMessages(),
-                    busy = chat.busy,
-                    failure = chat.lastFailure,
-                    pendingPermission = chat.pendingPermission,
-                )
+            repo.state.collect { chat -> onRepoState(chat) }
+        }
+    }
+
+    /**
+     * Folds one repository emission into [_state].
+     *
+     * Besides copying the chat over, this is where the cross-cutting
+     * Phase 2 wiring lives: client-side tool stamps (finding 20), the typed
+     * retry kind (finding 18), the queued follow-up flush (finding 10) and
+     * the deferred-permission lifecycle (finding 17).
+     */
+    private fun onRepoState(chat: ChatState) {
+        val previous = _state.value
+        val wasBusy = previous.busy
+
+        // A new session restarts the tool clock: ids must never be reused
+        // across sessions, or a new tool would inherit an old tool's stamps.
+        if (chat.sessionID != lastCollectorSessionID) {
+            toolStartedAt.clear()
+            toolCompletedAt.clear()
+            lastCollectorSessionID = chat.sessionID
+        }
+        // Stamp live tools: first sight starts the clock, a terminal status
+        // stops it. History-only tools are never stamped — resync must not
+        // invent a duration for a tool that finished before this client
+        // attached.
+        chat.liveTools.values.forEach { live ->
+            val id = live.call.id
+            val now = System.currentTimeMillis()
+            if (live.call.isDone) {
+                toolStartedAt.getOrPut(id) { now }
+                toolCompletedAt.getOrPut(id) { now }
+            } else {
+                toolStartedAt.getOrPut(id) { now }
             }
         }
-        loadControls()
+        val toolDurations = toolCompletedAt.mapNotNull { (id, end) ->
+            toolStartedAt[id]?.let { start ->
+                if (end >= start) id to (end - start) else null
+            }
+        }.toMap()
+
+        // A deferred permission stays hidden while the engine still waits on
+        // that same request; a different request supersedes it, and a
+        // finished run drops it — the engine no longer waits for it then,
+        // and a late reply would only fail with NoPendingPermission.
+        val repoPending = chat.pendingPermission
+        val deferred = previous.deferredPermission
+        val effectivePending = when {
+            repoPending == null -> null
+            deferred != null && repoPending.id == deferred.id -> null
+            else -> repoPending
+        }
+        val effectiveDeferred = when {
+            repoPending == null && !chat.busy -> null
+            repoPending != null && deferred != null && repoPending.id != deferred.id -> null
+            else -> deferred
+        }
+
+        _state.value = previous.copy(
+            sessionID = chat.sessionID,
+            messages = chat.toUiMessages(toolDurations),
+            busy = chat.busy,
+            failure = chat.lastFailure,
+            pendingPermission = effectivePending,
+            deferredPermission = effectiveDeferred,
+            // While a permission prompt is outstanding the prompt is the
+            // action, not the banner: Retry must not offer to re-send a
+            // prompt into a run that is blocked waiting for an answer.
+            retryKind = if (effectivePending != null) {
+                RetryKind.NONE
+            } else {
+                retryKindFor(chat.lastFailure)
+            },
+            stopping = if (!chat.busy) false else previous.stopping,
+            // A new request re-arms the prompt; the same request keeps the
+            // failed-reply flag so the prompt stays re-armed until answered.
+            permissionReplyFailed = if (effectivePending?.id != previous.pendingPermission?.id) {
+                false
+            } else {
+                previous.permissionReplyFailed
+            },
+        )
+
+        // The run just ended and a follow-up was queued while it worked:
+        // send it now. `send()` reads the draft, so the queued text is put
+        // back into the draft first; it is cleared from the queue before
+        // sending so a failed send cannot re-queue it in a loop.
+        if (wasBusy && !chat.busy) {
+            val queued = _state.value.queuedPrompt
+            if (queued != null) {
+                _state.value = _state.value.copy(queuedPrompt = null, draft = queued)
+                send()
+            }
+        }
+    }
+
+    /**
+     * What Retry means for [failure], from existing signals only — no new
+     * error-kind field was needed: [ApiResult.Failure.reason] already
+     * distinguishes auth/session-missing, and [EngineClient] preserves the
+     * HTTP code, so 429 is `code == 429`. The assistant-message error type
+     * `provider.free-limit` is NOT covered here: it surfaces as a Role.ERROR
+     * bubble, not a banner failure, so the banner never sees it.
+     */
+    private fun retryKindFor(failure: ApiResult.Failure?): RetryKind {
+        if (failure == null) return RetryKind.NONE
+        return when {
+            failure.isUnauthorized -> RetryKind.REAUTH
+            failure.code == 429 -> RetryKind.RATE_LIMITED
+            failure.isSessionMissing -> RetryKind.RELOAD_SESSION
+            failure.isLocationMissing || failure.isNoSession ||
+                failure.isBinaryFile || failure.isNoPendingPermission -> RetryKind.NONE
+            else -> if (_state.value.lastSentText != null) RetryKind.RESEND else RetryKind.NONE
+        }
     }
 
     /**
@@ -198,13 +381,15 @@ class ChatViewModel(
                     is ApiResult.Success -> _state.value = _state.value.copy(
                         agents = dev.bidzz.opencode.core.api.AgentApi.selectable(r.value),
                     )
-                    is ApiResult.Failure -> _state.value = _state.value.copy(failure = r)
+                    // A control-list failure is not a send failure: Retry
+                    // must not offer to re-send the last prompt for it.
+                    is ApiResult.Failure -> _state.value = _state.value.copy(failure = r, retryKind = RetryKind.NONE)
                 }
             }
             h.models.list().let { r ->
                 when (r) {
                     is ApiResult.Success -> _state.value = _state.value.copy(models = r.value)
-                    is ApiResult.Failure -> _state.value = _state.value.copy(failure = r)
+                    is ApiResult.Failure -> _state.value = _state.value.copy(failure = r, retryKind = RetryKind.NONE)
                 }
             }
             h.commands.list().let { r ->
@@ -260,15 +445,31 @@ class ChatViewModel(
     /** Sends the draft, creating a session first if there is none. */
     fun send() {
         val text = _state.value.draft.trim()
-        // `busy` only flips once the engine reports it over the stream, and the draft is
-        // cleared after the reply, so rapid taps would each start their own send. The
-        // in-flight flag is set synchronously on the main thread to close that window.
-        if (text.isEmpty() || _state.value.busy || sendInFlight) return
+        if (text.isEmpty()) return
+        // While the agent works the composer stays typable, and sending queues
+        // the follow-up instead of dropping it: the queue flushes when the
+        // run ends (see onRepoState). The draft is cleared so the queued text
+        // is not also still sitting in the composer.
+        if (_state.value.busy || sendInFlight) {
+            _state.value = _state.value.copy(queuedPrompt = text)
+            clearDraft()
+            return
+        }
+        sendText(text)
+    }
+
+    private var sendInFlight = false
+
+    /**
+     * Sends [text] as a new prompt, recording it as the retry target and in
+     * prompt history. Shared by [send], [submitEdit] and [resendMessage] so
+     * all three record the same retry state.
+     */
+    private fun sendText(text: String) {
         val repo = repository ?: run {
             _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
             return
         }
-
         _state.value = _state.value.copy(
             lastSentText = text,
             // Consecutive duplicates add nothing to history navigation.
@@ -288,7 +489,68 @@ class ChatViewModel(
         }
     }
 
-    private var sendInFlight = false
+    /**
+     * Loads a user message back into the composer in editing mode.
+     *
+     * The composer shows an editing header with Submit/Cancel; submitting
+     * sends the edited text as a new prompt in the same session
+     * ([submitEdit]). It is deliberately NOT a history rewrite: the engine
+     * exposes `POST /api/session/{id}/revert/stage` + `/revert/commit` and
+     * `/fork` (docs/API-REFERENCE.md), but neither request shape is verified
+     * against a live engine — `Session.ForkBoundary` is an untyped `anyOf` —
+     * and guessing would risk corrupting the session's real history. The
+     * original message stays visible and the edited text follows it as a new
+     * turn, so the transcript is never silently rewritten.
+     */
+    fun startEdit(messageId: String, text: String) {
+        if (_state.value.editingMessageId == messageId) return
+        draftBeforeEdit = _state.value.draft
+        _state.value = _state.value.copy(editingMessageId = messageId)
+        onDraftChange(text)
+    }
+
+    /** Abandons an edit and restores the draft as it was before it. */
+    fun cancelEdit() {
+        val restore = draftBeforeEdit
+        draftBeforeEdit = null
+        _state.value = _state.value.copy(editingMessageId = null)
+        if (restore != null) onDraftChange(restore)
+    }
+
+    /** Submits the edited text (see [startEdit] for why this re-sends). */
+    fun submitEdit() {
+        val text = _state.value.draft.trim()
+        val editingId = _state.value.editingMessageId
+        if (editingId == null) {
+            send()
+            return
+        }
+        if (text.isEmpty()) {
+            cancelEdit()
+            return
+        }
+        draftBeforeEdit = null
+        _state.value = _state.value.copy(editingMessageId = null)
+        if (_state.value.busy || sendInFlight) {
+            _state.value = _state.value.copy(queuedPrompt = text)
+            clearDraft()
+            return
+        }
+        sendText(text)
+    }
+
+    /** Re-sends one user message's text (its own Resend pill). */
+    fun resendMessage(messageId: String) {
+        val text = _state.value.messages
+            .firstOrNull { it.id == messageId && it.role == Role.USER }
+            ?.text?.trim()
+            .takeIf { !it.isNullOrBlank() } ?: return
+        if (_state.value.busy || sendInFlight) {
+            _state.value = _state.value.copy(queuedPrompt = text)
+            return
+        }
+        sendText(text)
+    }
 
     /**
      * Re-sends the last prompt that was sent, after a failure.
@@ -315,6 +577,50 @@ class ChatViewModel(
                 sendInFlight = false
             }
         }
+    }
+
+    /**
+     * The banner's single Retry, dispatched by [ChatUiState.retryKind].
+     *
+     * - RESEND: re-sends the last prompt.
+     * - RELOAD_SESSION: the session is gone server-side; re-open it.
+     * - RATE_LIMITED: does NOT re-send — the same model would fail again
+     *   immediately. It swaps the banner for switch-model / wait guidance
+     *   and hides Retry until a new failure arrives.
+     * - REAUTH: nothing to do here; the screen routes it to the engine
+     *   restart (re-auth), which re-issues credentials and re-attaches.
+     * - NONE: Retry is not offered at all for non-retryable failures.
+     */
+    fun retryError() {
+        when (_state.value.retryKind) {
+            RetryKind.RESEND -> retryLastSend()
+            RetryKind.RELOAD_SESSION -> reloadSession()
+            RetryKind.RATE_LIMITED -> _state.value = _state.value.copy(
+                failure = null,
+                failureKey = R.string.chat_rate_limited_guidance,
+                retryKind = RetryKind.NONE,
+            )
+            RetryKind.REAUTH, RetryKind.NONE -> Unit
+        }
+    }
+
+    /**
+     * Re-opens the current session after a SESSION_MISSING failure.
+     *
+     * The repository is rebuilt so the stream re-attaches over a fresh
+     * socket; the session id is kept, so a session that is actually still
+     * there reloads in place. If the engine answers 404 again the failure
+     * resurfaces through the collector.
+     */
+    fun reloadSession() {
+        val id = _state.value.sessionID ?: return
+        val attachedHandle = handle ?: return
+        repository?.close()
+        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope)
+        repository = repo
+        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE)
+        collectRepo(repo)
+        repo.open(id)
     }
 
     private suspend fun sendNow(repo: ChatRepository, text: String) {
@@ -387,10 +693,14 @@ class ChatViewModel(
 
     fun stop() {
         val repo = repository ?: return
+        // "Stopping…" until the run actually ends: the interrupt is async and
+        // the button must not flip back to Send while the agent still works.
+        // The collector clears it when busy goes false.
+        _state.value = _state.value.copy(stopping = true)
         viewModelScope.launch {
             when (val result = repo.interrupt()) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
-                is ApiResult.Success -> _state.value = _state.value.copy(busy = false)
+                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result, stopping = false)
+                is ApiResult.Success -> _state.value = _state.value.copy(busy = false, stopping = false)
             }
         }
     }
@@ -400,59 +710,115 @@ class ChatViewModel(
      *
      * The engine blocks the tool call until this is sent, so every decision path
      * (allow once, allow always, reject) must reach it. A failure leaves the
-     * prompt visible so the operator can retry rather than losing the request.
+     * prompt visible so the operator can retry rather than losing the request —
+     * and sets [ChatUiState.permissionReplyFailed], which re-arms the prompt's
+     * buttons (the composable spends them on tap and must not stay spent
+     * after a failed reply).
      */
     fun replyPermission(decision: String) {
         val repo = repository ?: return
+        _state.value = _state.value.copy(permissionReplyFailed = false)
         viewModelScope.launch {
             when (val result = repo.replyPermission(decision)) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
-                is ApiResult.Success -> Unit
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    failure = result,
+                    // The prompt is still outstanding, so the banner offers
+                    // no Retry for this failure (see onRepoState).
+                    retryKind = RetryKind.NONE,
+                    permissionReplyFailed = true,
+                )
+                is ApiResult.Success -> _state.value = _state.value.copy(
+                    deferredPermission = null,
+                    permissionReplyFailed = false,
+                )
             }
         }
+    }
+
+    /**
+     * Defers the pending permission ("Answer later").
+     *
+     * Nothing is sent to the engine: the request is not answered, rejected or
+     * saved, and the agent stays blocked on it — deferring only hides the
+     * prompt. The request is kept as [ChatUiState.deferredPermission] and the
+     * screen offers it back as a "Permission waiting" row, so it can be
+     * answered later via [restoreDeferredPermission] against the same request
+     * id. If the run ends first the deferred request is dropped (see
+     * [onRepoState]): the engine no longer waits for it, and a late reply
+     * would only fail with NoPendingPermission.
+     */
+    fun deferPermission() {
+        val pending = _state.value.pendingPermission ?: return
+        _state.value = _state.value.copy(pendingPermission = null, deferredPermission = pending)
+    }
+
+    /** Brings a deferred permission request back as the pending prompt. */
+    fun restoreDeferredPermission() {
+        val deferred = _state.value.deferredPermission ?: return
+        _state.value = _state.value.copy(pendingPermission = deferred, deferredPermission = null)
     }
 
     /** Starts a fresh conversation. */
     fun newSession() {
         repository?.close()
-        collector?.cancel()
         val attached = handle
         if (attached != null) {
             val repo = ChatRepository(attached.sessions, attached.stream, viewModelScope)
             repository = repo
-            collector = viewModelScope.launch {
-                repo.state.collect { chat ->
-                    _state.value = _state.value.copy(
-                        sessionID = chat.sessionID,
-                        messages = chat.toUiMessages(),
-                        busy = chat.busy,
-                        failure = chat.lastFailure,
-                        pendingPermission = chat.pendingPermission,
-                    )
-                }
-            }
+            collectRepo(repo)
         }
         // A draft belongs to the session it was typed in; it must not follow
         // the user into the fresh session. The last sent text goes with it:
         // retrying it in a new session would send the old session's prompt.
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", lastSentText = null, sentPrompts = emptyList())
+        // The queued follow-up, the edit in progress, any deferred permission
+        // and the stop state belong to the old session too.
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
     }
 
     /** Loads an existing session. */
     fun openSession(session: SessionInfo) {
-        openSession(session.id)
+        // Read-only sync: the session's own model and agent become the
+        // active ones, so the header stops showing the previous session's
+        // model. selectModel()/selectAgent() are NOT called — they write to
+        // the engine and could clobber the session's real model/agent.
+        // NOTE: agent sync reads SessionInfo.agent, which the engine returns
+        // in Session.Info.agent (docs/API-REFERENCE.md) — no new endpoint.
+        _state.value = _state.value.copy(
+            activeModel = session.model ?: _state.value.activeModel,
+            activeAgent = session.agent ?: _state.value.activeAgent,
+        )
+        openSessionById(session.id)
     }
 
     /** Loads an existing session by id, from the history list. */
     fun openSession(sessionID: String) {
+        openSessionById(sessionID, fetchMeta = true)
+    }
+
+    private fun openSessionById(sessionID: String, fetchMeta: Boolean = false) {
         val repo = repository ?: return
         // A draft belongs to the session it was typed in; opening another
         // session starts with an empty composer — and no retry target from
         // the previous session.
-        _state.value = _state.value.copy(draft = "", lastSentText = null, sentPrompts = emptyList())
+        _state.value = _state.value.copy(draft = "", lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         repo.open(sessionID)
+        // The id-only path has no SessionInfo to sync from, so the session's
+        // own model/agent are read back (GET /api/session/{id}) and copied
+        // into state — read-only, never written back to the engine. A failed
+        // read is best-effort: chat still opens on the previous selection.
+        if (!fetchMeta) return
+        val h = handle ?: return
+        viewModelScope.launch {
+            when (val result = h.sessions.get(sessionID)) {
+                is ApiResult.Success -> _state.value = _state.value.copy(
+                    activeModel = result.value.model ?: _state.value.activeModel,
+                    activeAgent = result.value.agent ?: _state.value.activeAgent,
+                )
+                is ApiResult.Failure -> Unit
+            }
+        }
     }
 
     /**
@@ -473,7 +839,7 @@ class ChatViewModel(
     fun currentSessionID(): String? = _state.value.sessionID
 
     fun dismissError() {
-        _state.value = _state.value.copy(failure = null, failureKey = null)
+        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE)
     }
 
     override fun onCleared() {
@@ -492,8 +858,11 @@ class ChatViewModel(
  *
  * Completed history and in-flight streaming text are merged here so the screen
  * never has to know that they come from two different sources.
+ *
+ * @param toolDurations client-side per-tool durations keyed by tool id (see
+ * [ChatViewModel]); passed through to each assistant turn.
  */
-private fun ChatState.toUiMessages(): List<ChatMessage> {
+private fun ChatState.toUiMessages(toolDurations: Map<String, Long> = emptyMap()): List<ChatMessage> {
     val result = mutableListOf<ChatMessage>()
     messages.forEach { message ->
         when {
@@ -542,6 +911,38 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                     agent = message.agent,
                     model = message.model,
                     createdAtMillis = message.time?.created,
+                    // Turn footer from the engine DTO (finding 6): tokens
+                    // are input + output only — reasoning/cache are subsets
+                    // of those, never added on top. Duration is completed −
+                    // created; thinking time is streamed − created while
+                    // reasoning is present. Any missing timestamp leaves its
+                    // field null rather than a guessed value.
+                    usageTokens = message.tokens?.let { tokens ->
+                        listOfNotNull(tokens.input, tokens.output).sum()
+                            .takeIf { tokens.input != null || tokens.output != null }
+                    },
+                    usageCostUsd = message.cost,
+                    turnDurationMs = message.time?.let { time ->
+                        if (time.created != null && time.completed != null &&
+                            time.completed >= time.created
+                        ) {
+                            time.completed - time.created
+                        } else {
+                            null
+                        }
+                    },
+                    stopReason = message.finish?.takeIf { it.isNotBlank() },
+                    thinkingSeconds = message.time?.let { time ->
+                        if (!message.reasoningText.isNullOrBlank() &&
+                            time.created != null && time.streamed != null &&
+                            time.streamed >= time.created
+                        ) {
+                            ((time.streamed - time.created) / 1000).toInt()
+                        } else {
+                            null
+                        }
+                    },
+                    toolDurations = toolDurations,
                 )
             }
             // `idle` markers are engine bookkeeping, not conversation.
@@ -633,6 +1034,15 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                 streaming = last.streaming || msg.streaming,
                 agent = msg.agent ?: last.agent,
                 model = msg.model ?: last.model,
+                // Footer fields combine across the merged chunks: token/cost/
+                // duration totals sum, the stop reason and thinking time come
+                // from the last chunk that has them, tool durations union.
+                usageTokens = sumOrNull(last.usageTokens, msg.usageTokens),
+                usageCostUsd = sumOrNull(last.usageCostUsd, msg.usageCostUsd),
+                turnDurationMs = sumOrNull(last.turnDurationMs, msg.turnDurationMs),
+                stopReason = msg.stopReason ?: last.stopReason,
+                thinkingSeconds = msg.thinkingSeconds ?: last.thinkingSeconds,
+                toolDurations = last.toolDurations + msg.toolDurations,
             )
         } else {
             merged += msg
@@ -640,3 +1050,11 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
     }
     return merged
 }
+
+/** Sums two nullable totals; null when both are absent. */
+private fun sumOrNull(a: Long?, b: Long?): Long? =
+    if (a == null && b == null) null else (a ?: 0L) + (b ?: 0L)
+
+/** Sums two nullable totals; null when both are absent. */
+private fun sumOrNull(a: Double?, b: Double?): Double? =
+    if (a == null && b == null) null else (a ?: 0.0) + (b ?: 0.0)

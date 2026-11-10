@@ -3,17 +3,14 @@ package dev.bidzz.opencode.ui.chat
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -91,7 +88,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import android.content.Context
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import dev.bidzz.opencode.ui.announceForAccessibility
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.semantics.contentDescription
@@ -166,6 +166,19 @@ fun ChatScreen(
     onDismissError: () -> Unit = {},
     /** Re-sends the last prompt after a failure; no-op when there is none. */
     onRetryError: () -> Unit = {},
+    /** Re-auth after an auth failure: restarts the engine so fresh
+     * credentials are issued (the banner routes REAUTH here). */
+    onReauth: () -> Unit = {},
+    /** Edit/resend (Phase 2, finding 3): load a user message into the
+     * composer in editing mode, and re-send one user message's text. */
+    onEditMessage: (String, String) -> Unit = { _, _ -> },
+    onResendMessage: (String) -> Unit = {},
+    /** Submit / cancel the edit in progress in the composer. */
+    onSubmitEdit: () -> Unit = {},
+    onCancelEdit: () -> Unit = {},
+    /** Defer a permission request, and bring a deferred one back. */
+    onDeferPermission: () -> Unit = {},
+    onRestoreDeferredPermission: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -226,6 +239,35 @@ fun ChatScreen(
         }
     }
 
+    // The first unread assistant message: the jump button and the "New
+    // messages" divider both target this index, not the last item — the
+    // reader asked to return to where they left off, not to the bottom.
+    val firstUnreadIndex by remember {
+        derivedStateOf {
+            state.messages.withIndex().firstOrNull { (index, message) ->
+                index >= lastReadMessageCount && message.role == Role.ASSISTANT
+            }?.index ?: -1
+        }
+    }
+
+    // The badge stays until the reader actually reaches the unread message:
+    // once the first unread item is on screen it counts as read and the
+    // watermark advances past it, so the badge drains as the reader scrolls
+    // through instead of clearing on any scroll. Keyed on the index as
+    // well as the visibility: several unread messages can be on screen at
+    // once, and the effect must re-run for each one it advances past.
+    val firstUnreadVisible by remember {
+        derivedStateOf {
+            if (firstUnreadIndex < 0) false
+            else listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
+        }
+    }
+    LaunchedEffect(firstUnreadVisible, firstUnreadIndex) {
+        if (firstUnreadVisible && firstUnreadIndex >= 0) {
+            lastReadMessageCount = firstUnreadIndex + 1
+        }
+    }
+
     // One run timer for the whole screen, started when the run starts
     // (busy false→true) and reset when it ends. It used to live inside
     // each MessageBubble and reset to 0 whenever the streaming flag
@@ -247,11 +289,45 @@ fun ChatScreen(
         }
     }
 
+    // Accessibility announcements (Phase 2, finding 14): ONLY on
+    // transitions, never for progress — a run finishing or failing, and a
+    // permission arriving. The stream itself is never narrated.
+    val a11yContext = LocalContext.current
+    val runFinishedText = stringResource(R.string.a11y_run_finished)
+    val runFailedText = stringResource(R.string.a11y_run_failed)
+    val permissionArrivedText = stringResource(R.string.a11y_permission_arrived)
+    var wasBusyForAnnouncement by remember { mutableStateOf(false) }
+    LaunchedEffect(state.busy) {
+        if (wasBusyForAnnouncement && !state.busy) {
+            announceForAccessibility(
+                a11yContext,
+                if (state.failure != null || state.failureKey != null) runFailedText else runFinishedText,
+            )
+        }
+        wasBusyForAnnouncement = state.busy
+    }
+
+    // A permission arriving moves focus to the prompt as well as announcing
+    // it: the agent is blocked until it is answered, so the operator must
+    // land on the one control that unblocks the conversation.
+    val permissionFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(state.pendingPermission?.id) {
+        if (state.pendingPermission != null) {
+            announceForAccessibility(a11yContext, permissionArrivedText)
+            permissionFocusRequester.requestFocus()
+        }
+    }
+
+    // Refocuses the composer after a send (see the Composer call below):
+    // a timestamp, not a boolean, so repeated sends re-trigger it.
+    var composerFocusSignal by remember { mutableLongStateOf(0L) }
+
     val targetLastIndex by remember {
         derivedStateOf {
             val hasWorking = state.busy && state.messages.lastOrNull()?.role == Role.USER
-            val hasError = state.failure != null || state.failureKey != null
-            val totalCount = state.messages.size + (if (hasWorking) 1 else 0) + (if (hasError) 1 else 0)
+            // No error term: the error is a pinned banner above the list
+            // now, not a tail item, so it never takes a list index.
+            val totalCount = state.messages.size + (if (hasWorking) 1 else 0)
             (totalCount - 1).coerceAtLeast(0)
         }
     }
@@ -371,6 +447,9 @@ fun ChatScreen(
                 busy = state.busy,
                 branch = activeBranch,
                 isScrolled = isScrolled,
+                models = state.models,
+                activeModel = state.activeModel,
+                onModel = onModel,
                 onMenu = {
                     onDrawerOpen()
                     scope.launch { drawerState.open() }
@@ -378,6 +457,52 @@ fun ChatScreen(
                 onStatusClick = onStatusClick,
                 onNewSession = onNewSession,
             )
+
+            // Pinned status banners: the error and the reconnecting state
+            // live here, above the transcript, so they stay visible even
+            // when the reader has scrolled up — a tail item in the
+            // LazyColumn scrolls away exactly when it is needed most.
+            // Both are capped at the content width like the transcript.
+            val hasError = state.failure != null || state.failureKey != null
+            if (hasError || state.connecting) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = dims.contentMaxWidth)
+                            .padding(horizontal = spacing.md),
+                    ) {
+                        if (state.connecting) {
+                            ReconnectingIndicator(
+                                modifier = Modifier.padding(top = spacing.sm),
+                            )
+                        }
+                        if (hasError) {
+                            PinnedErrorBanner(
+                                message = state.failure?.message()
+                                    ?: stringResource(state.failureKey!!),
+                                // Typed retry (Phase 2, finding 18): Retry is
+                                // only offered when the view model classified
+                                // the failure as retryable. Auth routes out to
+                                // the engine restart (re-auth); the rest go
+                                // through the single onRetry callback.
+                                canRetry = state.retryKind != RetryKind.NONE,
+                                onRetry = {
+                                    if (state.retryKind == RetryKind.REAUTH) onReauth() else onRetryError()
+                                },
+                                onDismiss = onDismissError,
+                                modifier = Modifier.padding(
+                                    top = spacing.sm,
+                                    bottom = spacing.sm,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
 
             Box(
                 modifier = Modifier
@@ -391,6 +516,8 @@ fun ChatScreen(
                         engineState = state.engineState,
                         busy = state.busy,
                         workspacePath = state.workspacePath,
+                        activeModel = state.activeModel,
+                        models = state.models,
                         onStatusClick = onStatusClick,
                         onProjectClick = onProjectClick,
                         onSuggestion = onDraftChange,
@@ -467,6 +594,15 @@ fun ChatScreen(
                                             )
                                         }
                                     }
+                                    // "New messages" divider (audit 15):
+                                    // the same hairline language as the date
+                                    // divider, marking the first message the
+                                    // reader has not seen yet.
+                                    if (index == firstUnreadIndex) {
+                                        NewMessagesDivider(
+                                            modifier = Modifier.padding(bottom = spacing.sm),
+                                        )
+                                    }
                                     // Hairline turn divider above the first part
                                     // of a new assistant turn (not the first
                                     // message). No card, no background — the
@@ -491,7 +627,34 @@ fun ChatScreen(
                                         model = message.model,
                                         reasoning = message.reasoning,
                                         parts = message.parts,
-                                        thinkingElapsedSeconds = busyElapsedSeconds,
+                                        // Per-turn thinking time (Phase 2,
+                                        // finding 7): a finished turn shows
+                                        // its own stored seconds; a streaming
+                                        // turn falls back to the live run
+                                        // timer; an idle turn shows nothing —
+                                        // the run clock (0 when idle) is never
+                                        // passed to every turn.
+                                        thinkingElapsedSeconds = message.thinkingSeconds
+                                            ?: if (message.streaming) busyElapsedSeconds else null,
+                                        // Turn footer (Phase 2, finding 6)
+                                        // and per-tool durations (finding 20).
+                                        usageTokens = message.usageTokens,
+                                        usageCostUsd = message.usageCostUsd,
+                                        turnDurationMs = message.turnDurationMs,
+                                        stopReason = message.stopReason,
+                                        toolDurations = message.toolDurations,
+                                        // Edit/resend (Phase 2, finding 3):
+                                        // user bubbles only.
+                                        onEdit = if (message.role == Role.USER) {
+                                            { onEditMessage(message.id, message.text) }
+                                        } else {
+                                            null
+                                        },
+                                        onResend = if (message.role == Role.USER) {
+                                            { onResendMessage(message.id) }
+                                        } else {
+                                            null
+                                        },
                                         // Delivered (C-B): a user message counts
                                         // as answered once any assistant turn
                                         // appears after it — a local read
@@ -515,102 +678,6 @@ fun ChatScreen(
                                             onSend()
                                         },
                                     )
-                                }
-                            }
-                            // Error slot, always present so its
-                            // AnimatedVisibility can play both the enter
-                            // (fade + expand, motion.standard) and the exit
-                            // when the error is dismissed. It sits before
-                            // the turn-tail slot, so targetLastIndex still
-                            // lands on it — never past it on an empty slot.
-                            item(key = "error") {
-                                // AnimatedVisibility must sit inside a Column
-                                // scope: the ColumnScope overload is the one
-                                // that resolves here (same pattern as the
-                                // permission prompt below).
-                                Column(modifier = Modifier.animateItem()) {
-                                    AnimatedVisibility(
-                                        visible = state.failure != null || state.failureKey != null,
-                                        enter = fadeIn(animationSpec = tween(motion.standard)) +
-                                            expandVertically(animationSpec = tween(motion.standard)),
-                                        exit = fadeOut(animationSpec = tween(motion.quick)) +
-                                            shrinkVertically(animationSpec = tween(motion.quick)),
-                                    ) {
-                                    // Hoisted out of the .semantics {} block below:
-                                    // stringResource() is @Composable and cannot be
-                                    // called inside a SemanticsPropertyReceiver lambda.
-                                    val closeDescription =
-                                        stringResource(R.string.chat_status_dialog_close)
-                                    val retryLabel = stringResource(R.string.chat_retry)
-                                    // Retry re-sends the last prompt that was
-                                    // actually sent — not the draft, which the
-                                    // user may have edited since — and is only
-                                    // offered when there is one to retry.
-                                    Column(modifier = Modifier.padding(top = spacing.md)) {
-                                        Box {
-                                            MessageBubble(
-                                                role = Role.ERROR,
-                                                markdown = state.failure?.message()
-                                                    ?: stringResource(state.failureKey!!),
-                                            )
-                                            // Small dismiss cross on the error bubble;
-                                            // it only clears the error, it does not retry.
-                                            Box(
-                                                modifier = Modifier
-                                                    .align(Alignment.TopEnd)
-                                                    .padding(4.dp)
-                                                    .size(28.dp)
-                                                    .clip(CircleShape)
-                                                    .background(colors.surfaceRaised)
-                                                    .clickable(
-                                                        role = SemanticsRole.Button,
-                                                        onClick = onDismissError,
-                                                    )
-                                                    .semantics {
-                                                        contentDescription = closeDescription
-                                                    },
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                GlyphIcon(
-                                                    glyph = Glyph.Close,
-                                                    tint = colors.onSurfaceMuted,
-                                                    size = 12.dp,
-                                                )
-                                            }
-                                        }
-                                        if (state.lastSentText != null) {
-                                            Spacer(modifier = Modifier.height(spacing.xs))
-                                            Row(
-                                                modifier = Modifier
-                                                    .height(dims.minTouchTarget)
-                                                    .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.full))
-                                                    .background(colors.accent)
-                                                    .semantics {
-                                                        role = SemanticsRole.Button
-                                                        contentDescription = retryLabel
-                                                    }
-                                                    .clickable(
-                                                        role = SemanticsRole.Button,
-                                                        onClick = onRetryError,
-                                                    )
-                                                    .padding(horizontal = spacing.md),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                                            ) {
-                                                GlyphIcon(
-                                                    glyph = Glyph.Refresh,
-                                                    tint = colors.onAccent,
-                                                    size = 16.dp,
-                                                )
-                                                Text(
-                                                    text = retryLabel,
-                                                    style = OpenCodeTypography.label,
-                                                    color = colors.onAccent,
-                                                )
-                                            }
-                                        }
-                                    }
-                                    }
                                 }
                             }
                             // Placeholder → answer transition. This slot stays
@@ -671,7 +738,19 @@ fun ChatScreen(
                                 unreadCount = unreadMessagesCount,
                                 pendingQuestions = pendingQuestionCount,
                                 isBusy = state.busy,
-                                onClick = { scope.launch { listState.animateScrollToItem(targetLastIndex) } },
+                                onClick = {
+                                    scope.launch {
+                                        // First unread, not the bottom: the
+                                        // reader asked to resume where they
+                                        // left off. With nothing unread it
+                                        // still falls through to the latest.
+                                        if (firstUnreadIndex >= 0) {
+                                            listState.animateScrollToItem(firstUnreadIndex)
+                                        } else {
+                                            listState.animateScrollToItem(targetLastIndex)
+                                        }
+                                    }
+                                },
                             )
                         }
                     }
@@ -696,77 +775,133 @@ fun ChatScreen(
                 }
             }
 
-            androidx.compose.animation.AnimatedVisibility(
-                visible = state.pendingPermission != null,
-                enter = fadeIn(tween(180)) + expandVertically(tween(180)),
-                exit = fadeOut(tween(140)) + shrinkVertically(tween(140)),
+            // Composer, command palette and permission prompt share one
+            // centred 720dp column (audit 9): on a tablet they must not
+            // stretch edge to edge while the transcript above is capped.
+            // The model picker moved to the header, so the composer
+            // controls row is agent-only now.
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                state.pendingPermission?.let { request ->
-                    PermissionPrompt(
-                        request = request,
-                        onReply = onPermissionReply,
-                        modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = dims.contentMaxWidth),
+                ) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = state.pendingPermission != null,
+                        enter = fadeIn(tween(180)) + expandVertically(tween(180)),
+                        exit = fadeOut(tween(140)) + shrinkVertically(tween(140)),
+                    ) {
+                        state.pendingPermission?.let { request ->
+                            PermissionPrompt(
+                                request = request,
+                                onReply = onPermissionReply,
+                                onAnswerLater = onDeferPermission,
+                                replyFailed = state.permissionReplyFailed,
+                                focusRequester = permissionFocusRequester,
+                                modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+                            )
+                        }
+                    }
+
+                    // A deferred permission waits here until it is answered:
+                    // the engine is still blocked on it, so it must stay one
+                    // tap away rather than vanishing. It disappears on its
+                    // own when the run ends (see ChatViewModel.onRepoState).
+                    if (state.pendingPermission == null && state.deferredPermission != null) {
+                        DeferredPermissionRow(
+                            onRestore = onRestoreDeferredPermission,
+                            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
+                        )
+                    }
+
+                    val paletteState = rememberCommandPaletteState(
+                        commands = state.commands,
+                        draft = state.draft,
+                    )
+
+                    CommandSuggestions(
+                        paletteState = paletteState,
+                        onPick = { name -> onDraftChange("/$name ") },
+                        onDismiss = { dismissPalette() },
+                    )
+
+                    // Placeholder names the model/agent (Phase 2, finding 24):
+                    // the human model label when the catalog knows it, else
+                    // the raw model id; the agent name the same way.
+                    val modelLabel = remember(state.activeModel, state.models) {
+                        state.models.firstOrNull { it.ref() == state.activeModel }?.label()
+                            ?: state.activeModel?.id
+                    }
+                    val agentLabel = remember(state.activeAgent, state.agents) {
+                        state.agents.firstOrNull { it.id == state.activeAgent }
+                            ?.name?.takeIf { it.isNotBlank() } ?: state.activeAgent
+                    }
+
+                    Composer(
+                        value = state.draft,
+                        onValueChange = onDraftChange,
+                        // IME Send must not bypass the command palette: with "/"
+                        // open, the soft keyboard's Send key used to submit the
+                        // raw draft instead of completing the selected command
+                        // (physical Enter is handled separately above and keeps
+                        // its Ctrl/Cmd+Enter behaviour).
+                        onSend = {
+                            val picked = if (paletteActive) paletteState.currentSelectedCommand() else null
+                            if (picked != null) {
+                                onDraftChange("/${picked.name} ")
+                            } else if (state.editingMessageId != null) {
+                                onSubmitEdit()
+                            } else {
+                                onSend()
+                            }
+                            // Refocus the composer after a send so the next
+                            // message can be typed without tapping it again.
+                            composerFocusSignal = System.currentTimeMillis()
+                        },
+                        onStop = onStop,
+                        busy = state.busy,
+                        stopping = state.stopping,
+                        enabled = state.workspaceReady,
+                        promptHistory = state.sentPrompts,
+                        queuedText = state.queuedPrompt,
+                        isEditing = state.editingMessageId != null,
+                        onCancelEdit = onCancelEdit,
+                        modelLabel = modelLabel,
+                        agentLabel = agentLabel,
+                        autofocus = true,
+                        focusRequestSignal = composerFocusSignal,
+                        modifier = Modifier.navigationBarsPadding(),
+                        onKeyEvent = { keyEvent ->
+                            // Ctrl/Cmd+Enter sends from a physical keyboard; a plain
+                            // Enter stays a newline and is left to the text field.
+                            if (keyEvent.type == KeyEventType.KeyDown &&
+                                (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter) &&
+                                (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)
+                            ) {
+                                onSend()
+                                true
+                            } else {
+                                paletteState.handleKeyEvent(
+                                    event = keyEvent,
+                                    onPick = { name -> onDraftChange("/$name ") },
+                                    onDismiss = { dismissPalette() },
+                                )
+                            }
+                        },
+                        controls = {
+                            ChatControls(
+                                agents = state.agents,
+                                activeAgent = state.activeAgent,
+                                onAgent = onAgent,
+                                enabled = !state.busy,
+                            )
+                        },
                     )
                 }
             }
-
-            val paletteState = rememberCommandPaletteState(
-                commands = state.commands,
-                draft = state.draft,
-            )
-
-            CommandSuggestions(
-                paletteState = paletteState,
-                onPick = { name -> onDraftChange("/$name ") },
-                onDismiss = { dismissPalette() },
-            )
-
-            Composer(
-                value = state.draft,
-                onValueChange = onDraftChange,
-                // IME Send must not bypass the command palette: with "/"
-                // open, the soft keyboard's Send key used to submit the
-                // raw draft instead of completing the selected command
-                // (physical Enter is handled separately above and keeps
-                // its Ctrl/Cmd+Enter behaviour).
-                onSend = {
-                    val picked = if (paletteActive) paletteState.currentSelectedCommand() else null
-                    if (picked != null) onDraftChange("/${picked.name} ") else onSend()
-                },
-                onStop = onStop,
-                busy = state.busy,
-                enabled = state.workspaceReady,
-                promptHistory = state.sentPrompts,
-                modifier = Modifier.navigationBarsPadding(),
-                onKeyEvent = { keyEvent ->
-                    // Ctrl/Cmd+Enter sends from a physical keyboard; a plain
-                    // Enter stays a newline and is left to the text field.
-                    if (keyEvent.type == KeyEventType.KeyDown &&
-                        (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter) &&
-                        (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)
-                    ) {
-                        onSend()
-                        true
-                    } else {
-                        paletteState.handleKeyEvent(
-                            event = keyEvent,
-                            onPick = { name -> onDraftChange("/$name ") },
-                            onDismiss = { dismissPalette() },
-                        )
-                    }
-                },
-                controls = {
-                    ChatControls(
-                        agents = state.agents,
-                        activeAgent = state.activeAgent,
-                        models = state.models,
-                        activeModel = state.activeModel,
-                        onAgent = onAgent,
-                        onModel = onModel,
-                        enabled = !state.busy,
-                    )
-                },
-            )
         }
     }
 }
@@ -836,10 +971,220 @@ private fun DateDivider(
     }
 }
 
+/** Centred "New messages" label on a hairline, marking the first unread message (audit 15). */
+@Composable
+private fun NewMessagesDivider(
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HairlineSeparator(modifier = Modifier.weight(1f))
+        Text(
+            text = stringResource(R.string.chat_new_messages),
+            style = OpenCodeTypography.caption,
+            color = colors.accent,
+            modifier = Modifier.padding(horizontal = spacing.sm),
+        )
+        HairlineSeparator(modifier = Modifier.weight(1f))
+    }
+}
+
 /**
- * Sleek minimalist top app bar with project title, branch/status chip, smooth navigation triggers,
- * interactive engine status preview dialog on tap, animated new conversation shortcut, and a
- * crisp hairline bottom separator that disappears seamlessly at top scroll.
+ * Slim row for a deferred permission request (Phase 2, finding 17): the
+ * engine is still blocked on it, so it stays one tap away. Tapping
+ * restores the full prompt; it never answers anything by itself.
+ */
+@Composable
+private fun DeferredPermissionRow(
+    onRestore: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = dims.minTouchTarget)
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surface)
+            .border(0.5.dp, colors.warning.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
+            .clickable(role = SemanticsRole.Button, onClick = onRestore)
+            .padding(horizontal = spacing.md, vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        GlyphIcon(
+            glyph = Glyph.Warning,
+            tint = colors.warning,
+            size = 16.dp,
+        )
+        Text(
+            text = stringResource(R.string.permission_deferred),
+            style = OpenCodeTypography.bodySmall,
+            color = colors.onSurfaceMuted,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = stringResource(R.string.permission_deferred_action),
+            style = OpenCodeTypography.label,
+            color = colors.accent,
+        )
+    }
+}
+
+/**
+ * Pinned error banner (audit 18): sits above the transcript, outside the
+ * LazyColumn, so it stays visible while scrolled up. One callback only —
+ * the typed retry decision lives in the view model ([RetryKind]): the
+ * banner never invents retry behaviour for non-retryable errors, and
+ * Retry is only offered when the kind is not NONE.
+ */
+@Composable
+private fun PinnedErrorBanner(
+    message: String,
+    canRetry: Boolean,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+    val retryLabel = stringResource(R.string.chat_retry)
+    val closeDescription = stringResource(R.string.chat_status_dialog_close)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.danger.copy(alpha = 0.12f))
+            .border(0.5.dp, colors.danger.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
+            .padding(start = spacing.md, top = spacing.xs, bottom = spacing.xs, end = spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GlyphIcon(
+            glyph = Glyph.Warning,
+            tint = colors.danger,
+            size = 16.dp,
+        )
+        Text(
+            text = message,
+            style = OpenCodeTypography.bodySmall,
+            color = colors.onSurface,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.sm),
+        )
+        if (canRetry) {
+            Box(
+                modifier = Modifier
+                    .defaultMinSize(minHeight = dims.minTouchTarget)
+                    .clip(RoundedCornerShape(radius.full))
+                    .background(colors.accent)
+                    .semantics {
+                        role = SemanticsRole.Button
+                        contentDescription = retryLabel
+                    }
+                    .clickable(role = SemanticsRole.Button, onClick = onRetry)
+                    .padding(horizontal = spacing.md),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    GlyphIcon(
+                        glyph = Glyph.Refresh,
+                        tint = colors.onAccent,
+                        size = 16.dp,
+                    )
+                    Text(
+                        text = retryLabel,
+                        style = OpenCodeTypography.label,
+                        color = colors.onAccent,
+                    )
+                }
+            }
+            Spacer(Modifier.width(spacing.xs))
+        }
+        // Dismiss: a full 48dp hit area around the 12dp cross.
+        Box(
+            modifier = Modifier
+                .size(dims.minTouchTarget)
+                .clip(CircleShape)
+                .clickable(role = SemanticsRole.Button, onClick = onDismiss)
+                .semantics { contentDescription = closeDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                glyph = Glyph.Close,
+                tint = colors.onSurfaceMuted,
+                size = 12.dp,
+            )
+        }
+    }
+}
+
+/**
+ * Reconnecting indicator (audit 18): the existing [ChatUiState.connecting]
+ * flag, rendered as a slim pinned row under the header while the engine
+ * session is being (re)created. No new ViewModel state.
+ */
+@Composable
+private fun ReconnectingIndicator(
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
+    // Gated behind composition (this only composes while connecting) and
+    // on the one live period, like the header status dot.
+    val infiniteTransition = rememberInfiniteTransition(label = "reconnecting_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = OpenCodeTheme.tokens.motion.pulsePeriodMs, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "reconnecting_pulse_alpha",
+    )
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        Box(
+            Modifier
+                .size(dims.statusDotSize)
+                .graphicsLayer { alpha = pulseAlpha }
+                .background(colors.accent, CircleShape),
+        )
+        Text(
+            text = stringResource(R.string.chat_reconnecting),
+            style = OpenCodeTypography.bodySmall,
+            color = colors.onSurfaceMuted,
+        )
+    }
+}
+
+/**
+ * One-line 56dp header (audit 8): menu, breadcrumb, model picker, status
+ * dot, new session — a single fixed-height row. The old three-row stack
+ * (title + session title + status chip, ~90-110dp) shifted the whole
+ * transcript whenever the session title loaded; a fixed 56dp row with
+ * single-line ellipsised text cannot change height at all.
+ *
+ * The branch no longer shows here — it lives in the status dialog — and
+ * the status chip collapsed to a dot: the dialog is one tap away.
  */
 @Composable
 fun ChatHeader(
@@ -854,19 +1199,15 @@ fun ChatHeader(
     isScrolled: Boolean = false,
     sessionTitle: String? = null,
     workspacePath: String? = null,
+    models: List<dev.bidzz.opencode.core.api.dto.ModelInfo> = emptyList(),
+    activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
+    onModel: (dev.bidzz.opencode.core.api.dto.ModelRef) -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
-    val radius = OpenCodeTheme.tokens.radius
     val status = engineState.toStatus(busy)
-    // The status colour animates between states instead of snapping.
-    val statusColor by animateColorAsState(
-        targetValue = colors.statusColor(status),
-        animationSpec = tween(durationMillis = motion.quick, easing = FastOutSlowInEasing),
-        label = "status_color",
-    )
 
     var showStatusDialog by remember { mutableStateOf(false) }
 
@@ -898,108 +1239,103 @@ fun ChatHeader(
         label = "chat_header_separator_alpha",
     )
 
-    val chipInteractionSource = remember { MutableInteractionSource() }
-    val isChipPressed by chipInteractionSource.collectIsPressedAsState()
-    val chipScale by animateFloatAsState(
-        targetValue = if (isChipPressed) 0.95f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
-        label = "status_chip_scale",
-    )
+    val statusLabel = engineState.statusLabel(busy)
+    val statusDescription = buildString {
+        append(statusLabel)
+        if (!branch.isNullOrBlank()) {
+            append(", ")
+            append(branch)
+        }
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(colors.background),
     ) {
+        // Content is capped at the 720dp content width and centred, like
+        // the transcript below; the background still spans edge to edge.
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .defaultMinSize(minHeight = dims.topBarHeight)
-                .padding(horizontal = spacing.xs, vertical = spacing.xxs),
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            IconAction(
-                glyph = Glyph.Menu,
-                description = stringResource(R.string.chat_menu),
-                onClick = onMenu,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-
-            Column(
+            Row(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = dims.minTouchTarget + spacing.sm),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
+                    .fillMaxWidth()
+                    .widthIn(max = dims.contentMaxWidth)
+                    .height(dims.topBarHeight)
+                    .padding(horizontal = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = title,
-                    style = OpenCodeTypography.title,
-                    color = colors.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.semantics { heading() },
+                IconAction(
+                    glyph = Glyph.Menu,
+                    description = stringResource(R.string.chat_menu),
+                    onClick = onMenu,
                 )
-                // The active session's title, under the project name: the
-                // header used to show the folder only, so two sessions in
-                // the same project looked identical. Crossfades when the
-                // session changes instead of swapping mid-frame.
-                Crossfade(
-                    targetState = sessionTitle,
-                    animationSpec = tween(durationMillis = motion.quick),
-                    label = "session_title",
-                ) { title ->
-                    if (!title.isNullOrBlank()) {
+
+                // Breadcrumb: "project / session", one line. The project
+                // name takes what it needs and the session title gets the
+                // rest; both ellipsise instead of wrapping, so the row
+                // stays 56dp whatever loads when.
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = title,
+                        style = OpenCodeTypography.title,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .semantics { heading() },
+                    )
+                    if (!sessionTitle.isNullOrBlank()) {
                         Text(
-                            text = title,
-                            style = OpenCodeTypography.label.copy(fontSize = 12.sp),
+                            text = " / ",
+                            style = OpenCodeTypography.label,
+                            color = colors.onSurfaceFaint,
+                            maxLines = 1,
+                        )
+                        Text(
+                            text = sessionTitle,
+                            style = OpenCodeTypography.label,
                             color = colors.onSurfaceMuted,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f),
                         )
-                    }
-                }
-                Spacer(Modifier.height(spacing.xxs))
-                val statusLabel = engineState.statusLabel(busy)
-                val statusDescription = buildString {
-                    append(statusLabel)
-                    if (!branch.isNullOrBlank()) {
-                        append(", ")
-                        append(branch)
                     }
                 }
 
-                Row(
+                if (models.isNotEmpty()) {
+                    ModelSelector(
+                        models = models,
+                        activeModel = activeModel,
+                        onSelect = onModel,
+                        enabled = !busy,
+                    )
+                    Spacer(Modifier.width(spacing.xs))
+                }
+
+                // Status dot: a full 48dp tap target around the dot.
+                // Opens the same status dialog the old chip opened.
+                Box(
                     modifier = Modifier
-                        .defaultMinSize(minWidth = dims.minTouchTarget, minHeight = 40.dp)
-                        .graphicsLayer {
-                            scaleX = chipScale
-                            scaleY = chipScale
-                        }
-                        .clip(RoundedCornerShape(radius.full))
-                        .background(statusColor.copy(alpha = 0.10f))
-                        .border(
-                            width = dims.hairline,
-                            color = statusColor.copy(alpha = 0.22f),
-                            shape = RoundedCornerShape(radius.full),
-                        )
+                        .size(dims.minTouchTarget)
+                        .clip(CircleShape)
                         .semantics {
                             role = SemanticsRole.Button
                             contentDescription = statusDescription
                         }
                         .clickable(
-                            interactionSource = chipInteractionSource,
-                            indication = ripple(bounded = true),
                             role = SemanticsRole.Button,
                             onClick = { showStatusDialog = true },
-                        )
-                        .padding(horizontal = spacing.md, vertical = spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
+                        ),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Box(
                         Modifier
@@ -1007,45 +1343,14 @@ fun ChatHeader(
                             .graphicsLayer { alpha = dotAlpha }
                             .background(statusDotColor(colors, status), CircleShape),
                     )
-                    Spacer(Modifier.width(spacing.xs))
-                    Text(
-                        text = statusLabel,
-                        style = OpenCodeTypography.label.copy(fontSize = 12.sp, lineHeight = 14.sp),
-                        color = statusTextColor(colors, status),
-                        maxLines = 1,
-                    )
-                    if (!branch.isNullOrBlank()) {
-                        Spacer(Modifier.width(spacing.xs))
-                        Text(
-                            text = "•",
-                            style = OpenCodeTypography.label.copy(fontSize = 11.sp, lineHeight = 14.sp),
-                            color = colors.onSurfaceFaint,
-                        )
-                        Spacer(Modifier.width(spacing.xs))
-                        Text(
-                            text = branch,
-                            style = OpenCodeTypography.label.copy(
-                                fontSize = 12.sp,
-                                lineHeight = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                            ),
-                            color = colors.onSurfaceMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
                 }
-            }
 
-            // New chat: no 360° spin. IconAction already scales to 0.90 on
-            // press (its built-in tactile feedback), which is the whole
-            // acknowledgement a tap needs.
-            IconAction(
-                glyph = Glyph.NewChat,
-                description = stringResource(R.string.chat_new_session),
-                onClick = onNewSession,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
+                IconAction(
+                    glyph = Glyph.NewChat,
+                    description = stringResource(R.string.chat_new_session),
+                    onClick = onNewSession,
+                )
+            }
         }
 
         HairlineSeparator(alpha = separatorAlpha)
@@ -1242,9 +1547,10 @@ private fun DialogDetailRow(
                 modifier = Modifier.weight(1f, fill = false),
             )
             if (onCopy != null) {
+                // 48dp hit area around the 12dp copy glyph.
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
                         .clickable(role = SemanticsRole.Button, onClick = onCopy),
                     contentAlignment = Alignment.Center,
@@ -1869,7 +2175,13 @@ private fun JumpToLatest(
     val colors = OpenCodeTheme.colors
     val dims = OpenCodeTheme.tokens.dimensions
     val spacing = OpenCodeTheme.tokens.spacing
-    val label = stringResource(R.string.chat_jump_latest)
+    // The unread count is part of what TalkBack announces, not just a
+    // visual badge: "Jump to latest message, 3 unread".
+    val buttonDescription = if (unreadCount > 0) {
+        stringResource(R.string.chat_jump_latest_unread, unreadCount)
+    } else {
+        stringResource(R.string.chat_jump_latest)
+    }
     val waitingLabel = if (pendingQuestions == 1) {
         stringResource(R.string.chat_question_waiting_one)
     } else {
@@ -1882,7 +2194,7 @@ private fun JumpToLatest(
     Column(
         modifier = modifier
             .semantics {
-                this.contentDescription = label
+                this.contentDescription = buttonDescription
                 this.role = SemanticsRole.Button
             },
         horizontalAlignment = Alignment.End,
@@ -1989,6 +2301,8 @@ private fun EmptyChat(
     },
     busy: Boolean = false,
     workspacePath: String? = null,
+    activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
+    models: List<dev.bidzz.opencode.core.api.dto.ModelInfo> = emptyList(),
     onStatusClick: (() -> Unit)? = null,
     onProjectClick: (() -> Unit)? = null,
 ) {
@@ -2011,8 +2325,14 @@ private fun EmptyChat(
             starterPrefs.getStringSet(DISMISSED_STARTERS_KEY, emptySet())?.toSet().orEmpty(),
         )
     }
-    val visibleStarters = remember(dismissedStarterIds) {
-        STARTER_PROMPTS.filter { it.promptRes.toString() !in dismissedStarterIds }
+    // No git repo → no "Review changes" starter: reviewing diffs in a
+    // workspace without version control is a dead suggestion (audit 1).
+    val hasGitRepo = remember(workspacePath) { detectGitBranch(workspacePath) != null }
+    val visibleStarters = remember(dismissedStarterIds, hasGitRepo) {
+        STARTER_PROMPTS.filter { item ->
+            (hasGitRepo || item.promptRes != R.string.starter_review_prompt) &&
+                item.promptRes.toString() !in dismissedStarterIds
+        }
     }
 
     BoxWithConstraints(
@@ -2054,6 +2374,45 @@ private fun EmptyChat(
                     onStatusClick = onStatusClick,
                     onProjectClick = onProjectClick,
                 )
+
+                // Provider / free-tier chip (audit 1): which account the
+                // agent runs on, before the first prompt is sent.
+                val providerChipText = when {
+                    activeModel != null -> {
+                        val model = models.firstOrNull { it.ref() == activeModel }
+                        val modelName = model?.let {
+                            cleanModelName(it.name.orEmpty(), it.modelID ?: it.id)
+                        } ?: cleanModelName("", activeModel.id)
+                        val provider = (model?.providerID ?: activeModel.providerID)
+                            .replaceFirstChar { it.uppercase() }
+                        stringResource(R.string.empty_state_provider_model, provider, modelName)
+                    }
+                    engineReady && models.isEmpty() -> {
+                        // No catalogued models: nothing to pick from, so
+                        // the agent runs on opencode's free tier (see the
+                        // providers screen). Real provider state belongs
+                        // in ChatUiState; until then this is the signal.
+                        stringResource(R.string.providers_status_free_tier)
+                    }
+                    else -> null
+                }
+                if (providerChipText != null) {
+                    Spacer(Modifier.height(spacing.md))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.full))
+                            .background(colors.fill)
+                            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
+                            .padding(horizontal = spacing.md, vertical = spacing.xs),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = providerChipText,
+                            style = OpenCodeTypography.label,
+                            color = colors.onSurfaceMuted,
+                        )
+                    }
+                }
 
                 if (!engineReady) {
                     if (status == Status.WORKING) {
@@ -2493,24 +2852,31 @@ private fun ActionableStarterCard(
         }
         }
         // The × is the innermost clickable at its touch point, so tapping
-        // it dismisses the card instead of filling the composer.
+        // it dismisses the card instead of filling the composer. Hit area
+        // is 48dp; the 28dp circle stays the visual, centred inside it.
         if (onDismiss != null) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(2.dp)
-                    .size(28.dp)
+                    .size(48.dp)
                     .clip(CircleShape)
-                    .background(colors.surfaceRaised)
                     .clickable(role = SemanticsRole.Button, onClick = onDismiss)
                     .semantics { contentDescription = dismissDescription },
                 contentAlignment = Alignment.Center,
             ) {
-                GlyphIcon(
-                    glyph = Glyph.Close,
-                    tint = colors.onSurfaceFaint,
-                    size = 12.dp,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(colors.surfaceRaised),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(
+                        glyph = Glyph.Close,
+                        tint = colors.onSurfaceFaint,
+                        size = 12.dp,
+                    )
+                }
             }
         }
     }

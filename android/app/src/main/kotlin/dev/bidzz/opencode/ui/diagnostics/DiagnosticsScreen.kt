@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -45,6 +47,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,7 +69,9 @@ import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.StatusDot
 import dev.bidzz.opencode.ui.TextAction
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -73,6 +79,12 @@ import java.util.Locale
 
 /** The probe's own timeout, so the message and the run cannot disagree about it. */
 private const val PROBE_TIMEOUT_SECONDS = 8
+
+/** Longest a restart may take before the button gives up waiting for the engine. */
+private const val RESTART_TIMEOUT_MS = 30_000L
+
+/** How long the engine password stays visible after the eye is tapped. */
+private const val PASSWORD_VISIBLE_MS = 10_000L
 
 private enum class LogTab {
     ALL,
@@ -151,6 +163,15 @@ fun DiagnosticsScreen(
     }
 
     LaunchedEffect(Unit) { refresh() }
+
+    // A revealed password hides itself again after 10s, so a glance does
+    // not leave the credential on screen indefinitely.
+    LaunchedEffect(showPassword) {
+        if (showPassword) {
+            delay(PASSWORD_VISIBLE_MS)
+            showPassword = false
+        }
+    }
 
     // Copy entire diagnostics report to clipboard
     val copyAllDiagnostics = {
@@ -237,6 +258,8 @@ fun DiagnosticsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .widthIn(max = 720.dp)
+                .align(Alignment.CenterHorizontally)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.lg, vertical = spacing.sm),
         ) {
@@ -313,12 +336,21 @@ fun DiagnosticsScreen(
                                 if (showPassword) it else stringResource(R.string.diag_password_hidden)
                             } ?: stringResource(R.string.diag_none),
                             isCode = true,
+                            // A revealed password must not be selectable:
+                            // the row sits inside a SelectionContainer, and a
+                            // long-press would otherwise copy the credential.
+                            selectable = false,
                             trailingAction = {
+                                val toggleDescription = stringResource(
+                                    if (showPassword) R.string.diag_password_hide else R.string.diag_password_show,
+                                )
                                 Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(radius.xs))
-                                        .clickable { showPassword = !showPassword }
-                                        .padding(horizontal = spacing.xs, vertical = spacing.xxs),
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .clickable(role = Role.Button) { showPassword = !showPassword }
+                                        .semantics { contentDescription = toggleDescription },
+                                    contentAlignment = Alignment.Center,
                                 ) {
                                     GlyphIcon(
                                         glyph = if (showPassword) Glyph.EyeOff else Glyph.Eye,
@@ -371,9 +403,44 @@ fun DiagnosticsScreen(
                                 enabled = !isRestarting,
                                 onClick = {
                                     isRestarting = true
+                                    // The button stays in "Restarting…" until
+                                    // the engine itself reports a settled
+                                    // state — no fixed delay. A restart is
+                                    // settled once the supervisor has cycled
+                                    // (STARTING/INITIALIZING/STOPPING seen)
+                                    // and the engine lands on RUNNING or
+                                    // FAILED, or once a new PID is running.
+                                    // StateFlow conflates rapid transitions,
+                                    // so the PID change is a second signal
+                                    // for a restart too fast to observe.
+                                    val pidBefore = status.pid
                                     app.restartEngine()
                                     scope.launch {
-                                        delay(1500)
+                                        val settled = withTimeoutOrNull(RESTART_TIMEOUT_MS) {
+                                            var sawRestart = false
+                                            app.engineStatus.first { engine ->
+                                                if (
+                                                    engine.state == EngineState.STARTING
+                                                    || engine.state == EngineState.INITIALIZING
+                                                    || engine.state == EngineState.STOPPING
+                                                ) {
+                                                    sawRestart = true
+                                                }
+                                                val newPidRunning =
+                                                    pidBefore != null && engine.pid != null
+                                                        && engine.pid != pidBefore
+                                                        && engine.state == EngineState.RUNNING
+                                                (sawRestart && (engine.state == EngineState.RUNNING || engine.state == EngineState.FAILED))
+                                                    || newPidRunning
+                                            }
+                                        }
+                                        if (settled == null) {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.diag_restart_timeout),
+                                                Toast.LENGTH_LONG,
+                                            ).show()
+                                        }
                                         refresh()
                                         isRestarting = false
                                     }
@@ -806,6 +873,8 @@ private fun DiagnosticRow(
     isCode: Boolean = false,
     valueColor: Color = OpenCodeTheme.colors.onSurface,
     trailingAction: (@Composable () -> Unit)? = null,
+    /** False keeps the value out of text selection (e.g. a revealed password). */
+    selectable: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -822,14 +891,17 @@ private fun DiagnosticRow(
             color = colors.onSurfaceFaint,
             modifier = Modifier.width(110.dp),
         )
-        Text(
-            text = value,
-            style = if (isCode) OpenCodeTypography.code else OpenCodeTypography.body,
-            color = valueColor,
-            modifier = Modifier.weight(1f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        val valueText = @Composable {
+            Text(
+                text = value,
+                style = if (isCode) OpenCodeTypography.code else OpenCodeTypography.body,
+                color = valueColor,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (selectable) valueText() else DisableSelection { valueText() }
         if (trailingAction != null) {
             trailingAction()
         }

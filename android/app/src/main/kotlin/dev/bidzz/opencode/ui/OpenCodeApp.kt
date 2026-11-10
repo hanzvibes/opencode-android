@@ -186,7 +186,14 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onStatusClick = { screen = Screen.Diagnostics },
                 onNewSession = chatViewModel::newSession,
                 onDismissError = chatViewModel::dismissError,
-                onRetryError = chatViewModel::retryLastSend,
+                onRetryError = chatViewModel::retryError,
+                onReauth = app::restartEngine,
+                onEditMessage = { id, text -> chatViewModel.startEdit(id, text) },
+                onResendMessage = chatViewModel::resendMessage,
+                onSubmitEdit = chatViewModel::submitEdit,
+                onCancelEdit = chatViewModel::cancelEdit,
+                onDeferPermission = chatViewModel::deferPermission,
+                onRestoreDeferredPermission = chatViewModel::restoreDeferredPermission,
                 onSessionsClick = { screen = Screen.Sessions },
                 onProjectClick = { screen = Screen.Projects },
                 onFilesClick = { screen = Screen.Files },
@@ -248,6 +255,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     chatViewModel.openSession(row.id)
                     screen = Screen.Chat
                 },
+                details = sessionsState.details,
                 onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
                 onNewSession = {
                     chatViewModel.newSession()

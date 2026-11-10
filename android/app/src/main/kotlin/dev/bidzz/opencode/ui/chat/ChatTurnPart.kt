@@ -209,3 +209,38 @@ fun mergeTurnParts(first: List<ChatTurnPart>, second: List<ChatTurnPart>): List<
     }
     return result
 }
+
+/**
+ * Collapses every [ChatTurnPart.ToolGroup] in a turn into a single group at
+ * the position of the first one, so a turn renders one trace card.
+ *
+ * Why here and not in [buildTurnParts]: a text block between two tool calls
+ * flushes the pending tools ([flushTools] is called on every "text" block),
+ * so one turn can hold several ToolGroups — and [MessageBubble] renders one
+ * [ToolTrace] per group. Changing the builder would break the interleaved
+ * order [ChatTurnPartsTest] pins (text, tools, text, question, text), so the
+ * merge happens at render time instead: the chronological prose order is
+ * untouched, only the tool cards collapse. Tools keep their original order;
+ * the merged group streams while any of its steps is still running.
+ */
+fun mergeToolGroups(parts: List<ChatTurnPart>): List<ChatTurnPart> {
+    val groups = parts.filterIsInstance<ChatTurnPart.ToolGroup>()
+    if (groups.size <= 1) return parts
+    val merged = ChatTurnPart.ToolGroup(
+        tools = groups.flatMap { it.tools }.distinctBy { it.id },
+        streaming = groups.any { it.streaming },
+    )
+    var inserted = false
+    val result = mutableListOf<ChatTurnPart>()
+    for (part in parts) {
+        if (part is ChatTurnPart.ToolGroup) {
+            if (!inserted) {
+                result += merged
+                inserted = true
+            }
+        } else {
+            result += part
+        }
+    }
+    return result
+}

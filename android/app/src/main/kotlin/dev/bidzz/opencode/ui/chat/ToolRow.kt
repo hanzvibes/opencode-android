@@ -65,6 +65,9 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.diff.DiffHunk
+import dev.bidzz.opencode.ui.diff.DiffLine
+import dev.bidzz.opencode.ui.diff.DiffParser
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -88,6 +91,11 @@ fun ToolTrace(
      * The engine records no per-tool timestamps, so the trace shows when
      * its turn started — a real time, never a faked per-step one. */
     startedAtMillis: Long? = null,
+    /** Per-tool durations in milliseconds, keyed by tool id, when the
+     * caller knows them. Empty until the integration agent fills it from
+     * per-tool startedAt/completedAt timestamps (the engine sends none
+     * today, so no duration is invented here). */
+    toolDurations: Map<String, Long> = emptyMap(),
 ) {
     if (tools.isEmpty()) return
 
@@ -357,6 +365,7 @@ fun ToolTrace(
                         call = call,
                         isFirst = index == 0,
                         isLast = index == filteredVisible.lastIndex,
+                        durationMillis = toolDurations[call.id],
                     )
                 }
             }
@@ -437,6 +446,10 @@ fun ToolStep(
     isLast: Boolean,
     modifier: Modifier = Modifier,
     isFirst: Boolean = false,
+    /** How long this step took, in milliseconds, when known. Null hides
+     * the chip — a duration is only shown from real per-tool timestamps,
+     * never estimated from the trace start time. */
+    durationMillis: Long? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -469,6 +482,19 @@ fun ToolStep(
     val label = stepLabel(call.name, call.summary, call.status)
     val verbText = label.verbText()
     val hasDetails = !call.inputText.isNullOrBlank() || !call.output.isNullOrBlank() || !call.error.isNullOrBlank()
+
+    // Edit/write steps show a concise unified diff instead of raw input
+    // JSON (audit finding 4). Parsed once per input change; null when the
+    // tool is not an edit/write, or its old/new text cannot be read (a
+    // partial stream, an unknown field name) — then the raw input block
+    // below is shown as before, so nothing is lost.
+    val editDiff = remember(call.inputText, toolKind) {
+        if (toolKind == ToolKind.EDIT || toolKind == ToolKind.WRITE) extractEditDiff(call) else null
+    }
+    val diffHunks = remember(editDiff) {
+        editDiff?.let { computeDiffHunks(it.oldText, it.newText) }
+    }
+    val diffCounts = remember(diffHunks) { diffHunks?.let { DiffParser.counts(it) } }
 
     // Path-copy feedback (C-D): tapping a file step's target copies the
     // full path and flashes a check for 1.5s. No editor exists in the app,
@@ -756,16 +782,24 @@ fun ToolStep(
                                 }
                             }
                             call.status == "completed" -> {
-                                val out = call.output
-                                val summaryText = if (!out.isNullOrBlank()) {
-                                    val lines = out.lines().size
-                                    if (lines > 1) {
-                                        stringResource(R.string.tool_lines, lines)
+                                // An edit/write with a readable diff reads
+                                // "+n −m" — the change itself, not the output
+                                // line count. Anything else keeps the old
+                                // "N lines" / "Success" pill.
+                                val summaryText = diffCounts?.let { (added, removed) ->
+                                    "+$added −$removed"
+                                } ?: run {
+                                    val out = call.output
+                                    if (!out.isNullOrBlank()) {
+                                        val lines = out.lines().size
+                                        if (lines > 1) {
+                                            stringResource(R.string.tool_lines, lines)
+                                        } else {
+                                            stringResource(R.string.tool_lines_one, 1)
+                                        }
                                     } else {
-                                        stringResource(R.string.tool_lines_one, 1)
+                                        stringResource(R.string.tool_status_success)
                                     }
-                                } else {
-                                    stringResource(R.string.tool_status_success)
                                 }
                                 Row(
                                     modifier = Modifier
@@ -787,6 +821,22 @@ fun ToolStep(
                                     )
                                 }
                             }
+                        }
+
+                        // Duration chip (finding 20): only when the caller
+                        // knows the real per-step duration. A finished step
+                        // without one shows no chip rather than a guess.
+                        if (durationMillis != null && !active) {
+                            Text(
+                                text = formatStepDuration(durationMillis),
+                                style = OpenCodeTypography.caption.copy(
+                                    fontFamily = OpenCodeTypography.mono,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Normal,
+                                ),
+                                color = colors.onSurfaceFaint,
+                                maxLines = 1,
+                            )
                         }
 
                         if (hasDetails) {
@@ -823,8 +873,18 @@ fun ToolStep(
                         val commandText = if (isShell) extractCommand(call) else null
                         val inputBody = commandText ?: call.inputText?.takeIf { it.isNotBlank() }
 
-                        // 1. Input/Command terminal block
-                        if (!inputBody.isNullOrBlank()) {
+                        // 1. Edit/write change, as a concise unified diff
+                        // (audit finding 4) — not the raw input JSON. When
+                        // the diff cannot be parsed, the input block below
+                        // is shown instead, so the raw arguments are never
+                        // hidden behind a failed parse.
+                        if (diffHunks != null && diffHunks.isNotEmpty() && diffCounts != null) {
+                            InlineDiffBlock(
+                                hunks = diffHunks,
+                                additions = diffCounts.first,
+                                deletions = diffCounts.second,
+                            )
+                        } else if (!inputBody.isNullOrBlank()) {
                             val inputLang = if (isShell) "bash" else if (inputBody.trim().startsWith("{")) "json" else null
                             val prompt = if (isShell) "$ " else null
                             TerminalConsoleBlock(
@@ -1211,3 +1271,363 @@ private fun detectOutputLanguage(output: String, isShell: Boolean): String? {
 }
 
 private const val MAX_OUTPUT = 8000
+
+/** Old and new text of an edit/write tool call, read from its input JSON. */
+private data class EditDiff(
+    val oldText: String,
+    val newText: String,
+)
+
+/**
+ * Reads the old/new text out of an edit/write tool call's input.
+ *
+ * The engine names the fields `oldString`/`newString` (edit) and `content`
+ * (write, whole file, no old text); `oldText`/`newText` and snake_case
+ * variants are accepted too, since tool schemas drift. Returns null for a
+ * `multiedit` (its `edits` array needs per-edit hunks, not one diff), for a
+ * partial stream that is not JSON yet, and for anything without both sides
+ * of the change — the caller then falls back to the raw input block.
+ */
+private fun extractEditDiff(call: ToolCall): EditDiff? {
+    val input = call.inputText ?: return null
+    if (!input.trim().startsWith("{")) return null
+    val name = call.name.lowercase()
+    if (name == "multiedit") return null
+    val old = extractJsonStringField(input, listOf("oldString", "oldText", "old_string", "old"))
+    val new = extractJsonStringField(input, listOf("newString", "newText", "new_string", "new"))
+    if (old != null && new != null) return EditDiff(oldText = old, newText = new)
+    if (name == "write") {
+        val content = extractJsonStringField(input, listOf("content"))
+        if (content != null) return EditDiff(oldText = "", newText = content)
+    }
+    return null
+}
+
+/** First matching JSON string field, unescaped; null when absent or malformed. */
+private fun extractJsonStringField(input: String, keys: List<String>): String? {
+    for (key in keys) {
+        val match = Regex(""""$key"\s*:\s*"((?:\\.|[^"\\])*)"""").find(input)
+        if (match != null) return unescapeJson(match.groupValues[1])
+    }
+    return null
+}
+
+/** Lines of context kept around each change in a computed diff. */
+private const val DIFF_CONTEXT_LINES = 3
+
+/** Lines shown before a diff collapses behind "Show full diff". */
+private const val DIFF_COLLAPSED_LINES = 10
+
+/**
+ * Line diff of [oldText] vs [newText] as [DiffHunk]s, the same types the
+ * full-screen [DiffScreen] renders — so a step diff and a file diff can
+ * never disagree about what "+" and "−" mean.
+ *
+ * A plain LCS diff: exact for the short texts an edit tool carries, and
+ * capped — past [DIFF_LCS_LINE_LIMIT] lines the whole old text is one
+ * removal and the whole new text one addition, which keeps the counts
+ * exact instead of silently truncating them. Empty lines at the end of
+ * either side (a trailing newline) are not changes.
+ */
+private const val DIFF_LCS_LINE_LIMIT = 500
+
+fun computeDiffHunks(oldText: String, newText: String): List<DiffHunk> {
+    val oldLines = oldText.split('\n').dropLastWhile { it.isEmpty() }
+    val newLines = newText.split('\n').dropLastWhile { it.isEmpty() }
+    if (oldLines == newLines) return emptyList()
+
+    // (kind, oldIndex, newIndex) in order, from the LCS backtrack — or a
+    // wholesale replace when the texts are too long to diff exactly.
+    val ops: List<Triple<DiffLine.Kind, Int?, Int?>>
+    if (oldLines.size + newLines.size > DIFF_LCS_LINE_LIMIT) {
+        ops = oldLines.indices.map { Triple(DiffLine.Kind.REMOVED, it, null) } +
+            newLines.indices.map { Triple(DiffLine.Kind.ADDED, null, it) }
+    } else {
+        val m = oldLines.size
+        val n = newLines.size
+        val dp = Array(m + 1) { IntArray(n + 1) }
+        for (i in m - 1 downTo 0) {
+            for (j in n - 1 downTo 0) {
+                dp[i][j] = if (oldLines[i] == newLines[j]) dp[i + 1][j + 1] + 1
+                else maxOf(dp[i + 1][j], dp[i][j + 1])
+            }
+        }
+        val walked = mutableListOf<Triple<DiffLine.Kind, Int?, Int?>>()
+        var i = 0
+        var j = 0
+        while (i < m && j < n) {
+            when {
+                oldLines[i] == newLines[j] -> {
+                    walked += Triple(DiffLine.Kind.CONTEXT, i, j)
+                    i++
+                    j++
+                }
+                dp[i + 1][j] >= dp[i][j + 1] -> {
+                    walked += Triple(DiffLine.Kind.REMOVED, i, null)
+                    i++
+                }
+                else -> {
+                    walked += Triple(DiffLine.Kind.ADDED, null, j)
+                    j++
+                }
+            }
+        }
+        while (i < m) {
+            walked += Triple(DiffLine.Kind.REMOVED, i, null)
+            i++
+        }
+        while (j < n) {
+            walked += Triple(DiffLine.Kind.ADDED, null, j)
+            j++
+        }
+        ops = walked
+    }
+
+    // Split into hunks: a run of context longer than twice the context
+    // window breaks the hunk, keeping DIFF_CONTEXT_LINES lines on each side.
+    val hunks = mutableListOf<DiffHunk>()
+    var cursor = 0
+    while (cursor < ops.size) {
+        // Skip leading context up to the first change.
+        var start = cursor
+        while (start < ops.size && ops[start].first == DiffLine.Kind.CONTEXT) {
+            start++
+        }
+        if (start >= ops.size) break
+        val hunkStart = maxOf(cursor, start - DIFF_CONTEXT_LINES)
+        // Extend to the last change, then DIFF_CONTEXT_LINES of trailing context.
+        var end = start
+        var lastChange = start
+        while (end < ops.size) {
+            if (ops[end].first != DiffLine.Kind.CONTEXT) lastChange = end
+            // A context run longer than the window ends the hunk.
+            if (end - lastChange > DIFF_CONTEXT_LINES * 2) break
+            end++
+        }
+        val hunkEnd = minOf(lastChange + 1 + DIFF_CONTEXT_LINES, ops.size)
+        val lines = ops.subList(hunkStart, hunkEnd).map { (kind, oldIdx, newIdx) ->
+            val text = when (kind) {
+                DiffLine.Kind.REMOVED -> oldLines[oldIdx!!]
+                DiffLine.Kind.ADDED -> newLines[newIdx!!]
+                else -> oldLines[oldIdx!!]
+            }
+            DiffLine(
+                kind = kind,
+                text = text,
+                oldLine = oldIdx?.plus(1),
+                newLine = newIdx?.plus(1),
+            )
+        }
+        val oldStart = lines.firstNotNullOfOrNull { it.oldLine } ?: 1
+        val newStart = lines.firstNotNullOfOrNull { it.newLine } ?: 1
+        val oldCount = lines.count { it.oldLine != null }
+        val newCount = lines.count { it.newLine != null }
+        hunks += DiffHunk(
+            header = "@@ -$oldStart,$oldCount +$newStart,$newCount @@",
+            lines = lines,
+        )
+        cursor = hunkEnd
+    }
+    return hunks
+}
+
+/** "350ms" under a second, "1.2s" above it — the same shape as the turn footer. */
+internal fun formatStepDuration(millis: Long): String =
+    if (millis < 1000) "${millis}ms" else "${millis / 1000}.${(millis % 1000) / 100}s"
+
+/**
+ * Concise unified diff for one edit/write step: the same added/removed
+ * row styling as the full-screen diff viewer, collapsed to the first
+ * [DIFF_COLLAPSED_LINES] lines with a "Show full diff" toggle for long
+ * changes, and a Copy button that copies the whole patch.
+ */
+@Composable
+private fun InlineDiffBlock(
+    hunks: List<DiffHunk>,
+    additions: Int,
+    deletions: Int,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val clipboardManager = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+    var showFull by remember { mutableStateOf(false) }
+
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
+
+    val showFullRotation by animateFloatAsState(
+        targetValue = if (showFull) 90f else 0f,
+        animationSpec = motion.tweenQuick(),
+        label = "tool_diff_expand_rotation",
+    )
+
+    val allLines = remember(hunks) { hunks.flatMap { it.lines } }
+    val visibleLines = if (showFull) allLines else allLines.take(DIFF_COLLAPSED_LINES)
+    val patchText = remember(hunks) {
+        buildString {
+            hunks.forEach { hunk ->
+                appendLine(hunk.header)
+                hunk.lines.forEach { line ->
+                    val marker = when (line.kind) {
+                        DiffLine.Kind.ADDED -> "+"
+                        DiffLine.Kind.REMOVED -> "-"
+                        else -> " "
+                    }
+                    appendLine(marker + line.text)
+                }
+            }
+        }.trimEnd()
+    }
+    val shape = RoundedCornerShape(radius.sm)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.background)
+            .border(0.5.dp, colors.hairline, shape),
+    ) {
+        // Header: one status dot, "Changes", "+n −m", Copy.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(colors.surfaceVariant.copy(alpha = 0.4f))
+                .border(
+                    width = 0.5.dp,
+                    color = colors.hairline,
+                    shape = RoundedCornerShape(topStart = radius.sm, topEnd = radius.sm),
+                )
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(colors.activity, CircleShape),
+            )
+            Spacer(Modifier.width(spacing.sm))
+            Text(
+                text = stringResource(R.string.tool_diff_changes),
+                style = OpenCodeTypography.caption.copy(
+                    fontFamily = OpenCodeTypography.mono,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = colors.onSurfaceMuted,
+            )
+            Text(
+                text = "· +$additions −$deletions",
+                style = OpenCodeTypography.caption.copy(
+                    fontFamily = OpenCodeTypography.mono,
+                    fontSize = 10.sp,
+                ),
+                color = colors.onSurfaceFaint,
+                modifier = Modifier.padding(start = spacing.xs),
+            )
+            Spacer(Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(radius.xs))
+                    .clickable {
+                        clipboardManager.setText(AnnotatedString(patchText))
+                        copied = true
+                    }
+                    .padding(horizontal = spacing.xs, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
+            ) {
+                GlyphIcon(
+                    glyph = if (copied) Glyph.Check else Glyph.Copy,
+                    tint = if (copied) colors.success else colors.onSurfaceMuted,
+                    size = 11.dp,
+                )
+                Text(
+                    text = if (copied) stringResource(R.string.code_copied) else stringResource(R.string.code_copy),
+                    style = OpenCodeTypography.caption.copy(fontSize = 10.sp),
+                    color = if (copied) colors.success else colors.onSurfaceMuted,
+                )
+            }
+        }
+
+        // Diff rows: marker + tinted background, same colours as DiffScreen.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = if (showFull) 320.dp else Dp.Infinity)
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = spacing.xxs),
+        ) {
+            visibleLines.forEach { line ->
+                val (bg, markerColor, marker) = when (line.kind) {
+                    DiffLine.Kind.ADDED -> Triple(colors.diffAddedBg, colors.diffAdded, "+")
+                    DiffLine.Kind.REMOVED -> Triple(colors.diffRemovedBg, colors.diffRemoved, "−")
+                    else -> Triple(Color.Transparent, colors.onSurfaceFaint, " ")
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(bg),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = marker,
+                        style = OpenCodeTypography.code.copy(fontWeight = FontWeight.Bold, fontSize = 11.5.sp),
+                        color = markerColor,
+                        modifier = Modifier
+                            .width(16.dp)
+                            .padding(start = spacing.xs),
+                    )
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
+                        Text(
+                            text = line.text.ifEmpty { " " },
+                            style = OpenCodeTypography.code.copy(fontSize = 11.5.sp, lineHeight = 16.5.sp),
+                            color = colors.onSurface,
+                            softWrap = false,
+                            maxLines = 1,
+                            modifier = Modifier.padding(end = spacing.md),
+                        )
+                    }
+                }
+            }
+        }
+
+        // Long diffs collapse behind one toggle instead of pushing the
+        // rest of the turn off-screen.
+        if (allLines.size > DIFF_COLLAPSED_LINES) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(role = Role.Button) { showFull = !showFull }
+                    .padding(horizontal = spacing.md, vertical = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.ChevronRight,
+                    tint = colors.onSurfaceMuted,
+                    size = 10.dp,
+                    modifier = Modifier.graphicsLayer { rotationZ = showFullRotation },
+                )
+                Text(
+                    text = stringResource(
+                        if (showFull) R.string.tool_diff_show_less else R.string.tool_diff_show_full,
+                    ),
+                    style = OpenCodeTypography.caption.copy(fontSize = 10.sp),
+                    color = colors.onSurfaceMuted,
+                )
+            }
+        }
+    }
+}
