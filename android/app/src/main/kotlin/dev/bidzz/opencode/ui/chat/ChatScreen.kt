@@ -460,7 +460,7 @@ private fun ChatDrawer(
                             .clip(RoundedCornerShape(radius.full))
                             .background(colors.surfaceVariant)
                             .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
-                            .clickable(role = Role.Button, onClick = onProject)
+                            .clickable(role = SemanticsRole.Button, onClick = onProject)
                             .padding(horizontal = spacing.sm, vertical = spacing.xxs),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -611,7 +611,7 @@ private fun DrawerItem(
                     Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
                 } else Modifier
             )
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = SemanticsRole.Button, onClick = onClick)
             .padding(horizontal = spacing.sm, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -675,7 +675,7 @@ private fun SessionDrawerItem(
                     Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
                 } else Modifier
             )
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = SemanticsRole.Button, onClick = onClick)
             .padding(horizontal = spacing.sm, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -869,7 +869,7 @@ private fun StatusPillBadge(
             .clickable(
                 interactionSource = interactionSource,
                 indication = ripple(),
-                role = Role.Button,
+                role = SemanticsRole.Button,
                 onClick = onClick,
             )
     } else {
@@ -945,7 +945,7 @@ private fun SuggestionCard(
             .clickable(
                 interactionSource = interactionSource,
                 indication = ripple(),
-                role = Role.Button,
+                role = SemanticsRole.Button,
                 onClick = onClick,
             )
             .padding(horizontal = spacing.lg, vertical = spacing.md),
