@@ -256,14 +256,22 @@ fun MarkdownText(
 
                         is MdBlock.Rule -> DividerBlock()
 
-                        is MdBlock.Code -> CodeBlock(language = block.language, code = block.code)
+                        is MdBlock.Code -> CodeBlock(
+                            language = block.language,
+                            code = block.code,
+                            streaming = streaming && blockIndex == blocks.lastIndex,
+                        )
 
                         is MdBlock.Table -> TableBlock(block)
                     }
                 }
             }
         }
-        if (streaming) {
+        // The lone cursor below the blocks is only shown when the last block
+        // is not a code window: while streaming inside a code block the
+        // cursor lives inside the window instead (see CodeBlock), so it
+        // never reads as a stray mark under a finished block.
+        if (streaming && blocks.lastOrNull() !is MdBlock.Code) {
             Row(
                 modifier = Modifier.padding(top = spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
@@ -285,7 +293,7 @@ fun MarkdownText(
  * and inset hairline borders.
  */
 @Composable
-private fun CodeBlock(language: String?, code: String) {
+private fun CodeBlock(language: String?, code: String, streaming: Boolean = false) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
@@ -357,18 +365,21 @@ private fun CodeBlock(language: String?, code: String) {
 
             Spacer(Modifier.weight(1f))
 
-            // Action pills (Copy)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BlockAction(
-                    label = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
-                    glyph = if (copied) Glyph.Check else Glyph.Copy,
-                    done = copied,
+            // No Copy pill while streaming: the code is still arriving, so
+            // copying here would hand out a partial snippet.
+            if (!streaming) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    copyToClipboard(context, code)
-                    copied = true
+                    BlockAction(
+                        label = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
+                        glyph = if (copied) Glyph.Check else Glyph.Copy,
+                        done = copied,
+                    ) {
+                        copyToClipboard(context, code)
+                        copied = true
+                    }
                 }
             }
         }
@@ -410,17 +421,37 @@ private fun CodeBlock(language: String?, code: String) {
                     .weight(1f)
                     .horizontalScroll(rememberScrollState()),
             ) {
-                Text(
-                    text = highlightedCode(language, code),
-                    style = codeStyle,
-                    softWrap = false,
-                    modifier = Modifier.padding(
-                        start = if (showLineNumbers) spacing.xs else spacing.lg,
-                        end = spacing.lg,
-                        top = spacing.sm,
-                        bottom = spacing.sm,
-                    ),
-                )
+                Column {
+                    Text(
+                        text = highlightedCode(language, code),
+                        style = codeStyle,
+                        softWrap = false,
+                        modifier = Modifier.padding(
+                            start = if (showLineNumbers) spacing.xs else spacing.lg,
+                            end = spacing.lg,
+                            top = spacing.sm,
+                            bottom = if (streaming) 0.dp else spacing.sm,
+                        ),
+                    )
+                    // While streaming, the cursor sits inside the window on
+                    // its own line below the last code line, bottom-aligned
+                    // with the code area — like a terminal prompt waiting
+                    // for the next line — instead of under the window.
+                    if (streaming) {
+                        Row(
+                            modifier = Modifier.padding(
+                                start = if (showLineNumbers) spacing.xs else spacing.lg,
+                                bottom = spacing.sm,
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            BlinkingCursor(
+                                color = colors.accent,
+                                height = 12.dp,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

@@ -201,7 +201,43 @@ fun Composer(
                 .padding(start = spacing.md, end = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Omnibar shortcuts row: Mode/Model controls + quick action pills
+            // Omnibar shortcuts: the / and @ pills are pinned outside the
+            // scrolling row, so the agent/model selectors can scroll on a
+            // narrow phone without ever pushing the primary command trigger
+            // off-screen. Only the mode/model controls scroll.
+            QuickActionChip(
+                label = "/",
+                glyph = null,
+                isActive = value.startsWith("/"),
+                enabled = enabled && !busy,
+                contentDescription = stringResource(R.string.composer_commands),
+                onClick = {
+                    if (value.startsWith("/")) {
+                        onValueChange(value.removePrefix("/").trimStart())
+                    } else {
+                        onValueChange("/$value")
+                    }
+                },
+            )
+
+            QuickActionChip(
+                label = "@",
+                glyph = Glyph.File,
+                isActive = false,
+                enabled = enabled && !busy,
+                contentDescription = stringResource(R.string.composer_attach),
+                onClick = {
+                    if (onAttachFile != null) {
+                        onAttachFile()
+                    } else {
+                        val prefix = if (value.isEmpty() || value.endsWith(" ")) "" else " "
+                        onValueChange("$value$prefix@")
+                    }
+                },
+            )
+
+            Spacer(modifier = Modifier.width(spacing.xs))
+
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -210,37 +246,6 @@ fun Composer(
                 horizontalArrangement = Arrangement.spacedBy(spacing.xs),
             ) {
                 controls()
-
-                QuickActionChip(
-                    label = "/",
-                    glyph = null,
-                    isActive = value.startsWith("/"),
-                    enabled = enabled && !busy,
-                    contentDescription = stringResource(R.string.composer_commands),
-                    onClick = {
-                        if (value.startsWith("/")) {
-                            onValueChange(value.removePrefix("/").trimStart())
-                        } else {
-                            onValueChange("/$value")
-                        }
-                    },
-                )
-
-                QuickActionChip(
-                    label = "@",
-                    glyph = Glyph.File,
-                    isActive = false,
-                    enabled = enabled && !busy,
-                    contentDescription = stringResource(R.string.composer_attach),
-                    onClick = {
-                        if (onAttachFile != null) {
-                            onAttachFile()
-                        } else {
-                            val prefix = if (value.isEmpty() || value.endsWith(" ")) "" else " "
-                            onValueChange("$value$prefix@")
-                        }
-                    },
-                )
             }
 
             Spacer(modifier = Modifier.width(spacing.xs))

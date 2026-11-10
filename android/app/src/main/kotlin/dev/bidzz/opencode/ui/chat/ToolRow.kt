@@ -91,9 +91,11 @@ fun ToolTrace(
     val running = tools.filter { it.status == "running" || it.status == "streaming" }
     val failed = tools.count { it.status == "error" }
 
-    // When a run finishes, stay open only if something failed, so an error is
-    // never hidden behind the collapsed summary. A clean run collapses as before.
-    LaunchedEffect(streaming, failed) { if (!streaming) open = failed > 0 }
+    // When a run finishes with a failure, open it so an error is never
+    // hidden behind the collapsed summary. Never force a run closed: if
+    // the user opened a clean run mid-stream to watch its output, it
+    // stays open.
+    LaunchedEffect(streaming, failed) { if (!streaming && failed > 0) open = true }
 
     val visible = if (open) tools else (running + tools.filter { it.status == "error" }).distinctBy { it.id }
 
@@ -165,7 +167,11 @@ fun ToolTrace(
                     fontWeight = if (running.isNotEmpty()) FontWeight.SemiBold else FontWeight.Medium,
                 ),
                 color = if (running.isNotEmpty()) colors.accent else colors.onSurfaceMuted,
-                modifier = Modifier.padding(start = spacing.xs),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .padding(start = spacing.xs),
             )
 
             Spacer(Modifier.weight(1f))
@@ -212,10 +218,13 @@ fun ToolTrace(
             } else {
                 null
             }
+            // Failed count first: on a one-line summary it is the most
+            // important signal, so it must never be the part that gets
+            // ellipsised away behind a long last-tool label.
             val summaryParts = listOfNotNull(
-                lastLabel?.takeIf { it.isNotBlank() }?.let { "✓ $it" },
-                succeededText,
                 failedText,
+                succeededText,
+                lastLabel?.takeIf { it.isNotBlank() }?.let { "✓ $it" },
             )
             val collapsedSummary = summaryParts.joinToString(" • ")
             if (collapsedSummary.isNotBlank()) {

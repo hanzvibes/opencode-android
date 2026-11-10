@@ -274,7 +274,10 @@ fun ChatScreen(
                                 start = spacing.lg,
                                 end = spacing.lg,
                                 top = spacing.md,
-                                bottom = spacing.xl,
+                                // 64dp of air under the last message so the
+                                // 42dp floating jump-to-latest button never
+                                // covers its text or copy button.
+                                bottom = 64.dp,
                             ),
                         ) {
                             itemsIndexed(state.messages, key = { _, it -> it.id }) { index, message ->
@@ -335,7 +338,10 @@ fun ChatScreen(
                                         model = state.activeModel,
                                         agents = state.agents,
                                         models = state.models,
-                                        modifier = Modifier.padding(top = spacing.md),
+                                        // Same 16dp (lg) as a real new turn, so
+                                        // the layout does not jump when the
+                                        // placeholder is replaced by the turn.
+                                        modifier = Modifier.padding(top = spacing.lg),
                                     )
                                 }
                             }
@@ -1455,6 +1461,7 @@ private fun EmptyChat(
         contentAlignment = Alignment.TopCenter,
     ) {
         val isWide = maxWidth >= 540.dp
+        val isNarrow = maxWidth < 360.dp
 
         Column(
             modifier = Modifier
@@ -1523,8 +1530,10 @@ private fun EmptyChat(
                         // Two-column grid on every width, including phones:
                         // all four starters are visible without scrolling.
                         // On a narrow phone the cards are compact (icon +
-                        // title only) so the titles still fit.
-                        STARTER_PROMPTS.chunked(2).forEach { rowPrompts ->
+                        // title only) so the titles still fit. Below 360dp
+                        // even the compact titles need a third line, so the
+                        // grid drops to a single full-width column there.
+                        STARTER_PROMPTS.chunked(if (isNarrow) 1 else 2).forEach { rowPrompts ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
@@ -1542,7 +1551,7 @@ private fun EmptyChat(
                                         compact = !isWide,
                                     )
                                 }
-                                if (rowPrompts.size == 1) {
+                                if (rowPrompts.size == 1 && !isNarrow) {
                                     Spacer(Modifier.weight(1f))
                                 }
                             }
@@ -1699,6 +1708,9 @@ private fun ReadinessStatusRow(
             color = statusColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            // Capped so a long status label cannot starve the weighted
+            // project name of space on a narrow phone.
+            modifier = Modifier.widthIn(max = 120.dp),
         )
         Text(text = "•", style = OpenCodeTypography.bodySmall, color = colors.onSurfaceFaint)
         // Tapping the project name still switches workspace, as the old
@@ -1730,6 +1742,10 @@ private fun ReadinessStatusRow(
             color = if (gitBranch != null) colors.onSurface else colors.onSurfaceFaint,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            // Weighted like the project name, so the two share whatever
+            // space is left instead of the branch taking its full intrinsic
+            // width first and squeezing the project name to zero.
+            modifier = Modifier.weight(1f, fill = false),
         )
         GlyphIcon(
             glyph = Glyph.ChevronRight,
