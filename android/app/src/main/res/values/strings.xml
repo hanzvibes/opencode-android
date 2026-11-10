@@ -153,7 +153,7 @@
     <string name="permission_allow_once">Allow once</string>
     <string name="permission_always">Always</string>
     <string name="permission_reject">Reject</string>
-    <string name="permission_explainer">Always saves this permission for this project, so it won't be asked again. Reject lets the agent continue without this tool.</string>
+    <string name="permission_explainer">Always saves this permission for this project, so it won\'t be asked again. Reject lets the agent continue without this tool.</string>
     <string name="permission_save_note">Will be saved: %1$s</string>
     <string name="question_title">Agent Question</string>
     <string name="question_single_choice">Select an option</string>
