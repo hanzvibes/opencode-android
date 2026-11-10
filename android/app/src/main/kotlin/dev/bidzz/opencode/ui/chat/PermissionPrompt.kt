@@ -107,12 +107,15 @@ fun PermissionPrompt(
         // Detail code box styling (monospace, hairline border, rounded corners)
         val detail = remember(request.message, request.resources, request.action) {
             val items = mutableListOf<String>()
-            request.message?.takeIf { it.isNotBlank() && it != request.action }?.let { items.add(it) }
+            val msg = request.message
+            if (!msg.isNullOrBlank() && msg != request.action) {
+                items.add(msg)
+            }
             if (request.resources.isNotEmpty()) {
                 items.addAll(request.resources.filter { it.isNotBlank() })
             }
-            if (items.isEmpty() && !request.message.isNullOrBlank()) {
-                items.add(request.message)
+            if (items.isEmpty() && !msg.isNullOrBlank()) {
+                items.add(msg)
             }
             items.joinToString("\n").takeIf { it.isNotBlank() }
         }

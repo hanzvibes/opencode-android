@@ -58,9 +58,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -72,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.Status
+import dev.bidzz.opencode.ui.chat.Role
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
@@ -352,6 +354,7 @@ private fun ChatHeader(
                 )
                 Spacer(Modifier.height(spacing.xxs))
                 val statusLabel = engineState.statusLabel(busy)
+                val diagTitle = stringResource(R.string.settings_diag_title)
                 Row(
                     modifier = Modifier
                         .defaultMinSize(minWidth = dims.minTouchTarget, minHeight = 28.dp)
@@ -363,11 +366,11 @@ private fun ChatHeader(
                             shape = RoundedCornerShape(radius.full),
                         )
                         .semantics {
-                            role = Role.Button
-                            contentDescription = "$statusLabel: ${stringResource(R.string.settings_diag_title)}"
+                            role = SemanticsRole.Button
+                            contentDescription = "$statusLabel: $diagTitle"
                         }
                         .clickable(
-                            role = Role.Button,
+                            role = SemanticsRole.Button,
                             onClick = onStatusClick,
                         )
                         .padding(horizontal = spacing.md, vertical = spacing.xs),
