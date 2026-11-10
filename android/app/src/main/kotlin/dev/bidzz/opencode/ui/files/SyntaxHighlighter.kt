@@ -29,6 +29,9 @@ fun buildAnnotatedCode(language: String?, code: String, colors: OpenCodeColors):
                         TokenKind.String -> colors.syntaxString
                         TokenKind.Number -> colors.syntaxNumber
                         TokenKind.Comment -> colors.syntaxComment
+                        TokenKind.Function -> colors.syntaxFunction
+                        TokenKind.Type -> colors.syntaxType
+                        TokenKind.Operator -> colors.onSurfaceMuted
                         TokenKind.Plain -> colors.onSurface
                     },
                     fontWeight = when (token.kind) {

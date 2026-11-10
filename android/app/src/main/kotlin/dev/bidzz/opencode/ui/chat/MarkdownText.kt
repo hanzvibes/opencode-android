@@ -449,19 +449,19 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
                             glyph = Glyph.ArrowDown,
                             glyphRotation = expandRotation,
                             done = false,
-                        ) {
-                            collapsedOverride = !collapsed
-                        }
+                            onClick = { collapsedOverride = !collapsed },
+                        )
                     }
                     if (!streaming) {
                         BlockAction(
                             label = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
                             glyph = if (copied) Glyph.Check else Glyph.Copy,
                             done = copied,
-                        ) {
-                            copyToClipboard(context, code)
-                            copied = true
-                        }
+                            onClick = {
+                                copyToClipboard(context, code)
+                                copied = true
+                            },
+                        )
                     }
                 }
             }

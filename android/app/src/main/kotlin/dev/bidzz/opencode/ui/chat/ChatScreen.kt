@@ -524,14 +524,18 @@ fun ChatScreen(
                             // the turn-tail slot, so targetLastIndex still
                             // lands on it — never past it on an empty slot.
                             item(key = "error") {
-                                AnimatedVisibility(
-                                    visible = state.failure != null || state.failureKey != null,
-                                    enter = fadeIn(animationSpec = tween(motion.standard)) +
-                                        expandVertically(animationSpec = tween(motion.standard)),
-                                    exit = fadeOut(animationSpec = tween(motion.quick)) +
-                                        shrinkVertically(animationSpec = tween(motion.quick)),
-                                    modifier = Modifier.animateItem(),
-                                ) {
+                                // AnimatedVisibility must sit inside a Column
+                                // scope: the ColumnScope overload is the one
+                                // that resolves here (same pattern as the
+                                // permission prompt below).
+                                Column(modifier = Modifier.animateItem()) {
+                                    AnimatedVisibility(
+                                        visible = state.failure != null || state.failureKey != null,
+                                        enter = fadeIn(animationSpec = tween(motion.standard)) +
+                                            expandVertically(animationSpec = tween(motion.standard)),
+                                        exit = fadeOut(animationSpec = tween(motion.quick)) +
+                                            shrinkVertically(animationSpec = tween(motion.quick)),
+                                    ) {
                                     // Hoisted out of the .semantics {} block below:
                                     // stringResource() is @Composable and cannot be
                                     // called inside a SemanticsPropertyReceiver lambda.
@@ -605,6 +609,7 @@ fun ChatScreen(
                                                 )
                                             }
                                         }
+                                    }
                                     }
                                 }
                             }
