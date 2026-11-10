@@ -152,19 +152,29 @@ fun MessageBubble(
                 bottomStart = radius.bubble,
                 bottomEnd = radius.xs,
             )
-            Box(
-                modifier = Modifier
-                    .padding(start = dims.minTouchTarget)
-                    .widthIn(max = maxBubbleWidth)
-                    .clip(userBubbleShape)
-                    .background(colors.userBubble)
-                    .padding(horizontal = spacing.lg, vertical = spacing.md - 2.dp),
-            ) {
-                SelectionContainer {
-                    Text(
+            Column(horizontalAlignment = Alignment.End) {
+                Box(
+                    modifier = Modifier
+                        .padding(start = dims.minTouchTarget)
+                        .widthIn(max = maxBubbleWidth)
+                        .clip(userBubbleShape)
+                        .background(colors.userBubble)
+                        .padding(horizontal = spacing.lg, vertical = spacing.md - 2.dp),
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = markdown,
+                            style = OpenCodeTypography.body,
+                            color = colors.onUserBubble,
+                        )
+                    }
+                }
+                // Same copy affordance as assistant replies, right-aligned
+                // under the user's own bubble.
+                if (markdown.isNotBlank()) {
+                    CopyButton(
                         text = markdown,
-                        style = OpenCodeTypography.body,
-                        color = colors.onUserBubble,
+                        modifier = Modifier.padding(top = spacing.xs),
                     )
                 }
             }

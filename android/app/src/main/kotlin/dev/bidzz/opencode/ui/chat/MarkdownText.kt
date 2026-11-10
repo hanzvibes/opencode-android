@@ -18,15 +18,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,17 +40,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -300,6 +308,15 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
     val context = LocalContext.current
     var copied by remember(code) { mutableStateOf(false) }
 
+    // "Copied" is ephemeral feedback: it resets after 1.5s so the next
+    // copy shows the feedback again instead of staying green forever.
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
+
     val defaultCodeLabel = stringResource(R.string.code_label)
     val displayLanguage = remember(language, defaultCodeLabel) {
         if (language.isNullOrBlank()) {
@@ -360,6 +377,9 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
                         letterSpacing = 0.15.sp,
                     ),
                     color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 180.dp),
                 )
             }
 
@@ -392,7 +412,17 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
                 .background(colors.hairline),
         )
 
-        // Monospace code with line numbers and horizontal scroll
+        // Monospace code with line numbers and horizontal scroll.
+        // Long blocks are capped in height (360dp, 420dp on wide/tablet
+        // screens) and scroll vertically instead of pushing the rest of the
+        // answer off-screen.
+        val isWide = LocalConfiguration.current.screenWidthDp >= 600
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = if (isWide) 420.dp else 360.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -454,16 +484,21 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
                 }
             }
         }
+        }
     }
 }
 
-private fun isShell(language: String?): Boolean = when (language?.trim()?.lowercase()) {
+private fun isShell(language: String?): Boolean = when (language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()) {
     "sh", "bash", "zsh", "shell", "console", "terminal" -> true
     else -> false
 }
 
 private fun formatLanguageName(language: String?): String {
-    val raw = language?.trim()?.lowercase() ?: return "Code"
+    // Only the first token is the language: fences like
+    // ```kotlin:Main.kt or ```python /app/main.py carry a file/path
+    // suffix that must never be shown as the language name.
+    val raw = language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()
+        ?: return "Code"
     return when (raw) {
         "kt", "kotlin" -> "Kotlin"
         "py", "python" -> "Python"
@@ -704,11 +739,12 @@ private fun BlockAction(
 
     Box(
         modifier = Modifier
+            .sizeIn(minHeight = 32.dp)
             .clip(RoundedCornerShape(radius.full))
             .background(pillBg)
             .border(0.5.dp, pillBorder, RoundedCornerShape(radius.full))
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = spacing.sm, vertical = spacing.xxs + 1.dp),
+            .padding(horizontal = spacing.sm, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(
@@ -797,10 +833,15 @@ private fun List<MdSpan>.toAnnotated(): AnnotatedString {
                 ) {
                     append(span.text)
                 }
-                is MdSpan.Link -> withStyle(
-                    SpanStyle(color = colors.accent, textDecoration = TextDecoration.Underline),
-                ) {
-                    append(span.text)
+                // withLink makes the span a real tappable link (opened via
+                // the ambient UriHandler); styling alone used to render links
+                // that did nothing when tapped.
+                is MdSpan.Link -> withLink(LinkAnnotation.Url(span.url)) {
+                    withStyle(
+                        SpanStyle(color = colors.accent, textDecoration = TextDecoration.Underline),
+                    ) {
+                        append(span.text)
+                    }
                 }
             }
         }

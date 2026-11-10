@@ -65,11 +65,15 @@ fun InlineQuestionCard(
     val radius = OpenCodeTheme.tokens.radius
     val shape = RoundedCornerShape(radius.md)
 
-    var submittedAnswer by rememberSaveable(call.id) { mutableStateOf<String?>(null) }
-    val isDone = call.isDone || submittedAnswer != null
+    // One answer per question, indexed by qIndex ("" = unanswered). A single
+    // shared answer used to mark every question done — and show the same
+    // answer on all of them — as soon as the first one was submitted.
+    var submittedAnswers by rememberSaveable(call.id) { mutableStateOf(listOf<String>()) }
 
-    // Answer from previous run output if available
-    val resolvedAnswer = submittedAnswer ?: call.output?.takeIf { it.isNotBlank() }
+    // The card stays "open" while any question is still unanswered.
+    val anyPending = questions.indices.any { qIndex ->
+        !call.isDone && submittedAnswers.getOrNull(qIndex).isNullOrBlank()
+    }
 
     Column(
         modifier = modifier
@@ -78,19 +82,30 @@ fun InlineQuestionCard(
             .background(colors.surfaceSunken)
             .border(
                 width = 0.5.dp,
-                color = if (!isDone) colors.accent.copy(alpha = 0.45f) else colors.hairline,
+                color = if (anyPending) colors.accent.copy(alpha = 0.45f) else colors.hairline,
                 shape = shape,
             )
             .padding(spacing.md),
         verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         questions.forEachIndexed { qIndex, item ->
+            // Per-section done state and answer: only this question is
+            // resolved by its own submission. A previous run's output is a
+            // fallback for history reloads, where no per-question answers
+            // were recorded.
+            val sectionAnswer = submittedAnswers.getOrNull(qIndex)?.takeIf { it.isNotBlank() }
+            val sectionDone = call.isDone || sectionAnswer != null
+            val sectionResolved = sectionAnswer
+                ?: call.output?.takeIf { it.isNotBlank() && call.isDone }
             SingleQuestionSection(
                 item = item,
-                isDone = isDone,
-                resolvedAnswer = resolvedAnswer,
+                isDone = sectionDone,
+                resolvedAnswer = sectionResolved,
                 onSubmit = { answerText ->
-                    submittedAnswer = answerText
+                    val updated = submittedAnswers.toMutableList()
+                    while (updated.size <= qIndex) updated.add("")
+                    updated[qIndex] = answerText
+                    submittedAnswers = updated
                     onAnswer(answerText)
                 },
             )

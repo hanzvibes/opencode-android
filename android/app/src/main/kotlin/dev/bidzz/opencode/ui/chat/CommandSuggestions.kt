@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +47,10 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -54,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.CommandInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -470,6 +475,7 @@ fun CommandSuggestions(
             CommandPaletteHeader(
                 matchesCount = matches.size,
                 totalCount = paletteState.allCommands.size,
+                onDismiss = onDismiss,
             )
 
             // Content list or empty notification
@@ -521,6 +527,7 @@ fun CommandSuggestions(
 private fun CommandPaletteHeader(
     matchesCount: Int,
     totalCount: Int,
+    onDismiss: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -570,6 +577,26 @@ private fun CommandPaletteHeader(
                     style = OpenCodeTypography.caption,
                     color = colors.onSurfaceFaint,
                 )
+
+                // Explicit close: dismissing the palette only cancels palette
+                // mode and restores the draft that was there before it.
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .clickable(role = Role.Button, onClick = onDismiss)
+                        .semantics {
+                            contentDescription =
+                                stringResource(R.string.chat_status_dialog_close)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(
+                        glyph = Glyph.Close,
+                        tint = colors.onSurfaceMuted,
+                        size = 12.dp,
+                    )
+                }
             }
         }
 

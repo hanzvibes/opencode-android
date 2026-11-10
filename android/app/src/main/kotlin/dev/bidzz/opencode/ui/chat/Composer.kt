@@ -21,6 +21,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -60,6 +62,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
@@ -162,6 +165,11 @@ fun Composer(
             ),
             cursorBrush = SolidColor(colors.accent),
             enabled = enabled,
+            // The soft keyboard's action key reads "Send" and sends; a plain
+            // Enter on a physical keyboard still inserts a newline (sending
+            // from hardware keys is Ctrl/Cmd+Enter, handled in ChatScreen).
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { onSend() }),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = spacing.lg)
@@ -220,21 +228,21 @@ fun Composer(
                 },
             )
 
-            QuickActionChip(
-                label = "@",
-                glyph = Glyph.File,
-                isActive = false,
-                enabled = enabled && !busy,
-                contentDescription = stringResource(R.string.composer_attach),
-                onClick = {
-                    if (onAttachFile != null) {
-                        onAttachFile()
-                    } else {
-                        val prefix = if (value.isEmpty() || value.endsWith(" ")) "" else " "
-                        onValueChange("$value$prefix@")
-                    }
-                },
-            )
+            // The @ chip only exists when a real attach action is wired in.
+            // Without onAttachFile it only inserted a bare "@" into the text
+            // while wearing a file icon and an "Attach file" label — a fake
+            // attach button. No file picker is built here; the chip simply
+            // stays hidden until a caller passes onAttachFile.
+            if (onAttachFile != null) {
+                QuickActionChip(
+                    label = "@",
+                    glyph = Glyph.File,
+                    isActive = false,
+                    enabled = enabled && !busy,
+                    contentDescription = stringResource(R.string.composer_attach),
+                    onClick = { onAttachFile() },
+                )
+            }
 
             Spacer(modifier = Modifier.width(spacing.xs))
 

@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.R
@@ -73,9 +74,21 @@ data class ChatMessage(
 class ChatViewModel(
     private val api: EngineApi,
     private val workspace: () -> String,
+    /**
+     * Optional handle that owns the draft across process death. Null when the
+     * caller constructs the view model without one (the draft then lives only
+     * in [ChatUiState], as before); the session-switch clearing below works
+     * either way.
+     */
+    private val savedStateHandle: SavedStateHandle? = null,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ChatUiState(workspacePath = workspace()))
+    private val _state = MutableStateFlow(
+        ChatUiState(
+            workspacePath = workspace(),
+            draft = savedStateHandle?.get<String>(DRAFT_KEY) ?: "",
+        ),
+    )
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     private var repository: ChatRepository? = null
@@ -218,7 +231,14 @@ class ChatViewModel(
     }
 
     fun onDraftChange(text: String) {
+        savedStateHandle?.set(DRAFT_KEY, text)
         _state.value = _state.value.copy(draft = text)
+    }
+
+    /** Clears the draft in both the UI state and the saved-state handle. */
+    private fun clearDraft() {
+        savedStateHandle?.remove<String>(DRAFT_KEY)
+        _state.value = _state.value.copy(draft = "")
     }
 
     /** Sends the draft, creating a session first if there is none. */
@@ -275,7 +295,7 @@ class ChatViewModel(
      */
     private fun clearSentDraft(sent: String) {
         if (_state.value.draft.trim() == sent) {
-            _state.value = _state.value.copy(draft = "")
+            clearDraft()
         }
     }
 
@@ -360,7 +380,10 @@ class ChatViewModel(
                 }
             }
         }
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null)
+        // A draft belongs to the session it was typed in; it must not follow
+        // the user into the fresh session.
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "")
+        savedStateHandle?.remove<String>(DRAFT_KEY)
     }
 
     /** Loads an existing session. */
@@ -371,6 +394,10 @@ class ChatViewModel(
     /** Loads an existing session by id, from the history list. */
     fun openSession(sessionID: String) {
         val repo = repository ?: return
+        // A draft belongs to the session it was typed in; opening another
+        // session starts with an empty composer.
+        _state.value = _state.value.copy(draft = "")
+        savedStateHandle?.remove<String>(DRAFT_KEY)
         repo.open(sessionID)
     }
 
@@ -399,6 +426,10 @@ class ChatViewModel(
         collector?.cancel()
         repository?.close()
         super.onCleared()
+    }
+
+    companion object {
+        private const val DRAFT_KEY = "chat_draft"
     }
 }
 

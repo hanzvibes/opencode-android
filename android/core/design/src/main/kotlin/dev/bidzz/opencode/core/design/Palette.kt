@@ -24,7 +24,10 @@ object Palette {
 
     val darkOnSurface = Color(0xFFFFFFFF)
     val darkOnSurfaceMuted = Color(0xFF8E8E93)
-    val darkOnSurfaceFaint = Color(0xFF5A5A5F)
+    // #9A9AA0 on OLED black is ~7:1, so even ≤13sp text in this token stays
+    // readable. The previous #5A5A5F was ~3.0:1 — fine for a decorative dot,
+    // too faint for the small labels and chevrons that actually use it.
+    val darkOnSurfaceFaint = Color(0xFF9A9AA0)
 
     val darkOutline = Color(0x33FFFFFF)       // 20% white
     val darkHairline = Color(0x1FFFFFFF)      // 12% white (crisp hairline on OLED black)

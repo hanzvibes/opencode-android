@@ -13,7 +13,7 @@ package dev.bidzz.opencode.ui.chat
  * - headings (# .. ######)
  * - blockquotes (> text)
  * - unordered and ordered lists
- * - links ([text](url))
+ * - links ([text](url)) and bare URLs (https://… autolinks)
  * - horizontal rules / dividers (---, ***, ___ or <hr>)
  * - pipe tables with a `| --- | --- |` separator row
  *
@@ -313,6 +313,24 @@ object Markdown {
                         flushPlain()
                         spans += MdSpan.Highlight(text.substring(i + 6, end))
                         i = end + 7
+                    } else {
+                        plain.append(c); i++
+                    }
+                }
+
+                // Autolink: a bare https://… URL becomes a link. Trailing
+                // punctuation (.,;:!?) and an unmatched closing paren are
+                // left as plain text so they are not swallowed into the URL.
+                c == 'h' && (text.startsWith("http://", i) || text.startsWith("https://", i)) -> {
+                    val match = Regex("""https?://[^\s<>"']+""").find(text, i)
+                    if (match != null && match.range.first == i) {
+                        var url = match.value.trimEnd('.', ',', ';', ':', '!', '?')
+                        if (url.endsWith(")") && url.count { it == '(' } < url.count { it == ')' }) {
+                            url = url.dropLast(1)
+                        }
+                        flushPlain()
+                        spans += MdSpan.Link(url, url)
+                        i += url.length
                     } else {
                         plain.append(c); i++
                     }

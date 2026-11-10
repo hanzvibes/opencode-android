@@ -90,6 +90,8 @@ fun ToolTrace(
 
     val running = tools.filter { it.status == "running" || it.status == "streaming" }
     val failed = tools.count { it.status == "error" }
+    val completed = tools.count { it.status == "completed" }
+    val lastCompleted = tools.lastOrNull { it.status == "completed" }
 
     // When a run finishes with a failure, open it so an error is never
     // hidden behind the collapsed summary. Never force a run closed: if
@@ -97,7 +99,12 @@ fun ToolTrace(
     // stays open.
     LaunchedEffect(streaming, failed) { if (!streaming && failed > 0) open = true }
 
-    val visible = if (open) tools else (running + tools.filter { it.status == "error" }).distinctBy { it.id }
+    // Collapsed while streaming still shows the most recently finished tool,
+    // so the timeline reads as progress (done → running) instead of only
+    // showing what is still running or has failed.
+    val visible = if (open) tools else (
+        running + tools.filter { it.status == "error" } + listOfNotNull(lastCompleted)
+        ).distinctBy { it.id }
 
     Column(
         modifier = modifier
@@ -144,13 +151,15 @@ fun ToolTrace(
             val summaryText = if (running.isNotEmpty()) {
                 val currentTool = running.firstOrNull()
                 val toolName = currentTool?.name?.takeIf { it.isNotBlank() }
+                // Progress as finished/total, so a long run reads as
+                // "Running Read… · 3/5" instead of an open-ended "Running…".
                 if (toolName != null) {
-                    "Running $toolName…"
+                    "Running $toolName… · $completed/${tools.size}"
                 } else {
                     stringResource(
                         if (tools.size == 1) R.string.tool_steps_one else R.string.tool_steps_other,
                         tools.size,
-                    )
+                    ) + " · $completed/${tools.size}"
                 }
             } else {
                 "Ran " + stringResource(
@@ -201,8 +210,8 @@ fun ToolTrace(
         // so a finished run still reads at a glance without expanding it.
         // Kept to one ellipsised line so it cannot overflow on narrow screens.
         if (!open && !streaming && tools.isNotEmpty()) {
-            val completed = tools.count { it.status == "completed" }
-            val lastCompleted = tools.lastOrNull { it.status == "completed" }
+            // `completed` / `lastCompleted` are computed once above and
+            // reused here.
             // Composable calls (stringResource / StepLabel.text) must stay in
             // composable scope, not inside buildList / let lambdas, so each
             // one is resolved here with a plain if-expression first.

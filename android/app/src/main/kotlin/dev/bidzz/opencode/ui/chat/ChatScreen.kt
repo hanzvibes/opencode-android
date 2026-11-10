@@ -78,6 +78,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -138,6 +145,7 @@ fun ChatScreen(
     onRenameSession: (String, String) -> Unit = { _, _ -> },
     onDeleteSession: (String) -> Unit = {},
     onTogglePinSession: (String) -> Unit = {},
+    onDismissError: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -149,10 +157,19 @@ fun ChatScreen(
 
     // Follow the conversation as it grows, but only while the reader is already at the bottom,
     // so scrolling up during a stream is not yanked back down.
-    val nearBottom by remember {
+    // Pixel-tight: the last item must be the last one *and* fully visible
+    // (its bottom edge within ~48dp of the viewport bottom), not merely
+    // "within two items", or a half-visible last bubble would still count
+    // as "at the bottom" and yank the reader down mid-read.
+    val density = LocalDensity.current
+    val nearBottom by remember(density) {
         derivedStateOf {
             val info = listState.layoutInfo
-            (info.visibleItemsInfo.lastOrNull()?.index ?: -1) >= info.totalItemsCount - 2
+            if (info.totalItemsCount == 0) return@derivedStateOf true
+            val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            if (last.index < info.totalItemsCount - 1) return@derivedStateOf false
+            val tolerancePx = with(density) { 48.dp.toPx() }
+            last.offset + last.size <= info.viewportEndOffset + tolerancePx
         }
     }
 
@@ -164,9 +181,12 @@ fun ChatScreen(
         }
     }
 
+    // Unread counts assistant messages only: the reader's own messages are
+    // never "unread", and counting them inflated the badge after a send.
     val unreadMessagesCount by remember {
         derivedStateOf {
-            if (nearBottom) 0 else (state.messages.size - lastReadMessageCount).coerceAtLeast(0)
+            if (nearBottom) 0 else state.messages.drop(lastReadMessageCount)
+                .count { it.role == Role.ASSISTANT }.coerceAtLeast(0)
         }
     }
 
@@ -184,6 +204,35 @@ fun ChatScreen(
             listState.scrollToItem(targetLastIndex)
         }
     }
+
+    // Opening an old session lands at the bottom (latest) once per session,
+    // and marks everything read so the jump-to-latest badge never shows a
+    // phantom count carried over from the previous session.
+    LaunchedEffect(state.sessionID) {
+        if (state.messages.isNotEmpty()) {
+            listState.scrollToItem(targetLastIndex)
+            lastReadMessageCount = state.messages.size
+        }
+    }
+
+    // The draft as it was before the "/" that opened the command palette was
+    // typed. Dismissing the palette restores it instead of wiping the
+    // composer: a "/" typed into an empty composer restores to empty, a "/"
+    // prepended to existing text restores that text.
+    val paletteActive = isCommandPaletteActive(state.draft)
+    var draftBeforePalette by remember { mutableStateOf("") }
+    LaunchedEffect(state.draft) {
+        if (!paletteActive) draftBeforePalette = state.draft
+    }
+
+    /** Cancels palette mode only; the draft before the palette is kept. */
+    fun dismissPalette() {
+        onDraftChange(draftBeforePalette)
+    }
+
+    // System back closes the palette non-destructively; it never exits the
+    // screen or clears the draft while the palette is open.
+    BackHandler(enabled = paletteActive) { dismissPalette() }
 
     /** Closes the drawer, then runs [action]; the drawer must not stay open over the next screen. */
     fun closeThen(action: () -> Unit) {
@@ -350,12 +399,38 @@ fun ChatScreen(
                             }
                             if (state.failure != null || state.failureKey != null) {
                                 item(key = "error") {
-                                    MessageBubble(
-                                        role = Role.ERROR,
-                                        markdown = state.failure?.message()
-                                            ?: stringResource(state.failureKey!!),
-                                        modifier = Modifier.padding(top = spacing.md),
-                                    )
+                                    Box(modifier = Modifier.padding(top = spacing.md)) {
+                                        MessageBubble(
+                                            role = Role.ERROR,
+                                            markdown = state.failure?.message()
+                                                ?: stringResource(state.failureKey!!),
+                                        )
+                                        // Small dismiss cross on the error bubble;
+                                        // it only clears the error, it does not retry.
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(4.dp)
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .background(colors.surfaceRaised)
+                                                .clickable(
+                                                    role = SemanticsRole.Button,
+                                                    onClick = onDismissError,
+                                                )
+                                                .semantics {
+                                                    contentDescription =
+                                                        stringResource(R.string.chat_status_dialog_close)
+                                                },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            GlyphIcon(
+                                                glyph = Glyph.Close,
+                                                tint = colors.onSurfaceMuted,
+                                                size = 12.dp,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -378,7 +453,7 @@ fun ChatScreen(
 
                     // Subtle scrim overlay over chat history when command palette is active
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = isCommandPaletteActive(state.draft),
+                        visible = paletteActive,
                         enter = fadeIn(tween(OpenCodeTheme.tokens.motion.standard)),
                         exit = fadeOut(tween(OpenCodeTheme.tokens.motion.quick)),
                     ) {
@@ -389,7 +464,7 @@ fun ChatScreen(
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                    onClick = { onDraftChange("") },
+                                    onClick = { dismissPalette() },
                                 ),
                         )
                     }
@@ -418,7 +493,7 @@ fun ChatScreen(
             CommandSuggestions(
                 paletteState = paletteState,
                 onPick = { name -> onDraftChange("/$name ") },
-                onDismiss = { onDraftChange("") },
+                onDismiss = { dismissPalette() },
             )
 
             Composer(
@@ -430,11 +505,21 @@ fun ChatScreen(
                 enabled = state.workspaceReady,
                 modifier = Modifier.navigationBarsPadding(),
                 onKeyEvent = { keyEvent ->
-                    paletteState.handleKeyEvent(
-                        event = keyEvent,
-                        onPick = { name -> onDraftChange("/$name ") },
-                        onDismiss = { onDraftChange("") },
-                    )
+                    // Ctrl/Cmd+Enter sends from a physical keyboard; a plain
+                    // Enter stays a newline and is left to the text field.
+                    if (keyEvent.type == KeyEventType.KeyDown &&
+                        (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter) &&
+                        (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)
+                    ) {
+                        onSend()
+                        true
+                    } else {
+                        paletteState.handleKeyEvent(
+                            event = keyEvent,
+                            onPick = { name -> onDraftChange("/$name ") },
+                            onDismiss = { dismissPalette() },
+                        )
+                    }
                 },
                 controls = {
                     ChatControls(
