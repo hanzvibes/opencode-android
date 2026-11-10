@@ -262,8 +262,11 @@ fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.xs),
             ) {
+                // Clear stays available while the agent works: the draft
+                // is the user's text, and hiding the only way to drop it
+                // mid-run was a trap, not a guard.
                 AnimatedVisibility(
-                    visible = value.isNotEmpty() && enabled && !busy,
+                    visible = value.isNotEmpty() && enabled,
                     enter = fadeIn(tween(motion.quick)) + scaleIn(tween(motion.quick), initialScale = 0.8f),
                     exit = fadeOut(tween(motion.quick)) + scaleOut(tween(motion.quick), targetScale = 0.8f),
                 ) {
@@ -609,9 +612,14 @@ private fun ActionButton(
         ) { state ->
             when (state) {
                 ActionState.BUSY -> {
+                    // 14dp, up from 11dp: the stop square was the
+                    // smallest glyph in the composer and read as a speck
+                    // next to the 20dp send arrow. (The button keeps its
+                    // "Stop" contentDescription for screen readers; the
+                    // 36dp circle has no room for a visible label.)
                     Box(
                         modifier = Modifier
-                            .size(11.dp)
+                            .size(14.dp)
                             .background(iconTint, RoundedCornerShape(2.5.dp)),
                     )
                 }

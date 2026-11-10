@@ -30,6 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -58,6 +61,8 @@ fun ChatControls(
     onAgent: (String) -> Unit,
     onModel: (ModelRef) -> Unit,
     modifier: Modifier = Modifier,
+    /** False while the agent is working: switching mode/model mid-run is a no-op. */
+    enabled: Boolean = true,
 ) {
     if (agents.isEmpty() && models.isEmpty()) return
 
@@ -73,6 +78,7 @@ fun ChatControls(
                 agents = agents,
                 activeAgent = activeAgent,
                 onSelect = onAgent,
+                enabled = enabled,
             )
         }
         if (models.isNotEmpty()) {
@@ -80,6 +86,7 @@ fun ChatControls(
                 models = models,
                 activeModel = activeModel,
                 onSelect = onModel,
+                enabled = enabled,
             )
         }
     }
@@ -94,6 +101,7 @@ private fun AgentSelector(
     agents: List<AgentInfo>,
     activeAgent: String?,
     onSelect: (String) -> Unit,
+    enabled: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
@@ -125,7 +133,11 @@ private fun AgentSelector(
                 .clip(chipShape)
                 .background(if (expanded) colors.surfacePressed else colors.fill)
                 .border(0.5.dp, if (expanded) colors.outline else colors.hairline, chipShape)
-                .clickable { expanded = true }
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Mode: ${currentPresentation?.title ?: "Mode"}"
+                }
+                .clickable(enabled = enabled) { expanded = true }
                 .padding(start = spacing.sm, end = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
@@ -149,7 +161,9 @@ private fun AgentSelector(
             Text(
                 text = currentPresentation?.title ?: "Mode",
                 style = OpenCodeTypography.label,
-                color = if (activeAgent != null || currentAgent != null) colors.onSurface else colors.onSurfaceFaint,
+                color = if (!enabled) colors.onSurfaceFaint
+                    else if (activeAgent != null || currentAgent != null) colors.onSurface
+                    else colors.onSurfaceFaint,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 110.dp),
@@ -194,9 +208,13 @@ private fun AgentSelector(
                     .background(colors.hairline),
             )
 
+            // Capped like the model menu: an uncapped agent menu could
+            // run off the bottom of a short screen with no way to scroll.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = 380.dp)
+                    .verticalScroll(rememberScrollState())
                     .padding(vertical = spacing.xxs),
             ) {
                 selectableAgents.forEach { agent ->
@@ -301,6 +319,7 @@ private fun ModelSelector(
     models: List<ModelInfo>,
     activeModel: ModelRef?,
     onSelect: (ModelRef) -> Unit,
+    enabled: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
@@ -324,7 +343,11 @@ private fun ModelSelector(
                 .clip(chipShape)
                 .background(if (expanded) colors.surfacePressed else colors.fill)
                 .border(0.5.dp, if (expanded) colors.outline else colors.hairline, chipShape)
-                .clickable { expanded = true }
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Model: ${currentPresentation?.displayName ?: "Model"}"
+                }
+                .clickable(enabled = enabled) { expanded = true }
                 .padding(start = spacing.sm, end = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
@@ -348,7 +371,9 @@ private fun ModelSelector(
             Text(
                 text = currentPresentation?.displayName ?: "Model",
                 style = OpenCodeTypography.label,
-                color = if (activeModel != null || currentModel != null) colors.onSurface else colors.onSurfaceFaint,
+                color = if (!enabled) colors.onSurfaceFaint
+                    else if (activeModel != null || currentModel != null) colors.onSurface
+                    else colors.onSurfaceFaint,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 200.dp),
@@ -588,7 +613,11 @@ private fun resolveBrand(model: ModelInfo): Triple<String, String, Color> {
     }
 }
 
-private fun cleanModelName(rawName: String, rawId: String): String {
+/**
+ * Shared with the transcript's provenance badge ([ProvenanceBadge]), so
+ * the model name reads the same in the selector and in the transcript.
+ */
+internal fun cleanModelName(rawName: String, rawId: String): String {
     val candidate = rawName.ifBlank { rawId }.substringAfterLast('/')
     val lower = candidate.lowercase()
     return when {

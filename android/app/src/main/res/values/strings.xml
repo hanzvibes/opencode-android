@@ -117,6 +117,7 @@
     <string name="drawer_no_sessions">No sessions yet</string>
     <string name="drawer_untitled">Untitled</string>
     <string name="drawer_all_sessions">All sessions</string>
+    <string name="drawer_view_all">View all sessions</string>
     <string name="drawer_diagnostics">Diagnostics</string>
     <string name="drawer_developer">Developer</string>
     <string name="drawer_switch_workspace">Switch workspace</string>
@@ -152,6 +153,8 @@
     <string name="permission_allow_once">Allow once</string>
     <string name="permission_always">Always</string>
     <string name="permission_reject">Reject</string>
+    <string name="permission_explainer">Always saves this permission for this project, so it won't be asked again. Reject lets the agent continue without this tool.</string>
+    <string name="permission_save_note">Will be saved: %1$s</string>
     <string name="question_title">Agent Question</string>
     <string name="question_single_choice">Select an option</string>
     <string name="question_multi_choice">Select one or more options</string>
@@ -178,11 +181,14 @@
     <string name="tool_input">Input</string>
     <string name="tool_output">Output</string>
     <string name="tool_error">Error</string>
+    <string name="tool_show_full">Show full output</string>
+    <string name="tool_show_less">Show less</string>
     <string name="code_label">code</string>
     <string name="code_download">Download</string>
     <string name="code_saved">Saved</string>
     <string name="code_copy">Copy</string>
     <string name="code_copied">Copied</string>
+    <string name="code_highlight_off">Highlight off (large file)</string>
 
     <!-- Project -->
     <string name="project_current">Current</string>
@@ -244,6 +250,8 @@
     <string name="history_all_projects">All projects</string>
     <string name="history_loading">Loading conversations…</string>
     <string name="history_empty">No conversations yet.\nSend a message to start one.</string>
+    <string name="history_search_hint">Search sessions</string>
+    <string name="history_search_no_results">No sessions match "%1$s"</string>
 
     <!-- Providers -->
     <string name="providers_title">Providers</string>

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -122,7 +123,11 @@ fun MarkdownText(
                                 1 -> HeadingStyle(20.sp, 26.sp, FontWeight.Bold, baseTopPadding, (-0.3).sp)
                                 2 -> HeadingStyle(17.sp, 22.sp, FontWeight.Bold, baseTopPadding, (-0.25).sp)
                                 3 -> HeadingStyle(15.sp, 20.sp, FontWeight.SemiBold, baseTopPadding, (-0.15).sp)
-                                else -> HeadingStyle(14.sp, 18.sp, FontWeight.SemiBold, baseTopPadding, (-0.1).sp)
+                                // H4–H6 used to be identical; each level now
+                                // steps down so the hierarchy still reads.
+                                4 -> HeadingStyle(14.sp, 18.sp, FontWeight.SemiBold, baseTopPadding, (-0.1).sp)
+                                5 -> HeadingStyle(13.5.sp, 18.sp, FontWeight.SemiBold, baseTopPadding, (-0.1).sp)
+                                else -> HeadingStyle(13.sp, 17.sp, FontWeight.Medium, baseTopPadding, (-0.1).sp)
                             }
                             Text(
                                 text = block.spans.toAnnotated(),
@@ -241,7 +246,7 @@ fun MarkdownText(
                                     verticalAlignment = Alignment.Top,
                                 ) {
                                     Text(
-                                        text = "${index + 1}.",
+                                        text = "${block.start + index}.",
                                         style = OpenCodeTypography.bodySmall.copy(
                                             fontFamily = OpenCodeTypography.mono,
                                             fontWeight = FontWeight.Medium,
@@ -329,7 +334,9 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
     val lines = remember(code) { code.lines() }
     val lineCount = lines.size
     val showLineNumbers = lineCount > 1
-    val digits = remember(lineCount) { lineCount.toString().length.coerceAtLeast(2) }
+    // Locked to at least 3 digits so the gutter never shifts width when
+    // the count crosses 9→10 or 99→100 mid-stream.
+    val digits = remember(lineCount) { lineCount.toString().length.coerceAtLeast(3) }
     val lineNumbersText = remember(lineCount, digits) {
         (1..lineCount).joinToString("\n") { it.toString().padStart(digits, ' ') }
     }
@@ -380,6 +387,19 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.widthIn(max = 180.dp),
+                )
+            }
+
+            // A block past the highlight cutoff renders plain on purpose;
+            // say so, so it does not read as a broken highlighter.
+            if (code.length > MAX_HIGHLIGHT_CHARS) {
+                Text(
+                    text = stringResource(R.string.code_highlight_off),
+                    style = OpenCodeTypography.caption.copy(fontSize = 10.sp),
+                    color = colors.onSurfaceFaint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = spacing.xs),
                 )
             }
 
@@ -444,6 +464,14 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
                         ),
                     )
                 }
+                // Hairline between the gutter and the code, so the numbers
+                // read as a column instead of text floating beside the code.
+                Box(
+                    modifier = Modifier
+                        .width(0.5.dp)
+                        .fillMaxHeight()
+                        .background(colors.hairline),
+                )
             }
 
             Box(
@@ -453,7 +481,7 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
             ) {
                 Column {
                     Text(
-                        text = highlightedCode(language, code),
+                        text = highlightedCode(language, code, streaming),
                         style = codeStyle,
                         softWrap = false,
                         modifier = Modifier.padding(
@@ -540,10 +568,12 @@ private fun formatLanguageName(language: String?): String {
  * copy button and text selection still hand out exactly what the model emitted.
  */
 @Composable
-private fun highlightedCode(language: String?, code: String): AnnotatedString {
+private fun highlightedCode(language: String?, code: String, streaming: Boolean = false): AnnotatedString {
     val colors = OpenCodeTheme.colors
     val isDark = colors.background == Palette.darkBackground || colors.surfaceSunken == Palette.darkSurfaceSunken
-    val tokens = remember(code, language) { highlight(language, code) }
+    // While streaming, long blocks stay plain until the stream finishes
+    // (see highlight()); the full highlight runs once, on completion.
+    val tokens = remember(code, language, streaming) { highlight(language, code, streaming) }
 
     val plainColor = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)
     val keywordColor = if (isDark) Color(0xFFC084FC) else Color(0xFF7C3AED)
@@ -784,7 +814,9 @@ private fun List<MdSpan>.toUppercase(): List<MdSpan> = map { span ->
         is MdSpan.Text -> MdSpan.Text(span.text.uppercase())
         is MdSpan.Bold -> MdSpan.Bold(span.text.uppercase())
         is MdSpan.Italic -> MdSpan.Italic(span.text.uppercase())
-        is MdSpan.Code -> MdSpan.Code(span.text.uppercase())
+        // Code stays verbatim: uppercasing it turns `config.yaml` into
+        // `CONFIG.YAML`, which is a different file.
+        is MdSpan.Code -> span
         is MdSpan.Link -> MdSpan.Link(span.text.uppercase(), span.url)
         is MdSpan.Highlight -> MdSpan.Highlight(span.text.uppercase())
     }
@@ -813,9 +845,13 @@ private fun List<MdSpan>.toAnnotated(): AnnotatedString {
                 is MdSpan.Code -> withStyle(
                     SpanStyle(
                         fontFamily = OpenCodeTypography.mono,
-                        fontSize = OpenCodeTypography.codeInline.fontSize,
+                        // Inline code sits at 12.5sp like block code; the
+                        // shared codeInline token is 13.5sp, larger than
+                        // the block it is supposed to be smaller than.
+                        // The global token is untouched — only prose here.
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium,
-                        background = colors.surfaceVariant.copy(alpha = 0.65f),
+                        background = colors.surfaceVariant.copy(alpha = 0.8f),
                         color = colors.onSurface,
                         baselineShift = BaselineShift(0.02f),
                     ),

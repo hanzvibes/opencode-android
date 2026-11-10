@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -97,18 +99,25 @@ fun InlineQuestionCard(
             val sectionDone = call.isDone || sectionAnswer != null
             val sectionResolved = sectionAnswer
                 ?: call.output?.takeIf { it.isNotBlank() && call.isDone }
-            SingleQuestionSection(
-                item = item,
-                isDone = sectionDone,
-                resolvedAnswer = sectionResolved,
-                onSubmit = { answerText ->
+            // Keyed per question: without the key, a section's selected
+            // option / write-in state could survive into the next question
+            // when the list changes.
+            key(qIndex) {
+                SingleQuestionSection(
+                    item = item,
+                    qIndex = qIndex,
+                    totalQuestions = questions.size,
+                    isDone = sectionDone,
+                    resolvedAnswer = sectionResolved,
+                    onSubmit = { answerText ->
                     val updated = submittedAnswers.toMutableList()
                     while (updated.size <= qIndex) updated.add("")
                     updated[qIndex] = answerText
                     submittedAnswers = updated
                     onAnswer(answerText)
                 },
-            )
+                )
+            }
         }
     }
 }
@@ -116,6 +125,8 @@ fun InlineQuestionCard(
 @Composable
 private fun SingleQuestionSection(
     item: QuestionItem,
+    qIndex: Int,
+    totalQuestions: Int,
     isDone: Boolean,
     resolvedAnswer: String?,
     onSubmit: (String) -> Unit,
@@ -124,9 +135,26 @@ private fun SingleQuestionSection(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
-    var selectedOptionIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var writeInText by rememberSaveable { mutableStateOf("") }
-    var writeInActive by rememberSaveable { mutableStateOf(false) }
+    // Keyed by question index, so each question keeps its own selection
+    // and write-in instead of inheriting the previous one's.
+    var selectedOptionIds by rememberSaveable(qIndex) { mutableStateOf(emptyList<String>()) }
+    var writeInText by rememberSaveable(qIndex) { mutableStateOf("") }
+    var writeInActive by rememberSaveable(qIndex) { mutableStateOf(false) }
+
+    /** Builds "Header: answer1, answer2" and hands it to the card. */
+    fun submitAnswer(selected: List<String>, writeIn: String, writeInOn: Boolean) {
+        val chosenLabels = item.options
+            .filter { it.id in selected }
+            .map { it.label }
+        val allAnswers = chosenLabels + (if (writeInOn && writeIn.isNotBlank()) listOf(writeIn.trim()) else emptyList())
+        val answerSummary = allAnswers.joinToString(", ")
+        val formatted = if (item.header != null) {
+            "${item.header}: $answerSummary"
+        } else {
+            answerSummary
+        }
+        onSubmit(formatted)
+    }
 
     // Header Row
     Row(
@@ -158,6 +186,20 @@ private fun SingleQuestionSection(
         )
 
         Spacer(Modifier.weight(1f))
+
+        // "2/3" — with several questions in one card, the reader needs
+        // to know which one this is and how many are left.
+        if (totalQuestions > 1) {
+            Text(
+                text = "${qIndex + 1}/$totalQuestions",
+                style = OpenCodeTypography.caption.copy(
+                    fontFamily = OpenCodeTypography.mono,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+                color = colors.onSurfaceFaint,
+            )
+        }
 
         // Badge: Multi-choice / Single-choice / Answered
         val badgeText = when {
@@ -243,8 +285,13 @@ private fun SingleQuestionSection(
                                 selectedOptionIds + option.id
                             }
                         } else {
+                            // Single-choice submits on the tap itself: a
+                            // second tap on a small Submit button in the
+                            // corner was the whole interaction, with no
+                            // hint that it was required.
                             selectedOptionIds = listOf(option.id)
                             writeInActive = false
+                            submitAnswer(listOf(option.id), "", false)
                         }
                     },
                 )
@@ -265,30 +312,25 @@ private fun SingleQuestionSection(
             )
         }
 
-        // Submit Button Row
+        // Submit Button Row: full-width and 48dp tall, so it is a real
+        // target instead of a ~30dp pill in the corner. Single-choice
+        // answers submit on the option tap above; this stays for
+        // multi-choice and write-in answers.
         val hasSelection = selectedOptionIds.isNotEmpty() || (writeInActive && writeInText.isNotBlank())
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = spacing.xs),
-            contentAlignment = Alignment.CenterEnd,
+            contentAlignment = Alignment.Center,
         ) {
             Box(
                 modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
                     .clip(RoundedCornerShape(radius.sm))
                     .background(if (hasSelection) colors.accent else colors.fill)
                     .clickable(enabled = hasSelection, role = Role.Button) {
-                        val chosenLabels = item.options
-                            .filter { it.id in selectedOptionIds }
-                            .map { it.label }
-                        val allAnswers = chosenLabels + (if (writeInActive && writeInText.isNotBlank()) listOf(writeInText.trim()) else emptyList())
-                        val answerSummary = allAnswers.joinToString(", ")
-                        val formatted = if (item.header != null) {
-                            "${item.header}: $answerSummary"
-                        } else {
-                            answerSummary
-                        }
-                        onSubmit(formatted)
+                        submitAnswer(selectedOptionIds, writeInText, writeInActive)
                     }
                     .padding(horizontal = spacing.md, vertical = spacing.sm - 2.dp),
                 contentAlignment = Alignment.Center,
@@ -334,12 +376,13 @@ private fun SelectableOptionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
             .clip(shape)
             .background(bgColor)
             .border(if (isSelected) 1.dp else 0.5.dp, borderColor, shape)
             .clickable(role = Role.RadioButton, onClick = onToggle)
             .padding(horizontal = spacing.sm, vertical = spacing.sm),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         // Radio / Checkbox Indicator

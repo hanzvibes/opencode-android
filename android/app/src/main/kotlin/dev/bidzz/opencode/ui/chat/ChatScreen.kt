@@ -69,6 +69,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,6 +86,7 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.semantics.contentDescription
@@ -92,6 +94,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -114,6 +117,8 @@ import dev.bidzz.opencode.ui.sessions.SessionDateGroup
 import dev.bidzz.opencode.ui.sessions.groupSessions
 import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -191,6 +196,27 @@ fun ChatScreen(
         }
     }
 
+    // One run timer for the whole screen, started when the run starts
+    // (busy false→true) and reset when it ends. It used to live inside
+    // each MessageBubble and reset to 0 whenever the streaming flag
+    // toggled, and the working placeholder had its own hardcoded 0 — so
+    // "Thought for 12s" could jump back to "Thinking…" mid-run and the
+    // placeholder→turn transition restarted the clock.
+    var busyStartedAtMs by remember { mutableLongStateOf(0L) }
+    var busyElapsedSeconds by remember { mutableIntStateOf(0) }
+    LaunchedEffect(state.busy) {
+        if (state.busy) {
+            if (busyStartedAtMs == 0L) busyStartedAtMs = System.currentTimeMillis()
+            while (isActive) {
+                busyElapsedSeconds = maxOf(0, ((System.currentTimeMillis() - busyStartedAtMs) / 1000).toInt())
+                delay(500)
+            }
+        } else {
+            busyStartedAtMs = 0L
+            busyElapsedSeconds = 0
+        }
+    }
+
     val targetLastIndex by remember {
         derivedStateOf {
             val hasWorking = state.busy && state.messages.lastOrNull()?.role == Role.USER
@@ -200,9 +226,23 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.text?.length, state.busy) {
+    // Follow keys include the last message's tools and parts: a stream
+    // that only runs tools (no new text) used to never trigger a follow.
+    LaunchedEffect(
+        state.messages.size,
+        state.messages.lastOrNull()?.text?.length,
+        state.messages.lastOrNull()?.tools?.size,
+        state.messages.lastOrNull()?.parts?.size,
+        state.busy,
+    ) {
         if (state.messages.isNotEmpty() && nearBottom) {
-            listState.scrollToItem(targetLastIndex)
+            // Instant while busy so a tap on Jump-to-latest is not fought
+            // by a per-token snap; animated only when idle.
+            if (state.busy) {
+                listState.scrollToItem(targetLastIndex)
+            } else {
+                listState.animateScrollToItem(targetLastIndex)
+            }
         }
     }
 
@@ -284,6 +324,11 @@ fun ChatScreen(
 
             ChatHeader(
                 title = headerTitle(state.workspacePath),
+                // The active session's own title, so the header says which
+                // conversation this is — not just which folder it is in.
+                sessionTitle = sessions.firstOrNull { it.id == state.sessionID }
+                    ?.title?.takeIf { it.isNotBlank() },
+                workspacePath = state.workspacePath,
                 engineState = state.engineState,
                 busy = state.busy,
                 branch = activeBranch,
@@ -328,7 +373,7 @@ fun ChatScreen(
                                 end = spacing.lg,
                                 top = spacing.md,
                                 // 64dp of air under the last message so the
-                                // 42dp floating jump-to-latest button never
+                                // 48dp floating jump-to-latest button never
                                 // covers its text or copy button.
                                 bottom = 64.dp,
                             ),
@@ -345,7 +390,10 @@ fun ChatScreen(
                                 val topSpacing = when {
                                     index == 0 -> 0.dp
                                     message.role == Role.USER -> {
-                                        if (prevMessage?.role == Role.USER) spacing.sm else spacing.xxl
+                                        // Two user messages in a row used to
+                                        // sit only 8dp apart and read as one
+                                        // merged bubble.
+                                        if (prevMessage?.role == Role.USER) spacing.md else spacing.xxl
                                     }
                                     isConsecutiveAssistant -> spacing.xs
                                     else -> spacing.lg
@@ -376,6 +424,7 @@ fun ChatScreen(
                                         model = message.model,
                                         reasoning = message.reasoning,
                                         parts = message.parts,
+                                        thinkingElapsedSeconds = busyElapsedSeconds,
                                         onAnswerQuestion = { answer ->
                                             onDraftChange(answer)
                                             onSend()
@@ -391,6 +440,10 @@ fun ChatScreen(
                                         model = state.activeModel,
                                         agents = state.agents,
                                         models = state.models,
+                                        // Same screen-owned timer as the real
+                                        // turn, so the clock does not restart
+                                        // when the placeholder is replaced.
+                                        elapsedSeconds = busyElapsedSeconds,
                                         // Same 16dp (lg) as a real new turn, so
                                         // the layout does not jump when the
                                         // placeholder is replaced by the turn.
@@ -534,6 +587,7 @@ fun ChatScreen(
                         activeModel = state.activeModel,
                         onAgent = onAgent,
                         onModel = onModel,
+                        enabled = !state.busy,
                     )
                 },
             )
@@ -557,6 +611,8 @@ fun ChatHeader(
     modifier: Modifier = Modifier,
     branch: String? = null,
     isScrolled: Boolean = false,
+    sessionTitle: String? = null,
+    workspacePath: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -643,6 +699,19 @@ fun ChatHeader(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.semantics { heading() },
                 )
+                // The active session's title, under the project name: the
+                // header used to show the folder only, so two sessions in
+                // the same project looked identical.
+                if (!sessionTitle.isNullOrBlank()) {
+                    Text(
+                        text = sessionTitle,
+                        style = OpenCodeTypography.label.copy(fontSize = 12.sp),
+                        color = colors.onSurfaceMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                }
                 Spacer(Modifier.height(spacing.xxs))
                 val statusLabel = engineState.statusLabel(busy)
                 val statusDescription = buildString {
@@ -655,7 +724,7 @@ fun ChatHeader(
 
                 Row(
                     modifier = Modifier
-                        .defaultMinSize(minWidth = dims.minTouchTarget, minHeight = 28.dp)
+                        .defaultMinSize(minWidth = dims.minTouchTarget, minHeight = 40.dp)
                         .graphicsLayer {
                             scaleX = chipScale
                             scaleY = chipScale
@@ -737,6 +806,7 @@ fun ChatHeader(
             engineState = engineState,
             busy = busy,
             projectTitle = title,
+            workspacePath = workspacePath,
             branch = branch,
             onOpenDiagnostics = {
                 showStatusDialog = false
@@ -759,6 +829,7 @@ private fun EngineStatusDialog(
     branch: String?,
     onOpenDiagnostics: () -> Unit,
     onDismiss: () -> Unit,
+    workspacePath: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -840,9 +911,17 @@ private fun EngineStatusDialog(
                         .padding(spacing.md),
                     verticalArrangement = Arrangement.spacedBy(spacing.xs),
                 ) {
+                    // The full workspace path, wrapping instead of an
+                    // ellipsised folder name, with a copy button — the
+                    // dialog used to repeat the header's short name, which
+                    // says nothing when two projects share a folder name.
+                    val clipboardManager = LocalClipboardManager.current
+                    val fullPath = workspacePath?.takeIf { it.isNotBlank() } ?: projectTitle
                     DialogDetailRow(
                         label = stringResource(R.string.chat_status_dialog_workspace),
-                        value = projectTitle,
+                        value = fullPath,
+                        wrapValue = true,
+                        onCopy = { clipboardManager.setText(AnnotatedString(fullPath)) },
                     )
                     if (!branch.isNullOrBlank()) {
                         DialogDetailRow(
@@ -877,7 +956,12 @@ private fun EngineStatusDialog(
 }
 
 @Composable
-private fun DialogDetailRow(label: String, value: String) {
+private fun DialogDetailRow(
+    label: String,
+    value: String,
+    wrapValue: Boolean = false,
+    onCopy: (() -> Unit)? = null,
+) {
     val colors = OpenCodeTheme.colors
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -889,13 +973,35 @@ private fun DialogDetailRow(label: String, value: String) {
             style = OpenCodeTypography.caption,
             color = colors.onSurfaceFaint,
         )
-        Text(
-            text = value,
-            style = OpenCodeTypography.label,
-            color = colors.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.weight(1f, fill = false),
+        ) {
+            Text(
+                text = value,
+                style = OpenCodeTypography.label,
+                color = colors.onSurface,
+                maxLines = if (wrapValue) 3 else 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (onCopy != null) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .clickable(role = SemanticsRole.Button, onClick = onCopy),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(
+                        glyph = Glyph.Copy,
+                        tint = colors.onSurfaceMuted,
+                        size = 12.dp,
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1034,7 +1140,7 @@ private fun ChatDrawer(
             )
             DrawerItem(
                 label = stringResource(R.string.drawer_all_sessions),
-                glyph = Glyph.Search,
+                glyph = Glyph.History,
                 onClick = onAllSessions,
             )
 
@@ -1047,8 +1153,11 @@ private fun ChatDrawer(
             )
         }
 
-        // Grouped conversation history
-        val groupedSessions = remember(sessions) { groupSessions(sessions) }
+        // Grouped conversation history, capped at DRAWER_SESSIONS: the
+        // drawer used to render every session the engine knew, and the
+        // constant that was supposed to cap it was never read.
+        val drawerSessions = remember(sessions) { sessions.take(DRAWER_SESSIONS) }
+        val groupedSessions = remember(drawerSessions) { groupSessions(drawerSessions) }
 
         if (sessions.isEmpty()) {
             Box(
@@ -1106,6 +1215,16 @@ private fun ChatDrawer(
                         )
                     }
                 }
+            }
+
+            // Past the cap, the full history lives one tap away on the
+            // sessions screen instead of scrolling forever in the drawer.
+            if (sessions.size > DRAWER_SESSIONS) {
+                DrawerItem(
+                    label = stringResource(R.string.drawer_view_all),
+                    glyph = Glyph.History,
+                    onClick = onAllSessions,
+                )
             }
         }
 
@@ -1324,6 +1443,7 @@ private fun SessionDrawerItem(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
 
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -1392,9 +1512,11 @@ private fun SessionDrawerItem(
         }
 
         Box {
+            // Full 48dp hit area: the session "…" used to be a 28dp
+            // target, the smallest in the drawer.
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    .size(dims.minTouchTarget)
                     .clip(RoundedCornerShape(radius.sm))
                     .clickable(role = SemanticsRole.Button) { menuExpanded = true },
                 contentAlignment = Alignment.Center,
@@ -1430,22 +1552,28 @@ private fun AssistantWorkingPlaceholder(
     agents: List<dev.bidzz.opencode.core.api.dto.AgentInfo>,
     models: List<dev.bidzz.opencode.core.api.dto.ModelInfo>,
     modifier: Modifier = Modifier,
+    /** Seconds since this run started, owned by the screen (see A-19). */
+    elapsedSeconds: Int = 0,
 ) {
     val spacing = OpenCodeTheme.tokens.spacing
-    val provenance = provenanceLabel(agent, model, agents, models) ?: "OpenCode"
+    val provenance = provenanceLabel(agent, model, agents, models)
 
     Column(modifier = modifier.fillMaxWidth()) {
-        ProvenanceBadge(
-            provenance = provenance,
-            modelRef = model,
-            streaming = false,
-            modifier = Modifier.padding(bottom = spacing.sm),
-        )
+        // No identity yet → no badge at all, instead of "OpenCode"
+        // jumping to "Build · model" when the turn arrives (A-47).
+        if (provenance != null) {
+            ProvenanceBadge(
+                provenance = provenance,
+                modelRef = model,
+                streaming = false,
+                modifier = Modifier.padding(bottom = spacing.sm),
+            )
+        }
 
         ThinkingDisclosure(
             isThinkingActive = true,
             reasoningText = null,
-            elapsedSeconds = 0,
+            elapsedSeconds = elapsedSeconds,
         )
     }
 }
@@ -1459,6 +1587,7 @@ private fun JumpToLatest(
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val dims = OpenCodeTheme.tokens.dimensions
     val label = stringResource(R.string.chat_jump_latest)
     val interactionSource = remember { MutableInteractionSource() }
 
@@ -1471,7 +1600,7 @@ private fun JumpToLatest(
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
+                .size(dims.minTouchTarget)
                 .clip(CircleShape)
                 .background(colors.surfaceRaised)
                 .border(0.5.dp, colors.hairline, CircleShape)
@@ -1556,6 +1685,7 @@ private fun EmptyChat(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
+    val radius = OpenCodeTheme.tokens.radius
     val status = engineState.toStatus(busy)
 
     BoxWithConstraints(
@@ -1606,6 +1736,40 @@ private fun EmptyChat(
                             strokeWidth = 2.dp,
                             color = colors.accent,
                         )
+                    } else {
+                        // A failed/stopped engine used to leave the empty
+                        // state with no spinner, no error and no action —
+                        // a dead screen. Say what happened and offer the
+                        // way out (diagnostics).
+                        Spacer(Modifier.height(spacing.xl))
+                        Text(
+                            text = stringResource(
+                                if (status == Status.ERROR) R.string.chat_status_desc_unhealthy
+                                else R.string.chat_status_desc_stopped,
+                            ),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.danger,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.widthIn(max = 380.dp),
+                        )
+                        if (onStatusClick != null) {
+                            Spacer(Modifier.height(spacing.md))
+                            Box(
+                                modifier = Modifier
+                                    .defaultMinSize(minHeight = dims.minTouchTarget)
+                                    .clip(RoundedCornerShape(radius.full))
+                                    .background(colors.accent)
+                                    .clickable(role = SemanticsRole.Button, onClick = onStatusClick)
+                                    .padding(horizontal = spacing.lg, vertical = spacing.sm),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_status_dialog_diagnostics),
+                                    style = OpenCodeTypography.label.copy(fontWeight = FontWeight.SemiBold),
+                                    color = colors.onAccent,
+                                )
+                            }
+                        }
                     }
                 } else {
                     Spacer(Modifier.height(spacing.lg))
@@ -1777,12 +1941,22 @@ private fun ReadinessStatusRow(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
+    // One row, two destinations (diagnostics everywhere, workspace
+    // switch on the project name) — TalkBack used to read the nested
+    // clickables as one confusing control. The row now announces itself
+    // as a whole, and the project name gets a full 48dp tap area.
+    val rowDescription = listOfNotNull(
+        statusLabel,
+        projectName,
+        gitBranch,
+    ).joinToString(", ")
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
             .background(if (isPressed) colors.surfacePressed else colors.surface)
             .border(0.5.dp, colors.hairline, shape)
+            .semantics { contentDescription = rowDescription }
             .then(
                 if (onStatusClick != null) {
                     Modifier.clickable(
@@ -1826,6 +2000,7 @@ private fun ReadinessStatusRow(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f, fill = false)
+                .defaultMinSize(minHeight = dims.minTouchTarget)
                 .then(
                     if (onProjectClick != null) {
                         Modifier.clickable(

@@ -193,9 +193,12 @@ fun ToolTrace(
             }
             if (running.isNotEmpty()) {
                 if (failed > 0) Spacer(Modifier.width(spacing.xs))
+                // Running reads blue (toolRunning = accent) everywhere:
+                // the step badge already is, but this header chip used to
+                // be orange (toolWarning), the system's warning/error colour.
                 StatusChip(
                     text = stringResource(R.string.tool_working).removePrefix("· ").trim(),
-                    color = colors.toolWarning,
+                    color = colors.toolRunning,
                     isPulsing = true,
                 )
             } else if (failed == 0 && tools.isNotEmpty() && !streaming) {
@@ -394,10 +397,26 @@ fun ToolStep(
             ) {
                 if (active) {
                     LivePulseIndicator(color = colors.accent, size = 6.dp)
+                } else if (isError) {
+                    // A failed step is more than a slightly bigger dot:
+                    // a white × inside the red dot reads as "failed" even
+                    // without colour, unlike the 8dp-vs-6dp size difference.
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(dotColor, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        GlyphIcon(
+                            glyph = Glyph.Close,
+                            tint = Color.White,
+                            size = 7.dp,
+                        )
+                    }
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(if (isError) 8.dp else 6.dp)
+                            .size(6.dp)
                             .background(dotColor, CircleShape),
                     )
                 }
@@ -720,6 +739,11 @@ private fun TerminalConsoleBlock(
     val headerBorder = if (isError) colors.danger.copy(alpha = 0.2f) else colors.hairline
     val shape = RoundedCornerShape(radius.sm)
 
+    // Long output is capped at 320dp, but the rest is one tap away instead
+    // of cut off with no way to see it (the old 220dp cap + 8000-char
+    // truncation had no escape hatch at all).
+    var showFullOutput by remember { mutableStateOf(false) }
+
     val highlightedText = rememberSyntaxHighlightedText(
         language = language,
         text = body,
@@ -809,13 +833,13 @@ private fun TerminalConsoleBlock(
             ) {
                 GlyphIcon(
                     glyph = if (copied) Glyph.Check else Glyph.Copy,
-                    tint = if (copied) colors.success else colors.onSurfaceFaint,
+                    tint = if (copied) colors.success else colors.onSurfaceMuted,
                     size = 11.dp,
                 )
                 Text(
                     text = if (copied) stringResource(R.string.code_copied) else stringResource(R.string.code_copy),
                     style = OpenCodeTypography.caption.copy(fontSize = 10.sp),
-                    color = if (copied) colors.success else colors.onSurfaceFaint,
+                    color = if (copied) colors.success else colors.onSurfaceMuted,
                 )
             }
         }
@@ -824,7 +848,7 @@ private fun TerminalConsoleBlock(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 220.dp)
+                .heightIn(max = if (showFullOutput) Dp.Infinity else 320.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.md, vertical = spacing.sm),
         ) {
@@ -838,6 +862,30 @@ private fun TerminalConsoleBlock(
                     color = if (isError) colors.danger else colors.onSurface,
                 )
             }
+        }
+
+        // "Show full output" lifts the height cap instead of leaving the
+        // rest of a long output unreachable behind a nested scroll.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button) { showFullOutput = !showFullOutput }
+                .padding(horizontal = spacing.md, vertical = spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            GlyphIcon(
+                glyph = if (showFullOutput) Glyph.ChevronDown else Glyph.ChevronRight,
+                tint = colors.onSurfaceMuted,
+                size = 10.dp,
+            )
+            Text(
+                text = stringResource(
+                    if (showFullOutput) R.string.tool_show_less else R.string.tool_show_full,
+                ),
+                style = OpenCodeTypography.caption.copy(fontSize = 10.sp),
+                color = colors.onSurfaceMuted,
+            )
         }
     }
 }

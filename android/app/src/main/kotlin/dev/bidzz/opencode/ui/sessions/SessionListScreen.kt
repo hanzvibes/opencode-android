@@ -16,15 +16,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -85,11 +88,70 @@ fun SessionListScreen(
         )
     }
 
+    // In-memory title search: the drawer only shows the latest 20, so
+    // anything older was unreachable without scrolling the whole list.
+    var query by rememberSaveable { mutableStateOf("") }
+    val filteredRows = remember(state.rows, query) {
+        if (query.isBlank()) state.rows
+        else state.rows.filter { it.title.contains(query, ignoreCase = true) }
+    }
+
     ScreenScaffold(
         title = stringResource(R.string.history_title),
         onBack = onBack,
         actions = { TextAction(stringResource(R.string.history_new), onNewSession) },
     ) {
+        // Search field
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.lg, top = spacing.sm)
+                .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
+                .background(colors.surface)
+                .border(0.5.dp, colors.hairline, RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
+                .padding(horizontal = spacing.md, vertical = spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            GlyphIcon(
+                glyph = Glyph.Search,
+                tint = colors.onSurfaceMuted,
+                size = 16.dp,
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.history_search_hint),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurfaceFaint,
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
+                    cursorBrush = SolidColor(colors.accent),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (query.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.sm))
+                        .clickable(role = Role.Button) { query = "" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(
+                        glyph = Glyph.Close,
+                        tint = colors.onSurfaceMuted,
+                        size = 14.dp,
+                    )
+                }
+            }
+        }
+
         // Scope toggle: "this project" and "everything".
         Row(
             modifier = Modifier
@@ -113,9 +175,12 @@ fun SessionListScreen(
             state.loading -> CenteredMessage(stringResource(R.string.history_loading))
             state.failure != null -> CenteredMessage(state.failure.message(), isError = true)
             state.failureKey != null -> CenteredMessage(stringResource(state.failureKey), isError = true)
-            state.rows.isEmpty() -> CenteredMessage(stringResource(R.string.history_empty))
+            filteredRows.isEmpty() -> CenteredMessage(
+                if (query.isBlank()) stringResource(R.string.history_empty)
+                else stringResource(R.string.history_search_no_results, query),
+            )
             else -> {
-                val grouped = remember(state.rows) { groupSessions(state.rows) }
+                val grouped = remember(filteredRows) { groupSessions(filteredRows) }
 
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),

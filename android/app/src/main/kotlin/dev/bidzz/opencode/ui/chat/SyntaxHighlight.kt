@@ -31,12 +31,17 @@ data class Token(val text: String, val kind: TokenKind)
  * The input is whatever the model streamed, so it is frequently mid-statement: an
  * unterminated string stops at the end of its line rather than running to the end of
  * the block, which keeps one stray quote from colouring everything below it.
+ *
+ * While [streaming], a block over 4000 characters is rendered plain until the
+ * stream finishes: re-highlighting the whole block on every delta is the
+ * expensive part, and a half-coloured block is no better than a plain one.
  */
-fun highlight(language: String?, code: String): List<Token> {
+fun highlight(language: String?, code: String, streaming: Boolean = false): List<Token> {
     if (code.isEmpty()) return emptyList()
     // ponytail: past this size colouring is skipped; it runs on the UI thread on every
     // streamed delta. Move to a background dispatcher if big blocks need colour.
     if (code.length > MAX_HIGHLIGHT_CHARS) return listOf(Token(code, TokenKind.Plain))
+    if (streaming && code.length > 4_000) return listOf(Token(code, TokenKind.Plain))
     val dialect = dialectOf(language) ?: return listOf(Token(code, TokenKind.Plain))
 
     val tokens = TokenList()
@@ -58,7 +63,14 @@ fun highlight(language: String?, code: String): List<Token> {
         }
         if (dialect.block && c == '/' && code.startsWith("/*", i)) {
             val close = code.indexOf("*/", i + 2)
-            val end = if (close < 0) code.length else close + 2
+            // An unterminated block comment stops at the end of its line,
+            // like an unterminated string: one stray "/*" mid-stream must
+            // not paint the whole rest of the block as a comment.
+            val end = if (close < 0) {
+                code.indexOf('\n', i).let { if (it < 0) code.length else it }
+            } else {
+                close + 2
+            }
             tokens.add(code.substring(i, end), TokenKind.Comment)
             i = end
             continue
@@ -202,6 +214,14 @@ private val ShellKeywords = setOf(
 
 private val JsonKeywords = setOf("true", "false", "null")
 
+private val RubyKeywords = setOf(
+    "alias", "and", "begin", "break", "case", "class", "def", "defined?", "do",
+    "else", "elsif", "end", "ensure", "false", "for", "if", "in", "module",
+    "next", "nil", "not", "or", "redo", "require", "rescue", "retry", "return",
+    "self", "super", "then", "true", "undef", "unless", "until", "when",
+    "while", "yield",
+)
+
 private val DialectClike = Dialect(ClikeKeywords, lineSlash = true, block = true)
 private val DialectPython = Dialect(PythonKeywords, hash = true, triple = true)
 private val DialectShell = Dialect(ShellKeywords, hash = true)
@@ -209,13 +229,15 @@ private val DialectShell = Dialect(ShellKeywords, hash = true)
 private val DialectHashData = Dialect(emptySet(), hash = true)
 private val DialectJson = Dialect(JsonKeywords, singleQuote = false)
 private val DialectJsonc = Dialect(JsonKeywords, lineSlash = true, singleQuote = false)
+private val DialectRuby = Dialect(RubyKeywords, hash = true)
 
 private fun dialectOf(language: String?): Dialect? = when (language?.trim()?.lowercase()) {
     "kt", "kts", "kotlin", "java", "js", "jsx", "mjs", "ts", "tsx", "typescript",
     "javascript", "swift", "rust", "rs", "go", "c", "h", "cpp", "cc", "cxx", "hpp",
-    "cs", "csharp", "scala", "dart", "php" -> DialectClike
+    "c++", "cs", "c#", "csharp", "scala", "dart", "php" -> DialectClike
     "py", "python" -> DialectPython
-    "sh", "bash", "zsh", "shell", "console" -> DialectShell
+    "rb", "ruby" -> DialectRuby
+    "sh", "bash", "zsh", "shell", "console", "terminal" -> DialectShell
     "yaml", "yml", "toml", "dockerfile", "ini", "conf", "properties" -> DialectHashData
     "json" -> DialectJson
     "jsonc" -> DialectJsonc

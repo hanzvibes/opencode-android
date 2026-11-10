@@ -116,6 +116,7 @@
     <string name="drawer_no_sessions">Belum ada sesi</string>
     <string name="drawer_untitled">Tanpa judul</string>
     <string name="drawer_all_sessions">Semua sesi</string>
+    <string name="drawer_view_all">Lihat semua sesi</string>
     <string name="drawer_diagnostics">Diagnostik</string>
     <string name="drawer_developer">Pengembang</string>
     <string name="drawer_switch_workspace">Ganti ruang kerja</string>
@@ -151,6 +152,8 @@
     <string name="permission_allow_once">Izinkan sekali</string>
     <string name="permission_always">Selalu</string>
     <string name="permission_reject">Tolak</string>
+    <string name="permission_explainer">Selalu menyimpan izin ini untuk proyek ini, jadi tidak ditanya lagi. Tolak membuat agen melanjutkan tanpa tool ini.</string>
+    <string name="permission_save_note">Akan disimpan: %1$s</string>
     <string name="question_title">Pertanyaan Agen</string>
     <string name="question_single_choice">Pilih salah satu opsi</string>
     <string name="question_multi_choice">Pilih satu atau beberapa opsi</string>
@@ -177,11 +180,14 @@
     <string name="tool_input">Masukan</string>
     <string name="tool_output">Keluaran</string>
     <string name="tool_error">Galat</string>
+    <string name="tool_show_full">Tampilkan semua output</string>
+    <string name="tool_show_less">Tampilkan lebih sedikit</string>
     <string name="code_label">kode</string>
     <string name="code_download">Unduh</string>
     <string name="code_saved">Tersimpan</string>
     <string name="code_copy">Salin</string>
     <string name="code_copied">Tersalin</string>
+    <string name="code_highlight_off">Highlight mati (berkas besar)</string>
 
     <!-- Project -->
     <string name="project_current">Saat ini</string>
@@ -243,6 +249,8 @@
     <string name="history_all_projects">Semua proyek</string>
     <string name="history_loading">Memuat percakapan…</string>
     <string name="history_empty">Belum ada percakapan.\nKirim pesan untuk memulai.</string>
+    <string name="history_search_hint">Cari sesi</string>
+    <string name="history_search_no_results">Tidak ada sesi yang cocok dengan "%1$s"</string>
 
     <!-- Providers -->
     <string name="providers_title">Penyedia</string>

@@ -48,14 +48,28 @@ fun stepLabel(name: String, summary: String, status: String): StepLabel {
             return StepLabel(Glyph.Sliders, StepVerb.OTHER, active, own + gist(summary), literal = true)
         }
     }
-    val target = if (kind in PATH_TOOLS) summary.replace('\\', '/').trimEnd('/').substringAfterLast('/') else summary.take(MAX_TARGET)
+    // A path reads as its last two segments ("src/chat/ChatScreen.kt"),
+    // so the folder is visible too — a bare file name says nothing when
+    // three tools all touched a different "index.ts". Truncation is
+    // marked with "…" instead of silently cutting the text off.
+    val target = if (kind in PATH_TOOLS) {
+        val segments = summary.replace('\\', '/').trimEnd('/').split('/').filter { it.isNotEmpty() }
+        val lastTwo = segments.takeLast(2).joinToString("/")
+        if (lastTwo.length > MAX_TARGET) "…" + lastTwo.takeLast(MAX_TARGET - 1) else lastTwo
+    } else if (summary.length > MAX_TARGET) {
+        summary.take(MAX_TARGET - 1) + "…"
+    } else {
+        summary
+    }
     return StepLabel(glyph, verb, active, target)
 }
 
 private val PATH_TOOLS = setOf("read", "write", "edit", "patch", "apply_patch", "multiedit", "list", "ls")
 private const val MAX_TARGET = 56
 
-private fun gist(summary: String): String = if (summary.isEmpty()) "" else " ${summary.take(MAX_TARGET)}"
+private fun gist(summary: String): String = if (summary.isEmpty()) "" else {
+    " " + if (summary.length > MAX_TARGET) summary.take(MAX_TARGET - 1) + "…" else summary
+}
 
 /**
  * The localized verb for this step, or empty if [literal] is true or verb is [StepVerb.OTHER].

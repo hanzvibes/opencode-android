@@ -134,6 +134,14 @@ fun MessageBubble(
     reasoning: String? = null,
     parts: List<ChatTurnPart> = emptyList(),
     onAnswerQuestion: (String) -> Unit = {},
+    /**
+     * Seconds since this run started, owned by the screen — not by this
+     * bubble. A bubble-local timer reset to 0 every time the streaming
+     * flag toggled, so "Thought for 12s" could jump back to "Thinking…"
+     * mid-run; the screen's timer runs from busy false→true and survives
+     * the placeholder→turn transition. Null keeps the old local timer.
+     */
+    thinkingElapsedSeconds: Int? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -212,13 +220,22 @@ fun MessageBubble(
                 }
             }
 
-            val finalDuration = if (recordedDuration > 0) recordedDuration else elapsedSeconds
+            // The screen-owned timer wins when provided; the local one is
+            // only a fallback for callers that do not pass it.
+            val finalDuration = thinkingElapsedSeconds
+                ?: if (recordedDuration > 0) recordedDuration else elapsedSeconds
             val hasTextContent = effectiveParts.any { it is ChatTurnPart.Text && it.markdown.isNotBlank() }
             val showStreamingSpinner = streaming && hasTextContent
 
             // 1. Author Identity Header: Branded provenance badge
-            if (showProvenance) {
-                val labelText = if (!provenance.isNullOrBlank()) provenance else "OpenCode"
+            // While streaming with no identity yet, the badge stays hidden
+            // instead of showing "OpenCode" and then jumping to
+            // "Build · model" once the identity arrives — one appearance,
+            // not a label swap. A finished turn with no identity still
+            // falls back to "OpenCode".
+            val identityKnown = !provenance.isNullOrBlank()
+            if (showProvenance && (identityKnown || !streaming)) {
+                val labelText = if (identityKnown) provenance else "OpenCode"
                 ProvenanceBadge(
                     provenance = labelText,
                     modelRef = model,

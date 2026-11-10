@@ -300,7 +300,7 @@ fun ProvenanceBadge(
         ) {
             ProviderIcon(
                 provider = tag.provider,
-                size = 10.dp,
+                size = 12.dp,
                 tint = tag.provider.brandColor,
             )
         }
@@ -319,9 +319,12 @@ fun ProvenanceBadge(
             )
         }
 
-        // Model name tag (e.g. "claude-3-7-sonnet", "gemini-2.0-flash", "gpt-4o")
+        // Model name tag, through the same friendly-name mapping the
+        // model selector uses — the transcript used to show the raw id
+        // ("anthropic/claude-3-7-sonnet") while the selector said
+        // "Claude 3.7 Sonnet".
         Text(
-            text = tag.model.orEmpty(),
+            text = tag.model?.let { cleanModelName(it, it) }.orEmpty(),
             style = OpenCodeTypography.label.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Medium),
             color = colors.onSurfaceMuted,
         )

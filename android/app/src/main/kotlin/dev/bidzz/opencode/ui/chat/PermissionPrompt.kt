@@ -3,7 +3,6 @@ package dev.bidzz.opencode.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +63,10 @@ fun PermissionPrompt(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val cardShape = RoundedCornerShape(radius.lg)
+
+    // Once any answer is tapped the card is spent: a double-tap (or a
+    // tap while the reply is still in flight) must not answer twice.
+    var replied by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -104,6 +110,26 @@ fun PermissionPrompt(
             )
         }
 
+        // What each answer actually does — it only lived in a code
+        // comment before, so "Always" vs "Allow once" was a guess.
+        Text(
+            text = stringResource(R.string.permission_explainer),
+            style = OpenCodeTypography.caption,
+            color = colors.onSurfaceMuted,
+        )
+
+        // What "Always" would save, when the engine says so.
+        if (request.save.isNotEmpty()) {
+            Text(
+                text = stringResource(
+                    R.string.permission_save_note,
+                    request.save.filter { it.isNotBlank() }.joinToString(", "),
+                ),
+                style = OpenCodeTypography.caption,
+                color = colors.onSurfaceMuted,
+            )
+        }
+
         // Detail code box styling (monospace, hairline border, rounded corners)
         val detail = remember(request.message, request.resources, request.action) {
             val items = mutableListOf<String>()
@@ -133,14 +159,16 @@ fun PermissionPrompt(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
                         .padding(horizontal = spacing.md, vertical = spacing.sm),
                 ) {
+                    // Wraps instead of scrolling sideways: a nested
+                    // vertical+horizontal scroll hid the detail behind two
+                    // gestures, and the muted grey made it read as disabled.
                     Text(
                         text = detail,
                         style = OpenCodeTypography.code,
-                        color = colors.onSurfaceMuted,
-                        softWrap = false,
+                        color = colors.onSurface,
+                        softWrap = true,
                     )
                 }
             }
@@ -157,7 +185,11 @@ fun PermissionPrompt(
                 label = stringResource(R.string.permission_allow_once),
                 backgroundColor = colors.accent,
                 contentColor = colors.onAccent,
-                onClick = { onReply("once") },
+                enabled = !replied,
+                onClick = {
+                    replied = true
+                    onReply("once")
+                },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -167,7 +199,11 @@ fun PermissionPrompt(
                 backgroundColor = colors.fill,
                 contentColor = colors.onSurface,
                 borderColor = colors.hairline,
-                onClick = { onReply("always") },
+                enabled = !replied,
+                onClick = {
+                    replied = true
+                    onReply("always")
+                },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -177,7 +213,11 @@ fun PermissionPrompt(
                 backgroundColor = colors.danger.copy(alpha = 0.14f),
                 contentColor = colors.danger,
                 borderColor = colors.danger.copy(alpha = 0.22f),
-                onClick = { onReply("reject") },
+                enabled = !replied,
+                onClick = {
+                    replied = true
+                    onReply("reject")
+                },
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
@@ -194,6 +234,7 @@ private fun PermissionAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     borderColor: Color? = null,
+    enabled: Boolean = true,
 ) {
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
@@ -212,6 +253,7 @@ private fun PermissionAction(
             .background(backgroundColor)
             .then(borderModifier)
             .clickable(
+                enabled = enabled,
                 role = Role.Button,
                 onClick = onClick,
             )

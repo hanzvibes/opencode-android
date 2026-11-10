@@ -38,7 +38,7 @@ sealed interface MdBlock {
 
     data class Bullet(val items: List<List<MdSpan>>) : MdBlock
 
-    data class Numbered(val items: List<List<MdSpan>>) : MdBlock
+    data class Numbered(val items: List<List<MdSpan>>, val start: Int = 1) : MdBlock
 
     /** A horizontal rule. */
     data object Rule : MdBlock
@@ -135,9 +135,14 @@ object Markdown {
             val headingMatch = heading.find(line)
             if (headingMatch != null) {
                 flushParagraph()
+                // Closing ATX hashes ("## Title ##") are decoration, not
+                // text — but only when separated by a space, so "C#" keeps
+                // its hash.
+                val headingText = headingMatch.groupValues[2].trim()
+                    .replace(Regex("\\s+#+$"), "")
                 blocks += MdBlock.Heading(
                     level = headingMatch.groupValues[1].length,
-                    spans = inline(headingMatch.groupValues[2].trim()),
+                    spans = inline(headingText),
                 )
                 i++
                 continue
@@ -206,6 +211,9 @@ object Markdown {
 
             if (numbered.containsMatchIn(line)) {
                 flushParagraph()
+                // The model's own start number is kept ("3." stays 3.),
+                // instead of renumbering every list 1, 2, 3.
+                val start = numbered.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: 1
                 val items = mutableListOf<List<MdSpan>>()
                 while (i < lines.size) {
                     val m = numbered.find(lines[i]) ?: break
@@ -220,7 +228,7 @@ object Markdown {
                     }
                     items += inline(itemLines.joinToString(" "))
                 }
-                blocks += MdBlock.Numbered(items)
+                blocks += MdBlock.Numbered(items, start = start)
                 continue
             }
 
