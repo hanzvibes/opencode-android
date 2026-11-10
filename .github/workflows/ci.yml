@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# One build per ref. A second push to the same branch cancels the first, so a
+# force-push does not leave two runners downloading 200 MB of APKs each.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -35,28 +41,97 @@ jobs:
           yes | "$sdkmanager" --sdk_root="$ANDROID_HOME" \
             "platforms;android-35" "build-tools;35.0.0" | tail -2
 
+      # Dependency resolution is forced onto IPv4 by android/gradle.properties.
+      # The runner's DNS answers with AAAA records it cannot actually route to,
+      # and the resulting stall used to look like an unrelated build timeout.
       - name: Unit tests
         working-directory: android
         run: ./gradlew test --no-daemon
 
+      # The engine ships as a native library inside the upstream release APKs.
+      # This is the only step that pulls executable content off the internet, so
+      # the bytes are pinned: the digests below are GitHub's own release-asset
+      # digests, and the step aborts if a single byte differs. Re-derive them
+      # from the GitHub API (`assets[].digest`) whenever the upstream tag moves.
       - name: Stage native engine binaries from upstream release
+        env:
+          UPSTREAM_TAG: v0.1.1
+          ARM64_SHA256: d330c1bd87be41dd3d1edebb73414bdce31dc96d26d54e64bb2887796f53af52
+          X86_64_SHA256: 9c60f84fb8fbde85b4d3d9a651cbeef2b16827a9784718d784c5f536266579d9
         run: |
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          mkdir -p android/app/src/main/jniLibs/x86_64
-          tmpdir=$(mktemp -d)
+          set -euo pipefail
 
-          echo "Downloading upstream release APKs..."
-          curl -f -sL "https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases/download/v0.1.1/app-arm64-v8a-release.apk" -o "$tmpdir/arm64.apk"
-          curl -f -sL "https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases/download/v0.1.1/app-x86_64-release.apk" -o "$tmpdir/x86_64.apk"
+          base="https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases/download/$UPSTREAM_TAG"
+          tmpdir=$(mktemp -d)
+          trap 'rm -rf "$tmpdir"' EXIT
+
+          download() { # $1=abi  $2=expected sha256
+            local abi="$1"
+            local expected="$2"
+            local apk="$tmpdir/$1.apk"
+            echo "Downloading $abi release APK..."
+            curl -f -sL --retry 3 --retry-delay 2 -4 "$base/app-$abi-release.apk" -o "$apk"
+            echo "$expected  $apk" | sha256sum --check --strict -
+          }
+
+          download arm64-v8a "$ARM64_SHA256"
+          download x86_64 "$X86_64_SHA256"
 
           echo "Extracting native libraries..."
-          unzip -q -j "$tmpdir/arm64.apk" "lib/arm64-v8a/*" -d android/app/src/main/jniLibs/arm64-v8a/
-          unzip -q -j "$tmpdir/x86_64.apk" "lib/x86_64/*" -d android/app/src/main/jniLibs/x86_64/
-          rm -rf "$tmpdir"
+          for abi in arm64-v8a x86_64; do
+            dest="android/app/src/main/jniLibs/$abi"
+            mkdir -p "$dest"
+            unzip -q -j "$tmpdir/$abi.apk" "lib/$abi/*" -d "$dest/"
+          done
 
-          echo "Staged native libraries:"
-          ls -lh android/app/src/main/jniLibs/arm64-v8a/
-          ls -lh android/app/src/main/jniLibs/x86_64/
+          # An APK with a truncated or wrong-architecture engine installs fine and
+          # then fails at exec time with a bare "Permission denied", which is
+          # miserable to diagnose on a device. Fail here instead.
+          check_elf() { # $1=file  $2=expected e_machine (little-endian hex)
+            local file="$1" expected="$2" magic machine
+            magic=$(od -An -tx1 -N4 "$file" | tr -d ' \n')
+            machine=$(od -An -tx1 -j18 -N2 "$file" | tr -d ' \n')
+            if [ "$magic" != "7f454c46" ]; then
+              echo "not an ELF file: $file" >&2
+              exit 1
+            fi
+            if [ "$machine" != "$expected" ]; then
+              echo "architecture mismatch: $file reports e_machine=0x$machine, expected 0x$expected" >&2
+              exit 1
+            fi
+          }
+
+          for abi in arm64-v8a x86_64; do
+            dest="android/app/src/main/jniLibs/$abi"
+            case "$abi" in
+              arm64-v8a) expected=b700 ;;
+              x86_64)    expected=3e00 ;;
+            esac
+
+            engine="$dest/libopencode.so"
+            if [ ! -f "$engine" ]; then
+              echo "the engine library is missing from the $abi APK: $engine" >&2
+              exit 1
+            fi
+            # A stub engine would be tens of kilobytes; the real one is ~200 MB.
+            size_mb=$(( $(wc -c < "$engine") / 1048576 ))
+            if [ "$size_mb" -lt 50 ]; then
+              echo "$engine is only ${size_mb} MB — the APK does not contain the engine" >&2
+              exit 1
+            fi
+            check_elf "$engine" "$expected"
+
+            for tool in git rg; do
+              lib="$dest/lib$tool.so"
+              if [ -f "$lib" ]; then
+                check_elf "$lib" "$expected"
+              else
+                echo "note: $lib is absent — git and ripgrep will be missing from the $abi APK" >&2
+              fi
+            done
+
+            echo "$abi staged: $(ls -1 "$dest" | tr '\n' ' ')"
+          done
 
       - name: Compile and package
         working-directory: android

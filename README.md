@@ -170,10 +170,21 @@ Rust. The complete walkthrough, including release signing, is in
 [**docs/BUILD.md**](docs/BUILD.md). The full upstream HTTP surface is documented in
 [`docs/API-REFERENCE.md`](docs/API-REFERENCE.md).
 
+To run the same pipeline as CI — unit tests, staging the native engine, and
+`assembleDebug` — on Linux, macOS or Git Bash:
+
+```bash
+./script/ci/run-local.sh
+```
+
+It downloads the upstream release APKs, verifies their SHA-256 digests against
+the ones pinned in the workflow, and stages the native libraries.
+
 ```
 android/        Gradle project (app + core modules)
 engine/         Android patches for the upstream engine, with notes
 script/android/ Engine staging and tool build scripts
+script/ci/      Local runner for the CI pipeline
 docs/           Build guide and API reference
 ```
 

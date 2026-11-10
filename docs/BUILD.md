@@ -67,6 +67,41 @@ tar -xf "%ARCHIVE%" -C "%DEST%"
 
 ---
 
+## Running the CI pipeline locally
+
+`.github/workflows/ci.yml` does four things: unit tests, staging the native
+engine out of the upstream release APKs, `assembleDebug`, and publishing the
+result to the `debug-latest` rolling release. The first three run on a
+developer machine with one command:
+
+```bash
+./script/ci/run-local.sh
+```
+
+The script mirrors the workflow step for step, including the pinned SHA-256
+digests of the upstream APKs, so what runs locally is what runs on the runner.
+Useful flags: `--skip-tests`, `--skip-stage`, `--stage-only`.
+
+Requirements: JDK 21, Android SDK (platform 35, build-tools 35.0.0), `curl`,
+`unzip`. Gradle comes from the wrapper.
+
+The APKs are cached in `.cache/ci-apks/`, so the second run does not download
+anything again. `android/app/src/main/jniLibs/` is gitignored — the staged
+`.so` files never enter a commit (the workflow fails the build if they do).
+
+### Why dependency downloads are forced onto IPv4
+
+`android/gradle.properties` sets
+`systemProp.java.net.preferIPv4Stack=true` and
+`systemProp.java.net.preferIPv4Addresses=true`. On hosts whose DNS answers
+with AAAA records that cannot actually be routed — GitHub Actions runners in
+some regions, and most ARM dev boxes — the JVM picks the IPv6 address and the
+download stalls until it times out, with an error that names neither the cause
+nor the fix. Both properties only affect the build JVM; the app's runtime
+networking is untouched, and the engine is reached over `127.0.0.1` anyway.
+
+---
+
 ## Full sequence
 
 All commands assume the repository root unless stated otherwise.
