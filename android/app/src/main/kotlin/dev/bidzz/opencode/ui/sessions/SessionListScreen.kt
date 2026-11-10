@@ -105,7 +105,7 @@ fun SessionListScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = spacing.lg, top = spacing.sm)
+                .padding(horizontal = spacing.lg, vertical = spacing.sm)
                 .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
                 .background(colors.surface)
                 .border(0.5.dp, colors.hairline, RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
