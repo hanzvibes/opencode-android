@@ -86,7 +86,9 @@ import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import android.content.Context
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role as SemanticsRole
 import androidx.compose.ui.semantics.contentDescription
@@ -152,6 +154,8 @@ fun ChatScreen(
     onDeleteSession: (String) -> Unit = {},
     onTogglePinSession: (String) -> Unit = {},
     onDismissError: () -> Unit = {},
+    /** Re-sends the last prompt after a failure; no-op when there is none. */
+    onRetryError: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -193,6 +197,21 @@ fun ChatScreen(
         derivedStateOf {
             if (nearBottom) 0 else state.messages.drop(lastReadMessageCount)
                 .count { it.role == Role.ASSISTANT }.coerceAtLeast(0)
+        }
+    }
+
+    // Unanswered questions below the read watermark: a pending question
+    // scrolled out of view is easy to miss, so it gets its own badge on
+    // the jump button — never an auto-scroll, which would yank the reader
+    // (same rule as A-3). A question whose call is done no longer waits.
+    val pendingQuestionCount by remember {
+        derivedStateOf {
+            if (nearBottom) 0 else state.messages.drop(lastReadMessageCount)
+                .sumOf { message ->
+                    message.parts.orEmpty()
+                        .filterIsInstance<ChatTurnPart.Question>()
+                        .count { !it.call.isDone }
+                }
         }
     }
 
@@ -464,35 +483,73 @@ fun ChatScreen(
                                     // called inside a SemanticsPropertyReceiver lambda.
                                     val closeDescription =
                                         stringResource(R.string.chat_status_dialog_close)
-                                    Box(modifier = Modifier.padding(top = spacing.md)) {
-                                        MessageBubble(
-                                            role = Role.ERROR,
-                                            markdown = state.failure?.message()
-                                                ?: stringResource(state.failureKey!!),
-                                        )
-                                        // Small dismiss cross on the error bubble;
-                                        // it only clears the error, it does not retry.
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(4.dp)
-                                                .size(28.dp)
-                                                .clip(CircleShape)
-                                                .background(colors.surfaceRaised)
-                                                .clickable(
-                                                    role = SemanticsRole.Button,
-                                                    onClick = onDismissError,
-                                                )
-                                                .semantics {
-                                                    contentDescription = closeDescription
-                                                },
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            GlyphIcon(
-                                                glyph = Glyph.Close,
-                                                tint = colors.onSurfaceMuted,
-                                                size = 12.dp,
+                                    val retryLabel = stringResource(R.string.chat_retry)
+                                    // Retry re-sends the last prompt that was
+                                    // actually sent — not the draft, which the
+                                    // user may have edited since — and is only
+                                    // offered when there is one to retry.
+                                    Column(modifier = Modifier.padding(top = spacing.md)) {
+                                        Box {
+                                            MessageBubble(
+                                                role = Role.ERROR,
+                                                markdown = state.failure?.message()
+                                                    ?: stringResource(state.failureKey!!),
                                             )
+                                            // Small dismiss cross on the error bubble;
+                                            // it only clears the error, it does not retry.
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .padding(4.dp)
+                                                    .size(28.dp)
+                                                    .clip(CircleShape)
+                                                    .background(colors.surfaceRaised)
+                                                    .clickable(
+                                                        role = SemanticsRole.Button,
+                                                        onClick = onDismissError,
+                                                    )
+                                                    .semantics {
+                                                        contentDescription = closeDescription
+                                                    },
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                GlyphIcon(
+                                                    glyph = Glyph.Close,
+                                                    tint = colors.onSurfaceMuted,
+                                                    size = 12.dp,
+                                                )
+                                            }
+                                        }
+                                        if (state.lastSentText != null) {
+                                            Spacer(modifier = Modifier.height(spacing.xs))
+                                            Row(
+                                                modifier = Modifier
+                                                    .height(dims.minTouchTarget)
+                                                    .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.full))
+                                                    .background(colors.accent)
+                                                    .semantics {
+                                                        role = SemanticsRole.Button
+                                                        contentDescription = retryLabel
+                                                    }
+                                                    .clickable(
+                                                        role = SemanticsRole.Button,
+                                                        onClick = onRetryError,
+                                                    )
+                                                    .padding(horizontal = spacing.md),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                                            ) {
+                                                GlyphIcon(
+                                                    glyph = Glyph.Refresh,
+                                                    tint = colors.onAccent,
+                                                    size = 16.dp,
+                                                )
+                                                Text(
+                                                    text = retryLabel,
+                                                    style = OpenCodeTypography.label,
+                                                    color = colors.onAccent,
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -509,6 +566,7 @@ fun ChatScreen(
                         ) {
                             JumpToLatest(
                                 unreadCount = unreadMessagesCount,
+                                pendingQuestions = pendingQuestionCount,
                                 isBusy = state.busy,
                                 onClick = { scope.launch { listState.animateScrollToItem(targetLastIndex) } },
                             )
@@ -1608,38 +1666,66 @@ private fun AssistantWorkingPlaceholder(
 @Composable
 private fun JumpToLatest(
     unreadCount: Int,
+    pendingQuestions: Int = 0,
     isBusy: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val dims = OpenCodeTheme.tokens.dimensions
+    val spacing = OpenCodeTheme.tokens.spacing
     val label = stringResource(R.string.chat_jump_latest)
+    val waitingLabel = if (pendingQuestions == 1) {
+        stringResource(R.string.chat_question_waiting_one)
+    } else {
+        stringResource(R.string.chat_question_waiting_other, pendingQuestions)
+    }
     val interactionSource = remember { MutableInteractionSource() }
 
-    Box(
+    // A pending-question pill sits above the circle, right-aligned: it is
+    // a label, not a second button, so it shares the jump click.
+    Column(
         modifier = modifier
             .semantics {
                 this.contentDescription = label
                 this.role = SemanticsRole.Button
             },
+        horizontalAlignment = Alignment.End,
     ) {
-        Box(
-            modifier = Modifier
-                .size(dims.minTouchTarget)
-                .clip(CircleShape)
-                .background(colors.surfaceRaised)
-                .border(0.5.dp, colors.hairline, CircleShape)
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = ripple(bounded = true),
-                    role = SemanticsRole.Button,
-                    onClick = onClick,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            GlyphIcon(Glyph.ArrowDown, tint = colors.onSurface, size = 18.dp)
+        if (pendingQuestions > 0) {
+            Box(
+                modifier = Modifier
+                    .padding(bottom = spacing.xs)
+                    .height(24.dp)
+                    .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.full))
+                    .background(colors.accent)
+                    .padding(horizontal = spacing.sm),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = waitingLabel,
+                    style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.Bold),
+                    color = colors.onAccent,
+                )
+            }
         }
+        Box {
+            Box(
+                modifier = Modifier
+                    .size(dims.minTouchTarget)
+                    .clip(CircleShape)
+                    .background(colors.surfaceRaised)
+                    .border(0.5.dp, colors.hairline, CircleShape)
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = ripple(bounded = true),
+                        role = SemanticsRole.Button,
+                        onClick = onClick,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                GlyphIcon(Glyph.ArrowDown, tint = colors.onSurface, size = 18.dp)
+            }
 
         if (unreadCount > 0) {
             Box(
@@ -1683,6 +1769,7 @@ private fun JumpToLatest(
                     .border(1.5.dp, colors.surfaceRaised, CircleShape),
             )
         }
+        }
     }
 }
 
@@ -1713,6 +1800,22 @@ private fun EmptyChat(
     val dims = OpenCodeTheme.tokens.dimensions
     val radius = OpenCodeTheme.tokens.radius
     val status = engineState.toStatus(busy)
+
+    // Dismissed starters are remembered by prompt resource id in
+    // SharedPreferences, so a dismissed card stays gone across restarts.
+    // There is no "recent prompts" list and no reset: the four starters
+    // are fixed suggestions, and dismissing one is a per-item choice.
+    val starterPrefs = remember {
+        LocalContext.current.getSharedPreferences("opencode_chat", Context.MODE_PRIVATE)
+    }
+    var dismissedStarterIds by remember {
+        mutableStateOf(
+            starterPrefs.getStringSet(DISMISSED_STARTERS_KEY, emptySet())?.toSet().orEmpty(),
+        )
+    }
+    val visibleStarters = remember(dismissedStarterIds) {
+        STARTER_PROMPTS.filter { it.promptRes.toString() !in dismissedStarterIds }
+    }
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
@@ -1797,7 +1900,7 @@ private fun EmptyChat(
                             }
                         }
                     }
-                } else {
+                } else if (visibleStarters.isNotEmpty()) {
                     Spacer(Modifier.height(spacing.lg))
 
                     // Actionable prompt starter cards section
@@ -1825,7 +1928,7 @@ private fun EmptyChat(
                         // title only) so the titles still fit. Below 360dp
                         // even the compact titles need a third line, so the
                         // grid drops to a single full-width column there.
-                        STARTER_PROMPTS.chunked(if (isNarrow) 1 else 2).forEach { rowPrompts ->
+                        visibleStarters.chunked(if (isNarrow) 1 else 2).forEach { rowPrompts ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
@@ -1839,6 +1942,13 @@ private fun EmptyChat(
                                         description = desc,
                                         glyph = item.glyph,
                                         onClick = { onSuggestion(prompt) },
+                                        onDismiss = {
+                                            val next = dismissedStarterIds + item.promptRes.toString()
+                                            dismissedStarterIds = next
+                                            starterPrefs.edit()
+                                                .putStringSet(DISMISSED_STARTERS_KEY, next)
+                                                .apply()
+                                        },
                                         modifier = Modifier.weight(1f),
                                         compact = !isWide,
                                     )
@@ -2071,6 +2181,8 @@ private fun ActionableStarterCard(
      * no description or chevron, so the title still fits in a ~150dp column.
      */
     compact: Boolean = false,
+    /** Null when the card cannot be dismissed; otherwise a small × at its top end. */
+    onDismiss: (() -> Unit)? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -2125,28 +2237,32 @@ private fun ActionableStarterCard(
         label = "starterIconTint",
     )
 
-    Row(
-        modifier = modifier
-            .graphicsLayer {
-                scaleX = cardScale
-                scaleY = cardScale
-            }
-            .fillMaxWidth()
-            .clip(shape)
-            .background(cardBg)
-            .border(0.5.dp, borderColor, shape)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = ripple(),
-                role = SemanticsRole.Button,
-                onClick = onClick,
-            )
-            .padding(
-                horizontal = spacing.md + spacing.xxs,
-                vertical = if (compact) spacing.sm else spacing.md,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    // Hoisted out of the .semantics {} block below: stringResource() is
+    // @Composable and cannot be called inside a SemanticsPropertyReceiver.
+    val dismissDescription = stringResource(R.string.chat_status_dialog_close)
+    Box(modifier = modifier) {
+        Row(
+            modifier = Modifier
+                .graphicsLayer {
+                    scaleX = cardScale
+                    scaleY = cardScale
+                }
+                .fillMaxWidth()
+                .clip(shape)
+                .background(cardBg)
+                .border(0.5.dp, borderColor, shape)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(),
+                    role = SemanticsRole.Button,
+                    onClick = onClick,
+                )
+                .padding(
+                    horizontal = spacing.md + spacing.xxs,
+                    vertical = if (compact) spacing.sm else spacing.md,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         Box(
             modifier = Modifier
                 .size(if (compact) 28.dp else 36.dp)
@@ -2201,6 +2317,28 @@ private fun ActionableStarterCard(
                 size = 14.dp,
             )
         }
+        }
+        // The × is the innermost clickable at its touch point, so tapping
+        // it dismisses the card instead of filling the composer.
+        if (onDismiss != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(2.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(colors.surfaceRaised)
+                    .clickable(role = SemanticsRole.Button, onClick = onDismiss)
+                    .semantics { contentDescription = dismissDescription },
+                contentAlignment = Alignment.Center,
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Close,
+                    tint = colors.onSurfaceFaint,
+                    size = 12.dp,
+                )
+            }
+        }
     }
 }
 
@@ -2210,6 +2348,9 @@ private data class ActionablePrompt(
     val promptRes: Int,
     val glyph: Glyph,
 )
+
+/** SharedPreferences key for the set of dismissed starter prompt ids. */
+private const val DISMISSED_STARTERS_KEY = "dismissed_starters"
 
 private val STARTER_PROMPTS = listOf(
     ActionablePrompt(

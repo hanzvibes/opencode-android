@@ -151,7 +151,12 @@ private fun SingleQuestionSection(
     // and write-in instead of inheriting the previous one's.
     var selectedOptionIds by rememberSaveable(qIndex) { mutableStateOf(emptyList<String>()) }
     var writeInText by rememberSaveable(qIndex) { mutableStateOf("") }
-    var writeInActive by rememberSaveable(qIndex) { mutableStateOf(false) }
+    // A question with no options has nothing to tap: the write-in column
+    // opens active by default, with the keyboard, so the user can answer
+    // straight away instead of finding the "Other" row first.
+    var writeInActive by rememberSaveable(qIndex) {
+        mutableStateOf(item.options.isEmpty())
+    }
 
     /** Builds "Header: answer1, answer2" and hands it to the card. */
     fun submitAnswer(selected: List<String>, writeIn: String, writeInOn: Boolean) {

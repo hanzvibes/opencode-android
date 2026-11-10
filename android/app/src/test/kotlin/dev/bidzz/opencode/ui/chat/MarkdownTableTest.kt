@@ -158,6 +158,7 @@ class MarkdownTableTest {
             is MdSpan.Code -> span.text
             is MdSpan.Link -> span.text
             is MdSpan.Highlight -> span.text
+            is MdSpan.Strikethrough -> span.text
         }
     }
 }

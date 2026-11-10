@@ -33,6 +33,13 @@ data class ChatUiState(
     val workspaceReady: Boolean = false,
     val workspacePath: String? = null,
     val draft: String = "",
+    /**
+     * The last prompt actually sent, kept so a failed send can be retried.
+     * It is the text that was sent — not the draft, which the user may
+     * have edited since — so retrying never sends a half-edited message
+     * the user did not mean to send. Cleared when the session changes.
+     */
+    val lastSentText: String? = null,
     /** Active permission request; the agent is blocked until it is answered. */
     val pendingPermission: dev.bidzz.opencode.core.api.dto.PendingPermission? = null,
     /** Selectable agents — the CLI's modes (build, plan, and user-defined ones). */
@@ -253,6 +260,7 @@ class ChatViewModel(
             return
         }
 
+        _state.value = _state.value.copy(lastSentText = text)
         sendInFlight = true
         viewModelScope.launch {
             try {
@@ -264,6 +272,33 @@ class ChatViewModel(
     }
 
     private var sendInFlight = false
+
+    /**
+     * Re-sends the last prompt that was sent, after a failure.
+     *
+     * Retries the recorded [ChatUiState.lastSentText], never the current
+     * draft: the draft is what the user is typing now, and it may already
+     * be a different message. A retry that silently sent the new draft
+     * would be a different request from the one that failed. The old
+     * error is cleared first so the bubble does not linger over the retry.
+     */
+    fun retryLastSend() {
+        val text = _state.value.lastSentText?.takeIf { it.isNotBlank() } ?: return
+        if (_state.value.busy || sendInFlight) return
+        val repo = repository ?: run {
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            return
+        }
+        _state.value = _state.value.copy(failure = null, failureKey = null)
+        sendInFlight = true
+        viewModelScope.launch {
+            try {
+                sendNow(repo, text)
+            } finally {
+                sendInFlight = false
+            }
+        }
+    }
 
     private suspend fun sendNow(repo: ChatRepository, text: String) {
         val sessionID = _state.value.sessionID ?: createSession(repo) ?: return
@@ -381,8 +416,9 @@ class ChatViewModel(
             }
         }
         // A draft belongs to the session it was typed in; it must not follow
-        // the user into the fresh session.
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "")
+        // the user into the fresh session. The last sent text goes with it:
+        // retrying it in a new session would send the old session's prompt.
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", lastSentText = null)
         savedStateHandle?.remove<String>(DRAFT_KEY)
     }
 
@@ -395,8 +431,9 @@ class ChatViewModel(
     fun openSession(sessionID: String) {
         val repo = repository ?: return
         // A draft belongs to the session it was typed in; opening another
-        // session starts with an empty composer.
-        _state.value = _state.value.copy(draft = "")
+        // session starts with an empty composer — and no retry target from
+        // the previous session.
+        _state.value = _state.value.copy(draft = "", lastSentText = null)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         repo.open(sessionID)
     }

@@ -64,6 +64,9 @@
     <string name="chat_menu">Menu</string>
     <string name="chat_new_session">Sesi baru</string>
     <string name="chat_jump_latest">Ke pesan terbaru</string>
+    <string name="chat_retry">Coba lagi</string>
+    <string name="chat_question_waiting_one">1 pertanyaan menunggu</string>
+    <string name="chat_question_waiting_other">%1$d pertanyaan menunggu</string>
     <string name="chat_working">Sedang bekerja…</string>
     <string name="chat_status_working">Bekerja</string>
     <string name="chat_status_ready">Siap</string>
@@ -185,6 +188,11 @@
     <string name="tool_error">Galat</string>
     <string name="tool_show_full">Tampilkan semua output</string>
     <string name="tool_show_less">Tampilkan lebih sedikit</string>
+    <string name="tool_filter_all">Semua</string>
+    <string name="tool_filter_failed">Gagal</string>
+    <string name="tool_filter_edit">Edit</string>
+    <string name="tool_filter_read">Baca</string>
+    <string name="code_show_more">Tampilkan semua %1$d baris</string>
     <string name="code_label">kode</string>
     <string name="code_download">Unduh</string>
     <string name="code_saved">Tersimpan</string>

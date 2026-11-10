@@ -18,9 +18,10 @@ package dev.bidzz.opencode.ui.chat
  * - pipe tables with a `| --- | --- |` separator row
  *
  * What it deliberately does **not** handle: images, nested lists, HTML, footnotes,
- * task lists, cell alignment, merged cells. A table needs a header row plus a
+ * task lists, merged cells. A table needs a header row plus a
  * separator row; anything less is left as literal text, because rendering a
- * half-recognised table is worse than showing the pipes.
+ * half-recognised table is worse than showing the pipes. Column alignment
+ * (`:---:`, `---:`) is read from the separator row and kept on the table.
  *
  * Parsing is line-oriented, which is enough for the subset above and keeps the
  * renderer free of a second AST pass.
@@ -46,13 +47,24 @@ sealed interface MdBlock {
     /**
      * A pipe table. Every row holds exactly [columns] cells; short rows are padded
      * rather than rejected, since models drop trailing pipes constantly.
+     * [alignments] holds one [TableAlign] per column, read from the separator
+     * row (`:---:` centre, `---:` right, anything else left); missing entries
+     * are left-aligned.
      */
     data class Table(
         val header: List<List<MdSpan>>,
         val rows: List<List<List<MdSpan>>>,
+        val alignments: List<TableAlign> = emptyList(),
     ) : MdBlock {
         val columns: Int get() = header.size
     }
+}
+
+/** Horizontal alignment of one table column, read from the separator row. */
+enum class TableAlign {
+    LEFT,
+    CENTER,
+    RIGHT,
 }
 
 /** Inline formatting inside a block. */
@@ -182,6 +194,13 @@ object Markdown {
                 flushParagraph()
                 val header = splitCells(line)
                 val width = header.size
+                val alignments = splitCells(lines[i + 1]).map { cell ->
+                    when {
+                        cell.startsWith(':') && cell.endsWith(':') -> TableAlign.CENTER
+                        cell.endsWith(':') -> TableAlign.RIGHT
+                        else -> TableAlign.LEFT
+                    }
+                }
                 i += 2
                 val rows = mutableListOf<List<String>>()
                 while (i < lines.size && lines[i].contains('|') && lines[i].isNotBlank()) {
@@ -195,6 +214,7 @@ object Markdown {
                         // relies on it to keep columns square.
                         (0 until width).map { inline(row.getOrElse(it) { "" }) }
                     },
+                    alignments = alignments,
                 )
                 continue
             }

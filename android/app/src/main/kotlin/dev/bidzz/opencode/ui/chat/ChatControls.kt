@@ -38,7 +38,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.AgentInfo
@@ -98,6 +103,28 @@ fun ChatControls(
 }
 
 /**
+ * Offset for a selector [DropdownMenu] anchored to a chip in the composer.
+ *
+ * The composer sits at the bottom of the screen, so a menu that opens
+ * downward runs off the bottom on short screens. When the chip sits in the
+ * bottom half of the screen the menu opens upward instead: the negative
+ * offset lifts it by the chip height plus its own (capped) height, so its
+ * bottom edge lands on the chip's top edge. The 380dp height cap stays, so
+ * the estimate is capped the same way. The selectors stay in the composer
+ * — nothing moves to the header — only the menu direction changes.
+ */
+private fun selectorMenuOffset(
+    openAbove: Boolean,
+    menuHeight: Dp,
+    chipHeight: Dp,
+    gap: Dp,
+): DpOffset = if (openAbove) {
+    DpOffset(0.dp, -(chipHeight + menuHeight + gap))
+} else {
+    DpOffset(0.dp, gap)
+}
+
+/**
  * Agent / Mode Selector chip with a distinct color-coded indicator badge and
  * rich popover menu detailing agent capabilities, permissions, and active selection.
  */
@@ -128,10 +155,23 @@ private fun AgentSelector(
     val currentPresentation = currentAgent?.let { resolveAgentPresentation(it, colors.accent) }
     val chipShape = RoundedCornerShape(radius.full)
 
+    // Drop-up: the composer chip sits at the bottom of the screen, so the
+    // menu opens above it when the chip is in the bottom half of the screen.
+    var anchorTopDp by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+    val openAbove = anchorTopDp > 0.dp && anchorTopDp > screenHeightDp / 2
+    // Header ~36dp plus one ~64dp row per agent, capped like the menu itself.
+    val estimatedMenuHeight = (36.dp + selectableAgents.size * 64.dp).coerceAtMost(380.dp)
+
     // Selector chips are 40dp tall (the composer touch target), not 28dp:
     // they sit in the same controls row as the composer chips, and a 28dp
     // chip next to a 40dp hit area was the smallest tap target in the row.
-    Box {
+    Box(
+        modifier = Modifier.onGloballyPositioned {
+            anchorTopDp = with(density) { it.positionInWindow().y.toDp() }
+        },
+    ) {
         Row(
             modifier = Modifier
                 .height(dims.composerChipTouchTarget)
@@ -185,7 +225,12 @@ private fun AgentSelector(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             modifier = Modifier.widthIn(min = 270.dp, max = 320.dp),
-            offset = DpOffset(0.dp, spacing.xs),
+            offset = selectorMenuOffset(
+                openAbove,
+                estimatedMenuHeight,
+                dims.composerChipTouchTarget,
+                spacing.xs,
+            ),
             shape = RoundedCornerShape(radius.lg),
             containerColor = colors.surfaceRaised,
             tonalElevation = 0.dp,
@@ -362,7 +407,21 @@ private fun ModelSelector(
     val currentPresentation = currentModel?.let { resolveModelPresentation(it) }
     val chipShape = RoundedCornerShape(radius.full)
 
-    Box {
+    // Drop-up, same as the agent menu: the model chip sits in the composer
+    // at the bottom of the screen, so its menu opens above it.
+    var anchorTopDp by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
+    val openAbove = anchorTopDp > 0.dp && anchorTopDp > screenHeightDp / 2
+    // Search field ~48dp plus header ~36dp plus one ~56dp row per model,
+    // capped like the menu itself.
+    val estimatedMenuHeight = (84.dp + filteredModels.size * 56.dp).coerceAtMost(380.dp)
+
+    Box(
+        modifier = Modifier.onGloballyPositioned {
+            anchorTopDp = with(density) { it.positionInWindow().y.toDp() }
+        },
+    ) {
         Row(
             modifier = Modifier
                 .height(dims.composerChipTouchTarget)
@@ -419,7 +478,12 @@ private fun ModelSelector(
                 modelQuery = ""
             },
             modifier = Modifier.widthIn(min = 290.dp, max = 340.dp),
-            offset = DpOffset(0.dp, spacing.xs),
+            offset = selectorMenuOffset(
+                openAbove,
+                estimatedMenuHeight,
+                dims.composerChipTouchTarget,
+                spacing.xs,
+            ),
             shape = RoundedCornerShape(radius.lg),
             containerColor = colors.surfaceRaised,
             tonalElevation = 0.dp,

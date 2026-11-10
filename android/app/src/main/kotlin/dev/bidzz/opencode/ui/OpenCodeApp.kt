@@ -186,6 +186,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onStatusClick = { screen = Screen.Diagnostics },
                 onNewSession = chatViewModel::newSession,
                 onDismissError = chatViewModel::dismissError,
+                onRetryError = chatViewModel::retryLastSend,
                 onSessionsClick = { screen = Screen.Sessions },
                 onProjectClick = { screen = Screen.Projects },
                 onFilesClick = { screen = Screen.Files },

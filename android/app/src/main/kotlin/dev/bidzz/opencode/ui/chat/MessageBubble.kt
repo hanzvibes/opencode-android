@@ -176,19 +176,20 @@ fun MessageBubble(
                     // accent selection handle/background is unreadable
                     // against the bubble, so this branch alone gets white
                     // selection colors. Assistant text keeps the default.
+                    // The message renders as markdown (bold, code, links)
+                    // in the bubble-aware variant: prose stays onUserBubble
+                    // on the blue, links stay tappable, and the bubble
+                    // colour itself is untouched.
                     CompositionLocalProvider(
                         LocalTextSelectionColors provides TextSelectionColors(
                             handleColor = Color.White,
                             backgroundColor = Color.White.copy(alpha = 0.35f),
                         ),
                     ) {
-                        SelectionContainer {
-                            Text(
-                                text = markdown,
-                                style = OpenCodeTypography.body,
-                                color = colors.onUserBubble,
-                            )
-                        }
+                        MarkdownText(
+                            markdown = markdown,
+                            textColor = colors.onUserBubble,
+                        )
                     }
                 }
                 // Same copy affordance as assistant replies, right-aligned

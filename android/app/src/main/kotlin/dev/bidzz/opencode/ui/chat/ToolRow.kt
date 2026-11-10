@@ -9,6 +9,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,6 +88,11 @@ fun ToolTrace(
     val shape = RoundedCornerShape(radius.md)
 
     var open by rememberSaveable { mutableStateOf(streaming) }
+
+    // Timeline filter, kept in rememberSaveable so it survives collapse,
+    // rotation and recomposition: collapsing the trace never resets it.
+    // Only these four kinds exist — no more are added here.
+    var filter by rememberSaveable { mutableStateOf(ToolFilter.ALL) }
 
     val running = tools.filter { it.status == "running" || it.status == "streaming" }
     val failed = tools.count { it.status == "error" }
@@ -262,22 +268,80 @@ fun ToolTrace(
             }
         }
 
-        // Vertical timeline of steps
-        if (visible.isNotEmpty()) {
+        // Filter chips, shown under the header while the trace is open.
+        // The choice lives in rememberSaveable above, so it is still there
+        // when the trace is collapsed and reopened.
+        if (open) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(start = spacing.sm, end = spacing.sm, bottom = spacing.xs),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                ToolFilter.entries.forEach { option ->
+                    val selected = option == filter
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.full))
+                            .background(if (selected) colors.accent else colors.fill)
+                            .border(
+                                0.5.dp,
+                                if (selected) colors.accent else colors.hairline,
+                                RoundedCornerShape(radius.full),
+                            )
+                            .clickable(role = Role.Button) { filter = option }
+                            .padding(horizontal = spacing.sm, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(option.labelRes),
+                            style = OpenCodeTypography.caption.copy(
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            ),
+                            color = if (selected) colors.onAccent else colors.onSurfaceMuted,
+                        )
+                    }
+                }
+            }
+        }
+
+        // Vertical timeline of steps, narrowed by the active filter. The
+        // collapsed summary above is unfiltered — it is the at-a-glance
+        // state of the run, not the filtered view.
+        val filteredVisible = visible.filter { filter.matches(it) }
+        if (filteredVisible.isNotEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = spacing.sm, end = spacing.sm, bottom = spacing.sm, top = spacing.xxs),
             ) {
-                visible.forEachIndexed { index, call ->
+                filteredVisible.forEachIndexed { index, call ->
                     ToolStep(
                         call = call,
                         isFirst = index == 0,
-                        isLast = index == visible.lastIndex,
+                        isLast = index == filteredVisible.lastIndex,
                     )
                 }
             }
         }
+    }
+}
+
+/** The only four timeline filters. Edit covers file writes and edits. */
+private enum class ToolFilter(val labelRes: Int) {
+    ALL(R.string.tool_filter_all),
+    FAILED(R.string.tool_filter_failed),
+    EDIT(R.string.tool_filter_edit),
+    READ(R.string.tool_filter_read),
+    ;
+
+    fun matches(call: ToolCall): Boolean = when (this) {
+        ALL -> true
+        FAILED -> call.status == "error"
+        EDIT -> toolKindFor(call.name) == ToolKind.EDIT ||
+            toolKindFor(call.name) == ToolKind.WRITE
+        READ -> toolKindFor(call.name) == ToolKind.READ
     }
 }
 
