@@ -923,21 +923,27 @@ private fun ChatState.toUiMessages(toolDurations: Map<String, Long> = emptyMap()
                     },
                     usageCostUsd = message.cost,
                     turnDurationMs = message.time?.let { time ->
-                        if (time.created != null && time.completed != null &&
-                            time.completed >= time.created
+                        // Local copies: time.* are public API properties from
+                        // another module, so smart casts on them are impossible.
+                        val created = time.created
+                        val completed = time.completed
+                        if (created != null && completed != null &&
+                            completed >= created
                         ) {
-                            time.completed - time.created
+                            completed - created
                         } else {
                             null
                         }
                     },
                     stopReason = message.finish?.takeIf { it.isNotBlank() },
                     thinkingSeconds = message.time?.let { time ->
+                        val created = time.created
+                        val streamed = time.streamed
                         if (!message.reasoningText.isNullOrBlank() &&
-                            time.created != null && time.streamed != null &&
-                            time.streamed >= time.created
+                            created != null && streamed != null &&
+                            streamed >= created
                         ) {
-                            ((time.streamed - time.created) / 1000).toInt()
+                            ((streamed - created) / 1000).toInt()
                         } else {
                             null
                         }
