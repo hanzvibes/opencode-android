@@ -255,39 +255,66 @@ private fun TableBlock(table: MdBlock.Table) {
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
+    val colCount = table.columns.coerceAtLeast(1)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(radius.md))
             .background(colors.surfaceSunken)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
-            .padding(horizontal = spacing.xs, vertical = spacing.xs),
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md)),
     ) {
-        Row(Modifier.fillMaxWidth()) {
-            table.header.forEach { cell ->
-                Text(
-                    text = cell.toAnnotated(),
-                    style = OpenCodeTypography.label,
-                    color = colors.onSurfaceMuted,
-                    modifier = Modifier.weight(1f).padding(spacing.xs),
-                )
-            }
-        }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = spacing.xs)
-                .height(0.5.dp)
-                .background(colors.hairline),
-        )
-        table.rows.forEach { row ->
-            Row(Modifier.fillMaxWidth()) {
-                row.forEach { cell ->
+        if (table.header.isNotEmpty() && table.header.any { it.isNotEmpty() }) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.fill)
+                    .padding(horizontal = spacing.md, vertical = spacing.sm),
+            ) {
+                table.header.forEachIndexed { colIdx, cell ->
+                    val weight = if (colIdx == 0 && colCount == 2) 0.38f else 1f / colCount
                     Text(
                         text = cell.toAnnotated(),
-                        style = OpenCodeTypography.bodySmall,
+                        style = OpenCodeTypography.bodyStrong,
                         color = colors.onSurface,
-                        modifier = Modifier.weight(1f).padding(spacing.xs),
+                        modifier = Modifier
+                            .weight(weight)
+                            .padding(end = spacing.xs),
+                    )
+                }
+            }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(colors.hairline),
+            )
+        }
+        table.rows.forEachIndexed { rowIdx, row ->
+            if (rowIdx > 0) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = spacing.md)
+                        .height(0.5.dp)
+                        .background(colors.hairline.copy(alpha = 0.5f)),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.md, vertical = spacing.sm),
+            ) {
+                row.forEachIndexed { colIdx, cell ->
+                    val isFirstCol = colIdx == 0
+                    val weight = if (isFirstCol && colCount == 2) 0.38f else 1f / colCount
+                    Text(
+                        text = cell.toAnnotated(),
+                        style = if (isFirstCol) OpenCodeTypography.bodySmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Medium) else OpenCodeTypography.bodySmall,
+                        color = if (isFirstCol) colors.onSurfaceMuted else colors.onSurface,
+                        modifier = Modifier
+                            .weight(weight)
+                            .padding(end = spacing.xs),
                     )
                 }
             }
@@ -350,8 +377,8 @@ private fun List<MdSpan>.toAnnotated(): AnnotatedString {
                     SpanStyle(
                         fontFamily = OpenCodeTypography.mono,
                         fontSize = OpenCodeTypography.codeInline.fontSize,
-                        background = colors.surfaceSunken,
-                        color = colors.onSurface,
+                        background = colors.fill,
+                        color = colors.accent,
                     ),
                 ) {
                     append(" ${span.text} ")

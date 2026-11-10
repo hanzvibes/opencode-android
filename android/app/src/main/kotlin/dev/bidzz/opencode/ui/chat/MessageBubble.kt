@@ -44,6 +44,7 @@ fun MessageBubble(
     tools: List<dev.bidzz.opencode.core.api.dto.ToolCall> = emptyList(),
     /** Mode and model that produced this reply, when known. Empty when absent. */
     provenance: String? = null,
+    showProvenance: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -77,12 +78,15 @@ fun MessageBubble(
         Role.ASSISTANT -> Column(modifier = modifier.fillMaxWidth()) {
             // Which mode and model answered, small and quiet: it is reference, not content.
             // Nothing at all when there is nothing to say, instead of a label on every reply.
-            if (!provenance.isNullOrBlank() || streaming) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            if (showProvenance && (!provenance.isNullOrBlank() || streaming)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = spacing.xxs),
+                ) {
                     if (!provenance.isNullOrBlank()) {
                         Text(
                             text = provenance,
-                            style = OpenCodeTypography.label,
+                            style = OpenCodeTypography.label.copy(fontSize = 12.sp),
                             color = colors.onSurfaceFaint,
                         )
                     }
@@ -97,22 +101,26 @@ fun MessageBubble(
                     }
                 }
             }
-            Box(Modifier.padding(top = spacing.xs)) {
-                if (markdown.isEmpty() && streaming) {
-                    Text(
-                        text = stringResource(R.string.bubble_thinking),
-                        style = OpenCodeTypography.body,
-                        color = colors.onSurfaceMuted,
-                    )
-                } else {
-                    MarkdownText(markdown = markdown)
+            if (tools.isNotEmpty()) {
+                ToolTrace(
+                    tools = tools,
+                    streaming = streaming,
+                    modifier = Modifier.padding(bottom = if (markdown.isNotEmpty()) spacing.sm else 0.dp),
+                )
+            }
+            if (markdown.isNotEmpty() || (streaming && tools.isEmpty())) {
+                Box {
+                    if (markdown.isEmpty() && streaming) {
+                        Text(
+                            text = stringResource(R.string.bubble_thinking),
+                            style = OpenCodeTypography.body,
+                            color = colors.onSurfaceMuted,
+                        )
+                    } else {
+                        MarkdownText(markdown = markdown)
+                    }
                 }
             }
-            ToolTrace(
-                tools = tools,
-                streaming = streaming,
-                modifier = Modifier.padding(top = spacing.xs),
-            )
             if (!streaming && markdown.isNotEmpty()) {
                 val context = LocalContext.current
                 Row(

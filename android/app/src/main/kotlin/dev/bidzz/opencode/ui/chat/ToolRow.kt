@@ -1,7 +1,10 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -55,17 +58,26 @@ fun ToolTrace(
     val spacing = OpenCodeTheme.tokens.spacing
     var open by rememberSaveable { mutableStateOf(streaming) }
 
+    val radius = OpenCodeTheme.tokens.radius
+
     val running = tools.filter { it.status == "running" || it.status == "streaming" }
     val failed = tools.count { it.status == "error" }
 
     LaunchedEffect(streaming) { if (!streaming) open = false }
 
-    Column(modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surfaceSunken)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { open = !open }
-                .padding(vertical = spacing.xs),
+                .padding(vertical = spacing.xxs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -102,8 +114,12 @@ fun ToolTrace(
 
         // A vertical timeline: a dot per step on a rail, joined by a line to the next.
         val visible = if (open) tools else running + tools.filter { it.status == "error" }
-        visible.forEachIndexed { index, call ->
-            ToolStep(call, isLast = index == visible.lastIndex)
+        if (visible.isNotEmpty()) {
+            Column(Modifier.padding(top = spacing.xs)) {
+                visible.forEachIndexed { index, call ->
+                    ToolStep(call, isLast = index == visible.lastIndex)
+                }
+            }
         }
     }
 }

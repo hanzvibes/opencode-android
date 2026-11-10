@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -160,9 +161,11 @@ fun ChatScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(spacing.lg),
                     ) {
-                        items(state.messages, key = { it.id }) { message ->
-                            // Computed here, not when the repository emitted, so the label
-                            // upgrades to human names as soon as the catalog loads.
+                        itemsIndexed(state.messages, key = { _, it -> it.id }) { index, message ->
+                            val prevMessage = if (index > 0) state.messages[index - 1] else null
+                            // Only show provenance if the previous message was NOT an assistant message
+                            val showProvenance = message.role == Role.ASSISTANT && prevMessage?.role != Role.ASSISTANT
+
                             MessageBubble(
                                 role = message.role,
                                 markdown = message.text,
@@ -174,6 +177,7 @@ fun ChatScreen(
                                     state.agents,
                                     state.models,
                                 ),
+                                showProvenance = showProvenance,
                             )
                         }
                         // Until the first reply token arrives, the only sign of life is this line

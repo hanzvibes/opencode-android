@@ -118,6 +118,23 @@ class ChatRepository(
         buffers.clear()
     }
 
+    private fun isAssistantContinuation(current: SessionMessage, prev: SessionMessage): Boolean {
+        if (!current.isAssistant || !prev.isAssistant) return false
+        // If the previous message was purely tool calls and had no text, merge current into it
+        val prevHasNoText = prev.content.none { it.type == "text" && !it.text.isNullOrBlank() }
+        return prevHasNoText || (current.content.all { it.type == "tool" })
+    }
+
+    private fun mergeAssistant(target: SessionMessage, addition: SessionMessage): SessionMessage {
+        return target.copy(
+            content = target.content + addition.content,
+            finish = addition.finish ?: target.finish,
+            cost = (target.cost ?: 0.0) + (addition.cost ?: 0.0),
+            tokens = addition.tokens ?: target.tokens,
+            error = addition.error ?: target.error,
+        )
+    }
+
     /** Rebuilds from REST. Called on open and after every reconnect. */
     private suspend fun resync() {
         val id = sessionID ?: return
@@ -126,10 +143,22 @@ class ChatRepository(
                 // The engine returns history newest-first (idle, assistant, user...).
                 // Reversing here means the UI and every consumer can assume
                 // oldest-first, which is the only order a chat transcript can use.
-                val chronological = result.value.reversed().map { m ->
+                val rawChronological = result.value.reversed().map { m ->
                     // A user entry that comes back without text keeps what we sent.
                     if (m.isUser && m.text.isNullOrBlank()) sentText[m.id]?.let { m.copy(text = it) } ?: m else m
                 }
+
+                // Merge contiguous assistant chunks (tools + response) into one cohesive assistant message
+                val chronological = mutableListOf<SessionMessage>()
+                for (msg in rawChronological) {
+                    val last = chronological.lastOrNull()
+                    if (last != null && isAssistantContinuation(msg, last)) {
+                        chronological[chronological.lastIndex] = mergeAssistant(last, msg)
+                    } else {
+                        chronological += msg
+                    }
+                }
+
                 val newest = result.value.firstOrNull()
                 buffers.clear()
                 _state.value = _state.value.copy(
