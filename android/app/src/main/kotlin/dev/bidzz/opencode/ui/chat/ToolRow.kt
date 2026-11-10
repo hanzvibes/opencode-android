@@ -1,12 +1,6 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -48,7 +42,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -98,7 +91,9 @@ fun ToolTrace(
     val running = tools.filter { it.status == "running" || it.status == "streaming" }
     val failed = tools.count { it.status == "error" }
 
-    LaunchedEffect(streaming) { if (!streaming) open = false }
+    // When a run finishes, stay open only if something failed, so an error is
+    // never hidden behind the collapsed summary. A clean run collapses as before.
+    LaunchedEffect(streaming, failed) { if (!streaming) open = failed > 0 }
 
     val visible = if (open) tools else (running + tools.filter { it.status == "error" }).distinctBy { it.id }
 
@@ -192,6 +187,56 @@ fun ToolTrace(
                 StatusChip(
                     text = stringResource(R.string.tool_status_success),
                     color = colors.toolSuccess,
+                )
+            }
+        }
+
+        // Collapsed summary: the last finished tool plus succeeded/failed counts,
+        // so a finished run still reads at a glance without expanding it.
+        // Kept to one ellipsised line so it cannot overflow on narrow screens.
+        if (!open && !streaming && tools.isNotEmpty()) {
+            val completed = tools.count { it.status == "completed" }
+            val lastCompleted = tools.lastOrNull { it.status == "completed" }
+            // Composable calls (stringResource / StepLabel.text) must stay in
+            // composable scope, not inside buildList / let lambdas, so each
+            // one is resolved here with a plain if-expression first.
+            val lastStepLabel = lastCompleted?.let { stepLabel(it.name, it.summary, it.status) }
+            val lastLabel = if (lastStepLabel != null) lastStepLabel.text() else null
+            val succeededText = if (completed > 0) {
+                stringResource(R.string.tool_summary_succeeded, completed)
+            } else {
+                null
+            }
+            val failedText = if (failed > 0) {
+                stringResource(R.string.tool_failed, failed).removePrefix("· ").trim()
+            } else {
+                null
+            }
+            val summaryParts = listOfNotNull(
+                lastLabel?.takeIf { it.isNotBlank() }?.let { "✓ $it" },
+                succeededText,
+                failedText,
+            )
+            val collapsedSummary = summaryParts.joinToString(" • ")
+            if (collapsedSummary.isNotBlank()) {
+                Text(
+                    text = collapsedSummary,
+                    style = OpenCodeTypography.caption.copy(
+                        fontFamily = OpenCodeTypography.mono,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                    color = if (failed > 0) colors.danger else colors.onSurfaceMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            start = spacing.sm,
+                            end = spacing.sm,
+                            top = spacing.xxs,
+                            bottom = spacing.sm,
+                        ),
                 )
             }
         }
@@ -299,8 +344,8 @@ fun ToolStep(
                 .drawBehind {
                     val centerX = size.width / 2f
                     val dotCenterY = 16.dp.toPx()
-                    val strokeWidth = 1.dp.toPx()
-                    val railColor = colors.hairline
+                    val strokeWidth = if (isError) 2.dp.toPx() else 1.dp.toPx()
+                    val railColor = if (isError) colors.danger.copy(alpha = 0.6f) else colors.hairline
 
                     if (!isFirst) {
                         drawLine(
@@ -334,7 +379,7 @@ fun ToolStep(
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(6.dp)
+                            .size(if (isError) 8.dp else 6.dp)
                             .background(dotColor, CircleShape),
                     )
                 }
@@ -356,8 +401,12 @@ fun ToolStep(
                         else colors.surfaceVariant.copy(alpha = 0.2f),
                     )
                     .border(
-                        width = 0.5.dp,
-                        color = if (active) colors.accent.copy(alpha = 0.5f) else colors.hairline,
+                        width = if (isError) 1.dp else 0.5.dp,
+                        color = when {
+                            isError -> colors.danger.copy(alpha = 0.5f)
+                            active -> colors.accent.copy(alpha = 0.5f)
+                            else -> colors.hairline
+                        },
                         shape = RoundedCornerShape(radius.sm),
                     ),
             ) {
@@ -773,84 +822,6 @@ private fun TerminalConsoleBlock(
             }
         }
     }
-}
-
-/**
- * Radar / beacon animated live pulse indicator for running commands.
- */
-@Composable
-fun LivePulseIndicator(
-    color: Color,
-    modifier: Modifier = Modifier,
-    size: Dp = 6.dp,
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 2.2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "pulseScale",
-    )
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.65f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "pulseAlpha",
-    )
-
-    Box(
-        modifier = modifier.size(size * 2),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(size)
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    this.alpha = alpha
-                }
-                .background(color, CircleShape),
-        )
-        Box(
-            modifier = Modifier
-                .size(size)
-                .background(color, CircleShape),
-        )
-    }
-}
-
-/**
- * Monospace blinking terminal block cursor.
- */
-@Composable
-fun BlinkingCursor(
-    color: Color,
-    modifier: Modifier = Modifier,
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "cursorAlpha",
-    )
-    Box(
-        modifier = modifier
-            .width(5.dp)
-            .height(12.dp)
-            .graphicsLayer { this.alpha = alpha }
-            .background(color, RoundedCornerShape(1.dp)),
-    )
 }
 
 /**

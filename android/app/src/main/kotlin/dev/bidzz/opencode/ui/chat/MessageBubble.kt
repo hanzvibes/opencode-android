@@ -147,14 +147,14 @@ fun MessageBubble(
         ) {
             val maxBubbleWidth = (maxWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp)
             val userBubbleShape = RoundedCornerShape(
-                topStart = 18.dp,
-                topEnd = 18.dp,
-                bottomStart = 18.dp,
+                topStart = radius.bubble,
+                topEnd = radius.bubble,
+                bottomStart = radius.bubble,
                 bottomEnd = radius.xs,
             )
             Box(
                 modifier = Modifier
-                    .padding(start = 48.dp)
+                    .padding(start = dims.minTouchTarget)
                     .widthIn(max = maxBubbleWidth)
                     .clip(userBubbleShape)
                     .background(colors.userBubble)
@@ -216,14 +216,17 @@ fun MessageBubble(
                     modifier = Modifier.padding(bottom = spacing.sm),
                 )
             } else if (showStreamingSpinner) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(bottom = spacing.xs)
-                        .size(dims.statusDotSize),
-                    strokeWidth = 1.5.dp,
-                    color = colors.accent,
+                // No provenance badge on a consecutive assistant turn, so the
+                // streaming state needs its own marker. The old 8dp spinner
+                // here was practically invisible; an 11dp pulse plus a
+                // "Typing…" label reads at a glance.
+                StreamingTypingRow(
+                    modifier = Modifier.padding(bottom = spacing.xs),
                 )
             }
+
+            // The last text block of a streaming turn gets the blinking cursor.
+            val lastTextIndex = effectiveParts.indexOfLast { it is ChatTurnPart.Text }
 
             // 2. Chronological turn content: Interleaved Reasoning, Tools, Questions, and Markdown Text
             effectiveParts.forEachIndexed { partIndex, part ->
@@ -263,7 +266,10 @@ fun MessageBubble(
                                 enter = fadeIn(tween(200)) + expandVertically(tween(200)),
                                 modifier = Modifier.padding(bottom = spacing.sm),
                             ) {
-                                MarkdownText(markdown = part.markdown)
+                                MarkdownText(
+                                    markdown = part.markdown,
+                                    streaming = streaming && partIndex == lastTextIndex,
+                                )
                             }
                         }
                     }
