@@ -24,7 +24,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -110,7 +109,7 @@ private fun SingleQuestionSection(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
-    val selectedOptionIds = rememberSaveable { mutableStateMapOf<String, Boolean>() }
+    var selectedOptionIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var writeInText by rememberSaveable { mutableStateOf("") }
     var writeInActive by rememberSaveable { mutableStateOf(false) }
 
@@ -216,18 +215,20 @@ private fun SingleQuestionSection(
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             item.options.forEach { option ->
-                val isSelected = selectedOptionIds[option.id] == true
+                val isSelected = option.id in selectedOptionIds
                 SelectableOptionRow(
                     option = option,
                     isSelected = isSelected,
                     isMultiple = item.multiple,
                     onToggle = {
                         if (item.multiple) {
-                            if (isSelected) selectedOptionIds.remove(option.id)
-                            else selectedOptionIds[option.id] = true
+                            selectedOptionIds = if (isSelected) {
+                                selectedOptionIds - option.id
+                            } else {
+                                selectedOptionIds + option.id
+                            }
                         } else {
-                            selectedOptionIds.clear()
-                            selectedOptionIds[option.id] = true
+                            selectedOptionIds = listOf(option.id)
                             writeInActive = false
                         }
                     },
@@ -242,7 +243,7 @@ private fun SingleQuestionSection(
                 onActiveChange = { active ->
                     writeInActive = active
                     if (active && !item.multiple) {
-                        selectedOptionIds.clear()
+                        selectedOptionIds = emptyList()
                     }
                 },
                 onValueChange = { writeInText = it },
@@ -250,7 +251,7 @@ private fun SingleQuestionSection(
         }
 
         // Submit Button Row
-        val hasSelection = selectedOptionIds.values.any { it } || (writeInActive && writeInText.isNotBlank())
+        val hasSelection = selectedOptionIds.isNotEmpty() || (writeInActive && writeInText.isNotBlank())
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -263,7 +264,7 @@ private fun SingleQuestionSection(
                     .background(if (hasSelection) colors.accent else colors.fill)
                     .clickable(enabled = hasSelection, role = Role.Button) {
                         val chosenLabels = item.options
-                            .filter { selectedOptionIds[it.id] == true }
+                            .filter { it.id in selectedOptionIds }
                             .map { it.label }
                         val allAnswers = chosenLabels + (if (writeInActive && writeInText.isNotBlank()) listOf(writeInText.trim()) else emptyList())
                         val answerSummary = allAnswers.joinToString(", ")
