@@ -159,4 +159,45 @@ class DiffParserTest {
         assertEquals(2, lines[1].newLine)
         assertEquals(3, lines[2].oldLine)
     }
+
+    @Test
+    fun `pairs side by side lines correctly`() {
+        val patch = """
+            @@ -1,3 +1,3 @@
+             context
+            -old1
+            -old2
+            +new1
+            +new2
+            +new3
+             end
+        """.trimIndent()
+        val hunks = DiffParser.parse(patch)
+        val sbs = DiffParser.toSideBySide(hunks.first())
+
+        // 1 context, 3 modified pairs, 1 end context = 5 rows
+        assertEquals(5, sbs.size)
+
+        // Row 0: context
+        assertEquals("context", sbs[0].left?.text)
+        assertEquals("context", sbs[0].right?.text)
+
+        // Row 1: old1 vs new1
+        assertEquals("old1", sbs[1].left?.text)
+        assertEquals(DiffLine.Kind.REMOVED, sbs[1].left?.kind)
+        assertEquals("new1", sbs[1].right?.text)
+        assertEquals(DiffLine.Kind.ADDED, sbs[1].right?.kind)
+
+        // Row 2: old2 vs new2
+        assertEquals("old2", sbs[2].left?.text)
+        assertEquals("new2", sbs[2].right?.text)
+
+        // Row 3: null on left, new3 on right
+        assertEquals(null, sbs[3].left)
+        assertEquals("new3", sbs[3].right?.text)
+
+        // Row 4: end
+        assertEquals("end", sbs[4].left?.text)
+        assertEquals("end", sbs[4].right?.text)
+    }
 }

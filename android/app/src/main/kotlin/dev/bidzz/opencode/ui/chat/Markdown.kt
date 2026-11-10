@@ -8,11 +8,13 @@ package dev.bidzz.opencode.ui.chat
  *
  * - fenced code blocks (``` or ~~~), with an optional language tag
  * - inline code (`code`)
- * - bold (**text**), italic (*text* or _text_)
+ * - bold (**text** or __text__), italic (*text* or _text_)
+ * - highlighted text (==text== or <mark>text</mark>)
  * - headings (# .. ######)
  * - blockquotes (> text)
  * - unordered and ordered lists
  * - links ([text](url))
+ * - horizontal rules / dividers (---, ***, ___ or <hr>)
  * - pipe tables with a `| --- | --- |` separator row
  *
  * What it deliberately does **not** handle: images, nested lists, HTML, footnotes,
@@ -60,6 +62,7 @@ sealed interface MdSpan {
     data class Italic(val text: String) : MdSpan
     data class Code(val text: String) : MdSpan
     data class Link(val text: String, val url: String) : MdSpan
+    data class Highlight(val text: String) : MdSpan
 }
 
 object Markdown {
@@ -70,6 +73,7 @@ object Markdown {
     private val bullet = Regex("^\\s*[-*+]\\s+(.*)$")
     private val numbered = Regex("^\\s*(\\d+)[.)]\\s+(.*)$")
     private val rule = Regex("^\\s*([-*_])\\s*\\1\\s*\\1[\\s\\-*_]*$")
+    private val hrTag = Regex("^\\s*<hr\\s*/?>\\s*$", RegexOption.IGNORE_CASE)
 
     /**
      * Parses [text] into blocks.
@@ -121,7 +125,7 @@ object Markdown {
                 continue
             }
 
-            if (rule.matches(line)) {
+            if (rule.matches(line) || hrTag.matches(line)) {
                 flushParagraph()
                 blocks += MdBlock.Rule
                 i++
@@ -185,8 +189,16 @@ object Markdown {
                 val items = mutableListOf<List<MdSpan>>()
                 while (i < lines.size) {
                     val m = bullet.find(lines[i]) ?: break
-                    items += inline(m.groupValues[1].trim())
+                    val itemLines = mutableListOf(m.groupValues[1].trim())
                     i++
+                    while (i < lines.size && lines[i].isNotBlank() &&
+                        (lines[i].startsWith("  ") || lines[i].startsWith("\t")) &&
+                        !bullet.containsMatchIn(lines[i]) && !numbered.containsMatchIn(lines[i])
+                    ) {
+                        itemLines += lines[i].trim()
+                        i++
+                    }
+                    items += inline(itemLines.joinToString(" "))
                 }
                 blocks += MdBlock.Bullet(items)
                 continue
@@ -197,8 +209,16 @@ object Markdown {
                 val items = mutableListOf<List<MdSpan>>()
                 while (i < lines.size) {
                     val m = numbered.find(lines[i]) ?: break
-                    items += inline(m.groupValues[2].trim())
+                    val itemLines = mutableListOf(m.groupValues[2].trim())
                     i++
+                    while (i < lines.size && lines[i].isNotBlank() &&
+                        (lines[i].startsWith("  ") || lines[i].startsWith("\t")) &&
+                        !bullet.containsMatchIn(lines[i]) && !numbered.containsMatchIn(lines[i])
+                    ) {
+                        itemLines += lines[i].trim()
+                        i++
+                    }
+                    items += inline(itemLines.joinToString(" "))
                 }
                 blocks += MdBlock.Numbered(items)
                 continue
@@ -261,13 +281,38 @@ object Markdown {
                     }
                 }
 
-                // Bold: **...**
-                c == '*' && i + 1 < text.length && text[i + 1] == '*' -> {
-                    val end = text.indexOf("**", i + 2)
+                // Bold: **...** or __...__
+                ((c == '*' && i + 1 < text.length && text[i + 1] == '*') ||
+                    (c == '_' && i + 1 < text.length && text[i + 1] == '_')) -> {
+                    val delim = if (c == '*') "**" else "__"
+                    val end = text.indexOf(delim, i + 2)
                     if (end > i + 2) {
                         flushPlain()
                         spans += MdSpan.Bold(text.substring(i + 2, end))
                         i = end + 2
+                    } else {
+                        plain.append(c); i++
+                    }
+                }
+
+                // Highlight: ==...== or <mark>...</mark>
+                c == '=' && i + 1 < text.length && text[i + 1] == '=' -> {
+                    val end = text.indexOf("==", i + 2)
+                    if (end > i + 2) {
+                        flushPlain()
+                        spans += MdSpan.Highlight(text.substring(i + 2, end))
+                        i = end + 2
+                    } else {
+                        plain.append(c); i++
+                    }
+                }
+
+                c == '<' && text.startsWith("<mark>", i, ignoreCase = true) -> {
+                    val end = text.indexOf("</mark>", i + 6, ignoreCase = true)
+                    if (end > i + 6) {
+                        flushPlain()
+                        spans += MdSpan.Highlight(text.substring(i + 6, end))
+                        i = end + 7
                     } else {
                         plain.append(c); i++
                     }

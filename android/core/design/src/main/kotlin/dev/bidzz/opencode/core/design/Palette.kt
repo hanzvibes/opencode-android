@@ -82,4 +82,110 @@ object Palette {
     val lightSyntaxString = Color(0xFF34C759)
     val lightSyntaxNumber = Color(0xFFFF9500)
     val lightSyntaxComment = Color(0xFF8E8E93)
+
+    // ---- Glassmorphism blur tints ----
+    val darkGlassSurfaceSubtle = Color(0x66141416)
+    val darkGlassSurface = Color(0x99141416)
+    val darkGlassSurfaceThick = Color(0xCC1C1C1E)
+    val darkGlassBorder = Color(0x26FFFFFF)
+    val darkGlassHighlight = Color(0x33FFFFFF)
+
+    val lightGlassSurfaceSubtle = Color(0x80FFFFFF)
+    val lightGlassSurface = Color(0xB3FFFFFF)
+    val lightGlassSurfaceThick = Color(0xCCF5F5F7)
+    val lightGlassBorder = Color(0x1F000000)
+    val lightGlassHighlight = Color(0x66FFFFFF)
+
+    // ---- Subtle Elevation Halos & Glows ----
+    val darkHaloAmbient = Color(0x40000000)
+    val darkHaloAccent = Color(0x2E0A84FF)
+    val darkHaloSuccess = Color(0x2630D158)
+    val darkHaloWarning = Color(0x26FF9F0A)
+    val darkHaloDanger = Color(0x26FF453A)
+
+    val lightHaloAmbient = Color(0x14000000)
+    val lightHaloAccent = Color(0x24007AFF)
+    val lightHaloSuccess = Color(0x1F34C759)
+    val lightHaloWarning = Color(0x1FFF9500)
+    val lightHaloDanger = Color(0x1FFF3B30)
+
+    // ---- Tool Statuses ----
+    val darkToolRunning = systemBlueDark
+    val darkToolRunningBg = Color(0x240A84FF)
+    val darkToolSuccess = success
+    val darkToolSuccessBg = Color(0x2430D158)
+    val darkToolError = danger
+    val darkToolErrorBg = Color(0x24FF453A)
+    val darkToolWarning = warning
+    val darkToolWarningBg = Color(0x24FF9F0A)
+    val darkToolPending = Color(0xFF8E8E93)
+    val darkToolPendingBg = Color(0x1F8E8E93)
+
+    val lightToolRunning = systemBlue
+    val lightToolRunningBg = Color(0x1F007AFF)
+    val lightToolSuccess = successLight
+    val lightToolSuccessBg = Color(0x1F34C759)
+    val lightToolError = dangerLight
+    val lightToolErrorBg = Color(0x1FFF3B30)
+    val lightToolWarning = warningLight
+    val lightToolWarningBg = Color(0x1FFF9500)
+    val lightToolPending = Color(0xFF6E6E73)
+    val lightToolPendingBg = Color(0x146E6E73)
+
+    // ---- Unified Diff semantic colors (+/-) ----
+    val darkDiffAdded = Color(0xFF30D158)
+    val darkDiffAddedBg = Color(0x2430D158)
+    val darkDiffAddedGutter = Color(0x3D30D158)
+
+    val darkDiffRemoved = Color(0xFFFF453A)
+    val darkDiffRemovedBg = Color(0x24FF453A)
+    val darkDiffRemovedGutter = Color(0x3DFF453A)
+
+    val darkDiffModified = Color(0xFFFF9F0A)
+    val darkDiffModifiedBg = Color(0x24FF9F0A)
+
+    val darkDiffHunkHeader = Color(0xFF5AC8FA)
+    val darkDiffHunkHeaderBg = Color(0x1F5AC8FA)
+
+    val lightDiffAdded = Color(0xFF28A745)
+    val lightDiffAddedBg = Color(0x1F28A745)
+    val lightDiffAddedGutter = Color(0x3328A745)
+
+    val lightDiffRemoved = Color(0xFFD73A49)
+    val lightDiffRemovedBg = Color(0x1FD73A49)
+    val lightDiffRemovedGutter = Color(0x33D73A49)
+
+    val lightDiffModified = Color(0xFFB08800)
+    val lightDiffModifiedBg = Color(0x1FB08800)
+
+    val lightDiffHunkHeader = Color(0xFF007AFF)
+    val lightDiffHunkHeaderBg = Color(0x14007AFF)
+
+    // ---- Model Providers ----
+    val darkProviderAnthropic = Color(0xFFD97757)
+    val lightProviderAnthropic = Color(0xFFC95738)
+
+    val darkProviderOpenAI = Color(0xFF10A37F)
+    val lightProviderOpenAI = Color(0xFF0D8C6D)
+
+    val darkProviderGoogle = Color(0xFF4285F4)
+    val lightProviderGoogle = Color(0xFF1A73E8)
+
+    val darkProviderDeepSeek = Color(0xFF4D88FF)
+    val lightProviderDeepSeek = Color(0xFF1E60D5)
+
+    val darkProviderMistral = Color(0xFFFF7000)
+    val lightProviderMistral = Color(0xFFE65100)
+
+    val darkProviderOllama = Color(0xFFF0F0F0)
+    val lightProviderOllama = Color(0xFF24292F)
+
+    val darkProviderMeta = Color(0xFF0081FB)
+    val lightProviderMeta = Color(0xFF0668E1)
+
+    val darkProviderGroq = Color(0xFFF55036)
+    val lightProviderGroq = Color(0xFFD63B22)
+
+    val darkProviderCohere = Color(0xFF388E6D)
+    val lightProviderCohere = Color(0xFF1E3A34)
 }

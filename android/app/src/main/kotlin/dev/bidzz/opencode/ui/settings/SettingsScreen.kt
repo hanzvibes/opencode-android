@@ -1,18 +1,13 @@
 package dev.bidzz.opencode.ui.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,12 +23,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.AppLanguage
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
@@ -47,15 +42,19 @@ import dev.bidzz.opencode.ui.IconBadge
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.StatusDot
 
 /**
- * Settings.
+ * Settings screen.
  *
- * Deliberately sparse: only what exists and works. Empty rows for future features
- * would be placeholder content presented as real, which `plan.md` §12 forbids.
+ * Organized into Apple-style grouped settings cards:
+ * - Project & Workspace (Folder, All Files Permission)
+ * - Engine & Diagnostics (Engine Port, Diagnostics)
+ * - Preferences & Models (Language, Providers)
+ * - Information (About)
  *
- * Rows are grouped into cards by topic. Each row says what it is (icon, title), what it is
- * set to (subtitle or status), and whether it opens something (chevron).
+ * Each row presents a clean squircle icon badge, descriptive title & subtitle,
+ * inline status value, and navigation chevron when actionable.
  */
 @Composable
 fun SettingsScreen(
@@ -74,6 +73,15 @@ fun SettingsScreen(
     var pickingLanguage by remember { mutableStateOf(false) }
     val hasAllFiles = app.workspaceStore.hasAllFilesAccess()
 
+    // Apple-style categorized badge colors
+    val blueBadge = Color(0xFF007AFF)
+    val greenBadge = Color(0xFF34C759)
+    val amberBadge = Color(0xFFFF9500)
+    val purpleBadge = Color(0xFF5856D6)
+    val violetBadge = Color(0xFFAF52DE)
+    val tealBadge = Color(0xFF30B0C7)
+    val grayBadge = Color(0xFF8E8E93)
+
     ScreenScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
         Column(
             modifier = Modifier
@@ -81,15 +89,18 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.lg, vertical = spacing.sm),
         ) {
+            // Workspace & Permissions
             Section(R.string.settings_section_project) {
                 SettingsRow(
                     glyph = Glyph.Folder,
+                    badgeColor = blueBadge,
                     title = stringResource(R.string.settings_project_folder),
                     subtitle = app.workspaceStore.resolve().absolutePath,
                     onClick = onProjects,
                 )
                 SettingsRow(
                     glyph = Glyph.File,
+                    badgeColor = if (hasAllFiles) greenBadge else amberBadge,
                     title = stringResource(R.string.settings_all_files),
                     subtitle = stringResource(
                         if (hasAllFiles) R.string.settings_all_files_granted_hint
@@ -99,15 +110,51 @@ fun SettingsScreen(
                         if (hasAllFiles) R.string.settings_granted else R.string.settings_not_granted,
                     ),
                     valueColor = if (hasAllFiles) colors.success else colors.warning,
-                    // Only actionable while the permission is missing; granted is just a status.
                     onClick = if (hasAllFiles) null else app::requestAllFilesAccess,
                     divider = true,
                 )
             }
 
+            // Engine & Connectivity
+            Section(R.string.settings_section_engine) {
+                SettingsRow(
+                    glyph = Glyph.Code,
+                    badgeColor = tealBadge,
+                    title = stringResource(R.string.settings_engine_port),
+                    subtitle = status.credentials?.baseUrl ?: stringResource(R.string.settings_engine_port_desc),
+                    value = status.port?.toString() ?: stringResource(R.string.settings_engine_inactive),
+                    valueColor = if (status.port != null) colors.neutral else colors.onSurfaceMuted,
+                    valueIsMono = status.port != null,
+                    onClick = onDiagnostics,
+                )
+                SettingsRow(
+                    glyph = Glyph.Sliders,
+                    badgeColor = amberBadge,
+                    title = stringResource(R.string.settings_diag_title),
+                    subtitle = stringResource(R.string.settings_diag_body, engineStateWord(status.state)),
+                    value = engineStateWord(status.state).replaceFirstChar { it.uppercase() },
+                    valueColor = when (status.state) {
+                        EngineState.RUNNING -> colors.success
+                        EngineState.STARTING, EngineState.INITIALIZING -> colors.warning
+                        EngineState.DEGRADED, EngineState.FAILED -> colors.danger
+                        EngineState.STOPPED, EngineState.STOPPING -> colors.onSurfaceMuted
+                    },
+                    statusDotColor = when (status.state) {
+                        EngineState.RUNNING -> colors.success
+                        EngineState.STARTING, EngineState.INITIALIZING -> colors.warning
+                        EngineState.DEGRADED, EngineState.FAILED -> colors.danger
+                        EngineState.STOPPED, EngineState.STOPPING -> null
+                    },
+                    onClick = onDiagnostics,
+                    divider = true,
+                )
+            }
+
+            // Preferences & Providers
             Section(R.string.settings_section_language) {
                 SettingsRow(
                     glyph = Glyph.Globe,
+                    badgeColor = purpleBadge,
                     title = stringResource(R.string.settings_language),
                     value = languageLabel(language),
                     onClick = { pickingLanguage = true },
@@ -116,25 +163,19 @@ fun SettingsScreen(
 
             Section(R.string.settings_section_provider) {
                 SettingsRow(
-                    glyph = Glyph.Sliders,
+                    glyph = Glyph.Key,
+                    badgeColor = violetBadge,
                     title = stringResource(R.string.settings_provider_title),
                     subtitle = stringResource(R.string.settings_provider_body),
                     onClick = onProviders,
                 )
             }
 
-            Section(R.string.settings_section_engine) {
-                SettingsRow(
-                    glyph = Glyph.Terminal,
-                    title = stringResource(R.string.settings_diag_title),
-                    subtitle = stringResource(R.string.settings_diag_body, engineStateWord(status.state)),
-                    onClick = onDiagnostics,
-                )
-            }
-
+            // About
             Section(R.string.settings_section_about) {
                 SettingsRow(
                     glyph = Glyph.Info,
+                    badgeColor = grayBadge,
                     title = stringResource(R.string.settings_about_title),
                     subtitle = stringResource(R.string.settings_about_body),
                     onClick = onAbout,
@@ -155,7 +196,7 @@ fun SettingsScreen(
     }
 }
 
-/** A titled group: small label above, rows inside one rounded card. */
+/** A titled group: Apple-style inset uppercase section header above a grouped card surface. */
 @Composable
 private fun Section(titleRes: Int, content: @Composable ColumnScope.() -> Unit) {
     val colors = OpenCodeTheme.colors
@@ -163,47 +204,76 @@ private fun Section(titleRes: Int, content: @Composable ColumnScope.() -> Unit) 
 
     Text(
         text = stringResource(titleRes).uppercase(),
-        style = OpenCodeTypography.label,
+        style = OpenCodeTypography.caption.copy(letterSpacing = 0.6.sp),
         color = colors.onSurfaceFaint,
-        modifier = Modifier.padding(start = spacing.xs, top = spacing.xl, bottom = spacing.sm),
+        modifier = Modifier.padding(start = spacing.sm, top = spacing.xl, bottom = spacing.xs),
     )
     CardGroup(content = content)
 }
 
 /**
- * One row. [onClick] null means it is information only: no chevron, not tappable.
- * [value] is the short current setting or status shown at the end of the row.
+ * Apple-style grouped settings row.
+ *
+ * @param glyph The icon glyph to render inside the squircle badge.
+ * @param badgeColor Background color of the icon badge.
+ * @param title Primary title of the setting.
+ * @param onClick Action callback; null renders an informational row without navigation chevron.
+ * @param subtitle Secondary explanatory text.
+ * @param value Setting value or status text shown on the right side.
+ * @param valueColor Color for the status text.
+ * @param valueIsMono Whether to render the value in monospace font (e.g. for port numbers).
+ * @param statusDotColor Optional status dot shown next to the value.
+ * @param divider Whether to draw a hairline separator above this row (inset past the badge).
  */
 @Composable
 private fun SettingsRow(
     glyph: Glyph,
+    badgeColor: Color,
     title: String,
     onClick: (() -> Unit)?,
     subtitle: String? = null,
     value: String? = null,
     valueColor: Color = OpenCodeTheme.colors.onSurfaceMuted,
+    valueIsMono: Boolean = false,
+    statusDotColor: Color? = null,
     divider: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
 
-    // Starts under the text, not under the icon, so the icons read as one column.
-    if (divider) RowDivider(inset = spacing.md + 32.dp + spacing.md)
+    // Inset separator starts cleanly beneath the text, skipping the badge column
+    if (divider) {
+        RowDivider(inset = spacing.md + 30.dp + spacing.md)
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
+            .heightIn(min = 54.dp)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = spacing.md, vertical = spacing.md),
+            .padding(horizontal = spacing.md, vertical = spacing.sm + 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconBadge(glyph)
+        // Apple-style squircle icon badge
+        IconBadge(
+            glyph = glyph,
+            tint = Color.White,
+            background = badgeColor,
+            shape = RoundedCornerShape(radius.sm),
+            size = 30.dp,
+        )
+
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(start = spacing.md),
+                .padding(start = spacing.md, end = spacing.xs),
         ) {
-            Text(title, style = OpenCodeTypography.body, color = colors.onSurface)
+            Text(
+                text = title,
+                style = OpenCodeTypography.body,
+                color = colors.onSurface,
+            )
             if (!subtitle.isNullOrEmpty()) {
                 Text(
                     text = subtitle,
@@ -214,20 +284,35 @@ private fun SettingsRow(
                 )
             }
         }
-        if (value != null) {
-            Text(
-                text = value,
-                style = OpenCodeTypography.bodySmall,
-                color = valueColor,
-                modifier = Modifier.padding(start = spacing.sm),
-            )
+
+        if (value != null || statusDotColor != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = spacing.xs),
+            ) {
+                if (statusDotColor != null) {
+                    StatusDot(
+                        color = statusDotColor,
+                        size = 7.dp,
+                        modifier = Modifier.padding(end = spacing.xs),
+                    )
+                }
+                if (value != null) {
+                    Text(
+                        text = value,
+                        style = if (valueIsMono) OpenCodeTypography.code else OpenCodeTypography.bodySmall,
+                        color = valueColor,
+                    )
+                }
+            }
         }
+
         if (onClick != null) {
             GlyphIcon(
-                Glyph.ChevronRight,
+                glyph = Glyph.ChevronRight,
                 tint = colors.onSurfaceFaint,
-                size = 18.dp,
-                modifier = Modifier.padding(start = spacing.sm),
+                size = 14.dp,
+                modifier = Modifier.padding(start = spacing.xs),
             )
         }
     }
@@ -242,7 +327,7 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
     },
 )
 
-/** Picks apply at once; there is nothing to confirm, so tapping a choice closes the dialog. */
+/** Language picker dialog. */
 @Composable
 private fun LanguageDialog(
     selected: AppLanguage,
@@ -256,7 +341,7 @@ private fun LanguageDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                stringResource(R.string.settings_language_dialog_title),
+                text = stringResource(R.string.settings_language_dialog_title),
                 style = OpenCodeTypography.title,
                 color = colors.onSurface,
             )

@@ -41,6 +41,9 @@
     <string name="settings_section_engine">Engine</string>
     <string name="settings_diag_title">Diagnostics</string>
     <string name="settings_diag_body">Engine is %1$s. Log, credentials, runtime paths.</string>
+    <string name="settings_engine_port">Engine port</string>
+    <string name="settings_engine_port_desc">Local server loopback port</string>
+    <string name="settings_engine_inactive">Inactive</string>
     <string name="settings_section_about">About</string>
     <string name="settings_about_title">About the developer</string>
     <string name="settings_about_body">Portfolio and ways to get in touch.</string>
@@ -71,6 +74,17 @@
     <string name="chat_status_stopping">Stopping</string>
     <string name="chat_status_failed">Failed</string>
     <string name="chat_status_stopped">Stopped</string>
+    <string name="chat_status_dialog_title">Engine Status</string>
+    <string name="chat_status_dialog_workspace">Workspace</string>
+    <string name="chat_status_dialog_branch">Branch</string>
+    <string name="chat_status_dialog_state">State</string>
+    <string name="chat_status_dialog_diagnostics">Diagnostics</string>
+    <string name="chat_status_dialog_close">Close</string>
+    <string name="chat_status_desc_ready">Engine is online and ready for prompts.</string>
+    <string name="chat_status_desc_working">Engine is actively running tasks or generating responses.</string>
+    <string name="chat_status_desc_starting">Engine is starting up and establishing runtime connections.</string>
+    <string name="chat_status_desc_stopped">Engine is not running. Tap Diagnostics to inspect logs.</string>
+    <string name="chat_status_desc_unhealthy">Engine is degraded or encountered an error.</string>
     <string name="empty_title_ready">What are we working on?</string>
     <string name="empty_title_starting">Starting engine…</string>
     <string name="empty_starting_body">The local engine is starting. This takes a few seconds.</string>
@@ -79,17 +93,61 @@
     <string name="suggestion_bug">Find the cause of a bug</string>
     <string name="suggestion_review">Review the latest changes</string>
     <string name="suggestion_tests">Write tests for a file</string>
+    <string name="starter_section_heading">Starters</string>
+    <string name="starter_explain_title">Explain codebase</string>
+    <string name="starter_explain_desc">Walk through architecture and structure</string>
+    <string name="starter_explain_prompt">Explain how this codebase is structured and its main architecture.</string>
+    <string name="starter_bugs_title">Find &amp; fix bugs</string>
+    <string name="starter_bugs_desc">Trace anomalies, errors, and edge cases</string>
+    <string name="starter_bugs_prompt">Help me find and fix potential bugs or issues in this project.</string>
+    <string name="starter_tests_title">Generate unit tests</string>
+    <string name="starter_tests_desc">Draft test suites with edge cases</string>
+    <string name="starter_tests_prompt">Generate comprehensive unit tests covering edge cases for this project.</string>
+    <string name="starter_review_title">Review changes</string>
+    <string name="starter_review_desc">Audit recent diffs for quality and security</string>
+    <string name="starter_review_prompt">Review recent git changes and diffs for code quality, bugs, and performance.</string>
+    <string name="workspace_readiness_section">Workspace &amp; Environment</string>
+    <string name="workspace_engine_label">Engine</string>
+    <string name="workspace_path_label">Workspace</string>
+    <string name="workspace_git_label">Git branch</string>
+    <string name="workspace_git_untracked">Untracked</string>
     <string name="drawer_files">Files</string>
     <string name="drawer_project">Project</string>
     <string name="drawer_recent">Recent</string>
     <string name="drawer_no_sessions">No sessions yet</string>
     <string name="drawer_untitled">Untitled</string>
     <string name="drawer_all_sessions">All sessions</string>
+    <string name="drawer_diagnostics">Diagnostics</string>
+    <string name="drawer_developer">Developer</string>
+    <string name="drawer_switch_workspace">Switch workspace</string>
+
+    <!-- Session Groups -->
+    <string name="session_group_pinned">Pinned</string>
+    <string name="session_group_today">Today</string>
+    <string name="session_group_yesterday">Yesterday</string>
+    <string name="session_group_7_days">Previous 7 days</string>
+    <string name="session_group_older">Older</string>
+
+    <!-- Session Actions -->
+    <string name="session_action_pin">Pin</string>
+    <string name="session_action_unpin">Unpin</string>
+    <string name="session_action_rename">Rename</string>
+    <string name="session_action_delete">Delete</string>
+    <string name="session_rename_title">Rename chat</string>
+    <string name="session_rename_hint">Chat title</string>
+    <string name="session_delete_title">Delete chat</string>
+    <string name="session_delete_message">Are you sure you want to delete this chat? This action cannot be undone.</string>
+    <string name="session_action_cancel">Cancel</string>
+    <string name="session_action_save">Save</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <string name="composer_hint">Ask anything about this project</string>
     <string name="composer_send">Send</string>
     <string name="composer_stop">Stop</string>
+    <string name="composer_voice">Voice</string>
+    <string name="composer_clear">Clear</string>
+    <string name="composer_commands">Commands</string>
+    <string name="composer_attach">Attach file</string>
     <string name="permission_title">Permission required</string>
     <string name="permission_allow_once">Allow once</string>
     <string name="permission_always">Always</string>
@@ -99,6 +157,15 @@
     <string name="tool_steps_other">%1$d steps</string>
     <string name="tool_failed">· %1$d failed</string>
     <string name="tool_working">· working</string>
+    <string name="tool_status_running">Running</string>
+    <string name="tool_status_success">Success</string>
+    <string name="tool_status_failed">Failed</string>
+    <string name="tool_lines_one">%1$d line</string>
+    <string name="tool_lines">%1$d lines</string>
+    <string name="tool_stdout">STDOUT</string>
+    <string name="tool_stdin">STDIN</string>
+    <string name="tool_stderr">STDERR</string>
+    <string name="tool_command">Command</string>
     <string name="tool_input">Input</string>
     <string name="tool_output">Output</string>
     <string name="tool_error">Error</string>
@@ -142,11 +209,22 @@
     <string name="conflict_reload">Reload</string>
     <string name="conflict_keep">Keep editing</string>
 
+    <string name="fileview_discard_title">Discard unsaved changes?</string>
+    <string name="fileview_discard_body">You have unsaved changes. Leaving will discard them.</string>
+    <string name="fileview_discard_confirm">Discard</string>
+    <string name="fileview_discard_dismiss">Keep editing</string>
+    <string name="fileview_dirty_badge">Unsaved</string>
+
     <!-- Diff -->
     <string name="diff_loading">Loading diff…</string>
     <string name="diff_git_unavailable">Git is not available in this build, so changes cannot be shown as a diff.\n\nThe file contents are still readable from the file list.</string>
     <string name="diff_none">No changes to show.</string>
     <string name="diff_truncated">Diff truncated by the engine.</string>
+    <string name="diff_mode_unified">Unified</string>
+    <string name="diff_mode_split">Split</string>
+    <string name="diff_filter_hint">Filter changed files…</string>
+    <string name="diff_original">Original</string>
+    <string name="diff_modified">Modified</string>
     <string name="difflist_title">Changes (%1$d)</string>
     <string name="difflist_empty">No changes in the working tree.\n\nEither the agent has not edited anything yet, or git is not available.</string>
 
@@ -198,9 +276,47 @@
     <string name="providers_field_models">Models, comma or line separated</string>
     <string name="providers_field_models_hint">model-id = name shown in the picker</string>
     <string name="providers_save_restart">Save &amp; restart</string>
+    <string name="providers_featured_title">Featured AI Providers</string>
+    <string name="providers_other_title">All Providers</string>
+    <string name="providers_status_connected">Connected</string>
+    <string name="providers_status_free_tier">Free Tier</string>
+    <string name="providers_status_missing_key">Missing Key</string>
+    <string name="providers_quick_test">Quick Test</string>
+    <string name="providers_testing">Testing…</string>
+    <string name="providers_test_passed">Key verified &amp; ready to save</string>
+    <string name="providers_test_failed">Key verification failed</string>
+    <string name="providers_key_empty">API key cannot be empty</string>
+    <string name="providers_key_spaces">Key cannot contain spaces</string>
+    <string name="providers_key_too_short">Key is too short (min 8 chars)</string>
+    <string name="providers_key_valid">Valid key format</string>
+    <string name="providers_paste_action">Paste</string>
+    <string name="providers_clear_action">Clear</string>
+    <string name="providers_show_key">Show key</string>
+    <string name="providers_hide_key">Hide key</string>
 
     <!-- Diagnostics. Field names (pid, baseUrl, filesDir) stay as they are: they are what a
          value is called in a bug report, and translating them makes the report unsearchable. -->
+    <string name="diag_section_engine_control">Engine Supervisor</string>
+    <string name="diag_section_health">System Health</string>
+    <string name="diag_restart_engine">Restart Engine</string>
+    <string name="diag_restarting">Restarting…</string>
+    <string name="diag_copy_all">Copy All</string>
+    <string name="diag_copy_logs">Copy Logs</string>
+    <string name="diag_copied_toast">Copied to clipboard</string>
+    <string name="diag_cpu">CPU</string>
+    <string name="diag_ram">RAM</string>
+    <string name="diag_storage">Storage</string>
+    <string name="diag_process_pid">Process PID</string>
+    <string name="diag_engine_pid">Engine PID</string>
+    <string name="diag_app_pid">App PID</string>
+    <string name="diag_tab_all">All Logs</string>
+    <string name="diag_tab_engine_log">Disk Log</string>
+    <string name="diag_tab_output">Console</string>
+    <string name="diag_health_good">Good</string>
+    <string name="diag_health_low_mem">Low Memory</string>
+    <string name="diag_health_normal">Normal</string>
+    <string name="diag_health_active">Active</string>
+    <string name="diag_health_inactive">Inactive</string>
     <string name="diag_running">Running…</string>
     <string name="diag_none">none</string>
     <string name="diag_password_hidden">•••••• (tap to reveal)</string>

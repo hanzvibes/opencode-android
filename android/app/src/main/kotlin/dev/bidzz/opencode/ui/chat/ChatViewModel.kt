@@ -41,6 +41,8 @@ data class ChatUiState(
     val activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
     /** Slash commands offered by the engine and the project's `commands/` folder. */
     val commands: List<dev.bidzz.opencode.core.api.dto.CommandInfo> = emptyList(),
+    /** Active git branch when inside a version-controlled workspace. */
+    val branch: String? = null,
 )
 
 /** A single rendered message. */
@@ -54,6 +56,7 @@ data class ChatMessage(
      * catalog that arrives late still produces human names. See [provenanceLabel]. */
     val agent: String? = null,
     val model: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
+    val reasoning: String? = null,
 )
 
 /**
@@ -71,7 +74,7 @@ class ChatViewModel(
     private val workspace: () -> String,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ChatUiState())
+    private val _state = MutableStateFlow(ChatUiState(workspacePath = workspace()))
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
 
     private var repository: ChatRepository? = null
@@ -428,6 +431,7 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
                 id = message.id,
                 role = Role.ASSISTANT,
                 text = message.plainText,
+                reasoning = message.reasoningText,
                 tools = message.content.mapNotNull { it.toToolCall() },
                 agent = message.agent,
                 model = message.model,

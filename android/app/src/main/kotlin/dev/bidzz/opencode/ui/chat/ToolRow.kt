@@ -1,5 +1,17 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,29 +48,37 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.ToolCall
+import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import kotlinx.coroutines.delay
 
 /**
- * The whole tool trace for one message, collapsed to a single summary line.
+ * The tool trace for one message, presented as a high-tech terminal console execution.
  *
- * A real coding run calls fifteen to thirty tools. Rendering every one as a
- * permanent row buried the answer under a wall of log, so the trace is folded and
- * the operator opens it on demand. Two things stay visible while it is folded:
- * the step currently running, so progress is still legible, and any failure, so a
- * red dot is never hidden behind a tap.
- *
- * It starts open while the message streams and closes itself when the run ends —
- * watch it work, then read what it produced.
+ * Designed to evoke terminal-grade CLI environments like Claude Code / Antigravity:
+ * - Compact console pill/card with dark console styling
+ * - Live pulse indicator when a command is running
+ * - Clean status badges with execution summaries and line counts
+ * - Formatted terminal console output with `$ ` prompt prefix and syntax coloring
  */
 @Composable
 fun ToolTrace(
@@ -86,7 +107,11 @@ fun ToolTrace(
             .fillMaxWidth()
             .clip(shape)
             .background(colors.surfaceSunken)
-            .border(0.5.dp, colors.hairline, shape),
+            .border(
+                width = 0.5.dp,
+                color = if (running.isNotEmpty()) colors.accent.copy(alpha = 0.4f) else colors.hairline,
+                shape = shape,
+            ),
     ) {
         // Summary toggle header row
         Row(
@@ -112,13 +137,20 @@ fun ToolTrace(
                 )
             }
 
+            GlyphIcon(
+                glyph = Glyph.Terminal,
+                tint = if (running.isNotEmpty()) colors.accent else colors.onSurfaceMuted,
+                size = 13.dp,
+                modifier = Modifier.padding(start = spacing.xxs),
+            )
+
             Text(
                 text = stringResource(
                     if (tools.size == 1) R.string.tool_steps_one else R.string.tool_steps_other,
                     tools.size,
                 ),
-                style = OpenCodeTypography.label,
-                color = colors.onSurfaceMuted,
+                style = OpenCodeTypography.label.copy(fontFamily = OpenCodeTypography.mono, fontSize = 12.sp),
+                color = if (running.isNotEmpty()) colors.accent else colors.onSurfaceMuted,
                 modifier = Modifier.padding(start = spacing.xs),
             )
 
@@ -127,14 +159,20 @@ fun ToolTrace(
             if (failed > 0) {
                 StatusChip(
                     text = stringResource(R.string.tool_failed, failed).removePrefix("· ").trim(),
-                    color = colors.danger,
+                    color = colors.toolError,
                 )
             }
             if (running.isNotEmpty()) {
                 if (failed > 0) Spacer(Modifier.width(spacing.xs))
                 StatusChip(
                     text = stringResource(R.string.tool_working).removePrefix("· ").trim(),
-                    color = colors.warning,
+                    color = colors.toolWarning,
+                    isPulsing = true,
+                )
+            } else if (failed == 0 && tools.isNotEmpty() && !streaming) {
+                StatusChip(
+                    text = stringResource(R.string.tool_status_success),
+                    color = colors.toolSuccess,
                 )
             }
         }
@@ -166,6 +204,7 @@ private fun StatusChip(
     text: String,
     color: Color,
     modifier: Modifier = Modifier,
+    isPulsing: Boolean = false,
 ) {
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
@@ -177,22 +216,30 @@ private fun StatusChip(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
-        Box(
-            modifier = Modifier
-                .size(6.dp)
-                .background(color, CircleShape),
-        )
+        if (isPulsing) {
+            LivePulseIndicator(color = color, size = 4.5.dp)
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(color, CircleShape),
+            )
+        }
         Text(
             text = text,
-            style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+            style = OpenCodeTypography.caption.copy(
+                fontFamily = OpenCodeTypography.mono,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            ),
             color = color,
         )
     }
 }
 
 /**
- * One step on the timeline: status dot on the rail, verb and target beside it.
- * The step currently running reads in the accent colour; tap toggles input and output.
+ * One step on the timeline: compact terminal pill card with dark console styling.
+ * Supports live pulsing execution indicator, clean status badges, and expandable terminal output.
  */
 @Composable
 fun ToolStep(
@@ -208,12 +255,14 @@ fun ToolStep(
 
     val active = call.status == "running" || call.status == "streaming"
     val isError = call.status == "error"
-    val dot = when {
-        call.status == "completed" -> colors.success
-        isError -> colors.danger
-        else -> colors.accent
+    val dotColor = when {
+        call.status == "completed" -> colors.toolSuccess
+        isError -> colors.toolError
+        else -> colors.toolRunning
     }
 
+    val toolKind = toolKindFor(call.name)
+    val badgeColor = badgeColorForKind(toolKind, colors)
     val label = stepLabel(call.name, call.summary, call.status)
     val verbText = label.verbText()
     val hasDetails = !call.inputText.isNullOrBlank() || !call.output.isNullOrBlank() || !call.error.isNullOrBlank()
@@ -226,13 +275,13 @@ fun ToolStep(
         // Vertical rail column with dot and connecting lines
         Box(
             modifier = Modifier
-                .width(20.dp)
+                .width(22.dp)
                 .fillMaxHeight()
                 .drawBehind {
                     val centerX = size.width / 2f
-                    val dotCenterY = 12.dp.toPx()
-                    val strokeWidth = 1.5.dp.toPx()
-                    val railColor = colors.outline
+                    val dotCenterY = 16.dp.toPx()
+                    val strokeWidth = 1.dp.toPx()
+                    val railColor = colors.hairline
 
                     if (!isFirst) {
                         drawLine(
@@ -256,112 +305,292 @@ fun ToolStep(
             contentAlignment = Alignment.TopCenter,
         ) {
             Box(
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .size(24.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 if (active) {
+                    LivePulseIndicator(color = colors.accent, size = 6.dp)
+                } else {
                     Box(
                         modifier = Modifier
-                            .size(15.dp)
-                            .background(dot.copy(alpha = 0.2f), CircleShape),
+                            .size(6.dp)
+                            .background(dotColor, CircleShape),
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .size(if (active) 9.dp else 7.dp)
-                        .background(dot, CircleShape),
-                )
             }
         }
 
-        // Step content: header line and optional expanded details
+        // Terminal card column: header pill & optional expanded console
         Column(
             modifier = Modifier
                 .weight(1f)
                 .padding(start = spacing.xs, bottom = if (isLast) 0.dp else spacing.sm),
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 24.dp)
-                    .clip(RoundedCornerShape(radius.xs))
-                    .clickable(enabled = hasDetails) { open = !open }
-                    .padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .clip(RoundedCornerShape(radius.sm))
+                    .background(
+                        if (active) colors.surfaceVariant.copy(alpha = 0.35f)
+                        else colors.surfaceVariant.copy(alpha = 0.2f),
+                    )
+                    .border(
+                        width = 0.5.dp,
+                        color = if (active) colors.accent.copy(alpha = 0.5f) else colors.hairline,
+                        shape = RoundedCornerShape(radius.sm),
+                    ),
             ) {
+                // Main terminal execution row
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = hasDetails) { open = !open }
+                        .padding(horizontal = spacing.sm, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    GlyphIcon(
-                        glyph = label.glyph,
-                        tint = if (active) colors.accent else if (isError) colors.danger else colors.onSurfaceMuted,
-                        size = 14.dp,
-                    )
-
-                    if (verbText.isNotEmpty()) {
+                    // Tool Badge Chip
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.xs))
+                            .background(badgeColor.copy(alpha = 0.14f))
+                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        GlyphIcon(glyph = label.glyph, tint = badgeColor, size = 10.dp)
                         Text(
-                            text = verbText,
-                            style = OpenCodeTypography.label.copy(fontSize = 12.sp),
-                            color = if (active) colors.accent else if (isError) colors.danger else colors.onSurface,
-                            modifier = Modifier.padding(start = spacing.xs),
+                            text = toolKind.label,
+                            style = OpenCodeTypography.caption.copy(
+                                fontFamily = OpenCodeTypography.mono,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            color = badgeColor,
                         )
                     }
 
-                    if (label.target.isNotEmpty()) {
-                        Text(
-                            text = label.target,
-                            style = if (verbText.isNotEmpty()) {
-                                OpenCodeTypography.codeInline.copy(fontSize = 12.sp)
-                            } else {
-                                OpenCodeTypography.label.copy(fontSize = 12.sp)
-                            },
-                            color = if (verbText.isNotEmpty()) colors.onSurfaceMuted else if (active) colors.accent else colors.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                    // Command snippet or Target text
+                    if (toolKind == ToolKind.SHELL) {
+                        val command = extractCommand(call) ?: call.summary
+                        val firstLine = command.lineSequence().firstOrNull().orEmpty()
+                        Row(
                             modifier = Modifier
                                 .weight(1f, fill = false)
                                 .padding(start = spacing.xs),
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "$ ",
+                                style = OpenCodeTypography.codeInline.copy(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                                color = colors.accent,
+                            )
+                            Text(
+                                text = firstLine,
+                                style = OpenCodeTypography.codeInline.copy(
+                                    fontSize = 11.5.sp,
+                                ),
+                                color = if (active) colors.accent else colors.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (active) {
+                                BlinkingCursor(
+                                    color = colors.accent,
+                                    modifier = Modifier.padding(start = spacing.xxs),
+                                )
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(start = spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (verbText.isNotEmpty()) {
+                                Text(
+                                    text = verbText,
+                                    style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                                    color = if (active) colors.accent else if (isError) colors.danger else colors.onSurfaceMuted,
+                                )
+                            }
+                            if (label.target.isNotEmpty()) {
+                                Text(
+                                    text = label.target,
+                                    style = OpenCodeTypography.codeInline.copy(fontSize = 11.5.sp),
+                                    color = if (active) colors.accent else colors.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(start = spacing.xs),
+                                )
+                            }
+                            if (active) {
+                                BlinkingCursor(
+                                    color = colors.accent,
+                                    modifier = Modifier.padding(start = spacing.xxs),
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.weight(1f))
+
+                    // Status Badge (Success / Failed / Running)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        modifier = Modifier.padding(start = spacing.xs),
+                    ) {
+                        when {
+                            active -> {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(radius.full))
+                                        .background(colors.accent.copy(alpha = 0.12f))
+                                        .padding(horizontal = spacing.xs, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                ) {
+                                    LivePulseIndicator(color = colors.accent, size = 4.5.dp)
+                                    Text(
+                                        text = stringResource(R.string.tool_status_running),
+                                        style = OpenCodeTypography.caption.copy(
+                                            fontFamily = OpenCodeTypography.mono,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        ),
+                                        color = colors.accent,
+                                    )
+                                }
+                            }
+                            isError -> {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(radius.full))
+                                        .background(colors.danger.copy(alpha = 0.12f))
+                                        .padding(horizontal = spacing.xs, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.tool_status_failed),
+                                        style = OpenCodeTypography.caption.copy(
+                                            fontFamily = OpenCodeTypography.mono,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        ),
+                                        color = colors.danger,
+                                    )
+                                }
+                            }
+                            call.status == "completed" -> {
+                                val summaryText = if (!call.output.isNullOrBlank()) {
+                                    val lines = call.output.lines().size
+                                    if (lines > 1) {
+                                        stringResource(R.string.tool_lines, lines)
+                                    } else {
+                                        stringResource(R.string.tool_lines_one, 1)
+                                    }
+                                } else {
+                                    stringResource(R.string.tool_status_success)
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(radius.full))
+                                        .background(colors.success.copy(alpha = 0.10f))
+                                        .padding(horizontal = spacing.xs, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                ) {
+                                    GlyphIcon(Glyph.Check, tint = colors.success, size = 9.dp)
+                                    Text(
+                                        text = summaryText,
+                                        style = OpenCodeTypography.caption.copy(
+                                            fontFamily = OpenCodeTypography.mono,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Normal,
+                                        ),
+                                        color = colors.success,
+                                    )
+                                }
+                            }
+                        }
+
+                        if (hasDetails) {
+                            GlyphIcon(
+                                glyph = if (open) Glyph.ChevronDown else Glyph.ChevronRight,
+                                tint = colors.onSurfaceFaint,
+                                size = 10.dp,
+                            )
+                        }
                     }
                 }
 
-                if (hasDetails) {
-                    GlyphIcon(
-                        glyph = if (open) Glyph.ChevronDown else Glyph.ChevronRight,
-                        tint = colors.onSurfaceFaint,
-                        size = 10.dp,
-                        modifier = Modifier.padding(start = spacing.xs, end = spacing.xxs),
-                    )
-                }
-            }
-
-            if (open) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = spacing.xs),
-                    verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                // Expanded Terminal Console Windows
+                AnimatedVisibility(
+                    visible = open,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
                 ) {
-                    call.inputText?.takeIf { it.isNotBlank() }?.let {
-                        DetailBlock(
-                            label = stringResource(R.string.tool_input),
-                            body = it,
-                        )
-                    }
-                    call.output?.takeIf { it.isNotBlank() }?.let {
-                        val truncated = if (it.length > MAX_OUTPUT) it.take(MAX_OUTPUT) + "…" else it
-                        DetailBlock(
-                            label = stringResource(R.string.tool_output),
-                            body = truncated,
-                        )
-                    }
-                    call.error?.takeIf { it.isNotBlank() }?.let {
-                        DetailBlock(
-                            label = stringResource(R.string.tool_error),
-                            body = it,
-                            isError = true,
-                        )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = spacing.sm,
+                                end = spacing.sm,
+                                bottom = spacing.sm,
+                                top = spacing.xxs,
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
+                        val isShell = toolKind == ToolKind.SHELL
+                        val commandText = if (isShell) extractCommand(call) else null
+                        val inputBody = commandText ?: call.inputText?.takeIf { it.isNotBlank() }
+
+                        // 1. Input/Command terminal block
+                        if (!inputBody.isNullOrBlank()) {
+                            val inputLang = if (isShell) "bash" else if (inputBody.trim().startsWith("{")) "json" else null
+                            val prompt = if (isShell) "$ " else null
+                            TerminalConsoleBlock(
+                                title = if (isShell) stringResource(R.string.tool_command) else stringResource(R.string.tool_input),
+                                body = inputBody,
+                                language = inputLang,
+                                promptPrefix = prompt,
+                                subtitle = if (isShell) "bash" else null,
+                            )
+                        }
+
+                        // 2. Output STDOUT block
+                        call.output?.takeIf { it.isNotBlank() }?.let { out ->
+                            val truncated = if (out.length > MAX_OUTPUT) out.take(MAX_OUTPUT) + "\n… [truncated]" else out
+                            val outLang = detectOutputLanguage(out, isShell)
+                            val lineCount = out.lines().size
+                            val lineSubtitle = if (lineCount > 1) {
+                                stringResource(R.string.tool_lines, lineCount)
+                            } else {
+                                stringResource(R.string.tool_lines_one, 1)
+                            }
+
+                            TerminalConsoleBlock(
+                                title = stringResource(R.string.tool_stdout),
+                                body = truncated,
+                                language = outLang,
+                                subtitle = lineSubtitle,
+                            )
+                        }
+
+                        // 3. Error STDERR block
+                        call.error?.takeIf { it.isNotBlank() }?.let { err ->
+                            TerminalConsoleBlock(
+                                title = stringResource(R.string.tool_stderr),
+                                body = err,
+                                isError = true,
+                            )
+                        }
                     }
                 }
             }
@@ -370,50 +599,382 @@ fun ToolStep(
 }
 
 /**
- * Monospace code/text block for tool details (input, output, error).
+ * Terminal window console block:
+ * - 3-dot window decoration bar (red/yellow/green terminal dots)
+ * - Monospace console typography
+ * - Live syntax highlighting for commands, output, JSON, and diffs
+ * - Built-in Copy action button
  */
 @Composable
-private fun DetailBlock(
-    label: String,
+private fun TerminalConsoleBlock(
+    title: String,
     body: String,
     modifier: Modifier = Modifier,
+    language: String? = null,
+    promptPrefix: String? = null,
     isError: Boolean = false,
+    subtitle: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
-    val shape = RoundedCornerShape(radius.sm)
+    val clipboardManager = LocalClipboardManager.current
+    var copied by remember { mutableStateOf(false) }
+
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
 
     val boxBg = if (isError) colors.danger.copy(alpha = 0.08f) else colors.background
     val boxBorder = if (isError) colors.danger.copy(alpha = 0.35f) else colors.hairline
-    val textColor = if (isError) colors.danger else colors.onSurface
+    val headerBorder = if (isError) colors.danger.copy(alpha = 0.2f) else colors.hairline
+    val shape = RoundedCornerShape(radius.sm)
 
-    Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            text = label.uppercase(),
-            style = OpenCodeTypography.label.copy(fontSize = 10.sp),
-            color = if (isError) colors.danger else colors.onSurfaceFaint,
-            modifier = Modifier.padding(bottom = spacing.xxs),
-        )
+    val highlightedText = rememberSyntaxHighlightedText(
+        language = language,
+        text = body,
+        promptPrefix = promptPrefix,
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(boxBg)
+            .border(0.5.dp, boxBorder, shape),
+    ) {
+        // Terminal Window Header Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(colors.surfaceVariant.copy(alpha = if (isError) 0.15f else 0.4f))
+                .border(
+                    width = 0.5.dp,
+                    color = headerBorder,
+                    shape = RoundedCornerShape(topStart = radius.sm, topEnd = radius.sm),
+                )
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // High-tech terminal window dots
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(if (isError) colors.danger else Color(0xFFFF5F56), CircleShape),
+                )
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(if (isError) colors.danger.copy(alpha = 0.5f) else Color(0xFFFFBD2E), CircleShape),
+                )
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .background(if (isError) colors.danger.copy(alpha = 0.25f) else Color(0xFF27C93F), CircleShape),
+                )
+            }
+
+            Spacer(Modifier.width(spacing.sm))
+
+            // Console Title / Tab Label
+            Text(
+                text = title,
+                style = OpenCodeTypography.caption.copy(
+                    fontFamily = OpenCodeTypography.mono,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = if (isError) colors.danger else colors.onSurfaceMuted,
+            )
+
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    text = "· $subtitle",
+                    style = OpenCodeTypography.caption.copy(
+                        fontFamily = OpenCodeTypography.mono,
+                        fontSize = 10.sp,
+                    ),
+                    color = colors.onSurfaceFaint,
+                    modifier = Modifier.padding(start = spacing.xs),
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // Copy Action Button
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(radius.xs))
+                    .clickable {
+                        clipboardManager.setText(AnnotatedString(body))
+                        copied = true
+                    }
+                    .padding(horizontal = spacing.xs, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
+            ) {
+                GlyphIcon(
+                    glyph = if (copied) Glyph.Check else Glyph.Copy,
+                    tint = if (copied) colors.success else colors.onSurfaceFaint,
+                    size = 11.dp,
+                )
+                Text(
+                    text = if (copied) stringResource(R.string.code_copied) else stringResource(R.string.code_copy),
+                    style = OpenCodeTypography.caption.copy(fontSize = 10.sp),
+                    color = if (copied) colors.success else colors.onSurfaceFaint,
+                )
+            }
+        }
+
+        // Terminal Content Body
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(shape)
-                .background(boxBg)
-                .border(0.5.dp, boxBorder, shape)
-                .heightIn(max = 180.dp)
+                .heightIn(max = 220.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.md, vertical = spacing.sm),
         ) {
             SelectionContainer {
                 Text(
-                    text = body,
-                    style = OpenCodeTypography.code.copy(fontSize = 12.sp, lineHeight = 17.sp),
-                    color = textColor,
+                    text = highlightedText,
+                    style = OpenCodeTypography.code.copy(
+                        fontSize = 11.5.sp,
+                        lineHeight = 16.5.sp,
+                    ),
+                    color = if (isError) colors.danger else colors.onSurface,
                 )
             }
         }
     }
 }
 
-private const val MAX_OUTPUT = 4000
+/**
+ * Radar / beacon animated live pulse indicator for running commands.
+ */
+@Composable
+fun LivePulseIndicator(
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 6.dp,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 2.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "pulseScale",
+    )
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "pulseAlpha",
+    )
+
+    Box(
+        modifier = modifier.size(size * 2),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.alpha = alpha
+                }
+                .background(color, CircleShape),
+        )
+        Box(
+            modifier = Modifier
+                .size(size)
+                .background(color, CircleShape),
+        )
+    }
+}
+
+/**
+ * Monospace blinking terminal block cursor.
+ */
+@Composable
+fun BlinkingCursor(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "cursorAlpha",
+    )
+    Box(
+        modifier = modifier
+            .width(5.dp)
+            .height(12.dp)
+            .graphicsLayer { this.alpha = alpha }
+            .background(color, RoundedCornerShape(1.dp)),
+    )
+}
+
+/**
+ * Syntax highlights [text] using [highlight] with optional prompt prefix.
+ */
+@Composable
+private fun rememberSyntaxHighlightedText(
+    language: String?,
+    text: String,
+    promptPrefix: String? = null,
+): AnnotatedString {
+    val colors = OpenCodeTheme.colors
+    val tokens = remember(text, language) { highlight(language, text) }
+    return remember(tokens, colors, promptPrefix) {
+        buildAnnotatedString {
+            if (promptPrefix != null) {
+                withStyle(
+                    SpanStyle(
+                        color = colors.accent,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                ) {
+                    append(promptPrefix)
+                }
+            }
+            tokens.forEach { token ->
+                withStyle(
+                    SpanStyle(
+                        color = when (token.kind) {
+                            TokenKind.Keyword -> colors.syntaxKeyword
+                            TokenKind.String -> colors.syntaxString
+                            TokenKind.Number -> colors.syntaxNumber
+                            TokenKind.Comment -> colors.syntaxComment
+                            TokenKind.Plain -> colors.onSurface
+                        },
+                        fontWeight = when (token.kind) {
+                            TokenKind.Keyword -> FontWeight.Medium
+                            else -> FontWeight.Normal
+                        },
+                        fontStyle = if (token.kind == TokenKind.Comment) FontStyle.Italic else FontStyle.Normal,
+                    ),
+                ) {
+                    append(token.text)
+                }
+            }
+        }
+    }
+}
+
+/** Known tool kinds for high-tech terminal badges. */
+private enum class ToolKind(val label: String) {
+    SHELL("BASH"),
+    READ("READ"),
+    WRITE("WRITE"),
+    EDIT("EDIT"),
+    SEARCH("SEARCH"),
+    LIST("LIST"),
+    FETCH("FETCH"),
+    OTHER("TOOL"),
+}
+
+private fun toolKindFor(name: String): ToolKind = when (name.lowercase()) {
+    "bash", "shell", "command" -> ToolKind.SHELL
+    "read" -> ToolKind.READ
+    "write" -> ToolKind.WRITE
+    "edit", "patch", "apply_patch", "multiedit" -> ToolKind.EDIT
+    "grep", "search" -> ToolKind.SEARCH
+    "glob", "list", "ls" -> ToolKind.LIST
+    "webfetch", "fetch", "websearch" -> ToolKind.FETCH
+    else -> ToolKind.OTHER
+}
+
+private fun badgeColorForKind(kind: ToolKind, colors: OpenCodeColors): Color = when (kind) {
+    ToolKind.SHELL -> colors.accent
+    ToolKind.READ -> colors.success
+    ToolKind.WRITE -> colors.warning
+    ToolKind.EDIT -> colors.warning
+    ToolKind.SEARCH -> colors.syntaxKeyword
+    ToolKind.LIST -> colors.syntaxNumber
+    ToolKind.FETCH -> colors.accent
+    ToolKind.OTHER -> colors.onSurfaceMuted
+}
+
+/** Extracts shell command from tool call input text. */
+private fun extractCommand(call: ToolCall): String? {
+    val input = call.inputText ?: return null
+    val match = Regex(""""command"\s*:\s*"((?:\\.|[^"\\])*)"""").find(input)
+    if (match != null) {
+        return unescapeJson(match.groupValues[1])
+    }
+    if (!input.trim().startsWith("{")) {
+        return input.trim()
+    }
+    return call.summary.ifEmpty { null }
+}
+
+/** Simple JSON string unescaper without external dependencies. */
+private fun unescapeJson(raw: String): String {
+    val sb = StringBuilder(raw.length)
+    var i = 0
+    while (i < raw.length) {
+        val c = raw[i]
+        if (c == '\\' && i + 1 < raw.length) {
+            when (val next = raw[i + 1]) {
+                'n' -> sb.append('\n')
+                'r' -> sb.append('\r')
+                't' -> sb.append('\t')
+                'b' -> sb.append('\b')
+                'f' -> sb.append('\u000c')
+                '"' -> sb.append('"')
+                '\\' -> sb.append('\\')
+                '/' -> sb.append('/')
+                'u' -> {
+                    if (i + 5 < raw.length) {
+                        val hex = raw.substring(i + 2, i + 6)
+                        hex.toIntOrNull(16)?.let { sb.append(it.toChar()) } ?: sb.append("\\u$hex")
+                        i += 6
+                        continue
+                    } else {
+                        sb.append(c)
+                    }
+                }
+                else -> sb.append(next)
+            }
+            i += 2
+        } else {
+            sb.append(c)
+            i++
+        }
+    }
+    return sb.toString()
+}
+
+/** Detects syntax language for output formatting. */
+private fun detectOutputLanguage(output: String, isShell: Boolean): String? {
+    val trimmed = output.trim()
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+        return "json"
+    }
+    if (isShell) {
+        return "bash"
+    }
+    return null
+}
+
+private const val MAX_OUTPUT = 8000

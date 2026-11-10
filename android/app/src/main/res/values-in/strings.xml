@@ -40,6 +40,9 @@
     <string name="settings_section_engine">Mesin</string>
     <string name="settings_diag_title">Diagnostik</string>
     <string name="settings_diag_body">Mesin %1$s. Log, kredensial, jalur runtime.</string>
+    <string name="settings_engine_port">Port mesin</string>
+    <string name="settings_engine_port_desc">Port loopback server lokal</string>
+    <string name="settings_engine_inactive">Tidak aktif</string>
     <string name="settings_section_about">Tentang</string>
     <string name="settings_about_title">Tentang pengembang</string>
     <string name="settings_about_body">Portofolio dan cara menghubungi.</string>
@@ -70,6 +73,17 @@
     <string name="chat_status_stopping">Menghentikan</string>
     <string name="chat_status_failed">Gagal</string>
     <string name="chat_status_stopped">Berhenti</string>
+    <string name="chat_status_dialog_title">Status Mesin</string>
+    <string name="chat_status_dialog_workspace">Ruang Kerja</string>
+    <string name="chat_status_dialog_branch">Branch</string>
+    <string name="chat_status_dialog_state">Status</string>
+    <string name="chat_status_dialog_diagnostics">Diagnostik</string>
+    <string name="chat_status_dialog_close">Tutup</string>
+    <string name="chat_status_desc_ready">Mesin online dan siap menerima perintah.</string>
+    <string name="chat_status_desc_working">Mesin sedang menjalankan tugas atau membuat respons.</string>
+    <string name="chat_status_desc_starting">Mesin sedang memulai dan menyiapkan koneksi runtime.</string>
+    <string name="chat_status_desc_stopped">Mesin tidak berjalan. Ketuk Diagnostik untuk melihat log.</string>
+    <string name="chat_status_desc_unhealthy">Mesin bermasalah atau mengalami kesalahan.</string>
     <string name="empty_title_ready">Apa yang ingin dikerjakan?</string>
     <string name="empty_title_starting">Memulai mesin…</string>
     <string name="empty_starting_body">Mesin lokal sedang dimulai. Ini butuh beberapa detik.</string>
@@ -78,17 +92,61 @@
     <string name="suggestion_bug">Cari penyebab sebuah bug</string>
     <string name="suggestion_review">Tinjau perubahan terbaru</string>
     <string name="suggestion_tests">Tulis tes untuk sebuah file</string>
+    <string name="starter_section_heading">Saran</string>
+    <string name="starter_explain_title">Jelaskan basis kode</string>
+    <string name="starter_explain_desc">Pelajari arsitektur dan struktur proyek</string>
+    <string name="starter_explain_prompt">Jelaskan bagaimana struktur dan arsitektur basis kode ini.</string>
+    <string name="starter_bugs_title">Cari &amp; perbaiki bug</string>
+    <string name="starter_bugs_desc">Lacak anomali, error, dan kasus tepi</string>
+    <string name="starter_bugs_prompt">Bantu saya menemukan dan memperbaiki bug atau masalah potensial dalam proyek ini.</string>
+    <string name="starter_tests_title">Buat unit test</string>
+    <string name="starter_tests_desc">Susun pengujian menyeluruh dengan kasus tepi</string>
+    <string name="starter_tests_prompt">Buat rangkaian unit test menyeluruh yang mencakup kasus tepi untuk proyek ini.</string>
+    <string name="starter_review_title">Tinjau perubahan</string>
+    <string name="starter_review_desc">Audit diff terbaru untuk kualitas dan keamanan</string>
+    <string name="starter_review_prompt">Tinjau perubahan git terbaru untuk mencari regresi atau perbaikan potensial.</string>
+    <string name="workspace_readiness_section">Ruang Kerja &amp; Lingkungan</string>
+    <string name="workspace_engine_label">Mesin</string>
+    <string name="workspace_path_label">Ruang Kerja</string>
+    <string name="workspace_git_label">Cabang Git</string>
+    <string name="workspace_git_untracked">Tidak dilacak</string>
     <string name="drawer_files">File</string>
     <string name="drawer_project">Proyek</string>
     <string name="drawer_recent">Terbaru</string>
     <string name="drawer_no_sessions">Belum ada sesi</string>
     <string name="drawer_untitled">Tanpa judul</string>
     <string name="drawer_all_sessions">Semua sesi</string>
+    <string name="drawer_diagnostics">Diagnostik</string>
+    <string name="drawer_developer">Pengembang</string>
+    <string name="drawer_switch_workspace">Ganti ruang kerja</string>
+
+    <!-- Session Groups -->
+    <string name="session_group_pinned">Disematkan</string>
+    <string name="session_group_today">Hari ini</string>
+    <string name="session_group_yesterday">Kemarin</string>
+    <string name="session_group_7_days">7 hari sebelumnya</string>
+    <string name="session_group_older">Lebih lama</string>
+
+    <!-- Session Actions -->
+    <string name="session_action_pin">Sematkan</string>
+    <string name="session_action_unpin">Lepas sematan</string>
+    <string name="session_action_rename">Ganti nama</string>
+    <string name="session_action_delete">Hapus</string>
+    <string name="session_rename_title">Ganti nama obrolan</string>
+    <string name="session_rename_hint">Judul obrolan</string>
+    <string name="session_delete_title">Hapus obrolan</string>
+    <string name="session_delete_message">Apakah Anda yakin ingin menghapus obrolan ini? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="session_action_cancel">Batal</string>
+    <string name="session_action_save">Simpan</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <string name="composer_hint">Tanyakan apa saja tentang proyek ini</string>
     <string name="composer_send">Kirim</string>
     <string name="composer_stop">Berhenti</string>
+    <string name="composer_voice">Suara</string>
+    <string name="composer_clear">Hapus</string>
+    <string name="composer_commands">Perintah</string>
+    <string name="composer_attach">Lampirkan berkas</string>
     <string name="permission_title">Izin diperlukan</string>
     <string name="permission_allow_once">Izinkan sekali</string>
     <string name="permission_always">Selalu</string>
@@ -98,6 +156,15 @@
     <string name="tool_steps_other">%1$d langkah</string>
     <string name="tool_failed">· %1$d gagal</string>
     <string name="tool_working">· bekerja</string>
+    <string name="tool_status_running">Berjalan</string>
+    <string name="tool_status_success">Berhasil</string>
+    <string name="tool_status_failed">Gagal</string>
+    <string name="tool_lines_one">%1$d baris</string>
+    <string name="tool_lines">%1$d baris</string>
+    <string name="tool_stdout">STDOUT</string>
+    <string name="tool_stdin">STDIN</string>
+    <string name="tool_stderr">STDERR</string>
+    <string name="tool_command">Perintah</string>
     <string name="tool_input">Masukan</string>
     <string name="tool_output">Keluaran</string>
     <string name="tool_error">Galat</string>
@@ -141,11 +208,22 @@
     <string name="conflict_reload">Muat ulang</string>
     <string name="conflict_keep">Lanjut mengedit</string>
 
+    <string name="fileview_discard_title">Buang perubahan yang belum disimpan?</string>
+    <string name="fileview_discard_body">Anda memiliki perubahan yang belum disimpan. Keluar akan membuangnya.</string>
+    <string name="fileview_discard_confirm">Buang</string>
+    <string name="fileview_discard_dismiss">Lanjut mengedit</string>
+    <string name="fileview_dirty_badge">Belum disimpan</string>
+
     <!-- Diff -->
     <string name="diff_loading">Memuat diff…</string>
     <string name="diff_git_unavailable">Git tidak tersedia di build ini, sehingga perubahan tidak bisa ditampilkan sebagai diff.\n\nIsi file tetap bisa dibaca dari daftar file.</string>
     <string name="diff_none">Tidak ada perubahan untuk ditampilkan.</string>
     <string name="diff_truncated">Diff dipotong oleh mesin.</string>
+    <string name="diff_mode_unified">Terpadu</string>
+    <string name="diff_mode_split">Berdampingan</string>
+    <string name="diff_filter_hint">Filter file yang diubah…</string>
+    <string name="diff_original">Asli</string>
+    <string name="diff_modified">Dimodifikasi</string>
     <string name="difflist_title">Perubahan (%1$d)</string>
     <string name="difflist_empty">Tidak ada perubahan di working tree.\n\nAgen belum mengedit apa pun, atau git tidak tersedia.</string>
 
@@ -197,9 +275,47 @@
     <string name="providers_field_models">Model, dipisah koma atau baris baru</string>
     <string name="providers_field_models_hint">id-model = nama yang tampil di pemilih</string>
     <string name="providers_save_restart">Simpan &amp; mulai ulang</string>
+    <string name="providers_featured_title">Penyedia AI Unggulan</string>
+    <string name="providers_other_title">Semua Penyedia</string>
+    <string name="providers_status_connected">Terhubung</string>
+    <string name="providers_status_free_tier">Paket Gratis</string>
+    <string name="providers_status_missing_key">Kunci Belum Ada</string>
+    <string name="providers_quick_test">Uji Kunci</string>
+    <string name="providers_testing">Menguji…</string>
+    <string name="providers_test_passed">Kunci terverifikasi &amp; siap disimpan</string>
+    <string name="providers_test_failed">Verifikasi kunci gagal</string>
+    <string name="providers_key_empty">Kunci API tidak boleh kosong</string>
+    <string name="providers_key_spaces">Kunci tidak boleh berisi spasi</string>
+    <string name="providers_key_too_short">Kunci terlalu pendek (min 8 karakter)</string>
+    <string name="providers_key_valid">Format kunci valid</string>
+    <string name="providers_paste_action">Tempel</string>
+    <string name="providers_clear_action">Hapus</string>
+    <string name="providers_show_key">Tampilkan kunci</string>
+    <string name="providers_hide_key">Sembunyikan kunci</string>
 
     <!-- Diagnostik. Nama field (pid, baseUrl, filesDir) dibiarkan: itulah sebutan nilai di
          laporan bug, dan menerjemahkannya membuat laporan tidak bisa dicari. -->
+    <string name="diag_section_engine_control">Pengawas Mesin</string>
+    <string name="diag_section_health">Kesehatan Sistem</string>
+    <string name="diag_restart_engine">Mulai Ulang Mesin</string>
+    <string name="diag_restarting">Memulai ulang…</string>
+    <string name="diag_copy_all">Salin Semua</string>
+    <string name="diag_copy_logs">Salin Log</string>
+    <string name="diag_copied_toast">Disalin ke papan klip</string>
+    <string name="diag_cpu">CPU</string>
+    <string name="diag_ram">RAM</string>
+    <string name="diag_storage">Penyimpanan</string>
+    <string name="diag_process_pid">PID Proses</string>
+    <string name="diag_engine_pid">PID Mesin</string>
+    <string name="diag_app_pid">PID Aplikasi</string>
+    <string name="diag_tab_all">Semua Log</string>
+    <string name="diag_tab_engine_log">Log Disk</string>
+    <string name="diag_tab_output">Konsol</string>
+    <string name="diag_health_good">Baik</string>
+    <string name="diag_health_low_mem">Memori Rendah</string>
+    <string name="diag_health_normal">Normal</string>
+    <string name="diag_health_active">Aktif</string>
+    <string name="diag_health_inactive">Tidak aktif</string>
     <string name="diag_running">Berjalan…</string>
     <string name="diag_none">tidak ada</string>
     <string name="diag_password_hidden">•••••• (ketuk untuk lihat)</string>

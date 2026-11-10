@@ -12,11 +12,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,12 +41,10 @@ import dev.bidzz.opencode.ui.TextAction
 import dev.bidzz.opencode.ui.message
 
 /**
- * Conversation history.
+ * Conversation history matching Cursor / ChatGPT experience.
  *
- * The rows sit on one card, like the file listing, so the list reads as one group.
- * Each row has the title the engine generated, and a quiet meta line with how long
- * ago it ran, its directory (only when the list is not already scoped to one project),
- * and its cost when non-zero.
+ * Grouped cleanly by date (Pinned, Today, Yesterday, Previous 7 days, Older)
+ * with a quick action menu on every session for Rename, Delete, and Pin.
  */
 @Composable
 fun SessionListScreen(
@@ -50,15 +53,44 @@ fun SessionListScreen(
     onOpen: (SessionRow) -> Unit,
     onToggleScope: () -> Unit,
     onNewSession: () -> Unit,
+    onRename: (SessionRow, String) -> Unit = { _, _ -> },
+    onDelete: (SessionRow) -> Unit = {},
+    onTogglePin: (SessionRow) -> Unit = {},
 ) {
     val spacing = OpenCodeTheme.tokens.spacing
+    val colors = OpenCodeTheme.colors
+
+    var sessionToRename by remember { mutableStateOf<SessionRow?>(null) }
+    var sessionToDelete by remember { mutableStateOf<SessionRow?>(null) }
+
+    sessionToRename?.let { target ->
+        RenameSessionDialog(
+            initialTitle = target.title,
+            onDismiss = { sessionToRename = null },
+            onConfirm = { newTitle ->
+                sessionToRename = null
+                onRename(target, newTitle)
+            },
+        )
+    }
+
+    sessionToDelete?.let { target ->
+        DeleteSessionDialog(
+            sessionTitle = target.title,
+            onDismiss = { sessionToDelete = null },
+            onConfirm = {
+                sessionToDelete = null
+                onDelete(target)
+            },
+        )
+    }
 
     ScreenScaffold(
         title = stringResource(R.string.history_title),
         onBack = onBack,
         actions = { TextAction(stringResource(R.string.history_new), onNewSession) },
     ) {
-        // Scope toggle: the two useful views are "this project" and "everything".
+        // Scope toggle: "this project" and "everything".
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -82,23 +114,59 @@ fun SessionListScreen(
             state.failure != null -> CenteredMessage(state.failure.message(), isError = true)
             state.failureKey != null -> CenteredMessage(stringResource(state.failureKey), isError = true)
             state.rows.isEmpty() -> CenteredMessage(stringResource(R.string.history_empty))
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = spacing.lg,
-                    end = spacing.lg,
-                    top = spacing.xs,
-                    bottom = spacing.xxl,
-                ),
-            ) {
-                itemsIndexed(state.rows, key = { _, row -> row.id }) { index, row ->
-                    SessionRowItem(
-                        row = row,
-                        showDirectory = state.filterDirectory == null,
-                        isFirst = index == 0,
-                        isLast = index == state.rows.lastIndex,
-                        onClick = { onOpen(row) },
-                    )
+            else -> {
+                val grouped = remember(state.rows) { groupSessions(state.rows) }
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = spacing.lg,
+                        end = spacing.lg,
+                        top = spacing.xs,
+                        bottom = spacing.xxl,
+                    ),
+                ) {
+                    grouped.forEach { (group, rows) ->
+                        item(key = "header_${group.name}") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        top = spacing.md,
+                                        bottom = spacing.xs,
+                                        start = spacing.xs,
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (group == SessionDateGroup.PINNED) {
+                                    GlyphIcon(
+                                        glyph = Glyph.Pin,
+                                        tint = colors.accent,
+                                        size = 14.dp,
+                                        modifier = Modifier.padding(end = spacing.xs),
+                                    )
+                                }
+                                Text(
+                                    text = stringResource(group.titleRes()).uppercase(),
+                                    style = OpenCodeTypography.label,
+                                    color = if (group == SessionDateGroup.PINNED) colors.accent else colors.onSurfaceFaint,
+                                )
+                            }
+                        }
+
+                        itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
+                            SessionRowItem(
+                                row = row,
+                                showDirectory = state.filterDirectory == null,
+                                isFirst = index == 0,
+                                isLast = index == rows.lastIndex,
+                                onClick = { onOpen(row) },
+                                onPinToggle = { onTogglePin(row) },
+                                onRenameClick = { sessionToRename = row },
+                                onDeleteClick = { sessionToDelete = row },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -123,6 +191,9 @@ private fun SessionRowItem(
     isFirst: Boolean,
     isLast: Boolean,
     onClick: () -> Unit,
+    onPinToggle: () -> Unit,
+    onRenameClick: () -> Unit,
+    onDeleteClick: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -133,6 +204,8 @@ private fun SessionRowItem(
         bottomStart = if (isLast) r else 0.dp,
         bottomEnd = if (isLast) r else 0.dp,
     )
+
+    var menuExpanded by remember { mutableStateOf(false) }
 
     val age = if (row.age != null) row.age.label() else null
     val directory = row.directory
@@ -157,13 +230,27 @@ private fun SessionRowItem(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
-                    style = OpenCodeTypography.body,
-                    color = colors.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    if (row.isPinned) {
+                        GlyphIcon(
+                            glyph = Glyph.Pin,
+                            tint = colors.accent,
+                            size = 14.dp,
+                            modifier = Modifier.padding(end = spacing.xs),
+                        )
+                    }
+                    Text(
+                        text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
                 if (meta.isNotEmpty()) {
                     Text(
                         text = meta,
@@ -175,12 +262,29 @@ private fun SessionRowItem(
                     )
                 }
             }
-            GlyphIcon(
-                Glyph.ChevronRight,
-                tint = colors.onSurfaceFaint,
-                size = 18.dp,
-                modifier = Modifier.padding(start = spacing.sm),
-            )
+            Box(modifier = Modifier.padding(start = spacing.xs)) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.sm))
+                        .clickable(role = Role.Button) { menuExpanded = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(
+                        Glyph.Dots,
+                        tint = colors.onSurfaceMuted,
+                        size = 16.dp,
+                    )
+                }
+                SessionActionMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false },
+                    isPinned = row.isPinned,
+                    onPinToggle = onPinToggle,
+                    onRenameClick = onRenameClick,
+                    onDeleteClick = onDeleteClick,
+                )
+            }
         }
     }
 }

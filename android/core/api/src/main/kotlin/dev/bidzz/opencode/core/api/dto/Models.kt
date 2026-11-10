@@ -133,6 +133,13 @@ data class SessionMessage(
     val plainText: String
         get() = if (isUser) text.orEmpty()
         else content.filter { it.type == "text" }.joinToString("") { it.text.orEmpty() }
+
+    /** Concatenated text of reasoning/thinking blocks, if any. */
+    val reasoningText: String?
+        get() = content.filter { it.type == "reasoning" }
+            .mapNotNull { it.text }
+            .joinToString("")
+            .takeIf { it.isNotBlank() }
 }
 
 @Serializable
@@ -235,6 +242,12 @@ data class CreateSessionRequest(
     val title: String? = null,
     val agent: String? = null,
     val model: ModelRef? = null,
+)
+
+/** Body of `PATCH /api/session/{id}` to update session metadata like title. */
+@Serializable
+data class UpdateSessionRequest(
+    val title: String? = null,
 )
 
 /** Body of `POST /api/session/{id}/prompt`. `text` is the only required field. */

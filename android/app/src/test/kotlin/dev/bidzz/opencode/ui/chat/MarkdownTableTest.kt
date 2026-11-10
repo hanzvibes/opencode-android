@@ -110,6 +110,43 @@ class MarkdownTableTest {
         assertEquals("after the table", (blocks[1] as MdBlock.Paragraph).spans.text())
     }
 
+    @Test
+    fun `parses hr tag as a horizontal rule`() {
+        val blocks = Markdown.parse("<hr>")
+        assertEquals(listOf(MdBlock.Rule), blocks)
+        val blocksSelfClosing = Markdown.parse("<hr/>")
+        assertEquals(listOf(MdBlock.Rule), blocksSelfClosing)
+    }
+
+    @Test
+    fun `parses highlighted text with double equals and mark tags`() {
+        val blocks = Markdown.parse("This is ==highlighted== and <mark>marked</mark> text")
+        val para = blocks.single() as MdBlock.Paragraph
+        assertTrue(para.spans.any { it is MdSpan.Highlight && it.text == "highlighted" })
+        assertTrue(para.spans.any { it is MdSpan.Highlight && it.text == "marked" })
+    }
+
+    @Test
+    fun `parses bold with double underscore`() {
+        val blocks = Markdown.parse("This is __bold__ text")
+        val para = blocks.single() as MdBlock.Paragraph
+        assertTrue(para.spans.any { it is MdSpan.Bold && it.text == "bold" })
+    }
+
+    @Test
+    fun `parses list items with continuation lines`() {
+        val md = """
+            - First line
+              continuation of first
+            - Second item
+        """.trimIndent()
+        val blocks = Markdown.parse(md)
+        val bullet = blocks.single() as MdBlock.Bullet
+        assertEquals(2, bullet.items.size)
+        assertEquals("First line continuation of first", bullet.items[0].text())
+        assertEquals("Second item", bullet.items[1].text())
+    }
+
     /** Flattens a cell row to plain text, ignoring formatting. */
     private fun List<List<MdSpan>>.plain(): List<String> = map { cell -> cell.text() }
 
@@ -120,6 +157,7 @@ class MarkdownTableTest {
             is MdSpan.Italic -> span.text
             is MdSpan.Code -> span.text
             is MdSpan.Link -> span.text
+            is MdSpan.Highlight -> span.text
         }
     }
 }

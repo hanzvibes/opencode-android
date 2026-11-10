@@ -70,21 +70,24 @@ fun AppCard(
     }
 }
 
-/** Neutral circular icon holder (matching IconBadge in cross-platform-llm-client). */
+/** Icon badge with customizable shape and background (Apple-style squircle or neutral circle). */
 @Composable
 fun IconBadge(
     glyph: Glyph,
     modifier: Modifier = Modifier,
     tint: Color? = null,
+    background: Color? = null,
+    shape: androidx.compose.ui.graphics.Shape = CircleShape,
     size: Dp = 32.dp,
 ) {
     val colors = OpenCodeTheme.colors
-    val fg = tint ?: colors.onSurface.copy(alpha = 0.85f)
+    val fg = tint ?: if (background != null) Color.White else colors.onSurface.copy(alpha = 0.85f)
+    val bg = background ?: colors.fill
     Box(
         modifier = modifier
             .size(size)
-            .clip(CircleShape)
-            .background(colors.fill),
+            .clip(shape)
+            .background(bg),
         contentAlignment = Alignment.Center,
     ) {
         GlyphIcon(glyph, tint = fg, size = size * 0.53f)

@@ -15,7 +15,7 @@ class NavigationTest {
 
     @Test
     fun `back from a top level screen goes to the conversation`() {
-        listOf(Screen.Files, Screen.Sessions, Screen.Projects, Screen.Settings, Screen.Diagnostics)
+        listOf(Screen.Files, Screen.Sessions, Screen.Projects, Screen.Settings, Screen.Diagnostics, Screen.About)
             .forEach { assertEquals(Screen.Chat, it.parent()) }
     }
 }

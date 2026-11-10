@@ -26,6 +26,8 @@ data class SessionRow(
     /** Null when the engine has not stamped the session. */
     val age: SessionAge?,
     val cost: String?,
+    val timestamp: Long? = null,
+    val isPinned: Boolean = false,
 )
 
 data class SessionListUiState(
@@ -49,6 +51,7 @@ data class SessionListUiState(
 class SessionListViewModel(
     private val api: EngineApi,
     private val workspace: () -> String,
+    private val pinnedStore: PinnedSessionStore? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SessionListUiState())
@@ -66,9 +69,10 @@ class SessionListViewModel(
         viewModelScope.launch {
             when (val result = handle.sessions.list(directory = directory, limit = 50)) {
                 is ApiResult.Success -> {
+                    val pinned = pinnedStore?.getPinnedIds().orEmpty()
                     _state.value = _state.value.copy(
                         loading = false,
-                        rows = result.value.map { it.toRow() },
+                        rows = result.value.map { it.toRow(isPinned = pinned.contains(it.id)) },
                         failure = null, failureKey = null,
                     )
                 }
@@ -78,15 +82,59 @@ class SessionListViewModel(
             }
         }
     }
+
+    /** Toggles the pinned status of a session. */
+    fun togglePin(sessionID: String) {
+        val pinned = pinnedStore?.togglePin(sessionID) ?: false
+        _state.value = _state.value.copy(
+            rows = _state.value.rows.map {
+                if (it.id == sessionID) it.copy(isPinned = pinned) else it
+            }
+        )
+    }
+
+    /** Renames a session. */
+    fun rename(sessionID: String, newTitle: String, scopedToWorkspace: Boolean = true) {
+        val trimmed = newTitle.trim()
+        if (trimmed.isEmpty()) return
+        _state.value = _state.value.copy(
+            rows = _state.value.rows.map {
+                if (it.id == sessionID) it.copy(title = trimmed) else it
+            }
+        )
+        val handle = api.handle() ?: return
+        viewModelScope.launch {
+            handle.sessions.rename(sessionID, trimmed)
+            load(scopedToWorkspace)
+        }
+    }
+
+    /** Deletes a session. */
+    fun delete(sessionID: String, scopedToWorkspace: Boolean = true) {
+        pinnedStore?.remove(sessionID)
+        _state.value = _state.value.copy(
+            rows = _state.value.rows.filter { it.id != sessionID }
+        )
+        val handle = api.handle() ?: return
+        viewModelScope.launch {
+            handle.sessions.delete(sessionID)
+            load(scopedToWorkspace)
+        }
+    }
 }
 
-private fun SessionInfo.toRow(): SessionRow = SessionRow(
-    id = id,
-    title = title.orEmpty().trim(),
-    directory = location?.directory,
-    age = formatAge(time?.updated ?: time?.created),
-    cost = cost?.takeIf { it > 0 }?.let { formatCost(it) },
-)
+private fun SessionInfo.toRow(isPinned: Boolean = false): SessionRow {
+    val ts = time?.updated ?: time?.created
+    return SessionRow(
+        id = id,
+        title = title.orEmpty().trim(),
+        directory = location?.directory,
+        age = formatAge(ts),
+        cost = cost?.takeIf { it > 0 }?.let { formatCost(it) },
+        timestamp = ts,
+        isPinned = isPinned,
+    )
+}
 
 /** Relative age from an epoch-millis timestamp. Coarse on purpose: exact seconds do not help. */
 internal fun formatAge(epochMillis: Long?, now: Long = System.currentTimeMillis()): SessionAge? {

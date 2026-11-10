@@ -11,6 +11,7 @@ import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SetModelRequest
 import dev.bidzz.opencode.core.api.dto.SingleResponse
+import dev.bidzz.opencode.core.api.dto.UpdateSessionRequest
 import kotlinx.serialization.encodeToString
 
 /**
@@ -134,5 +135,20 @@ class SessionApi(private val client: EngineClient) {
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<SingleResponse<SessionInfo>>(raw).data
         }
+    }
+
+    /** Deletes a session from the engine. */
+    suspend fun delete(sessionID: String): ApiResult<Unit> {
+        val request = client.request("/api/session/$sessionID").delete().build()
+        return client.executeUnit(request)
+    }
+
+    /** Renames a session. */
+    suspend fun rename(sessionID: String, title: String): ApiResult<Unit> {
+        val body = ApiJson.encodeToString(UpdateSessionRequest(title = title))
+        val request = client.request("/api/session/$sessionID")
+            .patch(client.jsonBody(body))
+            .build()
+        return client.executeUnit(request)
     }
 }

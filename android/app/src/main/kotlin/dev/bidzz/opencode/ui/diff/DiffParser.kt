@@ -39,6 +39,18 @@ data class DiffHunk(
     val lines: List<DiffLine>,
 )
 
+/**
+ * A side-by-side pair of lines for split diff view.
+ *
+ * [left] contains the original/removed line (or null if purely added).
+ * [right] contains the modified/added line (or null if purely removed).
+ * For context lines, both [left] and [right] point to the same context line.
+ */
+data class DiffSideBySideRow(
+    val left: DiffLine? = null,
+    val right: DiffLine? = null,
+)
+
 object DiffParser {
 
     private val hunkHeader = Regex("^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@(.*)$")
@@ -135,5 +147,42 @@ object DiffParser {
             }
         }
         return added to removed
+    }
+
+    /**
+     * Converts a unified [hunk] into paired side-by-side rows.
+     *
+     * Consecutive removed and added lines are aligned across left and right columns,
+     * matching the layout of Git split diffs and Claude Code.
+     */
+    fun toSideBySide(hunk: DiffHunk): List<DiffSideBySideRow> {
+        val rows = mutableListOf<DiffSideBySideRow>()
+        val pendingRemoved = mutableListOf<DiffLine>()
+        val pendingAdded = mutableListOf<DiffLine>()
+
+        fun flushPending() {
+            val count = maxOf(pendingRemoved.size, pendingAdded.size)
+            for (i in 0 until count) {
+                rows += DiffSideBySideRow(
+                    left = pendingRemoved.getOrNull(i),
+                    right = pendingAdded.getOrNull(i),
+                )
+            }
+            pendingRemoved.clear()
+            pendingAdded.clear()
+        }
+
+        for (line in hunk.lines) {
+            when (line.kind) {
+                DiffLine.Kind.REMOVED -> pendingRemoved += line
+                DiffLine.Kind.ADDED -> pendingAdded += line
+                DiffLine.Kind.CONTEXT, DiffLine.Kind.META, DiffLine.Kind.HUNK_HEADER -> {
+                    flushPending()
+                    rows += DiffSideBySideRow(left = line, right = line)
+                }
+            }
+        }
+        flushPending()
+        return rows
     }
 }

@@ -33,6 +33,7 @@ import dev.bidzz.opencode.ui.projects.ProjectOption
 import dev.bidzz.opencode.ui.projects.ProjectPickerScreen
 import dev.bidzz.opencode.ui.providers.ProvidersScreen
 import dev.bidzz.opencode.ui.providers.ProvidersViewModel
+import dev.bidzz.opencode.ui.sessions.PinnedSessionStore
 import dev.bidzz.opencode.ui.sessions.SessionListScreen
 import dev.bidzz.opencode.ui.sessions.SessionListViewModel
 import dev.bidzz.opencode.ui.sessions.SessionRow
@@ -70,7 +71,8 @@ internal sealed interface Screen {
 internal fun Screen.parent(): Screen = when (this) {
     is Screen.FileView, Screen.DiffList -> Screen.Files
     is Screen.Diff -> Screen.DiffList
-    Screen.Providers, Screen.About -> Screen.Settings
+    Screen.Providers -> Screen.Settings
+    Screen.About -> Screen.Chat
     else -> Screen.Chat
 }
 
@@ -86,7 +88,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     })
 
     val sessionViewModel: SessionListViewModel = viewModel(factory = viewModelFactory {
-        SessionListViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+        SessionListViewModel(
+            app.engineApi,
+            { app.workspaceStore.resolve().absolutePath },
+            PinnedSessionStore(app),
+        )
     })
 
     val chatState by chatViewModel.state.collectAsState()
@@ -183,6 +189,20 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onProjectClick = { screen = Screen.Projects },
                 onFilesClick = { screen = Screen.Files },
                 onSettingsClick = { screen = Screen.Settings },
+                onDiagnosticsClick = { screen = Screen.Diagnostics },
+                onAboutClick = { screen = Screen.About },
+                onRenameSession = { id, title ->
+                    sessionViewModel.rename(id, title, sessionScopeToProject)
+                },
+                onDeleteSession = { id ->
+                    if (chatState.sessionID == id) {
+                        chatViewModel.newSession()
+                    }
+                    sessionViewModel.delete(id, sessionScopeToProject)
+                },
+                onTogglePinSession = { id ->
+                    sessionViewModel.togglePin(id)
+                },
             )
 
             Screen.Files -> ExplorerScreen(
@@ -230,6 +250,18 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onNewSession = {
                     chatViewModel.newSession()
                     screen = Screen.Chat
+                },
+                onRename = { row, newTitle ->
+                    sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
+                },
+                onDelete = { row ->
+                    if (chatState.sessionID == row.id) {
+                        chatViewModel.newSession()
+                    }
+                    sessionViewModel.delete(row.id, sessionScopeToProject)
+                },
+                onTogglePin = { row ->
+                    sessionViewModel.togglePin(row.id)
                 },
             )
 

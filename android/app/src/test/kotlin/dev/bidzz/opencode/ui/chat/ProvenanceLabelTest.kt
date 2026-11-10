@@ -123,4 +123,70 @@ class ProvenanceLabelTest {
             provenanceLabel("big-pickle", ModelRef(id = "big-pickle", providerID = "opencode"), odd, models),
         )
     }
+
+    @Test
+    fun `detectProvider accurately identifies major AI providers`() {
+        assertEquals(ModelProvider.ANTHROPIC, detectProvider(providerID = "anthropic"))
+        assertEquals(ModelProvider.ANTHROPIC, detectProvider(modelID = "claude-3-7-sonnet"))
+        assertEquals(ModelProvider.OPENAI, detectProvider(providerID = "openai"))
+        assertEquals(ModelProvider.OPENAI, detectProvider(modelID = "gpt-4o"))
+        assertEquals(ModelProvider.OPENAI, detectProvider(modelID = "o3-mini"))
+        assertEquals(ModelProvider.GOOGLE, detectProvider(providerID = "google"))
+        assertEquals(ModelProvider.GOOGLE, detectProvider(modelID = "gemini-2.0-flash"))
+        assertEquals(ModelProvider.DEEPSEEK, detectProvider(modelID = "deepseek-r1"))
+        assertEquals(ModelProvider.META, detectProvider(modelID = "llama-3.3-70b"))
+        assertEquals(ModelProvider.MISTRAL, detectProvider(modelID = "mistral-large"))
+        assertEquals(ModelProvider.OPENCODE, detectProvider(providerID = "opencode"))
+        assertEquals(ModelProvider.OTHER, detectProvider(modelID = "custom-unknown-model"))
+    }
+
+    @Test
+    fun `cleanModelTag removes provider namespaces cleanly`() {
+        assertEquals("claude-3-7-sonnet", cleanModelTag("anthropic/claude-3-7-sonnet"))
+        assertEquals("gemini-2.0-flash", cleanModelTag("google/gemini-2.0-flash"))
+        assertEquals("gpt-4o", cleanModelTag("openai/gpt-4o"))
+        assertEquals("Big Pickle", cleanModelTag("Big Pickle"))
+    }
+
+    @Test
+    fun `parseProvenanceTag extracts mode model and provider badge info`() {
+        val tag1 = parseProvenanceTag("Build · claude-3-7-sonnet", ModelRef("claude-3-7-sonnet", "anthropic"))
+        assertEquals("Build", tag1?.mode)
+        assertEquals("claude-3-7-sonnet", tag1?.model)
+        assertEquals(ModelProvider.ANTHROPIC, tag1?.provider)
+
+        val tag2 = parseProvenanceTag("gemini-2.0-flash", null)
+        assertNull(tag2?.mode)
+        assertEquals("gemini-2.0-flash", tag2?.model)
+        assertEquals(ModelProvider.GOOGLE, tag2?.provider)
+
+        val tag3 = parseProvenanceTag("Plan · openai/gpt-4o", null)
+        assertEquals("Plan", tag3?.mode)
+        assertEquals("gpt-4o", tag3?.model)
+        assertEquals(ModelProvider.OPENAI, tag3?.provider)
+
+        assertNull(parseProvenanceTag(null))
+        assertNull(parseProvenanceTag("   "))
+    }
+
+    @Test
+    fun `parseThinkingContent handles both think tags and explicit reasoning`() {
+        // Closed think tag
+        val parsed1 = parseThinkingContent("<think>\nAnalyzing prompt\n</think>\nHere is the answer.", null)
+        assertEquals("Analyzing prompt", parsed1.reasoning)
+        assertEquals("Here is the answer.", parsed1.answer)
+        assertEquals(false, parsed1.isActivelyStreamingThoughts)
+
+        // Streaming open think tag
+        val parsed2 = parseThinkingContent("<think>\nStill reasoning...", null)
+        assertEquals("Still reasoning...", parsed2.reasoning)
+        assertEquals("", parsed2.answer)
+        assertEquals(true, parsed2.isActivelyStreamingThoughts)
+
+        // Explicit reasoning from DTO
+        val parsed3 = parseThinkingContent("Direct answer", "Background rationale")
+        assertEquals("Background rationale", parsed3.reasoning)
+        assertEquals("Direct answer", parsed3.answer)
+        assertEquals(false, parsed3.isActivelyStreamingThoughts)
+    }
 }

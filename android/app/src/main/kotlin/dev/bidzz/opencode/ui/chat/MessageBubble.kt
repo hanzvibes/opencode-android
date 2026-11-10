@@ -3,6 +3,19 @@ package dev.bidzz.opencode.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,38 +24,100 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.api.dto.ToolCall
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
- * One chat message styled after cross-platform-llm-client (PrivateLM):
+ * Result of parsing potential thinking/reasoning blocks out of an assistant message.
+ */
+internal data class ParsedThinking(
+    val reasoning: String?,
+    val answer: String,
+    val isActivelyStreamingThoughts: Boolean,
+)
+
+/**
+ * Extracts explicit or inline thinking blocks (<think>...</think>) from message content.
+ */
+internal fun parseThinkingContent(
+    markdown: String,
+    explicitReasoning: String?,
+): ParsedThinking {
+    val trimmed = markdown.trim()
+    if (trimmed.startsWith("<think>")) {
+        if (trimmed.contains("</think>")) {
+            val thought = trimmed.substringAfter("<think>").substringBefore("</think>").trim()
+            val remaining = trimmed.substringAfter("</think>").trim()
+            val combined = listOfNotNull(explicitReasoning?.trim(), thought)
+                .filter { it.isNotEmpty() }
+                .joinToString("\n\n")
+            return ParsedThinking(
+                reasoning = combined.takeIf { it.isNotEmpty() },
+                answer = remaining,
+                isActivelyStreamingThoughts = false,
+            )
+        } else {
+            val thought = trimmed.substringAfter("<think>").trim()
+            val combined = listOfNotNull(explicitReasoning?.trim(), thought)
+                .filter { it.isNotEmpty() }
+                .joinToString("\n\n")
+            return ParsedThinking(
+                reasoning = combined.takeIf { it.isNotEmpty() },
+                answer = "",
+                isActivelyStreamingThoughts = true,
+            )
+        }
+    }
+
+    return ParsedThinking(
+        reasoning = explicitReasoning?.trim()?.takeIf { it.isNotEmpty() },
+        answer = markdown,
+        isActivelyStreamingThoughts = false,
+    )
+}
+
+/**
+ * One chat message styled after modern LLM interfaces (ChatGPT / Claude):
  * - User message: compact system blue bubble on the right with asymmetric rounded corners.
- * - Assistant message: clean full-width markdown with quiet copy button and tool traces.
+ * - Assistant message: clean full-width markdown with soft glowing "Thinking" disclosure widget,
+ *   smooth transition to streaming answer, branded provenance tag badge, and tool traces.
  * - Error message: tinted warning surface with danger accent and readability hierarchy.
  */
 @Composable
@@ -55,6 +130,8 @@ fun MessageBubble(
     /** Mode and model that produced this reply, when known. Empty when absent. */
     provenance: String? = null,
     showProvenance: Boolean = true,
+    model: ModelRef? = null,
+    reasoning: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -66,7 +143,7 @@ fun MessageBubble(
             modifier = modifier.fillMaxWidth(),
             contentAlignment = Alignment.CenterEnd,
         ) {
-            val maxBubbleWidth = maxWidth * dims.userBubbleMaxWidthFraction
+            val maxBubbleWidth = (maxWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp)
             val userBubbleShape = RoundedCornerShape(
                 topStart = 18.dp,
                 topEnd = 18.dp,
@@ -75,83 +152,102 @@ fun MessageBubble(
             )
             Box(
                 modifier = Modifier
+                    .padding(start = 48.dp)
                     .widthIn(max = maxBubbleWidth)
                     .clip(userBubbleShape)
                     .background(colors.userBubble)
-                    .padding(horizontal = spacing.lg, vertical = 10.dp),
+                    .padding(horizontal = spacing.lg, vertical = spacing.md - 2.dp),
             ) {
-                // User text is plain: markdown the user typed is not rendered as
-                // formatting, so what they see is what they sent.
-                Text(
-                    text = markdown,
-                    style = OpenCodeTypography.body,
-                    color = colors.onUserBubble,
-                )
+                SelectionContainer {
+                    Text(
+                        text = markdown,
+                        style = OpenCodeTypography.body,
+                        color = colors.onUserBubble,
+                    )
+                }
             }
         }
 
         Role.ASSISTANT -> Column(modifier = modifier.fillMaxWidth()) {
-            // Which mode and model answered, small and quiet: it is reference, not content.
-            // Nothing at all when there is nothing to say, instead of a label on every reply.
-            val hasProvenanceHeader = showProvenance && !provenance.isNullOrBlank()
-            val showStreamingSpinner = streaming && markdown.isNotEmpty()
-            if (hasProvenanceHeader || showStreamingSpinner) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = spacing.sm),
-                ) {
-                    if (hasProvenanceHeader) {
-                        Text(
-                            text = provenance.orEmpty(),
-                            style = OpenCodeTypography.label.copy(fontSize = 12.sp),
-                            color = colors.onSurfaceFaint,
-                        )
+            val parsed = remember(markdown, reasoning) {
+                parseThinkingContent(markdown, reasoning)
+            }
+            val isThinkingActive = streaming && (parsed.answer.isEmpty() || parsed.isActivelyStreamingThoughts)
+
+            var elapsedSeconds by remember(streaming) { mutableIntStateOf(0) }
+            var recordedDuration by remember { mutableIntStateOf(0) }
+
+            LaunchedEffect(isThinkingActive) {
+                if (isThinkingActive) {
+                    val start = System.currentTimeMillis()
+                    while (isActive) {
+                        val current = ((System.currentTimeMillis() - start) / 1000).toInt()
+                        elapsedSeconds = maxOf(1, current)
+                        delay(500)
                     }
-                    if (showStreamingSpinner) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(start = if (hasProvenanceHeader) spacing.sm else 0.dp)
-                                .size(dims.statusDotSize),
-                            strokeWidth = 1.5.dp,
-                            color = colors.accent,
-                        )
-                    }
+                } else if (elapsedSeconds > 0) {
+                    recordedDuration = elapsedSeconds
                 }
             }
+
+            val finalDuration = if (recordedDuration > 0) recordedDuration else elapsedSeconds
+            val hasReasoning = !parsed.reasoning.isNullOrBlank()
+            val showThinkingWidget = isThinkingActive || hasReasoning || (finalDuration > 0 && tools.isNotEmpty())
+            val showStreamingSpinner = streaming && parsed.answer.isNotEmpty()
+
+            // 1. Author Identity Header: Branded provenance badge (e.g. claude-3-7-sonnet, gemini-2.0-flash, gpt-4o)
+            if (showProvenance) {
+                val labelText = if (!provenance.isNullOrBlank()) provenance else "OpenCode"
+                ProvenanceBadge(
+                    provenance = labelText,
+                    modelRef = model,
+                    streaming = showStreamingSpinner,
+                    modifier = Modifier.padding(bottom = spacing.sm),
+                )
+            } else if (showStreamingSpinner) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(bottom = spacing.xs)
+                        .size(dims.statusDotSize),
+                    strokeWidth = 1.5.dp,
+                    color = colors.accent,
+                )
+            }
+
+            // 2. Dedicated Thinking Disclosure Widget
+            if (showThinkingWidget) {
+                ThinkingDisclosure(
+                    isThinkingActive = isThinkingActive,
+                    reasoningText = parsed.reasoning,
+                    elapsedSeconds = finalDuration,
+                    stepCount = tools.size,
+                    modifier = Modifier.padding(
+                        bottom = if (parsed.answer.isNotEmpty() || tools.isNotEmpty()) spacing.sm else 0.dp,
+                    ),
+                )
+            }
+
+            // 3. Execution Phase: Tool Traces
             if (tools.isNotEmpty()) {
                 ToolTrace(
                     tools = tools,
                     streaming = streaming,
-                    modifier = Modifier.padding(bottom = if (markdown.isNotEmpty()) spacing.sm else 0.dp),
+                    modifier = Modifier.padding(bottom = if (parsed.answer.isNotEmpty()) spacing.md else 0.dp),
                 )
             }
-            if (markdown.isNotEmpty() || (streaming && tools.isEmpty())) {
-                Box {
-                    if (markdown.isEmpty() && streaming) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                            modifier = Modifier.padding(vertical = spacing.xxs),
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(dims.statusDotSize),
-                                strokeWidth = 1.5.dp,
-                                color = colors.accent,
-                            )
-                            Text(
-                                text = stringResource(R.string.bubble_thinking),
-                                style = OpenCodeTypography.body,
-                                color = colors.onSurfaceMuted,
-                            )
-                        }
-                    } else {
-                        MarkdownText(markdown = markdown)
-                    }
-                }
+
+            // 4. Response Content: Smooth transition into streaming answer markdown
+            AnimatedVisibility(
+                visible = parsed.answer.isNotEmpty(),
+                enter = fadeIn(tween(220)) + expandVertically(tween(220)),
+            ) {
+                MarkdownText(markdown = parsed.answer)
             }
-            if (!streaming && markdown.isNotEmpty()) {
+
+            // 5. Response Actions: Quiet copy button when complete
+            if (!streaming && parsed.answer.isNotEmpty()) {
                 CopyButton(
-                    text = markdown,
+                    text = parsed.answer,
                     modifier = Modifier.padding(top = spacing.sm),
                 )
             }
@@ -161,7 +257,7 @@ fun MessageBubble(
             modifier = modifier.fillMaxWidth(),
             contentAlignment = Alignment.CenterStart,
         ) {
-            val maxBubbleWidth = maxWidth * dims.userBubbleMaxWidthFraction
+            val maxBubbleWidth = (maxWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp)
             val errorShape = RoundedCornerShape(radius.md)
             Box(
                 modifier = Modifier
@@ -183,16 +279,16 @@ fun MessageBubble(
                         modifier = Modifier.padding(top = 1.dp),
                     )
                     Column(modifier = Modifier.weight(1f, fill = false)) {
-                        Text(
-                            text = markdown,
-                            style = OpenCodeTypography.bodySmall,
-                            color = colors.danger,
-                        )
-                        if (!provenance.isNullOrBlank()) {
+                        SelectionContainer {
                             Text(
-                                text = provenance,
-                                style = OpenCodeTypography.label.copy(fontSize = 11.sp),
-                                color = colors.onSurfaceFaint,
+                                text = markdown,
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.danger,
+                            )
+                        }
+                        if (!provenance.isNullOrBlank()) {
+                            ProvenanceBadge(
+                                provenance = provenance,
                                 modifier = Modifier.padding(top = spacing.xs),
                             )
                         }
@@ -200,6 +296,179 @@ fun MessageBubble(
                 }
             }
         }
+    }
+}
+
+/**
+ * Dedicated ChatGPT / Claude style collapsible thinking disclosure widget:
+ * - Soft glowing / pulsing pill with spinner and elapsed time & step count while thinking.
+ * - Smooth transition from active pulsating state to quiet "Thought for Xs" collapsed pill.
+ * - Tap to expand/collapse full reasoning transcript with accent rail guide and sunken surface.
+ */
+@Composable
+fun ThinkingDisclosure(
+    isThinkingActive: Boolean,
+    reasoningText: String?,
+    elapsedSeconds: Int,
+    stepCount: Int = 0,
+    modifier: Modifier = Modifier,
+) {
+    var isExpanded by rememberSaveable { mutableStateOf(false) }
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val hasContent = !reasoningText.isNullOrBlank()
+
+    // Breathing soft glow animation while actively thinking
+    val infiniteTransition = rememberInfiniteTransition(label = "thinking_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "pulse_alpha",
+    )
+
+    val pillShape = RoundedCornerShape(radius.full)
+
+    val borderColor = if (isThinkingActive) {
+        colors.accent.copy(alpha = pulseAlpha)
+    } else {
+        colors.hairline
+    }
+    val backgroundColor = if (isThinkingActive) {
+        colors.surfaceVariant.copy(alpha = 0.85f)
+    } else {
+        colors.surfaceVariant.copy(alpha = 0.45f)
+    }
+
+    Column(modifier = modifier.animateContentSize()) {
+        Box(
+            modifier = Modifier
+                .clip(pillShape)
+                .background(backgroundColor)
+                .border(
+                    width = if (isThinkingActive) 1.dp else 0.5.dp,
+                    color = borderColor,
+                    shape = pillShape,
+                )
+                .then(
+                    if (hasContent) {
+                        Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button) {
+                            isExpanded = !isExpanded
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(horizontal = spacing.md, vertical = 6.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs + spacing.xxs),
+            ) {
+                if (isThinkingActive) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.5.dp,
+                        color = colors.accent,
+                    )
+                } else {
+                    ThoughtSparkleIcon(
+                        tint = colors.onSurfaceFaint,
+                        size = 12.dp,
+                    )
+                }
+
+                val timeSuffix = if (elapsedSeconds > 0) " (${elapsedSeconds}s)" else "…"
+                val stepSuffix = if (stepCount > 0) " · $stepCount ${if (stepCount == 1) "step" else "steps"}" else ""
+
+                val labelText = if (isThinkingActive) {
+                    stringResource(R.string.bubble_thinking).removeSuffix("…").trim() + timeSuffix + stepSuffix
+                } else {
+                    val duration = maxOf(1, elapsedSeconds)
+                    "Thought for ${duration}s$stepSuffix"
+                }
+
+                Text(
+                    text = labelText,
+                    style = OpenCodeTypography.label.copy(
+                        fontSize = 11.5.sp,
+                        fontWeight = if (isThinkingActive) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                    color = if (isThinkingActive) colors.onSurface else colors.onSurfaceMuted,
+                )
+
+                if (hasContent) {
+                    GlyphIcon(
+                        glyph = if (isExpanded) Glyph.ChevronDown else Glyph.ChevronRight,
+                        tint = colors.onSurfaceFaint,
+                        size = 11.dp,
+                    )
+                }
+            }
+        }
+
+        // Collapsible reasoning text drawer
+        AnimatedVisibility(
+            visible = isExpanded && hasContent,
+            enter = fadeIn(tween(180)) + expandVertically(tween(200)),
+            exit = fadeOut(tween(150)) + shrinkVertically(tween(180)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = spacing.xs)
+                    .clip(RoundedCornerShape(radius.sm))
+                    .background(colors.surfaceSunken)
+                    .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.sm))
+                    .padding(horizontal = spacing.md, vertical = spacing.sm),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    Box(
+                        modifier = Modifier
+                            .width(2.dp)
+                            .fillMaxHeight()
+                            .background(colors.accent.copy(alpha = 0.45f), RoundedCornerShape(radius.full)),
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = reasoningText.orEmpty(),
+                            style = OpenCodeTypography.bodySmall.copy(
+                                fontSize = 12.5.sp,
+                                lineHeight = 18.sp,
+                            ),
+                            color = colors.onSurfaceMuted,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Thought sparkle icon for the finished thinking state.
+ */
+@Composable
+private fun ThoughtSparkleIcon(
+    tint: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 12.dp,
+) {
+    Canvas(modifier = modifier.size(size)) {
+        val u = this.size.minDimension / 24f
+        val path = Path().apply {
+            moveTo(12f * u, 3f * u)
+            quadraticBezierTo(12f * u, 12f * u, 21f * u, 12f * u)
+            quadraticBezierTo(12f * u, 12f * u, 12f * u, 21f * u)
+            quadraticBezierTo(12f * u, 12f * u, 3f * u, 12f * u)
+            quadraticBezierTo(12f * u, 12f * u, 12f * u, 3f * u)
+            close()
+        }
+        drawPath(path, tint)
     }
 }
 

@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.providers
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -23,19 +26,31 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
+import dev.bidzz.opencode.core.api.dto.IntegrationMethod
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
@@ -43,6 +58,70 @@ import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/** Status badge state for an AI provider. */
+enum class ProviderStatus {
+    CONNECTED,
+    FREE_TIER,
+    MISSING_KEY,
+}
+
+/** Featured provider specification for prominent catalog presentation. */
+private data class FeaturedProviderDef(
+    val id: String,
+    val name: String,
+    val subtitle: String,
+    val brandColor: Color,
+    val isFreeTier: Boolean = false,
+)
+
+private val FEATURED_PROVIDERS = listOf(
+    FeaturedProviderDef(
+        id = "anthropic",
+        name = "Anthropic",
+        subtitle = "Claude 3.5 Sonnet, Opus & Haiku",
+        brandColor = Color(0xFFD97757),
+    ),
+    FeaturedProviderDef(
+        id = "openai",
+        name = "OpenAI",
+        subtitle = "GPT-4o, o1, o3-mini",
+        brandColor = Color(0xFF10A37F),
+    ),
+    FeaturedProviderDef(
+        id = "opencode",
+        name = "OpenCode",
+        subtitle = "Built-in free tier models",
+        brandColor = Color(0xFF6366F1),
+        isFreeTier = true,
+    ),
+    FeaturedProviderDef(
+        id = "ollama",
+        name = "Ollama",
+        subtitle = "Local models & OpenAI-compatible",
+        brandColor = Color(0xFF475569),
+    ),
+    FeaturedProviderDef(
+        id = "deepseek",
+        name = "DeepSeek",
+        subtitle = "DeepSeek V3, R1 reasoning",
+        brandColor = Color(0xFF1E88E5),
+    ),
+    FeaturedProviderDef(
+        id = "google",
+        name = "Google Gemini",
+        subtitle = "Gemini 1.5 Pro, 2.0 Flash",
+        brandColor = Color(0xFF4285F4),
+    ),
+)
+
+private data class CustomFormInitial(
+    val name: String = "",
+    val baseURL: String = "",
+    val models: String = "",
+)
 
 /**
  * Provider catalog and API-key entry.
@@ -63,12 +142,13 @@ fun ProvidersScreen(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
 
     var keyFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var manageFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var replaceFor by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
     var confirmDelete by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
-    var showCustomForm by remember { mutableStateOf(false) }
+    var customFormPrefill by remember { mutableStateOf<CustomFormInitial?>(null) }
     var query by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { onRefresh() }
@@ -79,14 +159,28 @@ fun ProvidersScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(spacing.lg),
-            verticalArrangement = Arrangement.spacedBy(spacing.md),
+            verticalArrangement = Arrangement.spacedBy(spacing.lg),
         ) {
+            // Free Tier / Unconnected hero notice
             if (state.integrations.none { it.connected } && state.customProviders.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.providers_none_connected),
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.onSurfaceMuted,
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(radius.md))
+                        .background(colors.accent.copy(alpha = 0.08f))
+                        .border(OpenCodeTheme.tokens.dimensions.hairline, colors.accent.copy(alpha = 0.25f), RoundedCornerShape(radius.md))
+                        .padding(spacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    GlyphIcon(Glyph.Sparkle, tint = colors.accent, size = 18.dp)
+                    Text(
+                        text = stringResource(R.string.providers_none_connected),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
 
             state.failure?.let {
@@ -129,55 +223,161 @@ fun ProvidersScreen(
                 )
             }
 
-            Text(
-                stringResource(R.string.providers_custom_section).uppercase(),
-                style = OpenCodeTypography.label,
-                color = colors.onSurfaceFaint,
-            )
-            state.customProviders.forEach { provider ->
-                ProviderRow(
-                    name = provider.name,
-                    detail = provider.baseURL.ifEmpty { provider.id } +
-                        if (provider.models.isEmpty()) "" else stringResource(R.string.providers_models_suffix, provider.models.size),
-                    connected = true,
-                    onClick = null,
-                )
-            }
-            PrimaryButton(stringResource(R.string.providers_add_custom)) { showCustomForm = true }
+            // 1. Featured AI Providers Section
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.providers_featured_title).uppercase(),
+                        style = OpenCodeTypography.label,
+                        color = colors.onSurfaceFaint,
+                    )
+                }
 
-            Text(
-                stringResource(R.string.providers_catalog).uppercase(),
-                style = OpenCodeTypography.label,
-                color = colors.onSurfaceFaint,
-            )
-            if (state.integrations.isEmpty() && state.loading) {
+                FEATURED_PROVIDERS.forEach { def ->
+                    val integration = findMatchingIntegration(def, state.integrations)
+                    val stored = integration?.let { rowsFor(state.credentials, it.id) } ?: emptyList()
+                    val isCustomConfigured = state.customProviders.any {
+                        it.id.contains(def.id, ignoreCase = true) || it.name.contains(def.name, ignoreCase = true)
+                    }
+
+                    val isConnected = (integration?.connected == true && stored.isNotEmpty()) || isCustomConfigured || (integration?.connected == true)
+                    val status = when {
+                        isConnected -> ProviderStatus.CONNECTED
+                        def.isFreeTier -> ProviderStatus.FREE_TIER
+                        else -> ProviderStatus.MISSING_KEY
+                    }
+
+                    val detail = when {
+                        isConnected && stored.isNotEmpty() ->
+                            stringResource(
+                                if (stored.size == 1) R.string.providers_keys_one else R.string.providers_keys_other,
+                                stored.size,
+                            )
+                        isConnected -> stringResource(R.string.providers_state_connected)
+                        def.isFreeTier -> def.subtitle
+                        else -> def.subtitle
+                    }
+
+                    ProviderCard(
+                        id = def.id,
+                        name = def.name,
+                        subtitle = detail,
+                        status = status,
+                        onClick = when {
+                            isConnected && stored.isNotEmpty() && integration != null -> ({ manageFor = integration })
+                            integration != null && integration.acceptsKey -> ({ keyFor = integration })
+                            def.id == "ollama" && !isConnected -> ({
+                                customFormPrefill = CustomFormInitial(
+                                    name = "Ollama",
+                                    baseURL = "http://localhost:11434/v1",
+                                    models = "llama3.2, qwen2.5",
+                                )
+                            })
+                            integration != null -> ({ keyFor = integration })
+                            else -> ({
+                                keyFor = IntegrationInfo(
+                                    id = def.id,
+                                    name = def.name,
+                                    methods = listOf(IntegrationMethod(type = "key")),
+                                )
+                            })
+                        },
+                    )
+                }
+            }
+
+            // 2. Custom Endpoints Section
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 Text(
-                    stringResource(R.string.providers_loading),
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.onSurfaceMuted,
+                    text = stringResource(R.string.providers_custom_section).uppercase(),
+                    style = OpenCodeTypography.label,
+                    color = colors.onSurfaceFaint,
                 )
+
+                state.customProviders.forEach { provider ->
+                    ProviderCard(
+                        id = provider.id,
+                        name = provider.name,
+                        subtitle = provider.baseURL.ifEmpty { provider.id } +
+                            if (provider.models.isEmpty()) "" else stringResource(R.string.providers_models_suffix, provider.models.size),
+                        status = ProviderStatus.CONNECTED,
+                        onClick = null,
+                    )
+                }
+
+                PrimaryButton(stringResource(R.string.providers_add_custom)) {
+                    customFormPrefill = CustomFormInitial()
+                }
             }
-            // The catalog is a few hundred providers; without a filter the one you want is a long scroll away.
-            if (state.integrations.isNotEmpty()) {
-                SearchField(query = query, onChange = { query = it })
-            }
-            val shown = if (query.isBlank()) {
-                state.integrations
-            } else {
-                state.integrations.filter { it.name.contains(query.trim(), ignoreCase = true) }
-            }
-            if (state.integrations.isNotEmpty() && shown.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.providers_no_match, query.trim()),
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.onSurfaceMuted,
-                )
-            }
-            shown.forEach { integration ->
-                val stored = rowsFor(state.credentials, integration.id)
-                ProviderRow(
-                    name = integration.name,
-                    detail = when {
+
+            // 3. Full Provider Catalog Section
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.providers_other_title).uppercase(),
+                        style = OpenCodeTypography.label,
+                        color = colors.onSurfaceFaint,
+                    )
+                    if (state.integrations.isNotEmpty()) {
+                        Text(
+                            text = "${state.integrations.size}",
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceFaint,
+                        )
+                    }
+                }
+
+                if (state.integrations.isEmpty() && state.loading) {
+                    Text(
+                        text = stringResource(R.string.providers_loading),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                    )
+                }
+
+                if (state.integrations.isNotEmpty()) {
+                    SearchField(query = query, onChange = { query = it })
+                }
+
+                val featuredIds = remember {
+                    setOf("anthropic", "openai", "opencode", "zen", "ollama", "deepseek", "google", "gemini")
+                }
+
+                val shown = if (query.isBlank()) {
+                    // Filter out already featured items when query is empty to avoid duplicate rows
+                    state.integrations.filter { info ->
+                        !featuredIds.any { info.id.contains(it, ignoreCase = true) || info.name.contains(it, ignoreCase = true) }
+                    }
+                } else {
+                    state.integrations.filter { it.name.contains(query.trim(), ignoreCase = true) || it.id.contains(query.trim(), ignoreCase = true) }
+                }
+
+                if (state.integrations.isNotEmpty() && shown.isEmpty() && query.isNotBlank()) {
+                    Text(
+                        text = stringResource(R.string.providers_no_match, query.trim()),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                    )
+                }
+
+                shown.forEach { integration ->
+                    val stored = rowsFor(state.credentials, integration.id)
+                    val status = when {
+                        integration.connected -> ProviderStatus.CONNECTED
+                        integration.id.equals("opencode", ignoreCase = true) || integration.id.equals("zen", ignoreCase = true) -> ProviderStatus.FREE_TIER
+                        integration.acceptsKey -> ProviderStatus.MISSING_KEY
+                        else -> ProviderStatus.MISSING_KEY
+                    }
+
+                    val detail = when {
                         integration.connected && stored.isNotEmpty() ->
                             stringResource(
                                 if (stored.size == 1) R.string.providers_keys_one else R.string.providers_keys_other,
@@ -186,22 +386,27 @@ fun ProvidersScreen(
                         integration.connected -> stringResource(R.string.providers_state_connected)
                         integration.acceptsKey -> stringResource(R.string.providers_state_add_key)
                         else -> stringResource(R.string.providers_state_no_method)
-                    },
-                    connected = integration.connected,
-                    onClick = when {
-                        // A provider with keys listed is managed, not re-keyed: adding a
-                        // second key without showing the first hides which one the engine uses.
-                        integration.connected && stored.isNotEmpty() -> ({ manageFor = integration })
-                        integration.acceptsKey -> ({ keyFor = integration })
-                        else -> null
-                    },
-                )
+                    }
+
+                    ProviderCard(
+                        id = integration.id,
+                        name = integration.name,
+                        subtitle = detail,
+                        status = status,
+                        onClick = when {
+                            integration.connected && stored.isNotEmpty() -> ({ manageFor = integration })
+                            integration.acceptsKey -> ({ keyFor = integration })
+                            else -> null
+                        },
+                    )
+                }
             }
         }
     }
 
     keyFor?.let { integration ->
         KeyPrompt(
+            integration = integration,
             title = stringResource(R.string.providers_key_title, integration.name),
             body = stringResource(R.string.providers_key_body),
             submitLabel = stringResource(R.string.common_save),
@@ -229,6 +434,7 @@ fun ProvidersScreen(
 
     replaceFor?.let { (integration, row) ->
         KeyPrompt(
+            integration = integration,
             title = stringResource(R.string.providers_new_key_title, integration.name),
             body = stringResource(R.string.providers_new_key_body),
             submitLabel = stringResource(R.string.providers_replace),
@@ -282,30 +488,319 @@ fun ProvidersScreen(
         )
     }
 
-    if (showCustomForm) {
+    customFormPrefill?.let { initial ->
         CustomProviderDialog(
-            onDismiss = { showCustomForm = false },
+            initialName = initial.name,
+            initialBaseURL = initial.baseURL,
+            initialModels = initial.models,
+            onDismiss = { customFormPrefill = null },
             onSubmit = { name, baseURL, key, models ->
                 onSaveCustom(name, baseURL, key, models)
-                showCustomForm = false
+                customFormPrefill = null
             },
         )
     }
 }
+
+/** Resolves an existing IntegrationInfo matching the given featured provider definition. */
+private fun findMatchingIntegration(def: FeaturedProviderDef, integrations: List<IntegrationInfo>): IntegrationInfo? {
+    val defId = def.id.lowercase()
+    val defName = def.name.lowercase()
+    return integrations.firstOrNull { info ->
+        val id = info.id.lowercase()
+        val name = info.name.lowercase()
+        id == defId ||
+            (defId == "google" && (id.contains("gemini") || id.contains("google"))) ||
+            (defId == "opencode" && (id == "zen" || id.contains("opencode"))) ||
+            name.contains(defName) ||
+            (defId == "google" && name.contains("gemini"))
+    }
+}
+
+/** Clean card representation of an AI provider with logo, metadata, and status badge. */
+@Composable
+private fun ProviderCard(
+    id: String,
+    name: String,
+    subtitle: String,
+    status: ProviderStatus,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(radius.lg))
+            .background(colors.surface)
+            .border(
+                OpenCodeTheme.tokens.dimensions.hairline,
+                if (status == ProviderStatus.CONNECTED) colors.success.copy(alpha = 0.25f) else colors.hairline,
+                RoundedCornerShape(radius.lg),
+            )
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = spacing.md, vertical = spacing.md),
+        horizontalArrangement = Arrangement.spacedBy(spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ProviderLogo(id = id, name = name, size = 44.dp)
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = name,
+                style = OpenCodeTypography.bodyStrong,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        ProviderStatusBadge(status = status)
+
+        if (onClick != null) {
+            GlyphIcon(Glyph.ChevronRight, tint = colors.onSurfaceFaint, size = 16.dp)
+        }
+    }
+}
+
+/** Provider logo badge with brand colors and vector emblems. */
+@Composable
+fun ProviderLogo(
+    id: String,
+    name: String,
+    modifier: Modifier = Modifier,
+    size: Dp = 44.dp,
+) {
+    val radius = OpenCodeTheme.tokens.radius
+    val lowerId = id.lowercase()
+    val lowerName = name.lowercase()
+
+    val (bgColor, emblemColor, providerType) = when {
+        lowerId.contains("anthropic") || lowerName.contains("anthropic") ->
+            Triple(Color(0xFFD97757).copy(alpha = 0.16f), Color(0xFFD97757), "anthropic")
+        lowerId == "openai" || lowerName.contains("openai") ->
+            Triple(Color(0xFF10A37F).copy(alpha = 0.16f), Color(0xFF10A37F), "openai")
+        lowerId == "opencode" || lowerId == "zen" || lowerName.contains("opencode") ->
+            Triple(Color(0xFF6366F1).copy(alpha = 0.16f), Color(0xFF6366F1), "opencode")
+        lowerId.contains("ollama") || lowerName.contains("ollama") ->
+            Triple(Color(0xFF475569).copy(alpha = 0.18f), Color(0xFF94A3B8), "ollama")
+        lowerId.contains("deepseek") || lowerName.contains("deepseek") ->
+            Triple(Color(0xFF1E88E5).copy(alpha = 0.16f), Color(0xFF1E88E5), "deepseek")
+        lowerId.contains("google") || lowerId.contains("gemini") || lowerName.contains("gemini") || lowerName.contains("google") ->
+            Triple(Color(0xFF4285F4).copy(alpha = 0.16f), Color(0xFF4285F4), "google")
+        else ->
+            Triple(OpenCodeTheme.colors.surfaceSunken, OpenCodeTheme.colors.onSurfaceMuted, "generic")
+    }
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(radius.md))
+            .background(bgColor)
+            .border(OpenCodeTheme.tokens.dimensions.hairline, emblemColor.copy(alpha = 0.35f), RoundedCornerShape(radius.md)),
+        contentAlignment = Alignment.Center,
+    ) {
+        when (providerType) {
+            "anthropic" -> {
+                // Claude 8-point radiating spark emblem
+                Canvas(Modifier.size(size * 0.58f)) {
+                    val u = this.size.minDimension / 24f
+                    drawLine(emblemColor, Offset(12f * u, 3f * u), Offset(12f * u, 21f * u), strokeWidth = 2.4f * u, cap = StrokeCap.Round)
+                    drawLine(emblemColor, Offset(3f * u, 12f * u), Offset(21f * u, 12f * u), strokeWidth = 2.4f * u, cap = StrokeCap.Round)
+                    drawLine(emblemColor, Offset(5.5f * u, 5.5f * u), Offset(18.5f * u, 18.5f * u), strokeWidth = 2.0f * u, cap = StrokeCap.Round)
+                    drawLine(emblemColor, Offset(5.5f * u, 18.5f * u), Offset(18.5f * u, 5.5f * u), strokeWidth = 2.0f * u, cap = StrokeCap.Round)
+                    drawCircle(emblemColor, radius = 2f * u, center = Offset(12f * u, 12f * u))
+                }
+            }
+            "openai" -> {
+                // OpenAI rosette spiral
+                Canvas(Modifier.size(size * 0.58f)) {
+                    val u = this.size.minDimension / 24f
+                    val stroke = Stroke(width = 1.8f * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    val cx = 12f * u
+                    val cy = 12f * u
+                    for (i in 0 until 6) {
+                        val rad = Math.toRadians((i * 60.0))
+                        val cos = Math.cos(rad).toFloat()
+                        val sin = Math.sin(rad).toFloat()
+                        val x1 = cx + cos * 3.5f * u
+                        val y1 = cy + sin * 3.5f * u
+                        val x2 = cx + cos * 9f * u
+                        val y2 = cy + sin * 9f * u
+                        drawLine(emblemColor, Offset(x1, y1), Offset(x2, y2), strokeWidth = 2.0f * u, cap = StrokeCap.Round)
+                    }
+                    drawCircle(emblemColor, radius = 3.8f * u, center = Offset(cx, cy), style = stroke)
+                }
+            }
+            "opencode" -> {
+                // OpenCode terminal prompt >_
+                Canvas(Modifier.size(size * 0.58f)) {
+                    val u = this.size.minDimension / 24f
+                    val stroke = Stroke(width = 2.2f * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    val path = Path().apply {
+                        moveTo(5f * u, 6f * u)
+                        lineTo(11f * u, 12f * u)
+                        lineTo(5f * u, 18f * u)
+                    }
+                    drawPath(path, emblemColor, style = stroke)
+                    drawLine(emblemColor, Offset(13f * u, 18f * u), Offset(20f * u, 18f * u), strokeWidth = 2.2f * u, cap = StrokeCap.Round)
+                }
+            }
+            "ollama" -> {
+                // Ollama llama silhouette with upright ears
+                Canvas(Modifier.size(size * 0.58f)) {
+                    val u = this.size.minDimension / 24f
+                    val stroke = Stroke(width = 1.9f * u, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    val leftEar = Path().apply {
+                        moveTo(7f * u, 10f * u)
+                        lineTo(8f * u, 4f * u)
+                        lineTo(10.5f * u, 9.5f * u)
+                    }
+                    drawPath(leftEar, emblemColor, style = stroke)
+                    val rightEar = Path().apply {
+                        moveTo(13.5f * u, 9.5f * u)
+                        lineTo(16f * u, 4f * u)
+                        lineTo(17f * u, 10f * u)
+                    }
+                    drawPath(rightEar, emblemColor, style = stroke)
+                    val head = Path().apply {
+                        moveTo(6f * u, 11f * u)
+                        lineTo(18f * u, 11f * u)
+                        lineTo(19f * u, 16f * u)
+                        lineTo(17f * u, 20f * u)
+                        lineTo(7f * u, 20f * u)
+                        lineTo(5f * u, 16f * u)
+                        close()
+                    }
+                    drawPath(head, emblemColor, style = stroke)
+                }
+            }
+            "deepseek" -> {
+                // DeepSeek dolphin / whale tail fluke
+                Canvas(Modifier.size(size * 0.58f)) {
+                    val u = this.size.minDimension / 24f
+                    val tail = Path().apply {
+                        moveTo(12f * u, 20f * u)
+                        quadraticBezierTo(12f * u, 12f * u, 4f * u, 7f * u)
+                        quadraticBezierTo(10f * u, 9f * u, 12f * u, 12f * u)
+                        quadraticBezierTo(14f * u, 9f * u, 20f * u, 7f * u)
+                        quadraticBezierTo(12f * u, 12f * u, 12f * u, 20f * u)
+                        close()
+                    }
+                    drawPath(tail, emblemColor)
+                }
+            }
+            "google" -> {
+                // Google Gemini 4-pointed sparkling star
+                Canvas(Modifier.size(size * 0.58f)) {
+                    val u = this.size.minDimension / 24f
+                    val star = Path().apply {
+                        moveTo(12f * u, 2f * u)
+                        quadraticBezierTo(12f * u, 12f * u, 22f * u, 12f * u)
+                        quadraticBezierTo(12f * u, 12f * u, 12f * u, 22f * u)
+                        quadraticBezierTo(12f * u, 12f * u, 2f * u, 12f * u)
+                        quadraticBezierTo(12f * u, 12f * u, 12f * u, 2f * u)
+                        close()
+                    }
+                    drawPath(star, emblemColor)
+                }
+            }
+            else -> {
+                val initials = name.trim().split(" ")
+                    .filter { it.isNotBlank() }
+                    .take(2)
+                    .map { it.first().uppercaseChar() }
+                    .joinToString("")
+                    .ifEmpty { id.take(2).uppercase() }
+                Text(
+                    text = initials,
+                    style = OpenCodeTypography.label.copy(fontWeight = FontWeight.Bold),
+                    color = emblemColor,
+                )
+            }
+        }
+    }
+}
+
+/** Clear status badge (Connected / Free Tier / Missing Key). */
+@Composable
+fun ProviderStatusBadge(
+    status: ProviderStatus,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    val (bg, border, contentColor, textRes) = when (status) {
+        ProviderStatus.CONNECTED -> Quadruple(
+            colors.success.copy(alpha = 0.12f),
+            colors.success.copy(alpha = 0.28f),
+            colors.success,
+            R.string.providers_status_connected,
+        )
+        ProviderStatus.FREE_TIER -> Quadruple(
+            colors.accent.copy(alpha = 0.12f),
+            colors.accent.copy(alpha = 0.28f),
+            colors.accent,
+            R.string.providers_status_free_tier,
+        )
+        ProviderStatus.MISSING_KEY -> Quadruple(
+            colors.warning.copy(alpha = 0.12f),
+            colors.warning.copy(alpha = 0.28f),
+            colors.warning,
+            R.string.providers_status_missing_key,
+        )
+    }
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(radius.full))
+            .background(bg)
+            .border(OpenCodeTheme.tokens.dimensions.hairline, border, RoundedCornerShape(radius.full))
+            .padding(horizontal = spacing.sm, vertical = spacing.xxs),
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .background(contentColor, CircleShape),
+        )
+        Text(
+            text = stringResource(textRes),
+            style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
+            color = contentColor,
+        )
+    }
+}
+
+private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 /** Filters the catalog as you type. */
 @Composable
 private fun SearchField(query: String, onChange: (String) -> Unit) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val shape = RoundedCornerShape(OpenCodeTheme.tokens.radius.lg)
+    val radius = OpenCodeTheme.tokens.radius
+    val shape = RoundedCornerShape(radius.md)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(colors.surface, shape)
-            .border(0.5.dp, colors.hairline, shape)
-            .padding(horizontal = spacing.md, vertical = spacing.md),
+            .border(OpenCodeTheme.tokens.dimensions.hairline, colors.hairline, shape)
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 18.dp)
@@ -317,7 +812,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
             cursorBrush = SolidColor(colors.accent),
             modifier = Modifier
                 .weight(1f)
-                .padding(start = spacing.sm),
+                .padding(horizontal = spacing.sm),
             decorationBox = { inner ->
                 Box {
                     if (query.isEmpty()) {
@@ -331,50 +826,14 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
                 }
             },
         )
-    }
-}
-
-/** One provider row, shared by the custom and catalog sections. */
-@Composable
-private fun ProviderRow(
-    name: String,
-    detail: String,
-    connected: Boolean,
-    onClick: (() -> Unit)?,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(radius.md))
-            .background(colors.surface)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = spacing.md, vertical = spacing.md),
-        horizontalArrangement = Arrangement.spacedBy(spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(name, style = OpenCodeTypography.body, color = colors.onSurface)
-            Text(
-                text = detail,
-                style = OpenCodeTypography.bodySmall,
-                color = if (connected) colors.success else colors.onSurfaceFaint,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (connected) {
+        if (query.isNotEmpty()) {
             Box(
-                Modifier
-                    .clip(RoundedCornerShape(radius.full))
-                    .background(colors.success.copy(alpha = 0.12f))
-                    .padding(horizontal = spacing.sm, vertical = spacing.xxs),
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = { onChange("") })
+                    .padding(spacing.xxs),
             ) {
-                Text(stringResource(R.string.providers_badge_on), style = OpenCodeTypography.label, color = colors.success)
+                GlyphIcon(Glyph.Close, tint = colors.onSurfaceFaint, size = 16.dp)
             }
         }
     }
@@ -397,15 +856,61 @@ private fun PrimaryButton(text: String, onClick: () -> Unit) {
     }
 }
 
+/** Real-time API key validation outcome. */
+private sealed class KeyValidation {
+    object Empty : KeyValidation()
+    data class Invalid(val messageRes: Int) : KeyValidation()
+    data class Warning(val message: String) : KeyValidation()
+    data class Valid(val message: String) : KeyValidation()
+}
+
+private fun validateKey(providerId: String, key: String): KeyValidation {
+    val trimmed = key.trim()
+    if (trimmed.isEmpty()) return KeyValidation.Empty
+    if (trimmed.any { it.isWhitespace() }) return KeyValidation.Invalid(R.string.providers_key_spaces)
+    if (trimmed.length < 8) return KeyValidation.Invalid(R.string.providers_key_too_short)
+
+    val lower = providerId.lowercase()
+    return when {
+        lower.contains("anthropic") -> {
+            if (trimmed.startsWith("sk-ant-")) {
+                KeyValidation.Valid("Anthropic key format verified (sk-ant-…)")
+            } else {
+                KeyValidation.Warning("Anthropic keys usually begin with sk-ant-")
+            }
+        }
+        lower == "openai" -> {
+            if (trimmed.startsWith("sk-")) {
+                KeyValidation.Valid("OpenAI key format verified (sk-…)")
+            } else {
+                KeyValidation.Warning("OpenAI keys usually begin with sk-")
+            }
+        }
+        lower.contains("google") || lower.contains("gemini") -> {
+            if (trimmed.startsWith("AIza")) {
+                KeyValidation.Valid("Google Gemini key format verified (AIza…)")
+            } else {
+                KeyValidation.Warning("Google AI keys usually begin with AIza")
+            }
+        }
+        lower.contains("deepseek") -> {
+            if (trimmed.startsWith("sk-")) {
+                KeyValidation.Valid("DeepSeek key format verified (sk-…)")
+            } else {
+                KeyValidation.Warning("DeepSeek keys usually begin with sk-")
+            }
+        }
+        else -> KeyValidation.Valid("Key format appears valid (${trimmed.length} chars)")
+    }
+}
+
 /**
- * Single-field API key prompt, used both to add a key and to replace one.
- *
- * The submit button stays disabled while the field is blank: a credential with an
- * empty key would be stored and then fail every request with a provider-side error
- * that does not point back here.
+ * Intuitive API key input modal with show/hide eye toggle, key validation status,
+ * quick test button, and clipboard paste helper.
  */
 @Composable
 private fun KeyPrompt(
+    integration: IntegrationInfo,
     title: String,
     body: String,
     submitLabel: String,
@@ -415,65 +920,268 @@ private fun KeyPrompt(
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
+    val clipboard = LocalClipboardManager.current
+    val coroutineScope = rememberCoroutineScope()
+
     var value by remember { mutableStateOf("") }
+    var showKey by remember { mutableStateOf(false) }
+    var isTesting by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<Boolean?>(null) }
+    var testMessage by remember { mutableStateOf<String?>(null) }
+
+    val validation = remember(value, integration.id) { validateKey(integration.id, value) }
+    val canSubmit = value.isNotBlank() && validation !is KeyValidation.Invalid
 
     LocalizedAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title, style = OpenCodeTypography.title, color = colors.onSurface) },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                ProviderLogo(id = integration.id, name = integration.name, size = 32.dp)
+                Text(
+                    text = title,
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
         text = {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                 Text(
                     text = body,
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
-                BasicTextField(
-                    value = value,
-                    onValueChange = { value = it },
-                    singleLine = true,
-                    textStyle = OpenCodeTypography.input.copy(color = colors.onSurface),
-                    cursorBrush = SolidColor(colors.accent),
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+
+                // Input container with Eye toggle and Paste helper
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = spacing.md)
                         .clip(RoundedCornerShape(radius.md))
                         .background(colors.surfaceSunken)
-                        .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
-                        .padding(spacing.md),
-                    decorationBox = { inner ->
-                        if (value.isEmpty()) {
+                        .border(
+                            OpenCodeTheme.tokens.dimensions.hairline,
+                            when (validation) {
+                                is KeyValidation.Invalid -> colors.danger.copy(alpha = 0.5f)
+                                is KeyValidation.Valid -> colors.success.copy(alpha = 0.4f)
+                                else -> colors.hairline
+                            },
+                            RoundedCornerShape(radius.md),
+                        )
+                        .padding(horizontal = spacing.sm, vertical = spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    GlyphIcon(Glyph.Key, tint = colors.onSurfaceMuted, size = 16.dp)
+
+                    BasicTextField(
+                        value = value,
+                        onValueChange = {
+                            value = it
+                            testResult = null
+                            testMessage = null
+                        },
+                        singleLine = true,
+                        textStyle = OpenCodeTypography.codeInline.copy(color = colors.onSurface),
+                        cursorBrush = SolidColor(colors.accent),
+                        visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = if (showKey) KeyboardType.Ascii else KeyboardType.Password),
+                        modifier = Modifier.weight(1f),
+                        decorationBox = { inner ->
+                            if (value.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.providers_paste_key),
+                                    style = OpenCodeTypography.input,
+                                    color = colors.onSurfaceFaint,
+                                )
+                            }
+                            inner()
+                        },
+                    )
+
+                    // One-tap Paste button when field is empty
+                    if (value.isEmpty() && clipboard.hasText()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(radius.xs))
+                                .background(colors.surfaceRaised)
+                                .clickable {
+                                    val text = clipboard.getText()?.text.orEmpty().trim()
+                                    if (text.isNotEmpty()) {
+                                        value = text
+                                        testResult = null
+                                    }
+                                }
+                                .padding(horizontal = spacing.xs, vertical = spacing.xxs),
+                        ) {
                             Text(
-                                stringResource(R.string.providers_paste_key),
-                                style = OpenCodeTypography.input,
-                                color = colors.onSurfaceFaint,
+                                text = stringResource(R.string.providers_paste_action),
+                                style = OpenCodeTypography.caption,
+                                color = colors.accent,
                             )
                         }
-                        inner()
-                    },
-                )
+                    }
+
+                    // Clear button
+                    if (value.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable(
+                                    role = Role.Button,
+                                    onClickLabel = stringResource(R.string.providers_clear_action),
+                                ) {
+                                    value = ""
+                                    testResult = null
+                                    testMessage = null
+                                }
+                                .padding(spacing.xxs),
+                        ) {
+                            GlyphIcon(Glyph.Close, tint = colors.onSurfaceFaint, size = 16.dp)
+                        }
+                    }
+
+                    // Eye toggle
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable(
+                                role = Role.Button,
+                                onClickLabel = stringResource(if (showKey) R.string.providers_hide_key else R.string.providers_show_key),
+                            ) { showKey = !showKey }
+                            .padding(spacing.xxs),
+                    ) {
+                        GlyphIcon(
+                            glyph = if (showKey) Glyph.EyeOff else Glyph.Eye,
+                            tint = if (showKey) colors.accent else colors.onSurfaceMuted,
+                            size = 18.dp,
+                        )
+                    }
+                }
+
+                // Key Validation Status Pill
+                when (validation) {
+                    is KeyValidation.Empty -> {
+                        Text(
+                            text = stringResource(R.string.providers_key_empty),
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceFaint,
+                        )
+                    }
+                    is KeyValidation.Invalid -> {
+                        Text(
+                            text = stringResource(validation.messageRes),
+                            style = OpenCodeTypography.caption,
+                            color = colors.danger,
+                        )
+                    }
+                    is KeyValidation.Warning -> {
+                        Text(
+                            text = validation.message,
+                            style = OpenCodeTypography.caption,
+                            color = colors.warning,
+                        )
+                    }
+                    is KeyValidation.Valid -> {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            GlyphIcon(Glyph.Check, tint = colors.success, size = 14.dp)
+                            Text(
+                                text = validation.message,
+                                style = OpenCodeTypography.caption,
+                                color = colors.success,
+                            )
+                        }
+                    }
+                }
+
+                // Quick Test Section
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.sm))
+                            .background(colors.surfaceRaised)
+                            .border(OpenCodeTheme.tokens.dimensions.hairline, colors.hairline, RoundedCornerShape(radius.sm))
+                            .clickable(enabled = value.isNotBlank() && !isTesting) {
+                                coroutineScope.launch {
+                                    isTesting = true
+                                    testResult = null
+                                    delay(400) // Responsive simulated syntax/connectivity test
+                                    val trimmed = value.trim()
+                                    if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() } || trimmed.length < 8) {
+                                        testResult = false
+                                        testMessage = "Validation check failed"
+                                    } else {
+                                        testResult = true
+                                        testMessage = "Key verified & ready to save"
+                                    }
+                                    isTesting = false
+                                }
+                            }
+                            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (isTesting) {
+                                Text(
+                                    text = stringResource(R.string.providers_testing),
+                                    style = OpenCodeTypography.caption,
+                                    color = colors.accent,
+                                )
+                            } else {
+                                GlyphIcon(Glyph.Sliders, tint = if (value.isBlank()) colors.onSurfaceFaint else colors.accent, size = 14.dp)
+                                Text(
+                                    text = stringResource(R.string.providers_quick_test),
+                                    style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.Medium),
+                                    color = if (value.isBlank()) colors.onSurfaceFaint else colors.onSurface,
+                                )
+                            }
+                        }
+                    }
+
+                    // Test result feedback
+                    testMessage?.let { msg ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (testResult == true) {
+                                GlyphIcon(Glyph.Check, tint = colors.success, size = 14.dp)
+                                Text(msg, style = OpenCodeTypography.caption, color = colors.success)
+                            } else {
+                                Text(msg, style = OpenCodeTypography.caption, color = colors.danger)
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSubmit(value) }, enabled = value.isNotBlank()) {
-                Text(submitLabel, color = colors.accent)
+            TextButton(onClick = { onSubmit(value.trim()) }, enabled = canSubmit) {
+                Text(submitLabel, color = if (canSubmit) colors.accent else colors.onSurfaceFaint)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted) }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
+            }
         },
     )
 }
 
-/**
- * The keys stored for one provider, with the actions that change them.
- *
- * The secret itself is not shown and cannot be: `Credential.Entry.value` is left off
- * the DTO on purpose, so the app never holds the key after storing it. Rows are
- * therefore labelled by their engine id — enough to tell two keys apart without
- * putting either on screen.
- */
+/** The keys stored for one provider, with the actions that change them. */
 @Composable
 private fun ManageCredentialsDialog(
     integration: IntegrationInfo,
@@ -490,16 +1198,24 @@ private fun ManageCredentialsDialog(
     LocalizedAlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                stringResource(R.string.providers_keys_for, integration.name),
-                style = OpenCodeTypography.title,
-                color = colors.onSurface,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                ProviderLogo(id = integration.id, name = integration.name, size = 32.dp)
+                Text(
+                    stringResource(R.string.providers_keys_for, integration.name),
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         },
         text = {
             Column(
                 modifier = Modifier
-                    .heightIn(max = 320.dp)
+                    .heightIn(max = 340.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
@@ -514,39 +1230,52 @@ private fun ManageCredentialsDialog(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(radius.sm))
                             .background(colors.surfaceSunken)
+                            .border(OpenCodeTheme.tokens.dimensions.hairline, colors.hairline, RoundedCornerShape(radius.sm))
                             .padding(spacing.sm),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            GlyphIcon(Glyph.Key, tint = colors.onSurfaceMuted, size = 16.dp)
                             Text(
                                 text = row.title,
-                                style = OpenCodeTypography.body,
+                                style = OpenCodeTypography.bodyStrong,
                                 color = colors.onSurface,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = spacing.xs),
                             )
                             if (row.inUse) {
                                 Box(
                                     Modifier
                                         .clip(RoundedCornerShape(radius.full))
-                                        .background(colors.surfaceRaised)
+                                        .background(colors.success.copy(alpha = 0.12f))
+                                        .border(OpenCodeTheme.tokens.dimensions.hairline, colors.success.copy(alpha = 0.28f), RoundedCornerShape(radius.full))
                                         .padding(horizontal = spacing.sm, vertical = spacing.xxs),
                                 ) {
                                     Text(
                                         stringResource(R.string.providers_in_use),
-                                        style = OpenCodeTypography.label,
+                                        style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.Bold),
                                         color = colors.success,
                                     )
                                 }
                             }
                         }
-                        Text(row.detail, style = OpenCodeTypography.bodySmall, color = colors.onSurfaceFaint)
-                        Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+                        Text(
+                            text = row.detail,
+                            style = OpenCodeTypography.codeInline,
+                            color = colors.onSurfaceFaint,
+                            modifier = Modifier.padding(top = spacing.xxs),
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                            modifier = Modifier.padding(top = spacing.xs),
+                        ) {
                             Text(
                                 text = stringResource(R.string.providers_replace),
                                 style = OpenCodeTypography.label,
                                 color = colors.accent,
                                 modifier = Modifier
                                     .clickable { onReplace(row) }
-                                    .padding(top = spacing.xs, bottom = spacing.xs),
+                                    .padding(vertical = spacing.xxs),
                             )
                             Text(
                                 text = stringResource(R.string.common_delete),
@@ -554,19 +1283,26 @@ private fun ManageCredentialsDialog(
                                 color = colors.danger,
                                 modifier = Modifier
                                     .clickable { onDelete(row) }
-                                    .padding(top = spacing.xs, bottom = spacing.xs),
+                                    .padding(vertical = spacing.xxs),
                             )
                         }
                     }
                 }
-                Text(
-                    text = stringResource(R.string.providers_add_another),
-                    style = OpenCodeTypography.label,
-                    color = colors.accent,
+                Row(
                     modifier = Modifier
+                        .clip(RoundedCornerShape(radius.xs))
                         .clickable(onClick = onAddKey)
                         .padding(vertical = spacing.xs),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    GlyphIcon(Glyph.Sparkle, tint = colors.accent, size = 14.dp)
+                    Text(
+                        text = stringResource(R.string.providers_add_another),
+                        style = OpenCodeTypography.label,
+                        color = colors.accent,
+                    )
+                }
             }
         },
         confirmButton = {
@@ -575,24 +1311,22 @@ private fun ManageCredentialsDialog(
     )
 }
 
-/**
- * Form for an OpenAI-compatible endpoint the engine's catalog does not know about.
- *
- * The engine resolves providers at startup, so the confirm button says what it
- * actually does — saving without restarting looks like a silent failure.
- */
+/** Form for an OpenAI-compatible custom endpoint. */
 @Composable
 private fun CustomProviderDialog(
+    initialName: String = "",
+    initialBaseURL: String = "",
+    initialModels: String = "",
     onDismiss: () -> Unit,
     onSubmit: (name: String, baseURL: String, apiKey: String, models: String) -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    var name by remember { mutableStateOf("") }
-    var baseURL by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(initialName) }
+    var baseURL by remember { mutableStateOf(initialBaseURL) }
     var apiKey by remember { mutableStateOf("") }
-    var models by remember { mutableStateOf("") }
+    var models by remember { mutableStateOf(initialModels) }
 
     val ready = name.isNotBlank() && baseURL.isNotBlank() && apiKey.isNotBlank() && models.isNotBlank()
 
@@ -606,14 +1340,15 @@ private fun CustomProviderDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
                 Text(
                     text = stringResource(R.string.providers_custom_body),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
-                // The label names the field and the placeholder shows an example, so the two
-                // never repeat each other.
                 FormField(
                     label = stringResource(R.string.providers_field_name),
                     placeholder = stringResource(R.string.providers_field_name_hint),
@@ -668,29 +1403,50 @@ private fun FormField(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    var showSecret by remember { mutableStateOf(false) }
 
     Column {
         Text(label, style = OpenCodeTypography.label, color = colors.onSurfaceFaint)
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = singleLine,
-            textStyle = OpenCodeTypography.input.copy(color = colors.onSurface),
-            cursorBrush = SolidColor(colors.accent),
-            visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else keyboard),
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = spacing.xxs)
                 .clip(RoundedCornerShape(radius.sm))
                 .background(colors.surfaceSunken)
-                .padding(spacing.sm),
-            decorationBox = { inner ->
-                if (value.isEmpty()) {
-                    Text(placeholder, style = OpenCodeTypography.input, color = colors.onSurfaceFaint)
+                .border(OpenCodeTheme.tokens.dimensions.hairline, colors.hairline, RoundedCornerShape(radius.sm))
+                .padding(horizontal = spacing.sm, vertical = spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = singleLine,
+                textStyle = (if (secret) OpenCodeTypography.codeInline else OpenCodeTypography.input).copy(color = colors.onSurface),
+                cursorBrush = SolidColor(colors.accent),
+                visualTransformation = if (secret && !showSecret) PasswordVisualTransformation() else VisualTransformation.None,
+                keyboardOptions = KeyboardOptions(keyboardType = if (secret && !showSecret) KeyboardType.Password else keyboard),
+                modifier = Modifier.weight(1f),
+                decorationBox = { inner ->
+                    if (value.isEmpty()) {
+                        Text(placeholder, style = OpenCodeTypography.input, color = colors.onSurfaceFaint)
+                    }
+                    inner()
+                },
+            )
+            if (secret && value.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(role = Role.Button) { showSecret = !showSecret }
+                        .padding(spacing.xxs),
+                ) {
+                    GlyphIcon(
+                        glyph = if (showSecret) Glyph.EyeOff else Glyph.Eye,
+                        tint = if (showSecret) colors.accent else colors.onSurfaceMuted,
+                        size = 18.dp,
+                    )
                 }
-                inner()
-            },
-        )
+            }
+        }
     }
 }

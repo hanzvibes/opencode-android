@@ -1,5 +1,14 @@
 package dev.bidzz.opencode.core.design
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.SpringSpec
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -54,19 +63,103 @@ data class Radius(
 )
 
 /**
- * Motion durations.
+ * Motion durations, easing curves, and spring physics.
  *
  * Short and purposeful: `plan.md` §12 asks for meaningful motion only. Streaming
  * text needs no animation at all — the text itself is the feedback.
  */
 @Immutable
 data class Motion(
-    /** State change the user caused, e.g. a chip settling. */
+    /** State change the user caused, e.g. a chip settling (120ms). */
     val quick: Int = 120,
-    /** Entering content, sheet presentation. */
+    /** Entering content, sheet presentation (220ms). */
     val standard: Int = 220,
-    /** Screen transitions. */
+    /** Screen transitions (320ms). */
     val emphasized: Int = 320,
+
+    // ---- Easing Curves ----
+    /** Snappy responsive curve for user-initiated micro-interactions. */
+    val easingQuick: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f),
+    /** Standard material ease-in-out for content transitions. */
+    val easingStandard: Easing = FastOutSlowInEasing,
+    /** Emphasized deceleration for sheets and large dialogs. */
+    val easingEmphasized: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f),
+    /** Smooth exit deceleration curve. */
+    val easingDecelerate: Easing = LinearOutSlowInEasing,
+
+    // ---- Spring Physics Parameters ----
+    /** Medium bounce for playful micro-feedback (0.75f). */
+    val springDampingBouncy: Float = Spring.DampingRatioMediumBouncy,
+    /** Critical damping without overshoot for responsive UI (1.0f). */
+    val springDampingSmooth: Float = Spring.DampingRatioNoBouncy,
+    /** Soft damping with minimal settle oscillation (0.9f). */
+    val springDampingGentle: Float = 0.9f,
+    /** Snappy stiffness for direct manipulation / taps (1500f). */
+    val springStiffnessResponsive: Float = Spring.StiffnessMedium,
+    /** Smooth stiffness for expanding rows / tool steps (400f). */
+    val springStiffnessSmooth: Float = Spring.StiffnessMediumLow,
+    /** Gentle stiffness for sheets and drawer motions (200f). */
+    val springStiffnessGentle: Float = Spring.StiffnessLow,
+) {
+    /** Smooth spring animation for UI elements (no overshoot, smooth settling). */
+    fun <T> springSmooth(visibilityThreshold: T? = null): SpringSpec<T> =
+        spring(dampingRatio = springDampingSmooth, stiffness = springStiffnessSmooth, visibilityThreshold = visibilityThreshold)
+
+    /** Responsive snappy spring for taps and quick micro-interactions. */
+    fun <T> springResponsive(visibilityThreshold: T? = null): SpringSpec<T> =
+        spring(dampingRatio = springDampingSmooth, stiffness = springStiffnessResponsive, visibilityThreshold = visibilityThreshold)
+
+    /** Bouncy spring for badges, checkmarks, and celebratory states. */
+    fun <T> springBouncy(visibilityThreshold: T? = null): SpringSpec<T> =
+        spring(dampingRatio = springDampingBouncy, stiffness = springStiffnessResponsive, visibilityThreshold = visibilityThreshold)
+
+    /** Gentle spring for larger layout changes, accordions, and bottom sheets. */
+    fun <T> springGentle(visibilityThreshold: T? = null): SpringSpec<T> =
+        spring(dampingRatio = springDampingGentle, stiffness = springStiffnessGentle, visibilityThreshold = visibilityThreshold)
+
+    /** Quick tween with snappy easing. */
+    fun <T> tweenQuick(delayMillis: Int = 0): TweenSpec<T> =
+        tween(durationMillis = quick, delayMillis = delayMillis, easing = easingQuick)
+
+    /** Standard tween for content entry and fade transitions. */
+    fun <T> tweenStandard(delayMillis: Int = 0): TweenSpec<T> =
+        tween(durationMillis = standard, delayMillis = delayMillis, easing = easingStandard)
+
+    /** Emphasized tween for modal navigation and sheet presentation. */
+    fun <T> tweenEmphasized(delayMillis: Int = 0): TweenSpec<T> =
+        tween(durationMillis = emphasized, delayMillis = delayMillis, easing = easingEmphasized)
+}
+
+/** Glassmorphism blur, transparency, and border tokens. */
+@Immutable
+data class Glassmorphism(
+    /** Subtle blur for floating toolbars, floating pills, or badges (8dp). */
+    val blurSubtle: Dp = 8.dp,
+    /** Standard frosted glass blur for cards and headers (16dp). */
+    val blurStandard: Dp = 16.dp,
+    /** Heavy frosted glass blur for modal overlays and backdrop sheets (24dp). */
+    val blurHeavy: Dp = 24.dp,
+    /** Hairline glass border thickness (0.5dp). */
+    val strokeWidth: Dp = 0.5.dp,
+)
+
+/** Subtle elevation halos and glow tokens for soft depth without harsh drop-shadows. */
+@Immutable
+data class ElevationHalos(
+    /** Subtle halo for card edges and hover states (4dp). */
+    val haloRadiusSubtle: Dp = 4.dp,
+    /** Standard halo for dropdowns, popups, and elevated bars (8dp). */
+    val haloRadiusStandard: Dp = 8.dp,
+    /** Prominent halo for modal dialogs and bottom sheets (16dp). */
+    val haloRadiusProminent: Dp = 16.dp,
+    /** Ambient diffuse glow for active tools or accents (24dp). */
+    val haloRadiusGlow: Dp = 24.dp,
+    /** Low elevation vertical offset (1dp). */
+    val haloOffsetSubtle: Dp = 1.dp,
+    /** Standard elevation vertical offset (2dp). */
+    val haloOffsetStandard: Dp = 2.dp,
+    /** Elevated modal vertical offset (6dp). */
+    val haloOffsetElevated: Dp = 6.dp,
 )
 
 /** Fixed component dimensions, so rows line up across screens. */
@@ -97,4 +190,6 @@ data class OpenCodeTokens(
     val radius: Radius = Radius(),
     val motion: Motion = Motion(),
     val dimensions: Dimensions = Dimensions(),
+    val glass: Glassmorphism = Glassmorphism(),
+    val halos: ElevationHalos = ElevationHalos(),
 )

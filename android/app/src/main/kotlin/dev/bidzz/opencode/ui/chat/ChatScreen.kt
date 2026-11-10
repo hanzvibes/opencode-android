@@ -1,12 +1,23 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,12 +32,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -45,17 +58,22 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role as SemanticsRole
@@ -64,21 +82,29 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import dev.bidzz.opencode.R
-import dev.bidzz.opencode.ui.sessions.label
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.Status
-import dev.bidzz.opencode.ui.chat.Role
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.HairlineSeparator
 import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.IconBadge
+import dev.bidzz.opencode.ui.LocalizedAlertDialog
+import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.message
+import dev.bidzz.opencode.ui.sessions.DeleteSessionDialog
+import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
+import dev.bidzz.opencode.ui.sessions.SessionActionMenu
+import dev.bidzz.opencode.ui.sessions.SessionDateGroup
+import dev.bidzz.opencode.ui.sessions.groupSessions
+import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import kotlinx.coroutines.launch
 
@@ -107,10 +133,16 @@ fun ChatScreen(
     onProjectClick: () -> Unit,
     onFilesClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onDiagnosticsClick: () -> Unit = onStatusClick,
+    onAboutClick: () -> Unit = {},
+    onRenameSession: (String, String) -> Unit = { _, _ -> },
+    onDeleteSession: (String) -> Unit = {},
+    onTogglePinSession: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
     val listState = rememberLazyListState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -123,9 +155,33 @@ fun ChatScreen(
             (info.visibleItemsInfo.lastOrNull()?.index ?: -1) >= info.totalItemsCount - 2
         }
     }
-    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.text?.length) {
+
+    var lastReadMessageCount by remember { mutableStateOf(state.messages.size) }
+
+    LaunchedEffect(nearBottom, state.messages.size) {
+        if (nearBottom) {
+            lastReadMessageCount = state.messages.size
+        }
+    }
+
+    val unreadMessagesCount by remember {
+        derivedStateOf {
+            if (nearBottom) 0 else (state.messages.size - lastReadMessageCount).coerceAtLeast(0)
+        }
+    }
+
+    val targetLastIndex by remember {
+        derivedStateOf {
+            val hasWorking = state.busy && state.messages.lastOrNull()?.role == Role.USER
+            val hasError = state.failure != null || state.failureKey != null
+            val totalCount = state.messages.size + (if (hasWorking) 1 else 0) + (if (hasError) 1 else 0)
+            (totalCount - 1).coerceAtLeast(0)
+        }
+    }
+
+    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.text?.length, state.busy) {
         if (state.messages.isNotEmpty() && nearBottom) {
-            listState.scrollToItem(state.messages.lastIndex)
+            listState.scrollToItem(targetLastIndex)
         }
     }
 
@@ -148,6 +204,11 @@ fun ChatScreen(
                 onFiles = { closeThen(onFilesClick) },
                 onProject = { closeThen(onProjectClick) },
                 onSettings = { closeThen(onSettingsClick) },
+                onDiagnostics = { closeThen(onDiagnosticsClick) },
+                onDeveloper = { closeThen(onAboutClick) },
+                onRenameSession = onRenameSession,
+                onDeleteSession = onDeleteSession,
+                onTogglePinSession = onTogglePinSession,
             )
         },
     ) {
@@ -158,10 +219,22 @@ fun ChatScreen(
                 .statusBarsPadding()
                 .imePadding(),
         ) {
+            val isScrolled by remember {
+                derivedStateOf {
+                    listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                }
+            }
+
+            val activeBranch = remember(state.workspacePath, state.branch) {
+                state.branch ?: detectGitBranch(state.workspacePath)
+            }
+
             ChatHeader(
                 title = headerTitle(state.workspacePath),
                 engineState = state.engineState,
                 busy = state.busy,
+                branch = activeBranch,
+                isScrolled = isScrolled,
                 onMenu = {
                     onDrawerOpen()
                     scope.launch { drawerState.open() }
@@ -170,77 +243,126 @@ fun ChatScreen(
                 onNewSession = onNewSession,
             )
 
-            Box(Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
                 if (state.messages.isEmpty()) {
                     EmptyChat(
                         engineReady = state.workspaceReady,
                         engineState = state.engineState,
                         busy = state.busy,
+                        workspacePath = state.workspacePath,
                         onStatusClick = onStatusClick,
+                        onProjectClick = onProjectClick,
                         onSuggestion = onDraftChange,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = spacing.lg,
-                            end = spacing.lg,
-                            top = spacing.md,
-                            bottom = spacing.lg,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(spacing.lg),
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth()
+                            .widthIn(max = dims.contentMaxWidth),
                     ) {
-                        itemsIndexed(state.messages, key = { _, it -> it.id }) { index, message ->
-                            val prevMessage = if (index > 0) state.messages[index - 1] else null
-                            // Only show provenance if the previous message was NOT an assistant message
-                            val showProvenance = message.role == Role.ASSISTANT && prevMessage?.role != Role.ASSISTANT
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = spacing.lg,
+                                end = spacing.lg,
+                                top = spacing.md,
+                                bottom = spacing.xl,
+                            ),
+                        ) {
+                            itemsIndexed(state.messages, key = { _, it -> it.id }) { index, message ->
+                                val prevMessage = if (index > 0) state.messages[index - 1] else null
+                                val isConsecutiveAssistant = prevMessage?.role == Role.ASSISTANT && message.role == Role.ASSISTANT
+                                val showProvenance = message.role == Role.ASSISTANT && !isConsecutiveAssistant
 
-                            MessageBubble(
-                                role = message.role,
-                                markdown = message.text,
-                                streaming = message.streaming,
-                                tools = message.tools,
-                                provenance = provenanceLabel(
-                                    message.agent,
-                                    message.model,
-                                    state.agents,
-                                    state.models,
-                                ),
-                                showProvenance = showProvenance,
-                            )
-                        }
-                        // Until the first reply token arrives, the only sign of life is this line
-                        // under the user's own bubble; once the reply streams it has its spinner.
-                        if (state.busy && state.messages.lastOrNull()?.role == Role.USER) {
-                            item(key = "working") {
-                                Text(
-                                    text = stringResource(R.string.chat_working),
-                                    style = OpenCodeTypography.label,
-                                    color = colors.onSurfaceMuted,
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        }
-                        if (state.failure != null || state.failureKey != null) {
-                            item(key = "error") {
+                                val topSpacing = when {
+                                    index == 0 -> 0.dp
+                                    message.role == Role.USER -> {
+                                        if (prevMessage?.role == Role.USER) spacing.sm else spacing.xxl
+                                    }
+                                    isConsecutiveAssistant -> spacing.xs
+                                    else -> spacing.md
+                                }
+
                                 MessageBubble(
-                                    role = Role.ERROR,
-                                    markdown = state.failure?.message()
-                                        ?: stringResource(state.failureKey!!),
+                                    role = message.role,
+                                    markdown = message.text,
+                                    streaming = message.streaming,
+                                    tools = message.tools,
+                                    provenance = provenanceLabel(
+                                        message.agent,
+                                        message.model,
+                                        state.agents,
+                                        state.models,
+                                    ),
+                                    showProvenance = showProvenance,
+                                    model = message.model,
+                                    reasoning = message.reasoning,
+                                    modifier = Modifier.padding(top = topSpacing),
                                 )
                             }
+                            // When busy right after user message, show assistant's turn beginning immediately
+                            if (state.busy && state.messages.lastOrNull()?.role == Role.USER) {
+                                item(key = "working") {
+                                    AssistantWorkingPlaceholder(
+                                        agent = state.activeAgent,
+                                        model = state.activeModel,
+                                        agents = state.agents,
+                                        models = state.models,
+                                        modifier = Modifier.padding(top = spacing.md),
+                                    )
+                                }
+                            }
+                            if (state.failure != null || state.failureKey != null) {
+                                item(key = "error") {
+                                    MessageBubble(
+                                        role = Role.ERROR,
+                                        markdown = state.failure?.message()
+                                            ?: stringResource(state.failureKey!!),
+                                        modifier = Modifier.padding(top = spacing.md),
+                                    )
+                                }
+                            }
                         }
-                    }
-                    // Following stops when the reader scrolls up, so give them the way back.
-                    if (!nearBottom) {
-                        JumpToLatest(
-                            onClick = { scope.launch { listState.animateScrollToItem(state.messages.lastIndex) } },
+                        // Floating jump-to-bottom button with badge and smooth animation
+                        AnimatedVisibility(
+                            visible = !nearBottom,
+                            enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.85f, animationSpec = tween(180)) + slideInVertically(initialOffsetY = { it / 2 }, animationSpec = tween(180)),
+                            exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.85f, animationSpec = tween(150)) + slideOutVertically(targetOffsetY = { it / 2 }, animationSpec = tween(150)),
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(end = spacing.lg, bottom = spacing.md),
+                        ) {
+                            JumpToLatest(
+                                unreadCount = unreadMessagesCount,
+                                isBusy = state.busy,
+                                onClick = { scope.launch { listState.animateScrollToItem(targetLastIndex) } },
+                            )
+                        }
+                    }
+
+                    // Subtle scrim overlay over chat history when command palette is active
+                    AnimatedVisibility(
+                        visible = isCommandPaletteActive(state.draft),
+                        enter = fadeIn(tween(OpenCodeTheme.tokens.motion.standard)),
+                        exit = fadeOut(tween(OpenCodeTheme.tokens.motion.quick)),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.35f))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { onDraftChange("") },
+                                ),
                         )
                     }
                 }
@@ -254,10 +376,15 @@ fun ChatScreen(
                 )
             }
 
-            CommandSuggestions(
+            val paletteState = rememberCommandPaletteState(
                 commands = state.commands,
                 draft = state.draft,
+            )
+
+            CommandSuggestions(
+                paletteState = paletteState,
                 onPick = { name -> onDraftChange("/$name ") },
+                onDismiss = { onDraftChange("") },
             )
 
             Composer(
@@ -268,6 +395,13 @@ fun ChatScreen(
                 busy = state.busy,
                 enabled = state.workspaceReady,
                 modifier = Modifier.navigationBarsPadding(),
+                onKeyEvent = { keyEvent ->
+                    paletteState.handleKeyEvent(
+                        event = keyEvent,
+                        onPick = { name -> onDraftChange("/$name ") },
+                        onDismiss = { onDraftChange("") },
+                    )
+                },
                 controls = {
                     ChatControls(
                         agents = state.agents,
@@ -284,13 +418,12 @@ fun ChatScreen(
 }
 
 /**
- * Menu on the left, the project and the engine's state centred, new session on the right.
- *
- * The status sits under the title as a refined status badge: it is read at a glance,
- * pulses during active work, provides tactile click feedback, and tapping it opens diagnostics.
+ * Sleek minimalist top app bar with project title, branch/status chip, smooth navigation triggers,
+ * interactive engine status preview dialog on tap, animated new conversation shortcut, and a
+ * crisp hairline bottom separator that disappears seamlessly at top scroll.
  */
 @Composable
-private fun ChatHeader(
+fun ChatHeader(
     title: String,
     engineState: dev.bidzz.opencode.core.engine.EngineState,
     busy: Boolean,
@@ -298,6 +431,8 @@ private fun ChatHeader(
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
     modifier: Modifier = Modifier,
+    branch: String? = null,
+    isScrolled: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -305,6 +440,18 @@ private fun ChatHeader(
     val radius = OpenCodeTheme.tokens.radius
     val status = engineState.toStatus(busy)
     val statusColor = colors.statusColor(status)
+
+    var showStatusDialog by remember { mutableStateOf(false) }
+    var newChatClickTrigger by remember { mutableIntStateOf(0) }
+
+    val newChatRotation by animateFloatAsState(
+        targetValue = newChatClickTrigger * 360f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessLow,
+        ),
+        label = "new_chat_rotation",
+    )
 
     val infiniteTransition = rememberInfiniteTransition(label = "status_dot_pulse")
     val pulsingAlpha by infiniteTransition.animateFloat(
@@ -317,6 +464,26 @@ private fun ChatHeader(
         label = "status_dot_alpha",
     )
     val dotAlpha = if (status == Status.WORKING) pulsingAlpha else 1f
+
+    val separatorAlpha by animateFloatAsState(
+        targetValue = if (isScrolled) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = OpenCodeTheme.tokens.motion.quick,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "chat_header_separator_alpha",
+    )
+
+    val chipInteractionSource = remember { MutableInteractionSource() }
+    val isChipPressed by chipInteractionSource.collectIsPressedAsState()
+    val chipScale by animateFloatAsState(
+        targetValue = if (isChipPressed) 0.95f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "status_chip_scale",
+    )
 
     Column(
         modifier = modifier
@@ -354,24 +521,37 @@ private fun ChatHeader(
                 )
                 Spacer(Modifier.height(spacing.xxs))
                 val statusLabel = engineState.statusLabel(busy)
-                val diagTitle = stringResource(R.string.settings_diag_title)
+                val statusDescription = buildString {
+                    append(statusLabel)
+                    if (!branch.isNullOrBlank()) {
+                        append(", ")
+                        append(branch)
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .defaultMinSize(minWidth = dims.minTouchTarget, minHeight = 28.dp)
+                        .graphicsLayer {
+                            scaleX = chipScale
+                            scaleY = chipScale
+                        }
                         .clip(RoundedCornerShape(radius.full))
                         .background(statusColor.copy(alpha = 0.10f))
                         .border(
-                            width = 0.5.dp,
+                            width = dims.hairline,
                             color = statusColor.copy(alpha = 0.22f),
                             shape = RoundedCornerShape(radius.full),
                         )
                         .semantics {
                             role = SemanticsRole.Button
-                            contentDescription = "$statusLabel: $diagTitle"
+                            contentDescription = statusDescription
                         }
                         .clickable(
+                            interactionSource = chipInteractionSource,
+                            indication = ripple(bounded = true),
                             role = SemanticsRole.Button,
-                            onClick = onStatusClick,
+                            onClick = { showStatusDialog = true },
                         )
                         .padding(horizontal = spacing.md, vertical = spacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
@@ -390,21 +570,207 @@ private fun ChatHeader(
                         color = statusColor,
                         maxLines = 1,
                     )
+                    if (!branch.isNullOrBlank()) {
+                        Spacer(Modifier.width(spacing.xs))
+                        Text(
+                            text = "•",
+                            style = OpenCodeTypography.label.copy(fontSize = 11.sp, lineHeight = 14.sp),
+                            color = colors.onSurfaceFaint,
+                        )
+                        Spacer(Modifier.width(spacing.xs))
+                        Text(
+                            text = branch,
+                            style = OpenCodeTypography.label.copy(
+                                fontSize = 12.sp,
+                                lineHeight = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                            color = colors.onSurfaceMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
 
             IconAction(
                 glyph = Glyph.NewChat,
                 description = stringResource(R.string.chat_new_session),
-                onClick = onNewSession,
+                onClick = {
+                    newChatClickTrigger++
+                    onNewSession()
+                },
+                rotation = newChatRotation,
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
         }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(0.5.dp)
-                .background(colors.hairline),
+
+        HairlineSeparator(alpha = separatorAlpha)
+    }
+
+    if (showStatusDialog) {
+        EngineStatusDialog(
+            engineState = engineState,
+            busy = busy,
+            projectTitle = title,
+            branch = branch,
+            onOpenDiagnostics = {
+                showStatusDialog = false
+                onStatusClick()
+            },
+            onDismiss = { showStatusDialog = false },
+        )
+    }
+}
+
+/**
+ * Interactive preview dialog displaying live engine status, runtime details,
+ * and quick access to full diagnostics.
+ */
+@Composable
+private fun EngineStatusDialog(
+    engineState: dev.bidzz.opencode.core.engine.EngineState,
+    busy: Boolean,
+    projectTitle: String,
+    branch: String?,
+    onOpenDiagnostics: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
+    val radius = OpenCodeTheme.tokens.radius
+    val status = engineState.toStatus(busy)
+    val statusColor = colors.statusColor(status)
+    val statusLabel = engineState.statusLabel(busy)
+
+    val descRes = when (engineState) {
+        dev.bidzz.opencode.core.engine.EngineState.RUNNING ->
+            if (busy) R.string.chat_status_desc_working else R.string.chat_status_desc_ready
+        dev.bidzz.opencode.core.engine.EngineState.STARTING,
+        dev.bidzz.opencode.core.engine.EngineState.INITIALIZING -> R.string.chat_status_desc_starting
+        dev.bidzz.opencode.core.engine.EngineState.FAILED,
+        dev.bidzz.opencode.core.engine.EngineState.DEGRADED -> R.string.chat_status_desc_unhealthy
+        dev.bidzz.opencode.core.engine.EngineState.STOPPING,
+        dev.bidzz.opencode.core.engine.EngineState.STOPPED -> R.string.chat_status_desc_stopped
+    }
+
+    LocalizedAlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                Box(
+                    Modifier
+                        .size(dims.statusDotSize)
+                        .background(statusColor, CircleShape),
+                )
+                Text(
+                    text = stringResource(R.string.chat_status_dialog_title),
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(spacing.md),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(radius.sm))
+                        .background(statusColor.copy(alpha = 0.10f))
+                        .border(dims.hairline, statusColor.copy(alpha = 0.25f), RoundedCornerShape(radius.sm))
+                        .padding(horizontal = spacing.md, vertical = spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = statusLabel,
+                        style = OpenCodeTypography.label.copy(fontWeight = FontWeight.SemiBold),
+                        color = statusColor,
+                    )
+                    Text(
+                        text = engineState.name,
+                        style = OpenCodeTypography.caption,
+                        color = statusColor.copy(alpha = 0.8f),
+                    )
+                }
+
+                Text(
+                    text = stringResource(descRes),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(radius.sm))
+                        .background(colors.surfaceSunken)
+                        .border(dims.hairline, colors.hairline, RoundedCornerShape(radius.sm))
+                        .padding(spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    DialogDetailRow(
+                        label = stringResource(R.string.chat_status_dialog_workspace),
+                        value = projectTitle,
+                    )
+                    if (!branch.isNullOrBlank()) {
+                        DialogDetailRow(
+                            label = stringResource(R.string.chat_status_dialog_branch),
+                            value = branch,
+                        )
+                    }
+                    DialogDetailRow(
+                        label = stringResource(R.string.chat_status_dialog_state),
+                        value = if (busy) stringResource(R.string.chat_status_working) else statusLabel,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onOpenDiagnostics) {
+                Text(
+                    text = stringResource(R.string.chat_status_dialog_diagnostics),
+                    color = colors.accent,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = stringResource(R.string.chat_status_dialog_close),
+                    color = colors.onSurfaceMuted,
+                )
+            }
+        },
+    )
+}
+
+@Composable
+private fun DialogDetailRow(label: String, value: String) {
+    val colors = OpenCodeTheme.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = OpenCodeTypography.caption,
+            color = colors.onSurfaceFaint,
+        )
+        Text(
+            text = value,
+            style = OpenCodeTypography.label,
+            color = colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -412,8 +778,12 @@ private fun ChatHeader(
 /**
  * Navigation and recent sessions.
  *
- * What used to be a dropdown behind one glyph: the same destinations, plus the
- * conversations themselves, so switching sessions is one tap instead of a screen.
+ * Matching modern Cursor / ChatGPT sidebar experience:
+ * - Clean workspace switch / project picker integration at top
+ * - New chat and file explorer shortcuts
+ * - Conversation history grouped by date (Pinned, Today, Yesterday, Previous 7 days, Older)
+ * - Quick action menu (Rename, Delete, Pin) on every session
+ * - Settings, Diagnostics, and Developer profile links at bottom
  */
 @Composable
 private fun ChatDrawer(
@@ -426,10 +796,41 @@ private fun ChatDrawer(
     onFiles: () -> Unit,
     onProject: () -> Unit,
     onSettings: () -> Unit,
+    onDiagnostics: () -> Unit,
+    onDeveloper: () -> Unit,
+    onRenameSession: (String, String) -> Unit,
+    onDeleteSession: (String) -> Unit,
+    onTogglePinSession: (String) -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+
+    var sessionToRename by remember { mutableStateOf<SessionRow?>(null) }
+    var sessionToDelete by remember { mutableStateOf<SessionRow?>(null) }
+
+    sessionToRename?.let { target ->
+        RenameSessionDialog(
+            initialTitle = target.title,
+            onDismiss = { sessionToRename = null },
+            onConfirm = { newTitle ->
+                sessionToRename = null
+                onRenameSession(target.id, newTitle)
+            },
+        )
+    }
+
+    sessionToDelete?.let { target ->
+        DeleteSessionDialog(
+            sessionTitle = target.title,
+            onDismiss = { sessionToDelete = null },
+            onConfirm = {
+                sessionToDelete = null
+                onDeleteSession(target.id)
+            },
+        )
+    }
 
     ModalDrawerSheet(
         drawerShape = RoundedCornerShape(topEnd = radius.lg, bottomEnd = radius.lg),
@@ -441,45 +842,57 @@ private fun ChatDrawer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = spacing.lg),
+                .padding(top = spacing.md),
         ) {
-            Column(
+            // Workspace switch / project picker integration
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                    .padding(horizontal = spacing.sm, vertical = spacing.xxs)
+                    .clip(RoundedCornerShape(radius.md))
+                    .background(colors.surfaceVariant.copy(alpha = 0.5f))
+                    .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+                    .clickable(role = SemanticsRole.Button, onClick = onProject)
+                    .padding(horizontal = spacing.md, vertical = spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "OpenCode",
-                    style = OpenCodeTypography.titleLarge,
-                    color = colors.onSurface,
-                )
-                if (projectTitle.isNotBlank()) {
-                    Row(
-                        modifier = Modifier
-                            .padding(top = spacing.xs)
-                            .clip(RoundedCornerShape(radius.full))
-                            .background(colors.surfaceVariant)
-                            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
-                            .clickable(role = SemanticsRole.Button, onClick = onProject)
-                            .padding(horizontal = spacing.sm, vertical = spacing.xxs),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        GlyphIcon(
-                            glyph = Glyph.Folder,
-                            tint = colors.onSurfaceMuted,
-                            size = 12.dp,
-                        )
-                        Text(
-                            text = projectTitle,
-                            style = OpenCodeTypography.label,
-                            color = colors.onSurfaceMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = spacing.xs),
-                        )
-                    }
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(radius.sm))
+                        .background(colors.accent.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(Glyph.Folder, tint = colors.accent, size = dims.iconMedium)
                 }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = spacing.sm),
+                ) {
+                    Text(
+                        text = projectTitle.ifBlank { "OpenCode" },
+                        style = OpenCodeTypography.bodyStrong,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(R.string.drawer_switch_workspace),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceFaint,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                GlyphIcon(
+                    glyph = Glyph.ChevronDown,
+                    tint = colors.onSurfaceFaint,
+                    size = 14.dp,
+                )
             }
+
+            Spacer(Modifier.height(spacing.xxs))
 
             DrawerItem(
                 label = stringResource(R.string.chat_new_session),
@@ -493,52 +906,79 @@ private fun ChatDrawer(
                 onClick = onFiles,
             )
             DrawerItem(
-                label = stringResource(R.string.drawer_project),
-                glyph = Glyph.Folder,
-                onClick = onProject,
-            )
-            DrawerItem(
-                label = stringResource(R.string.settings_title),
-                glyph = Glyph.Sliders,
-                onClick = onSettings,
+                label = stringResource(R.string.drawer_all_sessions),
+                glyph = Glyph.Search,
+                onClick = onAllSessions,
             )
 
             Box(
                 Modifier
-                    .padding(horizontal = spacing.lg, vertical = spacing.sm)
+                    .padding(horizontal = spacing.lg, vertical = spacing.xs)
                     .fillMaxWidth()
                     .height(0.5.dp)
                     .background(colors.hairline),
             )
+        }
 
-            Text(
-                text = stringResource(R.string.drawer_recent).uppercase(),
-                style = OpenCodeTypography.label,
-                color = colors.onSurfaceFaint,
-                modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.xs),
-            )
-            if (sessions.isEmpty()) {
+        // Grouped conversation history
+        val groupedSessions = remember(sessions) { groupSessions(sessions) }
+
+        if (sessions.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.lg, vertical = spacing.xl),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
                     text = stringResource(R.string.drawer_no_sessions),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
-                    modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm),
+                    textAlign = TextAlign.Center,
                 )
             }
-        }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = spacing.xxs),
+            ) {
+                groupedSessions.forEach { (group, rows) ->
+                    item(key = "header_${group.name}") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (group == SessionDateGroup.PINNED) {
+                                GlyphIcon(
+                                    glyph = Glyph.Pin,
+                                    tint = colors.accent,
+                                    size = 12.dp,
+                                    modifier = Modifier.padding(end = spacing.xs),
+                                )
+                            }
+                            Text(
+                                text = stringResource(group.titleRes()).uppercase(),
+                                style = OpenCodeTypography.label,
+                                color = if (group == SessionDateGroup.PINNED) colors.accent else colors.onSurfaceFaint,
+                            )
+                        }
+                    }
 
-        // Only the list scrolls; the destinations above stay put.
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = spacing.xs),
-        ) {
-            items(sessions.take(DRAWER_SESSIONS), key = { it.id }) { row ->
-                val selected = row.id == currentSessionID
-                SessionDrawerItem(
-                    row = row,
-                    selected = selected,
-                    onClick = { onOpenSession(row.id) },
-                )
+                    items(rows, key = { it.id }) { row ->
+                        val selected = row.id == currentSessionID
+                        SessionDrawerItem(
+                            row = row,
+                            selected = selected,
+                            onClick = { onOpenSession(row.id) },
+                            onPinToggle = { onTogglePinSession(row.id) },
+                            onRenameClick = { sessionToRename = row },
+                            onDeleteClick = { sessionToDelete = row },
+                        )
+                    }
+                }
             }
         }
 
@@ -549,25 +989,113 @@ private fun ChatDrawer(
                 .background(colors.hairline),
         )
 
-        Box(
+        // Bottom footer with Settings, Diagnostics, and Developer Profile
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(vertical = spacing.xs),
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
         ) {
-            DrawerItem(
-                label = stringResource(R.string.drawer_all_sessions),
-                glyph = Glyph.Search,
-                onClick = onAllSessions,
-                trailing = {
-                    GlyphIcon(
-                        glyph = Glyph.ChevronRight,
-                        tint = colors.onSurfaceFaint,
-                        size = 16.dp,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                DrawerFooterButton(
+                    label = stringResource(R.string.settings_title),
+                    glyph = Glyph.Sliders,
+                    onClick = onSettings,
+                    modifier = Modifier.weight(1f),
+                )
+                DrawerFooterButton(
+                    label = stringResource(R.string.drawer_diagnostics),
+                    glyph = Glyph.Pulse,
+                    onClick = onDiagnostics,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = spacing.xxs)
+                    .clip(RoundedCornerShape(radius.md))
+                    .clickable(role = SemanticsRole.Button, onClick = onDeveloper)
+                    .padding(horizontal = spacing.sm, vertical = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(colors.accent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "R",
+                        style = OpenCodeTypography.bodyStrong.copy(fontSize = 13.sp),
+                        color = colors.onAccent,
                     )
-                },
-            )
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = spacing.sm),
+                ) {
+                    Text(
+                        text = "Raihan Ramadhani",
+                        style = OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "@hanzvibes",
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceFaint,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                GlyphIcon(
+                    glyph = Glyph.ChevronRight,
+                    tint = colors.onSurfaceFaint,
+                    size = 14.dp,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun DrawerFooterButton(
+    label: String,
+    glyph: Glyph,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surfaceVariant.copy(alpha = 0.6f))
+            .clickable(role = SemanticsRole.Button, onClick = onClick)
+            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        GlyphIcon(glyph, tint = colors.onSurfaceMuted, size = dims.iconSmall)
+        Text(
+            text = label,
+            style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.Medium),
+            color = colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = spacing.xs),
+        )
     }
 }
 
@@ -656,10 +1184,15 @@ private fun SessionDrawerItem(
     row: SessionRow,
     selected: Boolean,
     onClick: () -> Unit,
+    onPinToggle: () -> Unit,
+    onRenameClick: () -> Unit,
+    onDeleteClick: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+
+    var menuExpanded by remember { mutableStateOf(false) }
 
     val age = row.age?.label()
     val meta = listOfNotNull(age, row.cost).joinToString(" · ")
@@ -667,7 +1200,7 @@ private fun SessionDrawerItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = spacing.sm, vertical = spacing.xxs)
+            .padding(horizontal = spacing.sm, vertical = 1.dp)
             .clip(RoundedCornerShape(radius.md))
             .background(if (selected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
             .then(
@@ -676,7 +1209,7 @@ private fun SessionDrawerItem(
                 } else Modifier
             )
             .clickable(role = SemanticsRole.Button, onClick = onClick)
-            .padding(horizontal = spacing.sm, vertical = spacing.sm),
+            .padding(start = spacing.sm, end = spacing.xs, top = spacing.xs, bottom = spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -692,13 +1225,27 @@ private fun SessionDrawerItem(
                 .weight(1f)
                 .padding(start = spacing.sm),
         ) {
-            Text(
-                text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
-                style = if (selected) OpenCodeTypography.bodyStrong else OpenCodeTypography.body,
-                color = if (selected) colors.accent else colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (row.isPinned) {
+                    GlyphIcon(
+                        glyph = Glyph.Pin,
+                        tint = if (selected) colors.accent else colors.onSurfaceMuted,
+                        size = 12.dp,
+                        modifier = Modifier.padding(end = spacing.xs),
+                    )
+                }
+                Text(
+                    text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
+                    style = if (selected) OpenCodeTypography.bodyStrong else OpenCodeTypography.body,
+                    color = if (selected) colors.accent else colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
             if (meta.isNotEmpty()) {
                 Text(
                     text = meta,
@@ -706,40 +1253,158 @@ private fun SessionDrawerItem(
                     color = if (selected) colors.accent.copy(alpha = 0.75f) else colors.onSurfaceFaint,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = spacing.xxs),
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
+        }
+
+        Box {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(radius.sm))
+                    .clickable(role = SemanticsRole.Button) { menuExpanded = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Dots,
+                    tint = if (selected) colors.accent else colors.onSurfaceMuted,
+                    size = 14.dp,
+                )
+            }
+            SessionActionMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+                isPinned = row.isPinned,
+                onPinToggle = onPinToggle,
+                onRenameClick = onRenameClick,
+                onDeleteClick = onDeleteClick,
+            )
         }
     }
 }
 
 private const val DRAWER_SESSIONS = 20
 
-/** A small round button that returns to the newest message. */
+/**
+ * Assistant turn entry indicator displayed immediately when the user sends a prompt.
+ * Bridges the gap before the first streaming delta or tool execution, establishing the AI thought state on the left.
+ */
 @Composable
-private fun JumpToLatest(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun AssistantWorkingPlaceholder(
+    agent: String?,
+    model: dev.bidzz.opencode.core.api.dto.ModelRef?,
+    agents: List<dev.bidzz.opencode.core.api.dto.AgentInfo>,
+    models: List<dev.bidzz.opencode.core.api.dto.ModelInfo>,
+    modifier: Modifier = Modifier,
+) {
+    val spacing = OpenCodeTheme.tokens.spacing
+    val provenance = provenanceLabel(agent, model, agents, models) ?: "OpenCode"
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        ProvenanceBadge(
+            provenance = provenance,
+            modelRef = model,
+            streaming = false,
+            modifier = Modifier.padding(bottom = spacing.sm),
+        )
+
+        ThinkingDisclosure(
+            isThinkingActive = true,
+            reasoningText = null,
+            elapsedSeconds = 0,
+            stepCount = 0,
+        )
+    }
+}
+
+/** A floating button with entry/exit animation and unread/busy badge that returns to the newest message. */
+@Composable
+private fun JumpToLatest(
+    unreadCount: Int,
+    isBusy: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = OpenCodeTheme.colors
     val label = stringResource(R.string.chat_jump_latest)
+    val interactionSource = remember { MutableInteractionSource() }
 
     Box(
         modifier = modifier
-            .size(40.dp)
-            .background(colors.surface, CircleShape)
-            .border(0.5.dp, colors.hairline, CircleShape)
-            .clip(CircleShape)
-            .semantics { contentDescription = label }
-            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
+            .semantics {
+                this.contentDescription = label
+                this.role = SemanticsRole.Button
+            },
     ) {
-        GlyphIcon(Glyph.ArrowDown, tint = colors.onSurface, size = 20.dp)
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(colors.surfaceRaised)
+                .border(0.5.dp, colors.hairline, CircleShape)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(bounded = true),
+                    role = SemanticsRole.Button,
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(Glyph.ArrowDown, tint = colors.onSurface, size = 18.dp)
+        }
+
+        if (unreadCount > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 3.dp, y = (-3).dp)
+                    .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+                    .clip(CircleShape)
+                    .background(colors.accent)
+                    .padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                    style = OpenCodeTypography.caption.copy(
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = colors.onAccent,
+                )
+            }
+        } else if (isBusy) {
+            val infiniteTransition = rememberInfiniteTransition(label = "jump_busy_pulse")
+            val pulseAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.35f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 650, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "jump_pulse_alpha",
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 1.dp, y = (-1).dp)
+                    .size(10.dp)
+                    .graphicsLayer { alpha = pulseAlpha }
+                    .background(colors.accent, CircleShape)
+                    .border(1.5.dp, colors.surfaceRaised, CircleShape),
+            )
+        }
     }
 }
 
 /**
- * Shown before the first message: says what to do, and offers starting points.
+ * Shown before the first message: welcoming hero landing state with Apple minimalism,
+ * system environment & workspace readiness, and actionable prompt starter cards.
  *
- * Tapping a suggestion fills the composer rather than sending, so the user can change it
- * first. While the engine starts there is nothing to suggest yet.
+ * Tapping a suggestion fills the composer rather than sending, so the user can review
+ * and adapt the prompt first.
  */
 @Composable
 private fun EmptyChat(
@@ -752,18 +1417,21 @@ private fun EmptyChat(
         dev.bidzz.opencode.core.engine.EngineState.STARTING
     },
     busy: Boolean = false,
+    workspacePath: String? = null,
     onStatusClick: (() -> Unit)? = null,
+    onProjectClick: (() -> Unit)? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
     val status = engineState.toStatus(busy)
-    val statusLabel = engineState.statusLabel(busy)
 
     BoxWithConstraints(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
+        val isWide = maxWidth >= 540.dp
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -775,41 +1443,31 @@ private fun EmptyChat(
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 480.dp)
+                    .widthIn(max = 520.dp)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                StatusPillBadge(
-                    status = status,
-                    label = statusLabel,
-                    onClick = onStatusClick,
+                // Hero Branding with subtle ambient glow and minimalist Apple typography
+                HeroBranding(
+                    engineReady = engineReady,
                 )
 
-                Spacer(Modifier.height(spacing.md))
+                Spacer(Modifier.height(spacing.xl))
 
-                Text(
-                    text = stringResource(if (engineReady) R.string.empty_title_ready else R.string.empty_title_starting),
-                    style = OpenCodeTypography.titleLarge,
-                    color = colors.onSurface,
-                    textAlign = TextAlign.Center,
-                )
-
-                Spacer(Modifier.height(spacing.xs))
-
-                Text(
-                    text = stringResource(if (engineReady) R.string.empty_ready_body else R.string.empty_starting_body),
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.onSurfaceMuted,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.widthIn(max = 380.dp),
+                // System Environment & Workspace Readiness Card
+                WorkspaceReadinessCard(
+                    engineState = engineState,
+                    busy = busy,
+                    workspacePath = workspacePath,
+                    onStatusClick = onStatusClick,
+                    onProjectClick = onProjectClick,
                 )
 
                 if (!engineReady) {
                     if (status == Status.WORKING) {
+                        Spacer(Modifier.height(spacing.xl))
                         CircularProgressIndicator(
-                            modifier = Modifier
-                                .padding(top = spacing.xl)
-                                .size(dims.iconLarge),
+                            modifier = Modifier.size(dims.iconLarge),
                             strokeWidth = 2.dp,
                             color = colors.accent,
                         )
@@ -817,17 +1475,60 @@ private fun EmptyChat(
                 } else {
                     Spacer(Modifier.height(spacing.xxl))
 
+                    // Actionable prompt starter cards section
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(spacing.sm),
                     ) {
-                        SUGGESTIONS.forEach { item ->
-                            val suggestion = stringResource(item.textRes)
-                            SuggestionCard(
-                                suggestion = suggestion,
-                                glyph = item.glyph,
-                                onClick = { onSuggestion(suggestion) },
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = spacing.xs, vertical = spacing.xxs),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.starter_section_heading).uppercase(),
+                                style = OpenCodeTypography.caption,
+                                color = colors.onSurfaceFaint,
                             )
+                        }
+
+                        if (isWide) {
+                            STARTER_PROMPTS.chunked(2).forEach { rowPrompts ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                                ) {
+                                    rowPrompts.forEach { item ->
+                                        val title = stringResource(item.titleRes)
+                                        val desc = stringResource(item.descRes)
+                                        val prompt = stringResource(item.promptRes)
+                                        ActionableStarterCard(
+                                            title = title,
+                                            description = desc,
+                                            glyph = item.glyph,
+                                            onClick = { onSuggestion(prompt) },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                    if (rowPrompts.size == 1) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        } else {
+                            STARTER_PROMPTS.forEach { item ->
+                                val title = stringResource(item.titleRes)
+                                val desc = stringResource(item.descRes)
+                                val prompt = stringResource(item.promptRes)
+                                ActionableStarterCard(
+                                    title = title,
+                                    description = desc,
+                                    glyph = item.glyph,
+                                    onClick = { onSuggestion(prompt) },
+                                )
+                            }
                         }
                     }
                 }
@@ -835,6 +1536,497 @@ private fun EmptyChat(
         }
     }
 }
+
+/** Hero branding with subtle glowing gradient and minimalist Apple typography. */
+@Composable
+private fun HeroBranding(
+    engineReady: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Subtle ambient glowing gradient container behind hero emblem
+        Box(
+            modifier = Modifier
+                .size(84.dp)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            colors.accent.copy(alpha = 0.22f),
+                            colors.accent.copy(alpha = 0.06f),
+                            Color.Transparent,
+                        ),
+                    ),
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(radius.lg))
+                    .background(colors.surfaceRaised)
+                    .border(
+                        0.5.dp,
+                        colors.accent.copy(alpha = 0.30f),
+                        RoundedCornerShape(radius.lg),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Code,
+                    tint = colors.accent,
+                    size = 26.dp,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(spacing.md))
+
+        Text(
+            text = stringResource(if (engineReady) R.string.empty_title_ready else R.string.empty_title_starting),
+            style = OpenCodeTypography.titleLarge.copy(
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-0.5).sp,
+            ),
+            color = colors.onSurface,
+            textAlign = TextAlign.Center,
+        )
+
+        Spacer(Modifier.height(spacing.xs))
+
+        Text(
+            text = stringResource(if (engineReady) R.string.empty_ready_body else R.string.empty_starting_body),
+            style = OpenCodeTypography.bodySmall.copy(
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            ),
+            color = colors.onSurfaceMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 380.dp),
+        )
+    }
+}
+
+/** System environment & workspace readiness card showing Engine, Workspace, and Git status. */
+@Composable
+private fun WorkspaceReadinessCard(
+    engineState: dev.bidzz.opencode.core.engine.EngineState,
+    busy: Boolean,
+    workspacePath: String?,
+    onStatusClick: (() -> Unit)?,
+    onProjectClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val shape = RoundedCornerShape(radius.lg)
+
+    val status = engineState.toStatus(busy)
+    val statusLabel = engineState.statusLabel(busy)
+    val statusColor = colors.statusColor(status)
+    val gitBranch = remember(workspacePath) { detectGitBranch(workspacePath) }
+    val projectName = headerTitle(workspacePath)
+
+    val infiniteTransition = rememberInfiniteTransition(label = "readiness_dot_pulse")
+    val pulsingAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "readiness_dot_alpha",
+    )
+    val dotAlpha = if (status == Status.WORKING) pulsingAlpha else 1f
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.surface)
+            .border(0.5.dp, colors.hairline, shape),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = spacing.lg, end = spacing.sm, top = spacing.md, bottom = spacing.xs),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.workspace_readiness_section).uppercase(),
+                style = OpenCodeTypography.caption,
+                color = colors.onSurfaceFaint,
+            )
+
+            if (onStatusClick != null) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(radius.full))
+                        .clickable(
+                            role = SemanticsRole.Button,
+                            onClick = onStatusClick,
+                        )
+                        .padding(horizontal = spacing.sm, vertical = spacing.xxs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_diag_title),
+                        style = OpenCodeTypography.caption,
+                        color = colors.accent,
+                    )
+                    Spacer(Modifier.width(spacing.xxs))
+                    GlyphIcon(Glyph.ChevronRight, tint = colors.accent, size = 10.dp)
+                }
+            }
+        }
+
+        // Engine readiness row
+        ReadinessRow(
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(statusColor.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(OpenCodeTheme.tokens.dimensions.statusDotSize)
+                            .graphicsLayer { alpha = dotAlpha }
+                            .background(statusColor, CircleShape),
+                    )
+                }
+            },
+            label = stringResource(R.string.workspace_engine_label),
+            value = statusLabel,
+            valueColor = statusColor,
+            onClick = onStatusClick,
+            trailing = {
+                GlyphIcon(
+                    glyph = Glyph.ChevronRight,
+                    tint = colors.onSurfaceFaint,
+                    size = 14.dp,
+                )
+            },
+        )
+
+        RowDivider(inset = 48.dp)
+
+        // Workspace directory row
+        ReadinessRow(
+            icon = {
+                IconBadge(
+                    glyph = Glyph.Folder,
+                    tint = colors.onSurfaceMuted,
+                    size = 26.dp,
+                )
+            },
+            label = stringResource(R.string.workspace_path_label),
+            value = projectName,
+            onClick = onProjectClick,
+            trailing = {
+                GlyphIcon(
+                    glyph = Glyph.ChevronRight,
+                    tint = colors.onSurfaceFaint,
+                    size = 14.dp,
+                )
+            },
+        )
+
+        RowDivider(inset = 48.dp)
+
+        // Git status row
+        ReadinessRow(
+            icon = {
+                IconBadge(
+                    glyph = Glyph.Terminal,
+                    tint = if (gitBranch != null) colors.accent else colors.onSurfaceFaint,
+                    size = 26.dp,
+                )
+            },
+            label = stringResource(R.string.workspace_git_label),
+            value = gitBranch ?: stringResource(R.string.workspace_git_untracked),
+            valueColor = if (gitBranch != null) colors.onSurface else colors.onSurfaceFaint,
+            valueMono = gitBranch != null,
+            onClick = null,
+            trailing = {
+                if (gitBranch != null) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.full))
+                            .background(colors.accent.copy(alpha = 0.10f))
+                            .border(0.5.dp, colors.accent.copy(alpha = 0.22f), RoundedCornerShape(radius.full))
+                            .padding(horizontal = spacing.sm, vertical = spacing.xxs),
+                    ) {
+                        Text(
+                            text = "git",
+                            style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
+                            color = colors.accent,
+                        )
+                    }
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ReadinessRow(
+    icon: @Composable () -> Unit,
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color = OpenCodeTheme.colors.onSurface,
+    valueMono: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    val rowBg by animateColorAsState(
+        targetValue = when {
+            onClick != null && isPressed -> colors.surfacePressed
+            onClick != null && isHovered -> colors.surfaceRaised
+            else -> Color.Transparent
+        },
+        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
+        label = "readinessRowBg",
+    )
+
+    val rowModifier = if (onClick != null) {
+        Modifier
+            .fillMaxWidth()
+            .background(rowBg)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(),
+                role = SemanticsRole.Button,
+                onClick = onClick,
+            )
+            .padding(horizontal = spacing.lg, vertical = spacing.md)
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .background(rowBg)
+            .padding(horizontal = spacing.lg, vertical = spacing.md)
+    }
+
+    Row(
+        modifier = modifier.then(rowModifier),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon()
+
+        Spacer(Modifier.width(spacing.md))
+
+        Text(
+            text = label,
+            style = OpenCodeTypography.bodySmall,
+            color = colors.onSurfaceMuted,
+            modifier = Modifier.weight(1f),
+        )
+
+        Text(
+            text = value,
+            style = if (valueMono) OpenCodeTypography.code else OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(end = if (trailing != null) spacing.sm else 0.dp),
+        )
+
+        if (trailing != null) {
+            trailing()
+        }
+    }
+}
+
+/** Actionable prompt starter card with hover/press states and vector glyph. */
+@Composable
+private fun ActionableStarterCard(
+    title: String,
+    description: String,
+    glyph: Glyph,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val shape = RoundedCornerShape(radius.lg)
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    val cardScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.985f else 1f,
+        animationSpec = tween(durationMillis = 100),
+        label = "starterCardScale",
+    )
+
+    val cardBg by animateColorAsState(
+        targetValue = when {
+            isPressed -> colors.surfacePressed
+            isHovered -> colors.surfaceRaised
+            else -> colors.surface
+        },
+        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
+        label = "starterCardBg",
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isPressed -> colors.accent.copy(alpha = 0.50f)
+            isHovered -> colors.accent.copy(alpha = 0.35f)
+            else -> colors.hairline
+        },
+        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
+        label = "starterCardBorder",
+    )
+
+    val iconBg by animateColorAsState(
+        targetValue = when {
+            isPressed || isHovered -> colors.accent.copy(alpha = 0.16f)
+            else -> colors.fill
+        },
+        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
+        label = "starterIconBg",
+    )
+
+    val iconTint by animateColorAsState(
+        targetValue = when {
+            isPressed || isHovered -> colors.accent
+            else -> colors.onSurfaceMuted
+        },
+        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
+        label = "starterIconTint",
+    )
+
+    Row(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
+            .fillMaxWidth()
+            .clip(shape)
+            .background(cardBg)
+            .border(0.5.dp, borderColor, shape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(),
+                role = SemanticsRole.Button,
+                onClick = onClick,
+            )
+            .padding(horizontal = spacing.md + spacing.xxs, vertical = spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(radius.md))
+                .background(iconBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                glyph = glyph,
+                tint = iconTint,
+                size = 18.dp,
+            )
+        }
+
+        Spacer(Modifier.width(spacing.md))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = title,
+                style = OpenCodeTypography.bodyStrong.copy(
+                    fontSize = 14.5.sp,
+                    lineHeight = 18.sp,
+                ),
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (description.isNotBlank()) {
+                Spacer(Modifier.height(spacing.xxs))
+                Text(
+                    text = description,
+                    style = OpenCodeTypography.bodySmall.copy(
+                        fontSize = 12.5.sp,
+                        lineHeight = 16.sp,
+                    ),
+                    color = colors.onSurfaceMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Spacer(Modifier.width(spacing.xs))
+
+        GlyphIcon(
+            glyph = Glyph.ChevronRight,
+            tint = if (isHovered || isPressed) colors.accent else colors.onSurfaceFaint,
+            size = 14.dp,
+        )
+    }
+}
+
+private data class ActionablePrompt(
+    val titleRes: Int,
+    val descRes: Int,
+    val promptRes: Int,
+    val glyph: Glyph,
+)
+
+private val STARTER_PROMPTS = listOf(
+    ActionablePrompt(
+        titleRes = R.string.starter_explain_title,
+        descRes = R.string.starter_explain_desc,
+        promptRes = R.string.starter_explain_prompt,
+        glyph = Glyph.Folder,
+    ),
+    ActionablePrompt(
+        titleRes = R.string.starter_bugs_title,
+        descRes = R.string.starter_bugs_desc,
+        promptRes = R.string.starter_bugs_prompt,
+        glyph = Glyph.Terminal,
+    ),
+    ActionablePrompt(
+        titleRes = R.string.starter_tests_title,
+        descRes = R.string.starter_tests_desc,
+        promptRes = R.string.starter_tests_prompt,
+        glyph = Glyph.Pencil,
+    ),
+    ActionablePrompt(
+        titleRes = R.string.starter_review_title,
+        descRes = R.string.starter_review_desc,
+        promptRes = R.string.starter_review_prompt,
+        glyph = Glyph.Code,
+    ),
+)
 
 /** Status and readiness pill badge with live state dot and touch feedback. */
 @Composable
@@ -899,7 +2091,7 @@ private fun StatusPillBadge(
     }
 }
 
-/** Suggestion starter card with 16dp radius, hairline border, hover/press state, and ripple. */
+/** Suggestion starter card for backward compatibility. */
 @Composable
 private fun SuggestionCard(
     suggestion: String,
@@ -907,68 +2099,13 @@ private fun SuggestionCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val shape = RoundedCornerShape(radius.lg)
-
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val isHovered by interactionSource.collectIsHoveredAsState()
-
-    val cardBg by animateColorAsState(
-        targetValue = when {
-            isPressed -> colors.surfacePressed
-            isHovered -> colors.surfaceRaised
-            else -> colors.surface
-        },
-        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
-        label = "suggestionCardBg",
+    ActionableStarterCard(
+        title = suggestion,
+        description = "",
+        glyph = glyph,
+        onClick = onClick,
+        modifier = modifier,
     )
-
-    val borderColor by animateColorAsState(
-        targetValue = when {
-            isPressed -> colors.outline
-            isHovered -> colors.onSurfaceMuted.copy(alpha = 0.35f)
-            else -> colors.hairline
-        },
-        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
-        label = "suggestionCardBorder",
-    )
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(cardBg)
-            .border(0.5.dp, borderColor, shape)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = ripple(),
-                role = SemanticsRole.Button,
-                onClick = onClick,
-            )
-            .padding(horizontal = spacing.lg, vertical = spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconBadge(
-            glyph = glyph,
-            size = 28.dp,
-            modifier = Modifier.padding(end = spacing.md),
-        )
-        Text(
-            text = suggestion,
-            style = OpenCodeTypography.body,
-            color = colors.onSurface,
-            modifier = Modifier.weight(1f),
-        )
-        GlyphIcon(
-            glyph = Glyph.ChevronRight,
-            tint = colors.onSurfaceFaint,
-            size = 14.dp,
-            modifier = Modifier.padding(start = spacing.sm),
-        )
-    }
 }
 
 private data class StarterSuggestion(
