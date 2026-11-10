@@ -351,7 +351,7 @@ private fun ModelSelector(
                 color = if (activeModel != null || currentModel != null) colors.onSurface else colors.onSurfaceFaint,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 130.dp),
+                modifier = Modifier.widthIn(max = 200.dp),
             )
 
             GlyphIcon(

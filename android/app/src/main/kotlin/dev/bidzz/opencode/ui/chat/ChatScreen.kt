@@ -193,6 +193,9 @@ fun ChatScreen(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        // Strong scrim so the drawer reads as modal over the OLED-black
+        // chat instead of a floating panel over undimmed bubbles.
+        scrimColor = Color.Black.copy(alpha = 0.6f),
         drawerContent = {
             ChatDrawer(
                 projectTitle = headerTitle(state.workspacePath),
@@ -863,13 +866,16 @@ private fun ChatDrawer(
         )
     }
 
-    ModalDrawerSheet(
-        drawerShape = RoundedCornerShape(topEnd = radius.lg, bottomEnd = radius.lg),
-        drawerContainerColor = colors.surface,
-        drawerContentColor = colors.onSurface,
-        drawerTonalElevation = 0.dp,
-        modifier = Modifier.width(320.dp),
-    ) {
+    // Drawer covers at most 85% of the width on narrow phones, so a sliver
+    // of the chat stays visible; wide screens keep the 320dp sheet.
+    BoxWithConstraints {
+        ModalDrawerSheet(
+            drawerShape = RoundedCornerShape(topEnd = radius.lg, bottomEnd = radius.lg),
+            drawerContainerColor = colors.surface,
+            drawerContentColor = colors.onSurface,
+            drawerTonalElevation = 0.dp,
+            modifier = Modifier.width(minOf(320.dp, maxWidth * 0.85f)),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1094,6 +1100,7 @@ private fun ChatDrawer(
                 )
             }
         }
+    }
     }
 }
 
