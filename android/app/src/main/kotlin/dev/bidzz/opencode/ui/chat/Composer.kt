@@ -67,6 +67,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.HairlineSeparator
 
 /**
  * Message input styled as an AI IDE omnibar (like Cursor, Claude, Antigravity).
@@ -93,13 +94,16 @@ fun Composer(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
     val motion = OpenCodeTheme.tokens.motion
 
     var isFocused by remember { mutableStateOf(false) }
 
     val canSend = enabled && value.isNotBlank() && !busy
-    val shape = RoundedCornerShape(22.dp)
+    // Named token, not a hardcoded 22.dp: the composer capsule is a deliberate
+    // exception to the 16dp surface radius cap (see Tokens.kt).
+    val shape = RoundedCornerShape(radius.composer)
 
     val borderColor by animateColorAsState(
         targetValue = if (isFocused) colors.accent.copy(alpha = 0.70f) else colors.hairline,
@@ -187,7 +191,9 @@ fun Composer(
             },
         )
 
-        Spacer(modifier = Modifier.height(spacing.sm))
+        Spacer(modifier = Modifier.height(spacing.xs))
+        HairlineSeparator(modifier = Modifier.padding(horizontal = spacing.lg))
+        Spacer(modifier = Modifier.height(spacing.xs))
 
         Row(
             modifier = Modifier
@@ -286,6 +292,7 @@ private fun QuickActionChip(
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
     val motion = OpenCodeTheme.tokens.motion
     val haptic = LocalHapticFeedback.current
 
@@ -329,16 +336,11 @@ private fun QuickActionChip(
         else -> colors.onSurfaceMuted
     }
 
-    Row(
+    // Hit area is 40dp; the pill itself stays 28dp, centred inside it, so
+    // the chip is easier to tap without the composer controls growing taller.
+    Box(
         modifier = modifier
-            .height(28.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(chipShape)
-            .background(backgroundColor)
-            .border(0.5.dp, borderColor, chipShape)
+            .height(dims.composerChipTouchTarget)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -349,23 +351,36 @@ private fun QuickActionChip(
                     onClick()
                 },
             )
-            .semantics { this.contentDescription = contentDescription }
-            .padding(horizontal = spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
     ) {
-        if (glyph != null) {
-            GlyphIcon(
-                glyph = glyph,
-                tint = contentColor,
-                size = 13.dp,
+        Row(
+            modifier = Modifier
+                .height(28.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .clip(chipShape)
+                .background(backgroundColor)
+                .border(0.5.dp, borderColor, chipShape)
+                .padding(horizontal = spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
+        ) {
+            if (glyph != null) {
+                GlyphIcon(
+                    glyph = glyph,
+                    tint = contentColor,
+                    size = 13.dp,
+                )
+            }
+            Text(
+                text = label,
+                style = OpenCodeTypography.caption.copy(fontFamily = OpenCodeTypography.mono),
+                color = contentColor,
             )
         }
-        Text(
-            text = label,
-            style = OpenCodeTypography.caption.copy(fontFamily = OpenCodeTypography.mono),
-            color = contentColor,
-        )
     }
 }
 
@@ -378,6 +393,7 @@ private fun ClearButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val dims = OpenCodeTheme.tokens.dimensions
     val haptic = LocalHapticFeedback.current
     val label = stringResource(R.string.composer_clear)
 
@@ -393,15 +409,10 @@ private fun ClearButton(
         label = "clear_button_scale",
     )
 
+    // Hit area is 40dp; the 28dp circle stays the visual, centred inside it.
     Box(
         modifier = modifier
-            .size(28.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(CircleShape)
-            .background(colors.fill)
+            .size(dims.composerChipTouchTarget)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -414,11 +425,23 @@ private fun ClearButton(
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        GlyphIcon(
-            glyph = Glyph.Close,
-            tint = colors.onSurfaceMuted,
-            size = 12.dp,
-        )
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .clip(CircleShape)
+                .background(colors.fill),
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                glyph = Glyph.Close,
+                tint = colors.onSurfaceMuted,
+                size = 12.dp,
+            )
+        }
     }
 }
 
@@ -435,6 +458,7 @@ private fun ActionButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val dims = OpenCodeTheme.tokens.dimensions
     val motion = OpenCodeTheme.tokens.motion
     val haptic = LocalHapticFeedback.current
 
@@ -497,7 +521,9 @@ private fun ActionButton(
     val targetTint = when {
         busy || canSend -> Color.White
         hasVoice -> colors.accent
-        else -> colors.onSurfaceMuted.copy(alpha = 0.45f)
+        // Clearly grey and dim when there is nothing to send, so the accent
+        // state above reads as "ready" instead of "slightly different grey".
+        else -> colors.onSurfaceFaint
     }
     val iconTint by animateColorAsState(
         targetValue = targetTint,
@@ -517,22 +543,14 @@ private fun ActionButton(
     }
 
     val finalScale = pressScale * (if (busy) pulseScale else 1.0f)
+    // Disabled state gets a hairline ring so it still reads as a button,
+    // just an unavailable one, instead of a flat grey dot.
+    val isDisabled = !busy && !canSend && !hasVoice
 
+    // Hit area is 44dp; the 36dp circle stays the visual, centred inside it.
     Box(
         modifier = modifier
-            .size(36.dp)
-            .graphicsLayer {
-                scaleX = finalScale
-                scaleY = finalScale
-            }
-            .shadow(
-                elevation = shadowElevation,
-                shape = CircleShape,
-                ambientColor = shadowColor.copy(alpha = shadowColor.alpha * 0.5f),
-                spotColor = shadowColor,
-            )
-            .clip(CircleShape)
-            .background(backgroundColor)
+            .size(dims.composerActionTouchTarget)
             .semantics { contentDescription = label }
             .clickable(
                 interactionSource = interactionSource,
@@ -546,6 +564,27 @@ private fun ActionButton(
             ),
         contentAlignment = Alignment.Center,
     ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .graphicsLayer {
+                    scaleX = finalScale
+                    scaleY = finalScale
+                }
+                .shadow(
+                    elevation = shadowElevation,
+                    shape = CircleShape,
+                    ambientColor = shadowColor.copy(alpha = shadowColor.alpha * 0.5f),
+                    spotColor = shadowColor,
+                )
+                .clip(CircleShape)
+                .background(backgroundColor)
+                .then(
+                    if (isDisabled) Modifier.border(0.5.dp, colors.hairline, CircleShape)
+                    else Modifier,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
         Crossfade(
             targetState = when {
                 busy -> ActionState.BUSY
@@ -574,10 +613,11 @@ private fun ActionButton(
                     GlyphIcon(
                         glyph = Glyph.ArrowUp,
                         tint = iconTint,
-                        size = 18.dp,
+                        size = dims.iconMedium,
                     )
                 }
             }
+        }
         }
     }
 }

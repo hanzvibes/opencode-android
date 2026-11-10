@@ -98,6 +98,7 @@ private fun AgentSelector(
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
     var expanded by remember { mutableStateOf(false) }
 
     val selectableAgents = remember(agents) {
@@ -114,10 +115,13 @@ private fun AgentSelector(
     val currentPresentation = currentAgent?.let { resolveAgentPresentation(it, colors.accent) }
     val chipShape = RoundedCornerShape(radius.full)
 
+    // Selector chips are 40dp tall (the composer touch target), not 28dp:
+    // they sit in the same controls row as the composer chips, and a 28dp
+    // chip next to a 40dp hit area was the smallest tap target in the row.
     Box {
         Row(
             modifier = Modifier
-                .height(28.dp)
+                .height(dims.composerChipTouchTarget)
                 .clip(chipShape)
                 .background(if (expanded) colors.surfacePressed else colors.fill)
                 .border(0.5.dp, if (expanded) colors.outline else colors.hairline, chipShape)
@@ -301,6 +305,7 @@ private fun ModelSelector(
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
     var expanded by remember { mutableStateOf(false) }
 
     val currentModel = remember(models, activeModel) {
@@ -315,7 +320,7 @@ private fun ModelSelector(
     Box {
         Row(
             modifier = Modifier
-                .height(28.dp)
+                .height(dims.composerChipTouchTarget)
                 .clip(chipShape)
                 .background(if (expanded) colors.surfacePressed else colors.fill)
                 .border(0.5.dp, if (expanded) colors.outline else colors.hairline, chipShape)
