@@ -1313,7 +1313,6 @@ private fun AssistantWorkingPlaceholder(
             isThinkingActive = true,
             reasoningText = null,
             elapsedSeconds = 0,
-            stepCount = 0,
         )
     }
 }

@@ -70,7 +70,7 @@ object Markdown {
     private val fence = Regex("^\\s*(```+|~~~+)\\s*(.*)$")
     private val heading = Regex("^\\s*(#{1,6})\\s+(.*)$")
     private val blockquote = Regex("^\\s*>\\s?(.*)$")
-    private val bullet = Regex("^\\s*[-*+]\\s+(.*)$")
+    private val bullet = Regex("^\\s*[-*+•●]\\s+(.*)$")
     private val numbered = Regex("^\\s*(\\d+)[.)]\\s+(.*)$")
     private val rule = Regex("^\\s*([-*_])\\s*\\1\\s*\\1[\\s\\-*_]*$")
     private val hrTag = Regex("^\\s*<hr\\s*/?>\\s*$", RegexOption.IGNORE_CASE)

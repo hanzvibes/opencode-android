@@ -119,10 +119,8 @@ class ChatRepository(
     }
 
     private fun isAssistantContinuation(current: SessionMessage, prev: SessionMessage): Boolean {
-        if (!current.isAssistant || !prev.isAssistant) return false
-        // If the previous message was purely tool calls and had no text, merge current into it
-        val prevHasNoText = prev.content.none { it.type == "text" && !it.text.isNullOrBlank() }
-        return prevHasNoText || (current.content.all { it.type == "tool" })
+        // Any consecutive assistant messages between user turns belong to the same agent run
+        return current.isAssistant && prev.isAssistant
     }
 
     private fun mergeAssistant(target: SessionMessage, addition: SessionMessage): SessionMessage {
@@ -132,6 +130,8 @@ class ChatRepository(
             cost = (target.cost ?: 0.0) + (addition.cost ?: 0.0),
             tokens = addition.tokens ?: target.tokens,
             error = addition.error ?: target.error,
+            model = addition.model ?: target.model,
+            agent = addition.agent ?: target.agent,
         )
     }
 

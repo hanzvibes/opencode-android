@@ -469,12 +469,14 @@ private fun ChatState.toUiMessages(): List<ChatMessage> {
         if (last != null && last.role == Role.ASSISTANT && msg.role == Role.ASSISTANT) {
             val combinedText = listOf(last.text, msg.text).filter { it.isNotBlank() }.joinToString("\n\n")
             val combinedReasoning = listOfNotNull(last.reasoning, msg.reasoning).filter { it.isNotBlank() }.joinToString("\n\n").ifEmpty { null }
-            val existingToolIds = last.tools.map { it.id }.toSet()
-            val newTools = msg.tools.filter { it.id !in existingToolIds }
+            val toolMap = last.tools.associateBy { it.id }.toMutableMap()
+            msg.tools.forEach { tool -> toolMap[tool.id] = tool }
+            val orderedIds = (last.tools.map { it.id } + msg.tools.map { it.id }).distinct()
+            val mergedTools = orderedIds.mapNotNull { toolMap[it] }
             merged[merged.lastIndex] = last.copy(
                 text = combinedText,
                 reasoning = combinedReasoning,
-                tools = last.tools + newTools,
+                tools = mergedTools,
                 streaming = last.streaming || msg.streaming,
                 agent = msg.agent ?: last.agent,
                 model = msg.model ?: last.model,

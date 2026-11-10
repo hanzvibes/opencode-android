@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -145,23 +146,29 @@ fun MarkdownText(
                         }
 
                         is MdBlock.Bullet -> Column(
-                            verticalArrangement = Arrangement.spacedBy(spacing.sm),
-                            modifier = Modifier.padding(start = spacing.xs, top = spacing.xxs, bottom = spacing.xxs),
+                            verticalArrangement = Arrangement.spacedBy(spacing.xs + spacing.xxs),
+                            modifier = Modifier.padding(start = spacing.xxs),
                         ) {
                             block.items.forEach { item ->
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.Top,
                                 ) {
-                                    Text(
-                                        text = "•",
-                                        style = OpenCodeTypography.body.copy(fontWeight = FontWeight.Bold),
-                                        color = colors.onSurfaceMuted,
-                                        modifier = Modifier.width(18.dp),
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .width(16.dp)
+                                            .padding(top = 8.dp),
+                                        contentAlignment = Alignment.TopCenter,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(4.5.dp)
+                                                .background(colors.onSurfaceMuted.copy(alpha = 0.75f), CircleShape),
+                                        )
+                                    }
                                     Text(
                                         text = item.toAnnotated(),
-                                        style = OpenCodeTypography.body.copy(lineHeight = 23.sp),
+                                        style = OpenCodeTypography.body.copy(lineHeight = 22.sp),
                                         color = colors.onSurface,
                                         modifier = Modifier.weight(1f),
                                     )
@@ -170,8 +177,8 @@ fun MarkdownText(
                         }
 
                         is MdBlock.Numbered -> Column(
-                            verticalArrangement = Arrangement.spacedBy(spacing.sm),
-                            modifier = Modifier.padding(start = spacing.xs, top = spacing.xxs, bottom = spacing.xxs),
+                            verticalArrangement = Arrangement.spacedBy(spacing.xs + spacing.xxs),
+                            modifier = Modifier.padding(start = spacing.xxs),
                         ) {
                             block.items.forEachIndexed { index, item ->
                                 Row(
@@ -180,15 +187,19 @@ fun MarkdownText(
                                 ) {
                                     Text(
                                         text = "${index + 1}.",
-                                        style = OpenCodeTypography.body.copy(fontWeight = FontWeight.SemiBold),
+                                        style = OpenCodeTypography.bodySmall.copy(
+                                            fontFamily = OpenCodeTypography.mono,
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 12.sp,
+                                        ),
                                         color = colors.onSurfaceMuted,
                                         modifier = Modifier
-                                            .widthIn(min = 22.dp)
-                                            .padding(end = spacing.xs),
+                                            .widthIn(min = 20.dp)
+                                            .padding(top = 1.dp, end = spacing.xs),
                                     )
                                     Text(
                                         text = item.toAnnotated(),
-                                        style = OpenCodeTypography.body.copy(lineHeight = 23.sp),
+                                        style = OpenCodeTypography.body.copy(lineHeight = 22.sp),
                                         color = colors.onSurface,
                                         modifier = Modifier.weight(1f),
                                     )
@@ -485,7 +496,7 @@ private fun TableBlock(table: MdBlock.Table) {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(radius.md))
                 .background(colors.surfaceSunken)
-                .border(dims.hairline, colors.hairline, RoundedCornerShape(radius.md))
+                .border(0.5.dp, colors.hairline.copy(alpha = 0.5f), RoundedCornerShape(radius.md))
                 .horizontalScroll(horizontalScrollState),
         ) {
             Column(modifier = Modifier.width(totalTableWidth)) {
@@ -494,7 +505,7 @@ private fun TableBlock(table: MdBlock.Table) {
                     Row(
                         modifier = Modifier
                             .width(totalTableWidth)
-                            .background(colors.surfaceVariant.copy(alpha = 0.75f)),
+                            .background(colors.surfaceVariant.copy(alpha = 0.55f)),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         table.header.forEachIndexed { colIdx, cell ->
@@ -502,24 +513,14 @@ private fun TableBlock(table: MdBlock.Table) {
                             Box(
                                 modifier = Modifier
                                     .width(cellWidth)
-                                    .drawBehind {
-                                        if (colIdx < colCount - 1) {
-                                            drawLine(
-                                                color = colors.hairline,
-                                                start = Offset(size.width, 0f),
-                                                end = Offset(size.width, size.height),
-                                                strokeWidth = dims.hairline.toPx(),
-                                            )
-                                        }
-                                    }
-                                    .padding(horizontal = spacing.md, vertical = spacing.sm),
+                                    .padding(horizontal = spacing.md, vertical = 10.dp),
                             ) {
                                 Text(
                                     text = cell.toUppercase().toAnnotated(),
                                     style = OpenCodeTypography.label.copy(
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.6.sp,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        letterSpacing = 0.5.sp,
                                     ),
                                     color = colors.onSurfaceMuted,
                                 )
@@ -529,8 +530,8 @@ private fun TableBlock(table: MdBlock.Table) {
                     Box(
                         Modifier
                             .width(totalTableWidth)
-                            .height(dims.hairline)
-                            .background(colors.hairline),
+                            .height(0.5.dp)
+                            .background(colors.hairline.copy(alpha = 0.6f)),
                     )
                 }
 
@@ -540,8 +541,8 @@ private fun TableBlock(table: MdBlock.Table) {
                         Box(
                             Modifier
                                 .width(totalTableWidth)
-                                .height(dims.hairline)
-                                .background(colors.hairline),
+                                .height(0.5.dp)
+                                .background(colors.hairline.copy(alpha = 0.35f)),
                         )
                     }
                     val rowBg = if (rowIdx % 2 == 1) colors.fill.copy(alpha = 0.25f) else Color.Transparent
@@ -557,22 +558,12 @@ private fun TableBlock(table: MdBlock.Table) {
                             Box(
                                 modifier = Modifier
                                     .width(cellWidth)
-                                    .drawBehind {
-                                        if (colIdx < colCount - 1) {
-                                            drawLine(
-                                                color = colors.hairline,
-                                                start = Offset(size.width, 0f),
-                                                end = Offset(size.width, size.height),
-                                                strokeWidth = dims.hairline.toPx(),
-                                            )
-                                        }
-                                    }
-                                    .padding(horizontal = spacing.md, vertical = 11.dp),
+                                    .padding(horizontal = spacing.md, vertical = 10.dp),
                             ) {
                                 Text(
                                     text = cell.toAnnotated(),
                                     style = if (isKeyCol) {
-                                        OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+                                        OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.Medium)
                                     } else {
                                         OpenCodeTypography.bodySmall
                                     },

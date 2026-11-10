@@ -144,12 +144,31 @@ fun ToolTrace(
                 modifier = Modifier.padding(start = spacing.xxs),
             )
 
-            Text(
-                text = stringResource(
+            val summaryText = if (running.isNotEmpty()) {
+                val currentTool = running.firstOrNull()
+                val toolName = currentTool?.name?.takeIf { it.isNotBlank() }
+                if (toolName != null) {
+                    "Running $toolName…"
+                } else {
+                    stringResource(
+                        if (tools.size == 1) R.string.tool_steps_one else R.string.tool_steps_other,
+                        tools.size,
+                    )
+                }
+            } else {
+                "Ran " + stringResource(
                     if (tools.size == 1) R.string.tool_steps_one else R.string.tool_steps_other,
                     tools.size,
+                )
+            }
+
+            Text(
+                text = summaryText,
+                style = OpenCodeTypography.label.copy(
+                    fontFamily = OpenCodeTypography.mono,
+                    fontSize = 12.sp,
+                    fontWeight = if (running.isNotEmpty()) FontWeight.SemiBold else FontWeight.Medium,
                 ),
-                style = OpenCodeTypography.label.copy(fontFamily = OpenCodeTypography.mono, fontSize = 12.sp),
                 color = if (running.isNotEmpty()) colors.accent else colors.onSurfaceMuted,
                 modifier = Modifier.padding(start = spacing.xs),
             )

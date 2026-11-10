@@ -172,7 +172,9 @@ fun MessageBubble(
             val parsed = remember(markdown, reasoning) {
                 parseThinkingContent(markdown, reasoning)
             }
-            val isThinkingActive = streaming && (parsed.answer.isEmpty() || parsed.isActivelyStreamingThoughts)
+            val hasReasoning = !parsed.reasoning.isNullOrBlank()
+            // Actively thinking only when thought tokens are streaming or reasoning is in progress without text answer yet
+            val isThinkingActive = streaming && (parsed.isActivelyStreamingThoughts || (hasReasoning && parsed.answer.isEmpty()))
 
             var elapsedSeconds by remember(streaming) { mutableIntStateOf(0) }
             var recordedDuration by remember { mutableIntStateOf(0) }
@@ -191,7 +193,6 @@ fun MessageBubble(
             }
 
             val finalDuration = if (recordedDuration > 0) recordedDuration else elapsedSeconds
-            val hasReasoning = !parsed.reasoning.isNullOrBlank()
             // Only show thinking widget if there is actual reasoning content, or if thinking is actively in progress
             val showThinkingWidget = isThinkingActive || hasReasoning
             val showStreamingSpinner = streaming && parsed.answer.isNotEmpty()
@@ -221,7 +222,6 @@ fun MessageBubble(
                     isThinkingActive = isThinkingActive,
                     reasoningText = parsed.reasoning,
                     elapsedSeconds = finalDuration,
-                    stepCount = tools.size,
                     modifier = Modifier.padding(
                         bottom = if (parsed.answer.isNotEmpty() || tools.isNotEmpty()) spacing.sm else 0.dp,
                     ),
@@ -311,7 +311,6 @@ fun ThinkingDisclosure(
     isThinkingActive: Boolean,
     reasoningText: String?,
     elapsedSeconds: Int,
-    stepCount: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
@@ -384,13 +383,12 @@ fun ThinkingDisclosure(
                 }
 
                 val timeSuffix = if (elapsedSeconds > 0) " (${elapsedSeconds}s)" else "…"
-                val stepSuffix = if (stepCount > 0) " · $stepCount ${if (stepCount == 1) "step" else "steps"}" else ""
 
                 val labelText = if (isThinkingActive) {
-                    stringResource(R.string.bubble_thinking).removeSuffix("…").trim() + timeSuffix + stepSuffix
+                    stringResource(R.string.bubble_thinking).removeSuffix("…").trim() + timeSuffix
                 } else {
                     val duration = maxOf(1, elapsedSeconds)
-                    "Thought for ${duration}s$stepSuffix"
+                    "Thought for ${duration}s"
                 }
 
                 Text(
