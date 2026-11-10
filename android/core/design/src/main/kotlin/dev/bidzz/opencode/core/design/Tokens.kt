@@ -58,6 +58,14 @@ data class Radius(
     val sm: Dp = 8.dp,
     val md: Dp = 12.dp,
     val lg: Dp = 16.dp,
+    /**
+     * Deliberate exceptions to the 16dp surface cap above: the user bubble
+     * (asymmetric, 18dp with a 4dp tail corner) and the composer capsule
+     * (22dp). Named here so a hardcoded 18.dp / 22.dp in a screen is still
+     * a bug, but the values themselves are a conscious choice, not an accident.
+     */
+    val bubble: Dp = 18.dp,
+    val composer: Dp = 22.dp,
     /** Pills: chips, send button. */
     val full: Dp = 999.dp,
 )
@@ -172,6 +180,14 @@ data class Dimensions(
     val composerMaxHeight: Dp = 160.dp,
     val avatarSize: Dp = 28.dp,
     val statusDotSize: Dp = 8.dp,
+    /** Streaming indicator pulse (11dp dot, 22dp animated halo). Large enough to
+     *  read at a glance while the assistant is typing, unlike the 8dp status dot. */
+    val streamingIndicatorSize: Dp = 11.dp,
+    /** Touch target for the composer send/stop button. Visual stays 36dp; the
+     *  extra padding is hit area only, so the transcript does not shrink. */
+    val composerActionTouchTarget: Dp = 44.dp,
+    /** Touch target for composer quick-action chips and the clear button. */
+    val composerChipTouchTarget: Dp = 40.dp,
     val iconSmall: Dp = 16.dp,
     val iconMedium: Dp = 20.dp,
     val iconLarge: Dp = 24.dp,

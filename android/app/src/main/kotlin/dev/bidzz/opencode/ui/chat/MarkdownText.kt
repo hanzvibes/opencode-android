@@ -78,6 +78,14 @@ private data class HeadingStyle(
 fun MarkdownText(
     markdown: String,
     modifier: Modifier = Modifier,
+    /**
+     * True while this is the last text block of a turn that is still
+     * streaming. Shows a blinking cursor after the rendered blocks so the
+     * reader can tell "still typing" from "finished" on a long answer.
+     * The cursor sits outside the SelectionContainer, so it is never part
+     * of a copy/selection and does not jump when the markdown re-parses.
+     */
+    streaming: Boolean = false,
 ) {
     val blocks = remember(markdown) { Markdown.parse(markdown) }
     val colors = OpenCodeTheme.colors
@@ -253,6 +261,17 @@ fun MarkdownText(
                         is MdBlock.Table -> TableBlock(block)
                     }
                 }
+            }
+        }
+        if (streaming) {
+            Row(
+                modifier = Modifier.padding(top = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BlinkingCursor(
+                    color = colors.accent,
+                    height = 15.dp,
+                )
             }
         }
     }
