@@ -2,6 +2,7 @@ package dev.bidzz.opencode.core.design
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -23,14 +24,14 @@ object OpenCodeTypography {
      * Prose and UI chrome. Bundled Inter (SIL OFL 1.1, see
      * `assets/fonts/OFL.txt`); weights 400/500/600/700 in `res/font/inter.xml`.
      */
-    val ui: FontFamily = FontFamily(R.font.inter)
+    val ui: FontFamily = FontFamily(Font(R.font.inter))
 
     /**
      * Code, paths, and anything copyable. Bundled JetBrains Mono (SIL OFL 1.1,
      * see `assets/fonts/OFL.txt`); weights 400/500/700 in
      * `res/font/jetbrains_mono.xml`.
      */
-    val mono: FontFamily = FontFamily(R.font.jetbrains_mono)
+    val mono: FontFamily = FontFamily(Font(R.font.jetbrains_mono))
 
     /** Base body text for chat messages. */
     val body: TextStyle = TextStyle(
