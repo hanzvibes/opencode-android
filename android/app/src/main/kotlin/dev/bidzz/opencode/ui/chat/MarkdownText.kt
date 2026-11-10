@@ -3,8 +3,6 @@ package dev.bidzz.opencode.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -224,7 +222,6 @@ private fun CodeBlock(language: String?, code: String) {
     val radius = OpenCodeTheme.tokens.radius
     val context = LocalContext.current
     var copied by remember(code) { mutableStateOf(false) }
-    var saved by remember(code) { mutableStateOf(false) }
 
     val defaultCodeLabel = stringResource(R.string.code_label)
     val displayLanguage = remember(language, defaultCodeLabel) {
@@ -233,11 +230,6 @@ private fun CodeBlock(language: String?, code: String) {
         } else {
             formatLanguageName(language)
         }
-    }
-
-    // The system "save as" screen picks the place; the app needs no storage permission.
-    val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
-        if (uri != null) saved = writeText(context, uri, code)
     }
 
     val lines = remember(code) { code.lines() }
@@ -296,18 +288,11 @@ private fun CodeBlock(language: String?, code: String) {
 
             Spacer(Modifier.weight(1f))
 
-            // Action pills (Download & Copy)
+            // Action pills (Copy)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                BlockAction(
-                    label = stringResource(if (saved) R.string.code_saved else R.string.code_download),
-                    glyph = if (saved) Glyph.Check else Glyph.ArrowDown,
-                    done = saved,
-                ) {
-                    saveAs.launch(suggestedFileName(language))
-                }
                 BlockAction(
                     label = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
                     glyph = if (copied) Glyph.Check else Glyph.Copy,
