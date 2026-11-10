@@ -63,7 +63,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --skip-tests)   RUN_TESTS=0 ;;
         --skip-stage)   RUN_STAGE=0 ;;
-        --stage-only)   RUN_ASSEMBLE=0 ;;
+        --stage-only)   RUN_TESTS=0; RUN_ASSEMBLE=0 ;;
         -h|--help)      usage ;;
         *)              die "unknown option: $1 (try --help)" ;;
     esac
@@ -76,7 +76,11 @@ need() { command -v "$1" >/dev/null 2>&1 || die "missing required tool: $1"; }
 need curl
 need unzip
 need od
-need java
+
+# The JDK is only needed for the Gradle steps, not for staging the natives.
+if [ "$RUN_TESTS" = "1" ] || [ "$RUN_ASSEMBLE" = "1" ]; then
+    need java
+fi
 
 # sha256sum on Linux, shasum -a 256 on macOS.
 if command -v sha256sum >/dev/null 2>&1; then
