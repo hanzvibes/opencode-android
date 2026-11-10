@@ -308,7 +308,10 @@ fun ChatScreen(
                                     model = message.model,
                                     reasoning = message.reasoning,
                                     parts = message.parts,
-                                    onAnswerQuestion = onSend,
+                                    onAnswerQuestion = { answer ->
+                                        onDraftChange(answer)
+                                        onSend()
+                                    },
                                     modifier = Modifier.padding(top = topSpacing),
                                 )
                             }
