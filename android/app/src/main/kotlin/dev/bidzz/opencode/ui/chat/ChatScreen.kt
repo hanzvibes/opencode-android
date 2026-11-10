@@ -1,32 +1,52 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -36,7 +56,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -44,12 +68,14 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.ui.sessions.label
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.Status
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
+import dev.bidzz.opencode.ui.IconBadge
 import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import kotlinx.coroutines.launch
@@ -146,8 +172,11 @@ fun ChatScreen(
                 if (state.messages.isEmpty()) {
                     EmptyChat(
                         engineReady = state.workspaceReady,
+                        engineState = state.engineState,
+                        busy = state.busy,
+                        onStatusClick = onStatusClick,
                         onSuggestion = onDraftChange,
-                        modifier = Modifier.align(Alignment.Center),
+                        modifier = Modifier.fillMaxSize(),
                     )
                 } else {
                     LazyColumn(
@@ -255,8 +284,8 @@ fun ChatScreen(
 /**
  * Menu on the left, the project and the engine's state centred, new session on the right.
  *
- * The status sits under the title as coloured text rather than a pill: it is read at a
- * glance, and tapping it still opens diagnostics.
+ * The status sits under the title as a refined status badge: it is read at a glance,
+ * pulses during active work, provides tactile click feedback, and tapping it opens diagnostics.
  */
 @Composable
 private fun ChatHeader(
@@ -266,63 +295,113 @@ private fun ChatHeader(
     onMenu: () -> Unit,
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
+    val radius = OpenCodeTheme.tokens.radius
     val status = engineState.toStatus(busy)
+    val statusColor = colors.statusColor(status)
 
-    Box(
-        modifier = Modifier
+    val infiniteTransition = rememberInfiniteTransition(label = "status_dot_pulse")
+    val pulsingAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "status_dot_alpha",
+    )
+    val dotAlpha = if (status == Status.WORKING) pulsingAlpha else 1f
+
+    Column(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            .background(colors.background),
     ) {
-        IconAction(
-            glyph = Glyph.Menu,
-            description = stringResource(R.string.chat_menu),
-            onClick = onMenu,
-            modifier = Modifier.align(Alignment.CenterStart),
-        )
-
-        Column(
+        Box(
             modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = dims.minTouchTarget + spacing.xs),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = dims.topBarHeight)
+                .padding(horizontal = spacing.xs, vertical = spacing.xxs),
         ) {
-            Text(
-                text = title,
-                style = OpenCodeTypography.title,
-                color = colors.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            IconAction(
+                glyph = Glyph.Menu,
+                description = stringResource(R.string.chat_menu),
+                onClick = onMenu,
+                modifier = Modifier.align(Alignment.CenterStart),
             )
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.full))
-                    .clickable(onClick = onStatusClick)
-                    .padding(horizontal = spacing.sm, vertical = spacing.xxs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(dims.statusDotSize)
-                        .background(colors.statusColor(status), CircleShape),
-                )
-                Text(
-                    text = engineState.statusLabel(busy),
-                    style = OpenCodeTypography.label,
-                    color = colors.statusColor(status),
-                    modifier = Modifier.padding(start = spacing.xs),
-                )
-            }
-        }
 
-        IconAction(
-            glyph = Glyph.NewChat,
-            description = stringResource(R.string.chat_new_session),
-            onClick = onNewSession,
-            modifier = Modifier.align(Alignment.CenterEnd),
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = dims.minTouchTarget + spacing.sm),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = title,
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Spacer(Modifier.height(spacing.xxs))
+                val statusLabel = engineState.statusLabel(busy)
+                Row(
+                    modifier = Modifier
+                        .defaultMinSize(minWidth = dims.minTouchTarget, minHeight = 28.dp)
+                        .clip(RoundedCornerShape(radius.full))
+                        .background(statusColor.copy(alpha = 0.10f))
+                        .border(
+                            width = 0.5.dp,
+                            color = statusColor.copy(alpha = 0.22f),
+                            shape = RoundedCornerShape(radius.full),
+                        )
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "$statusLabel: ${stringResource(R.string.settings_diag_title)}"
+                        }
+                        .clickable(
+                            role = Role.Button,
+                            onClick = onStatusClick,
+                        )
+                        .padding(horizontal = spacing.md, vertical = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(dims.statusDotSize)
+                            .graphicsLayer { alpha = dotAlpha }
+                            .background(statusColor, CircleShape),
+                    )
+                    Spacer(Modifier.width(spacing.xs))
+                    Text(
+                        text = statusLabel,
+                        style = OpenCodeTypography.label.copy(fontSize = 12.sp, lineHeight = 14.sp),
+                        color = statusColor,
+                        maxLines = 1,
+                    )
+                }
+            }
+
+            IconAction(
+                glyph = Glyph.NewChat,
+                description = stringResource(R.string.chat_new_session),
+                onClick = onNewSession,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(colors.hairline),
         )
     }
 }
@@ -347,38 +426,85 @@ private fun ChatDrawer(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
 
     ModalDrawerSheet(
+        drawerShape = RoundedCornerShape(topEnd = radius.lg, bottomEnd = radius.lg),
         drawerContainerColor = colors.surface,
         drawerContentColor = colors.onSurface,
-        modifier = Modifier.widthIn(max = 320.dp),
+        drawerTonalElevation = 0.dp,
+        modifier = Modifier.width(320.dp),
     ) {
-        Column(Modifier.padding(top = spacing.lg)) {
-            Text(
-                text = "OpenCode",
-                style = OpenCodeTypography.title,
-                color = colors.onSurface,
-                modifier = Modifier.padding(horizontal = spacing.xl),
-            )
-            Text(
-                text = projectTitle,
-                style = OpenCodeTypography.label,
-                color = colors.onSurfaceMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = spacing.xl, vertical = spacing.xs),
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = spacing.lg),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.lg, vertical = spacing.xs),
+            ) {
+                Text(
+                    text = "OpenCode",
+                    style = OpenCodeTypography.titleLarge,
+                    color = colors.onSurface,
+                )
+                if (projectTitle.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .padding(top = spacing.xs)
+                            .clip(RoundedCornerShape(radius.full))
+                            .background(colors.surfaceVariant)
+                            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
+                            .clickable(role = Role.Button, onClick = onProject)
+                            .padding(horizontal = spacing.sm, vertical = spacing.xxs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        GlyphIcon(
+                            glyph = Glyph.Folder,
+                            tint = colors.onSurfaceMuted,
+                            size = 12.dp,
+                        )
+                        Text(
+                            text = projectTitle,
+                            style = OpenCodeTypography.label,
+                            color = colors.onSurfaceMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = spacing.xs),
+                        )
+                    }
+                }
+            }
 
-            DrawerItem(stringResource(R.string.chat_new_session), Glyph.NewChat, onNewSession, accent = true)
-            DrawerItem(stringResource(R.string.drawer_files), Glyph.File, onFiles)
-            DrawerItem(stringResource(R.string.drawer_project), Glyph.Folder, onProject)
-            DrawerItem(stringResource(R.string.settings_title), Glyph.Sliders, onSettings)
+            DrawerItem(
+                label = stringResource(R.string.chat_new_session),
+                glyph = Glyph.NewChat,
+                onClick = onNewSession,
+                accent = true,
+            )
+            DrawerItem(
+                label = stringResource(R.string.drawer_files),
+                glyph = Glyph.File,
+                onClick = onFiles,
+            )
+            DrawerItem(
+                label = stringResource(R.string.drawer_project),
+                glyph = Glyph.Folder,
+                onClick = onProject,
+            )
+            DrawerItem(
+                label = stringResource(R.string.settings_title),
+                glyph = Glyph.Sliders,
+                onClick = onSettings,
+            )
 
             Box(
                 Modifier
-                    .padding(vertical = spacing.sm)
+                    .padding(horizontal = spacing.lg, vertical = spacing.sm)
                     .fillMaxWidth()
-                    .size(0.5.dp)
+                    .height(0.5.dp)
                     .background(colors.hairline),
             )
 
@@ -386,71 +512,201 @@ private fun ChatDrawer(
                 text = stringResource(R.string.drawer_recent).uppercase(),
                 style = OpenCodeTypography.label,
                 color = colors.onSurfaceFaint,
-                modifier = Modifier.padding(horizontal = spacing.xl, vertical = spacing.xs),
+                modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.xs),
             )
             if (sessions.isEmpty()) {
                 Text(
                     text = stringResource(R.string.drawer_no_sessions),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
-                    modifier = Modifier.padding(horizontal = spacing.xl, vertical = spacing.sm),
+                    modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm),
                 )
             }
         }
 
         // Only the list scrolls; the destinations above stay put.
-        LazyColumn(Modifier.weight(1f)) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(vertical = spacing.xs),
+        ) {
             items(sessions.take(DRAWER_SESSIONS), key = { it.id }) { row ->
                 val selected = row.id == currentSessionID
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(if (selected) colors.surfaceSunken else colors.surface)
-                        .clickable { onOpenSession(row.id) }
-                        .padding(horizontal = spacing.xl, vertical = spacing.sm),
-                ) {
-                    Text(
-                        text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
-                        style = OpenCodeTypography.body,
-                        color = colors.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    row.age?.let { age ->
-                        Text(
-                            text = age.label(),
-                            style = OpenCodeTypography.label,
-                            color = colors.onSurfaceFaint,
-                        )
-                    }
-                }
+                SessionDrawerItem(
+                    row = row,
+                    selected = selected,
+                    onClick = { onOpenSession(row.id) },
+                )
             }
         }
 
-        DrawerItem(stringResource(R.string.drawer_all_sessions), Glyph.Search, onAllSessions)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(colors.hairline),
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(vertical = spacing.xs),
+        ) {
+            DrawerItem(
+                label = stringResource(R.string.drawer_all_sessions),
+                glyph = Glyph.Search,
+                onClick = onAllSessions,
+                trailing = {
+                    GlyphIcon(
+                        glyph = Glyph.ChevronRight,
+                        tint = colors.onSurfaceFaint,
+                        size = 16.dp,
+                    )
+                },
+            )
+        }
     }
 }
 
 @Composable
-private fun DrawerItem(label: String, glyph: Glyph, onClick: () -> Unit, accent: Boolean = false) {
+private fun DrawerItem(
+    label: String,
+    glyph: Glyph,
+    onClick: () -> Unit,
+    active: Boolean = false,
+    accent: Boolean = false,
+    trailing: @Composable (() -> Unit)? = null,
+) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val tint = if (accent) colors.accent else colors.onSurface
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+
+    val itemBg = if (active) colors.accent.copy(alpha = 0.12f) else Color.Transparent
+    val badgeBg = when {
+        active -> colors.accent.copy(alpha = 0.16f)
+        accent -> colors.accent.copy(alpha = 0.12f)
+        else -> colors.surfaceVariant
+    }
+    val contentTint = when {
+        active || accent -> colors.accent
+        else -> colors.onSurface
+    }
+    val iconTint = when {
+        active || accent -> colors.accent
+        else -> colors.onSurfaceMuted
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = spacing.xl, vertical = spacing.md),
+            .padding(horizontal = spacing.sm, vertical = spacing.xxs)
+            .clip(RoundedCornerShape(radius.md))
+            .background(itemBg)
+            .then(
+                if (active) {
+                    Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
+                } else Modifier
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = spacing.sm, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlyphIcon(glyph, tint = tint, size = 20.dp)
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(20.dp)
+                .clip(RoundedCornerShape(radius.full))
+                .background(if (active) colors.accent else Color.Transparent),
+        )
+
+        Box(
+            modifier = Modifier
+                .padding(start = spacing.xs)
+                .size(32.dp)
+                .clip(RoundedCornerShape(radius.sm))
+                .background(badgeBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(glyph, tint = iconTint, size = dims.iconSmall)
+        }
+
         Text(
             text = label,
-            style = OpenCodeTypography.body,
-            color = tint,
-            modifier = Modifier.padding(start = spacing.lg),
+            style = if (active) OpenCodeTypography.bodyStrong else OpenCodeTypography.body,
+            color = contentTint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.md),
         )
+
+        if (trailing != null) {
+            trailing()
+        }
+    }
+}
+
+@Composable
+private fun SessionDrawerItem(
+    row: SessionRow,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    val age = row.age?.label()
+    val meta = listOfNotNull(age, row.cost).joinToString(" · ")
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.sm, vertical = spacing.xxs)
+            .clip(RoundedCornerShape(radius.md))
+            .background(if (selected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
+            .then(
+                if (selected) {
+                    Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
+                } else Modifier
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = spacing.sm, vertical = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(24.dp)
+                .clip(RoundedCornerShape(radius.full))
+                .background(if (selected) colors.accent else Color.Transparent),
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.sm),
+        ) {
+            Text(
+                text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
+                style = if (selected) OpenCodeTypography.bodyStrong else OpenCodeTypography.body,
+                color = if (selected) colors.accent else colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (meta.isNotEmpty()) {
+                Text(
+                    text = meta,
+                    style = OpenCodeTypography.label,
+                    color = if (selected) colors.accent.copy(alpha = 0.75f) else colors.onSurfaceFaint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = spacing.xxs),
+                )
+            }
+        }
     }
 }
 
@@ -483,62 +739,245 @@ private fun JumpToLatest(onClick: () -> Unit, modifier: Modifier = Modifier) {
  * first. While the engine starts there is nothing to suggest yet.
  */
 @Composable
-private fun EmptyChat(engineReady: Boolean, onSuggestion: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun EmptyChat(
+    engineReady: Boolean,
+    onSuggestion: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    engineState: dev.bidzz.opencode.core.engine.EngineState = if (engineReady) {
+        dev.bidzz.opencode.core.engine.EngineState.RUNNING
+    } else {
+        dev.bidzz.opencode.core.engine.EngineState.STARTING
+    },
+    busy: Boolean = false,
+    onStatusClick: (() -> Unit)? = null,
+) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
+    val status = engineState.toStatus(busy)
+    val statusLabel = engineState.statusLabel(busy)
 
-    Column(
-        modifier = modifier
-            .widthIn(max = dims.contentMaxWidth)
-            .padding(horizontal = spacing.xl),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    BoxWithConstraints(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Text(
-            text = stringResource(if (engineReady) R.string.empty_title_ready else R.string.empty_title_starting),
-            style = OpenCodeTypography.title,
-            color = colors.onSurface,
-            textAlign = TextAlign.Center,
-        )
-        if (!engineReady) {
-            Text(
-                text = stringResource(R.string.empty_starting_body),
-                style = OpenCodeTypography.body,
-                color = colors.onSurfaceMuted,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = spacing.sm),
-            )
-        } else {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = maxHeight)
+                .padding(horizontal = spacing.xl, vertical = spacing.xl),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
             Column(
-                modifier = Modifier.padding(top = spacing.xl),
-                verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                modifier = Modifier
+                    .widthIn(max = 480.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                SUGGESTIONS.forEach { suggestionRes ->
-                    val suggestion = stringResource(suggestionRes)
-                    Text(
-                        text = suggestion,
-                        style = OpenCodeTypography.body,
-                        color = colors.onSurface,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(radius.lg))
-                            .background(colors.surface)
-                            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.lg))
-                            .clickable { onSuggestion(suggestion) }
-                            .padding(horizontal = spacing.lg, vertical = spacing.md),
-                    )
+                StatusPillBadge(
+                    status = status,
+                    label = statusLabel,
+                    onClick = onStatusClick,
+                )
+
+                Spacer(Modifier.height(spacing.md))
+
+                Text(
+                    text = stringResource(if (engineReady) R.string.empty_title_ready else R.string.empty_title_starting),
+                    style = OpenCodeTypography.titleLarge,
+                    color = colors.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(Modifier.height(spacing.xs))
+
+                Text(
+                    text = stringResource(if (engineReady) R.string.empty_ready_body else R.string.empty_starting_body),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.widthIn(max = 380.dp),
+                )
+
+                if (!engineReady) {
+                    if (status == Status.WORKING) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(top = spacing.xl)
+                                .size(dims.iconLarge),
+                            strokeWidth = 2.dp,
+                            color = colors.accent,
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.height(spacing.xxl))
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+                    ) {
+                        SUGGESTIONS.forEach { item ->
+                            val suggestion = stringResource(item.textRes)
+                            SuggestionCard(
+                                suggestion = suggestion,
+                                glyph = item.glyph,
+                                onClick = { onSuggestion(suggestion) },
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+/** Status and readiness pill badge with live state dot and touch feedback. */
+@Composable
+private fun StatusPillBadge(
+    status: Status,
+    label: String,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
+    val radius = OpenCodeTheme.tokens.radius
+    val shape = RoundedCornerShape(radius.full)
+    val statusColor = colors.statusColor(status)
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    val bgModifier = if (onClick != null) {
+        Modifier
+            .clip(shape)
+            .background(
+                when {
+                    isPressed -> statusColor.copy(alpha = 0.20f)
+                    isHovered -> statusColor.copy(alpha = 0.15f)
+                    else -> statusColor.copy(alpha = 0.10f)
+                },
+            )
+            .border(0.5.dp, statusColor.copy(alpha = 0.25f), shape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(),
+                role = Role.Button,
+                onClick = onClick,
+            )
+    } else {
+        Modifier
+            .clip(shape)
+            .background(statusColor.copy(alpha = 0.10f))
+            .border(0.5.dp, statusColor.copy(alpha = 0.25f), shape)
+    }
+
+    Row(
+        modifier = modifier
+            .then(bgModifier)
+            .padding(horizontal = spacing.md, vertical = spacing.xs + spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs + spacing.xxs),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(dims.statusDotSize)
+                .background(statusColor, CircleShape),
+        )
+        Text(
+            text = label,
+            style = OpenCodeTypography.label,
+            color = statusColor,
+        )
+    }
+}
+
+/** Suggestion starter card with 16dp radius, hairline border, hover/press state, and ripple. */
+@Composable
+private fun SuggestionCard(
+    suggestion: String,
+    glyph: Glyph,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val shape = RoundedCornerShape(radius.lg)
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val isHovered by interactionSource.collectIsHoveredAsState()
+
+    val cardBg by animateColorAsState(
+        targetValue = when {
+            isPressed -> colors.surfacePressed
+            isHovered -> colors.surfaceRaised
+            else -> colors.surface
+        },
+        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
+        label = "suggestionCardBg",
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isPressed -> colors.outline
+            isHovered -> colors.onSurfaceMuted.copy(alpha = 0.35f)
+            else -> colors.hairline
+        },
+        animationSpec = tween(durationMillis = OpenCodeTheme.tokens.motion.quick),
+        label = "suggestionCardBorder",
+    )
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(cardBg)
+            .border(0.5.dp, borderColor, shape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(),
+                role = Role.Button,
+                onClick = onClick,
+            )
+            .padding(horizontal = spacing.lg, vertical = spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBadge(
+            glyph = glyph,
+            size = 28.dp,
+            modifier = Modifier.padding(end = spacing.md),
+        )
+        Text(
+            text = suggestion,
+            style = OpenCodeTypography.body,
+            color = colors.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        GlyphIcon(
+            glyph = Glyph.ChevronRight,
+            tint = colors.onSurfaceFaint,
+            size = 14.dp,
+            modifier = Modifier.padding(start = spacing.sm),
+        )
+    }
+}
+
+private data class StarterSuggestion(
+    val textRes: Int,
+    val glyph: Glyph,
+)
+
 private val SUGGESTIONS = listOf(
-    R.string.suggestion_structure,
-    R.string.suggestion_bug,
-    R.string.suggestion_review,
-    R.string.suggestion_tests,
+    StarterSuggestion(R.string.suggestion_structure, Glyph.Folder),
+    StarterSuggestion(R.string.suggestion_bug, Glyph.Terminal),
+    StarterSuggestion(R.string.suggestion_review, Glyph.Code),
+    StarterSuggestion(R.string.suggestion_tests, Glyph.Pencil),
 )
 
 private fun dev.bidzz.opencode.core.engine.EngineState.toStatus(busy: Boolean): Status = when (this) {

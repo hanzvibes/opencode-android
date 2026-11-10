@@ -39,7 +39,7 @@ data class Spacing(
 /**
  * Corner radii.
  *
- * `plan.md` §12 bans "excessive rounded cards". The scale tops out at 14dp for
+ * `plan.md` §12 bans "excessive rounded cards". The scale tops out at 16dp for
  * surfaces and uses a full pill only for chips and the send button, which is where
  * a pill is conventional on Android rather than decorative.
  */
@@ -82,6 +82,8 @@ data class Dimensions(
     val iconSmall: Dp = 16.dp,
     val iconMedium: Dp = 20.dp,
     val iconLarge: Dp = 24.dp,
+    /** Standard hairline border/divider thickness (0.5dp for crisp iOS-style hairline). */
+    val hairline: Dp = 0.5.dp,
     /** Content column cap, so text does not stretch unreadably on tablets. */
     val contentMaxWidth: Dp = 720.dp,
     /** Assistant output uses the full column; user bubbles stay narrower. */

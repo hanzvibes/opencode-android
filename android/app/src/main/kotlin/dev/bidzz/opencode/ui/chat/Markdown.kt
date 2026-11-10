@@ -9,7 +9,8 @@ package dev.bidzz.opencode.ui.chat
  * - fenced code blocks (``` or ~~~), with an optional language tag
  * - inline code (`code`)
  * - bold (**text**), italic (*text* or _text_)
- * - headings (# .. ###)
+ * - headings (# .. ######)
+ * - blockquotes (> text)
  * - unordered and ordered lists
  * - links ([text](url))
  * - pipe tables with a `| --- | --- |` separator row
@@ -29,6 +30,9 @@ sealed interface MdBlock {
     data class Heading(val level: Int, val spans: List<MdSpan>) : MdBlock
 
     data class Code(val language: String?, val code: String) : MdBlock
+
+    /** A quoted block of text. */
+    data class Blockquote(val spans: List<MdSpan>) : MdBlock
 
     data class Bullet(val items: List<List<MdSpan>>) : MdBlock
 
@@ -61,7 +65,8 @@ sealed interface MdSpan {
 object Markdown {
 
     private val fence = Regex("^\\s*(```+|~~~+)\\s*(.*)$")
-    private val heading = Regex("^\\s*(#{1,3})\\s+(.*)$")
+    private val heading = Regex("^\\s*(#{1,6})\\s+(.*)$")
+    private val blockquote = Regex("^\\s*>\\s?(.*)$")
     private val bullet = Regex("^\\s*[-*+]\\s+(.*)$")
     private val numbered = Regex("^\\s*(\\d+)[.)]\\s+(.*)$")
     private val rule = Regex("^\\s*([-*_])\\s*\\1\\s*\\1[\\s\\-*_]*$")
@@ -131,6 +136,23 @@ object Markdown {
                     spans = inline(headingMatch.groupValues[2].trim()),
                 )
                 i++
+                continue
+            }
+
+            // Blockquote: consecutive lines starting with `>`.
+            val quoteMatch = blockquote.find(line)
+            if (quoteMatch != null) {
+                flushParagraph()
+                val quoteLines = mutableListOf<String>()
+                while (i < lines.size) {
+                    val m = blockquote.find(lines[i]) ?: break
+                    quoteLines += m.groupValues[1]
+                    i++
+                }
+                val quoteText = quoteLines.joinToString("\n").trim()
+                if (quoteText.isNotEmpty()) {
+                    blocks += MdBlock.Blockquote(inline(quoteText))
+                }
                 continue
             }
 

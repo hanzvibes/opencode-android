@@ -73,6 +73,7 @@
     <string name="empty_title_ready">Apa yang ingin dikerjakan?</string>
     <string name="empty_title_starting">Memulai mesin…</string>
     <string name="empty_starting_body">Mesin lokal sedang dimulai. Ini butuh beberapa detik.</string>
+    <string name="empty_ready_body">Pilih saran atau tanyakan apa saja tentang proyek Anda.</string>
     <string name="suggestion_structure">Jelaskan struktur proyek ini</string>
     <string name="suggestion_bug">Cari penyebab sebuah bug</string>
     <string name="suggestion_review">Tinjau perubahan terbaru</string>

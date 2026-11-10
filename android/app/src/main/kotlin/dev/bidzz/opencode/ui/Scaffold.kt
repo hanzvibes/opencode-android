@@ -56,6 +56,7 @@ fun ScreenScaffold(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
 
     Column(
         modifier = modifier
@@ -67,7 +68,7 @@ fun ScreenScaffold(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(colors.background)
-                .height(56.dp)
+                .defaultMinSize(minHeight = dims.topBarHeight)
                 .padding(horizontal = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -116,20 +117,35 @@ fun ScreenScaffold(
     }
 }
 
-/** A round icon button with the 48dp touch target and a spoken label. */
+/** A round icon button with the minimum 48dp touch target and a spoken label. */
 @Composable
-fun IconAction(glyph: Glyph, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun IconAction(
+    glyph: Glyph,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
     val colors = OpenCodeTheme.colors
+    val dims = OpenCodeTheme.tokens.dimensions
 
     Box(
         modifier = modifier
-            .size(48.dp)
+            .size(dims.minTouchTarget)
             .clip(CircleShape)
             .semantics { contentDescription = description }
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(
+                enabled = enabled,
+                role = Role.Button,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        GlyphIcon(glyph, tint = colors.onSurface, size = 22.dp)
+        GlyphIcon(
+            glyph = glyph,
+            tint = if (enabled) colors.onSurface else colors.onSurfaceFaint,
+            size = dims.iconMedium,
+        )
     }
 }
 
@@ -138,10 +154,11 @@ fun IconAction(glyph: Glyph, description: String, onClick: () -> Unit, modifier:
 fun TextAction(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
 
     Box(
         modifier = modifier
-            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .defaultMinSize(minWidth = dims.minTouchTarget, minHeight = dims.minTouchTarget)
             .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = spacing.md),

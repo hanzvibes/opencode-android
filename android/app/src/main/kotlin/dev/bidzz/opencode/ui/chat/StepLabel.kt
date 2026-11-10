@@ -58,15 +58,12 @@ private const val MAX_TARGET = 56
 private fun gist(summary: String): String = if (summary.isEmpty()) "" else " ${summary.take(MAX_TARGET)}"
 
 /**
- * The sentence for this step, in the app's language.
- *
- * A verb plus a target is two words in English and two in Indonesian, but the order and the
- * separator are the language's business, so the join goes through a string resource too.
+ * The localized verb for this step, or empty if [literal] is true or verb is [StepVerb.OTHER].
  */
 @Composable
-fun StepLabel.text(): String {
-    if (literal) return target
-    val verb = stringResource(
+fun StepLabel.verbText(): String {
+    if (literal) return ""
+    return stringResource(
         when (verb) {
             StepVerb.READ -> if (active) R.string.step_read_present else R.string.step_read_past
             StepVerb.WRITE -> if (active) R.string.step_write_present else R.string.step_write_past
@@ -75,8 +72,20 @@ fun StepLabel.text(): String {
             StepVerb.SEARCH -> if (active) R.string.step_search_present else R.string.step_search_past
             StepVerb.LIST -> if (active) R.string.step_list_present else R.string.step_list_past
             StepVerb.FETCH -> if (active) R.string.step_fetch_present else R.string.step_fetch_past
-            StepVerb.OTHER -> return target
+            StepVerb.OTHER -> return ""
         },
     )
+}
+
+/**
+ * The sentence for this step, in the app's language.
+ *
+ * A verb plus a target is two words in English and two in Indonesian, but the order and the
+ * separator are the language's business, so the join goes through a string resource too.
+ */
+@Composable
+fun StepLabel.text(): String {
+    if (literal) return target
+    val verb = verbText()
     return if (target.isEmpty()) verb else stringResource(R.string.step_target, verb, target)
 }

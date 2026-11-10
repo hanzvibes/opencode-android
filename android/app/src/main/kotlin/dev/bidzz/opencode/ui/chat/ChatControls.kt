@@ -1,14 +1,18 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -22,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.AgentInfo
 import dev.bidzz.opencode.core.api.dto.CommandInfo
@@ -31,7 +36,6 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
-import androidx.compose.foundation.layout.widthIn
 
 /**
  * Session controls — mode and model — sitting between the transcript and the composer.
@@ -57,6 +61,7 @@ fun ChatControls(
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (agents.isNotEmpty()) {
             ChoiceChip(
@@ -92,15 +97,17 @@ private fun ChoiceChip(
     val spacing = OpenCodeTheme.tokens.spacing
     var expanded by remember { mutableStateOf(false) }
     val chosen = selected != null
+    val chipShape = RoundedCornerShape(radius.full)
 
     Box {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(radius.full))
-                .background(colors.fill)
-                .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
+                .height(28.dp)
+                .clip(chipShape)
+                .background(if (expanded) colors.surfacePressed else colors.fill)
+                .border(0.5.dp, if (expanded) colors.outline else colors.hairline, chipShape)
                 .clickable { expanded = true }
-                .padding(start = spacing.md, end = spacing.sm, top = spacing.xs, bottom = spacing.xs),
+                .padding(start = spacing.md, end = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
@@ -112,23 +119,64 @@ private fun ChoiceChip(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 140.dp),
             )
-            GlyphIcon(Glyph.ChevronDown, tint = colors.onSurfaceFaint, size = 14.dp)
+            GlyphIcon(
+                glyph = Glyph.ChevronDown,
+                tint = if (expanded) colors.accent else if (chosen) colors.onSurfaceMuted else colors.onSurfaceFaint,
+                size = 12.dp,
+            )
         }
 
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.widthIn(min = 180.dp, max = 280.dp),
+            offset = DpOffset(0.dp, spacing.xs),
+            shape = RoundedCornerShape(radius.lg),
+            containerColor = colors.surfaceRaised,
+            tonalElevation = 0.dp,
+            shadowElevation = 8.dp,
+            border = BorderStroke(0.5.dp, colors.hairline),
+        ) {
             items.forEach { (id, text) ->
+                val isSelected = id == selected
                 DropdownMenuItem(
                     text = {
                         Text(
                             text = text,
-                            style = OpenCodeTypography.body,
-                            color = if (id == selected) colors.accent else colors.onSurface,
+                            style = if (isSelected) OpenCodeTypography.bodyStrong else OpenCodeTypography.body,
+                            color = if (isSelected) colors.accent else colors.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     },
+                    trailingIcon = if (isSelected) {
+                        {
+                            GlyphIcon(
+                                glyph = Glyph.Check,
+                                tint = colors.accent,
+                                size = 16.dp,
+                            )
+                        }
+                    } else null,
                     onClick = {
                         onSelect(id)
                         expanded = false
                     },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = spacing.xs, vertical = 2.dp)
+                        .clip(RoundedCornerShape(radius.sm))
+                        .then(
+                            if (isSelected) {
+                                Modifier.background(colors.accent.copy(alpha = 0.10f))
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    contentPadding = PaddingValues(
+                        horizontal = spacing.md,
+                        vertical = spacing.xs,
+                    ),
                 )
             }
         }

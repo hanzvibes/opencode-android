@@ -74,6 +74,7 @@
     <string name="empty_title_ready">What are we working on?</string>
     <string name="empty_title_starting">Starting engine…</string>
     <string name="empty_starting_body">The local engine is starting. This takes a few seconds.</string>
+    <string name="empty_ready_body">Choose a starter prompt or ask anything about your workspace.</string>
     <string name="suggestion_structure">Explain how this project is structured</string>
     <string name="suggestion_bug">Find the cause of a bug</string>
     <string name="suggestion_review">Review the latest changes</string>

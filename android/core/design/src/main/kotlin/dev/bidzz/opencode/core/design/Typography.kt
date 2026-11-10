@@ -40,7 +40,7 @@ object OpenCodeTypography {
         fontSize = 15.sp,
         lineHeight = 22.sp,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.2).sp,
+        letterSpacing = (-0.15).sp,
     )
 
     /** Slightly denser, for secondary labels and metadata. */
@@ -49,6 +49,7 @@ object OpenCodeTypography {
         fontSize = 13.sp,
         lineHeight = 18.sp,
         fontWeight = FontWeight.Normal,
+        letterSpacing = (-0.08).sp,
     )
 
     /** Message author, section labels. */
@@ -58,6 +59,15 @@ object OpenCodeTypography {
         lineHeight = 16.sp,
         fontWeight = FontWeight.SemiBold,
         letterSpacing = (-0.08).sp,
+    )
+
+    /** Micro text, badge labels, timestamps. Subtle open tracking for small-scale readability. */
+    val caption: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.05.sp,
     )
 
     /** Screen titles. Apple style modest title. */
@@ -75,7 +85,7 @@ object OpenCodeTypography {
         fontSize = 22.sp,
         lineHeight = 28.sp,
         fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.6).sp,
+        letterSpacing = (-0.4).sp,
     )
 
     /** Code inside a fenced block. */
@@ -84,6 +94,7 @@ object OpenCodeTypography {
         fontSize = 13.sp,
         lineHeight = 19.sp,
         fontWeight = FontWeight.Normal,
+        letterSpacing = 0.sp,
     )
 
     /** Inline code inside prose: same family, slightly smaller to sit on the baseline. */
@@ -91,24 +102,29 @@ object OpenCodeTypography {
         fontFamily = mono,
         fontSize = 13.5.sp,
         lineHeight = 20.sp,
+        fontWeight = FontWeight.Normal,
+        letterSpacing = 0.sp,
     )
 
     /** Composer input. Matches body so the text does not jump on send. */
     val input: TextStyle = TextStyle(
         fontFamily = ui,
         fontSize = 15.sp,
-        lineHeight = 21.sp,
+        lineHeight = 22.sp,
+        fontWeight = FontWeight.Normal,
+        letterSpacing = (-0.15).sp,
     )
 
     /** Material3 typography, mapped so Material components match the scale above. */
     fun material(): Typography = Typography(
-        titleLarge = title,
-        titleMedium = title.copy(fontSize = 15.sp),
+        titleLarge = titleLarge,
+        titleMedium = title,
+        titleSmall = title.copy(fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = (-0.15).sp),
         bodyLarge = body,
         bodyMedium = body,
         bodySmall = bodySmall,
-        labelLarge = label.copy(fontSize = 14.sp, fontWeight = FontWeight.Medium),
+        labelLarge = label.copy(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.1).sp),
         labelMedium = label,
-        labelSmall = label.copy(fontSize = 11.sp),
+        labelSmall = caption,
     )
 }

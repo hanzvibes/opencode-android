@@ -1,12 +1,18 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -15,9 +21,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -55,17 +67,32 @@ fun Composer(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
+    val motion = OpenCodeTheme.tokens.motion
+
+    var isFocused by remember { mutableStateOf(false) }
 
     val canSend = enabled && value.isNotBlank() && !busy
     val shape = RoundedCornerShape(24.dp)
+
+    val borderColor by animateColorAsState(
+        targetValue = if (isFocused) colors.accent.copy(alpha = 0.55f) else colors.hairline,
+        animationSpec = tween(durationMillis = motion.quick),
+        label = "composer_border_color",
+    )
+    val borderWidth by animateDpAsState(
+        targetValue = if (isFocused) 1.dp else 0.5.dp,
+        animationSpec = tween(durationMillis = motion.quick),
+        label = "composer_border_width",
+    )
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.md, vertical = spacing.sm)
+            .clip(shape)
             .background(colors.surface, shape)
-            .border(0.5.dp, colors.hairline, shape)
-            .padding(start = spacing.lg, end = spacing.sm, top = spacing.md, bottom = spacing.sm),
+            .border(borderWidth, borderColor, shape)
+            .padding(top = spacing.md, bottom = spacing.sm),
     ) {
         // `decorationBox` rather than a sibling Text: the field itself must own the
         // placeholder and the layout, otherwise it collapses to zero height and the IME
@@ -73,12 +100,16 @@ fun Composer(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            textStyle = OpenCodeTypography.input.copy(color = colors.onSurface),
+            textStyle = OpenCodeTypography.input.copy(
+                color = if (enabled) colors.onSurface else colors.onSurfaceMuted,
+            ),
             cursorBrush = SolidColor(colors.accent),
             enabled = enabled,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = dims.composerMaxHeight),
+                .padding(horizontal = spacing.lg)
+                .heightIn(min = 24.dp, max = dims.composerMaxHeight)
+                .onFocusChanged { isFocused = it.isFocused },
             decorationBox = { inner ->
                 Box {
                     if (value.isEmpty()) {
@@ -93,7 +124,7 @@ fun Composer(
                                 },
                             ),
                             style = OpenCodeTypography.input,
-                            color = colors.onSurfaceFaint,
+                            color = colors.onSurfaceMuted,
                         )
                     }
                     inner()
@@ -101,13 +132,20 @@ fun Composer(
             },
         )
 
+        Spacer(modifier = Modifier.height(spacing.sm))
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = spacing.sm),
+                .padding(start = spacing.lg, end = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(Modifier.weight(1f)) { controls() }
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                controls()
+            }
             ActionButton(
                 busy = busy,
                 canSend = canSend,
@@ -120,36 +158,55 @@ fun Composer(
 @Composable
 private fun ActionButton(busy: Boolean, canSend: Boolean, onClick: () -> Unit) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val active = busy || canSend
     val label = stringResource(if (busy) R.string.composer_stop else R.string.composer_send)
+
+    val targetBg = when {
+        busy -> colors.danger
+        canSend -> colors.accent
+        else -> colors.fill
+    }
+    val backgroundColor by animateColorAsState(
+        targetValue = targetBg,
+        animationSpec = tween(durationMillis = motion.quick),
+        label = "composer_action_bg",
+    )
+
+    val targetTint = if (active) Color.White else colors.onSurfaceMuted
+    val iconTint by animateColorAsState(
+        targetValue = targetTint,
+        animationSpec = tween(durationMillis = motion.quick),
+        label = "composer_action_tint",
+    )
 
     Box(
         modifier = Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(
-                when {
-                    busy -> colors.danger
-                    canSend -> colors.accent
-                    else -> colors.fill
-                },
-            )
+            .background(backgroundColor)
             .semantics { contentDescription = label }
             .clickable(enabled = active, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (busy) {
-            Box(
-                Modifier
-                    .size(11.dp)
-                    .background(androidx.compose.ui.graphics.Color.White, RoundedCornerShape(2.dp)),
-            )
-        } else {
-            GlyphIcon(
-                glyph = Glyph.ArrowUp,
-                tint = if (canSend) androidx.compose.ui.graphics.Color.White else colors.onSurfaceFaint,
-                size = 18.dp,
-            )
+        Crossfade(
+            targetState = busy,
+            animationSpec = tween(durationMillis = motion.quick),
+            label = "composer_action_icon",
+        ) { isBusy ->
+            if (isBusy) {
+                Box(
+                    modifier = Modifier
+                        .size(11.dp)
+                        .background(iconTint, RoundedCornerShape(2.dp)),
+                )
+            } else {
+                GlyphIcon(
+                    glyph = Glyph.ArrowUp,
+                    tint = iconTint,
+                    size = 18.dp,
+                )
+            }
         }
     }
 }
