@@ -3,15 +3,12 @@ package dev.bidzz.opencode.ui.chat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.animateContentSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -78,7 +76,7 @@ import dev.bidzz.opencode.ui.HairlineSeparator
  * Message input styled as an AI IDE omnibar (like Cursor, Claude, Antigravity).
  *
  * Features:
- * - Sleek floating capsule with active glow and hairline focus effect.
+ * - Flat omnibar (12dp) with a hairline border and an accent focus ring — no glow.
  * - Multi-line auto-expand behavior with comfortable line-height.
  * - Quick action shortcuts: `/` command prefix, file attachment indicator, clear icon.
  * - Modern action button (Send / Stop / Voice / Abort) with dynamic colors and haptic-like press feel.
@@ -121,226 +119,237 @@ fun Composer(
     }
 
     val canSend = enabled && value.isNotBlank() && !busy
-    // Named token, not a hardcoded 22.dp: the composer capsule is a deliberate
-    // exception to the 16dp surface radius cap (see Tokens.kt).
-    val shape = RoundedCornerShape(radius.composer)
+    // Phase 1 flat omnibar: radius.md (12dp). The old 22dp capsule token
+    // (radius.composer) was deleted in Wave 1 — do not re-add it.
+    val shape = RoundedCornerShape(radius.md)
 
     val borderColor by animateColorAsState(
         targetValue = if (isFocused) colors.accent.copy(alpha = 0.70f) else colors.hairline,
-        animationSpec = tween(durationMillis = motion.quick),
+        animationSpec = motion.tweenQuick(),
         label = "composer_border_color",
     )
     val borderWidth by animateDpAsState(
         targetValue = if (isFocused) 1.dp else 0.5.dp,
-        animationSpec = tween(durationMillis = motion.quick),
+        animationSpec = motion.tweenQuick(),
         label = "composer_border_width",
     )
-    val glowElevation by animateDpAsState(
-        targetValue = if (isFocused) 8.dp else 1.5.dp,
-        animationSpec = tween(durationMillis = motion.standard),
-        label = "composer_glow_elevation",
-    )
-    val glowAlpha by animateFloatAsState(
-        targetValue = if (isFocused) 0.35f else 0.05f,
-        animationSpec = tween(durationMillis = motion.standard),
-        label = "composer_glow_alpha",
-    )
-
-    val containerBrush = if (isFocused) {
-        Brush.verticalGradient(
-            colors = listOf(
-                colors.surfaceRaised,
-                colors.surface,
-            ),
-        )
-    } else {
-        SolidColor(colors.surface)
-    }
-
-    Column(
+    // Flat omnibar: no glow / shadow. Depth comes from the hairline border
+    // plus the accent focus ring (borderColor / borderWidth above) only.
+    // The background crossfades between the focused gradient and the solid
+    // unfocused surface; multi-line growth eases on motion.springSmooth().
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.md, vertical = spacing.sm)
-            .shadow(
-                elevation = glowElevation,
-                shape = shape,
-                ambientColor = if (isFocused) colors.accent.copy(alpha = glowAlpha * 0.4f) else Color.Black.copy(alpha = 0.06f),
-                spotColor = if (isFocused) colors.accent.copy(alpha = glowAlpha) else Color.Black.copy(alpha = 0.10f),
-            )
+            .animateContentSize(motion.springSmooth())
             .clip(shape)
-            .background(containerBrush, shape)
-            .border(borderWidth, borderColor, shape)
-            .padding(top = spacing.md, bottom = spacing.sm),
+            .border(borderWidth, borderColor, shape),
     ) {
-        // Multi-line text field with comfortable line height
-        BasicTextField(
-            value = value,
-            onValueChange = onTextChange,
-            textStyle = OpenCodeTypography.input.copy(
-                color = if (enabled) colors.onSurface else colors.onSurfaceMuted,
-                lineHeight = 22.sp,
-            ),
-            cursorBrush = SolidColor(colors.accent),
-            enabled = enabled,
-            // The soft keyboard's action key reads "Send" and sends; a plain
-            // Enter on a physical keyboard still inserts a newline (sending
-            // from hardware keys is Ctrl/Cmd+Enter, handled in ChatScreen).
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = { onSend() }),
+        Crossfade(
+            targetState = isFocused,
+            animationSpec = motion.tweenQuick(),
+            label = "composer_background",
+            modifier = Modifier.matchParentSize(),
+        ) { focused ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        if (focused) {
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    colors.surfaceRaised,
+                                    colors.surface,
+                                ),
+                            )
+                        } else {
+                            SolidColor(colors.surface)
+                        },
+                        shape,
+                    ),
+            )
+        }
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = spacing.lg)
-                .heightIn(min = 28.dp, max = dims.composerMaxHeight)
-                .onFocusChanged { isFocused = it.isFocused }
-                .then(if (onKeyEvent != null) Modifier.onPreviewKeyEvent(onKeyEvent) else Modifier),
-            decorationBox = { inner ->
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.TopStart,
-                ) {
-                    if (value.isEmpty()) {
-                        Text(
-                            text = stringResource(
-                                when {
+                .padding(top = spacing.md, bottom = spacing.sm),
+        ) {
+            // Multi-line text field with comfortable line height
+            BasicTextField(
+                value = value,
+                onValueChange = onTextChange,
+                textStyle = OpenCodeTypography.input.copy(
+                    color = if (enabled) colors.onSurface else colors.onSurfaceMuted,
+                    lineHeight = 22.sp,
+                ),
+                cursorBrush = SolidColor(colors.accent),
+                enabled = enabled,
+                // The soft keyboard's action key reads "Send" and sends; a plain
+                // Enter on a physical keyboard still inserts a newline (sending
+                // from hardware keys is Ctrl/Cmd+Enter, handled in ChatScreen).
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { onSend() }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.lg)
+                    .heightIn(min = 28.dp, max = dims.composerMaxHeight)
+                    .onFocusChanged { isFocused = it.isFocused }
+                    .then(if (onKeyEvent != null) Modifier.onPreviewKeyEvent(onKeyEvent) else Modifier),
+                decorationBox = { inner ->
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.TopStart,
+                    ) {
+                        if (value.isEmpty()) {
+                            // Crossfade between the not-ready / busy / hint
+                            // states so the placeholder swaps instead of popping.
+                            Crossfade(
+                                targetState = when {
                                     !enabled -> R.string.composer_not_ready
                                     busy -> R.string.composer_busy
                                     else -> R.string.composer_hint
                                 },
-                            ),
-                            style = OpenCodeTypography.input.copy(lineHeight = 22.sp),
-                            color = colors.onSurfaceMuted,
-                        )
-                    }
-                    inner()
-                }
-            },
-        )
-
-        Spacer(modifier = Modifier.height(spacing.xs))
-        HairlineSeparator(modifier = Modifier.padding(horizontal = spacing.lg))
-        Spacer(modifier = Modifier.height(spacing.xs))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = spacing.md, end = spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Omnibar shortcuts: the / and @ pills are pinned outside the
-            // scrolling row, so the agent/model selectors can scroll on a
-            // narrow phone without ever pushing the primary command trigger
-            // off-screen. Only the mode/model controls scroll.
-            QuickActionChip(
-                label = "/",
-                glyph = null,
-                isActive = value.startsWith("/"),
-                enabled = enabled && !busy,
-                contentDescription = stringResource(R.string.composer_commands),
-                onClick = {
-                    if (value.startsWith("/")) {
-                        onValueChange(value.removePrefix("/").trimStart())
-                    } else {
-                        onValueChange("/$value")
+                                animationSpec = motion.tweenQuick(),
+                                label = "composer_placeholder",
+                            ) { placeholderRes ->
+                                Text(
+                                    text = stringResource(placeholderRes),
+                                    style = OpenCodeTypography.input.copy(lineHeight = 22.sp),
+                                    color = colors.onSurfaceMuted,
+                                )
+                            }
+                        }
+                        inner()
                     }
                 },
             )
 
-            // The @ chip only exists when a real attach action is wired in.
-            // Without onAttachFile it only inserted a bare "@" into the text
-            // while wearing a file icon and an "Attach file" label — a fake
-            // attach button. No file picker is built here; the chip simply
-            // stays hidden until a caller passes onAttachFile.
-            if (onAttachFile != null) {
-                QuickActionChip(
-                    label = "@",
-                    glyph = Glyph.File,
-                    isActive = false,
-                    enabled = enabled && !busy,
-                    contentDescription = stringResource(R.string.composer_attach),
-                    onClick = { onAttachFile() },
-                )
-            }
-
-            Spacer(modifier = Modifier.width(spacing.xs))
+            Spacer(modifier = Modifier.height(spacing.xs))
+            HairlineSeparator(modifier = Modifier.padding(horizontal = spacing.lg))
+            Spacer(modifier = Modifier.height(spacing.xs))
 
             Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(rememberScrollState()),
+                    .fillMaxWidth()
+                    .padding(start = spacing.md, end = spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
             ) {
-                controls()
-            }
-
-            Spacer(modifier = Modifier.width(spacing.xs))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-            ) {
-                // Prompt history (C-F): Up/Down step through prompts sent
-                // in this session. Up only starts from an empty draft, so
-                // it never overwrites text being typed; Down past the
-                // newest prompt restores an empty draft.
-                if (promptHistory.isNotEmpty() && enabled) {
-                    HistoryNavButton(
-                        glyph = Glyph.ArrowUp,
-                        contentDescription = stringResource(R.string.prompt_history_previous),
-                        enabled = historyIndex != 0 && (historyIndex >= 0 || value.isEmpty()),
-                        onClick = {
-                            if (historyIndex < 0) {
-                                if (value.isNotBlank()) return@HistoryNavButton
-                                historyIndex = promptHistory.lastIndex
-                            } else if (historyIndex > 0) {
-                                historyIndex--
-                            } else {
-                                return@HistoryNavButton
-                            }
-                            onValueChange(promptHistory[historyIndex])
-                        },
-                    )
-                    HistoryNavButton(
-                        glyph = Glyph.ArrowDown,
-                        contentDescription = stringResource(R.string.prompt_history_next),
-                        enabled = historyIndex >= 0,
-                        onClick = {
-                            if (historyIndex < promptHistory.lastIndex) {
-                                historyIndex++
-                                onValueChange(promptHistory[historyIndex])
-                            } else {
-                                historyIndex = -1
-                                onValueChange("")
-                            }
-                        },
-                    )
-                }
-
-                // Clear stays available while the agent works: the draft
-                // is the user's text, and hiding the only way to drop it
-                // mid-run was a trap, not a guard.
-                AnimatedVisibility(
-                    visible = value.isNotEmpty() && enabled,
-                    enter = fadeIn(tween(motion.quick)) + scaleIn(tween(motion.quick), initialScale = 0.8f),
-                    exit = fadeOut(tween(motion.quick)) + scaleOut(tween(motion.quick), targetScale = 0.8f),
-                ) {
-                    ClearButton(
-                        onClick = { onValueChange("") },
-                    )
-                }
-
-                ActionButton(
-                    busy = busy,
-                    canSend = canSend,
-                    hasVoice = onVoice != null && value.isBlank() && !busy,
+                // Omnibar shortcuts: the / and @ pills are pinned outside the
+                // scrolling row, so the agent/model selectors can scroll on a
+                // narrow phone without ever pushing the primary command trigger
+                // off-screen. Only the mode/model controls scroll.
+                QuickActionChip(
+                    label = "/",
+                    glyph = null,
+                    isActive = value.startsWith("/"),
+                    enabled = enabled && !busy,
+                    contentDescription = stringResource(R.string.composer_commands),
                     onClick = {
-                        when {
-                            busy -> onStop()
-                            canSend -> onSend()
-                            onVoice != null && value.isBlank() -> onVoice()
+                        if (value.startsWith("/")) {
+                            onValueChange(value.removePrefix("/").trimStart())
+                        } else {
+                            onValueChange("/$value")
                         }
                     },
                 )
+
+                // The @ chip only exists when a real attach action is wired in.
+                // Without onAttachFile it only inserted a bare "@" into the text
+                // while wearing a file icon and an "Attach file" label — a fake
+                // attach button. No file picker is built here; the chip simply
+                // stays hidden until a caller passes onAttachFile.
+                if (onAttachFile != null) {
+                    QuickActionChip(
+                        label = "@",
+                        glyph = Glyph.File,
+                        isActive = false,
+                        enabled = enabled && !busy,
+                        contentDescription = stringResource(R.string.composer_attach),
+                        onClick = { onAttachFile() },
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(spacing.xs))
+
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    controls()
+                }
+
+                Spacer(modifier = Modifier.width(spacing.xs))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    // Prompt history (C-F): Up/Down step through prompts sent
+                    // in this session. Up only starts from an empty draft, so
+                    // it never overwrites text being typed; Down past the
+                    // newest prompt restores an empty draft.
+                    if (promptHistory.isNotEmpty() && enabled) {
+                        HistoryNavButton(
+                            glyph = Glyph.ArrowUp,
+                            contentDescription = stringResource(R.string.prompt_history_previous),
+                            enabled = historyIndex != 0 && (historyIndex >= 0 || value.isEmpty()),
+                            onClick = {
+                                if (historyIndex < 0) {
+                                    if (value.isNotBlank()) return@HistoryNavButton
+                                    historyIndex = promptHistory.lastIndex
+                                } else if (historyIndex > 0) {
+                                    historyIndex--
+                                } else {
+                                    return@HistoryNavButton
+                                }
+                                onValueChange(promptHistory[historyIndex])
+                            },
+                        )
+                        HistoryNavButton(
+                            glyph = Glyph.ArrowDown,
+                            contentDescription = stringResource(R.string.prompt_history_next),
+                            enabled = historyIndex >= 0,
+                            onClick = {
+                                if (historyIndex < promptHistory.lastIndex) {
+                                    historyIndex++
+                                    onValueChange(promptHistory[historyIndex])
+                                } else {
+                                    historyIndex = -1
+                                    onValueChange("")
+                                }
+                            },
+                        )
+                    }
+
+                    // Clear stays available while the agent works: the draft
+                    // is the user's text, and hiding the only way to drop it
+                    // mid-run was a trap, not a guard.
+                    AnimatedVisibility(
+                        visible = value.isNotEmpty() && enabled,
+                        enter = fadeIn(motion.tweenQuick()) + scaleIn(motion.tweenQuick(), initialScale = 0.8f),
+                        exit = fadeOut(motion.tweenQuick()) + scaleOut(motion.tweenQuick(), targetScale = 0.8f),
+                    ) {
+                        ClearButton(
+                            onClick = { onValueChange("") },
+                        )
+                    }
+
+                    ActionButton(
+                        busy = busy,
+                        canSend = canSend,
+                        hasVoice = onVoice != null && value.isBlank() && !busy,
+                        onClick = {
+                            when {
+                                busy -> onStop()
+                                canSend -> onSend()
+                                onVoice != null && value.isBlank() -> onVoice()
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -371,10 +380,7 @@ private fun QuickActionChip(
 
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.92f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        animationSpec = motion.springBouncy(),
         label = "chip_press_scale",
     )
 
@@ -386,7 +392,7 @@ private fun QuickActionChip(
     }
     val backgroundColor by animateColorAsState(
         targetValue = targetBg,
-        animationSpec = tween(durationMillis = motion.quick),
+        animationSpec = motion.tweenQuick(),
         label = "chip_bg",
     )
 
@@ -396,7 +402,7 @@ private fun QuickActionChip(
     }
     val borderColor by animateColorAsState(
         targetValue = targetBorder,
-        animationSpec = tween(durationMillis = motion.quick),
+        animationSpec = motion.tweenQuick(),
         label = "chip_border",
     )
 
@@ -496,6 +502,7 @@ private fun ClearButton(
 ) {
     val colors = OpenCodeTheme.colors
     val dims = OpenCodeTheme.tokens.dimensions
+    val motion = OpenCodeTheme.tokens.motion
     val haptic = LocalHapticFeedback.current
     val label = stringResource(R.string.composer_clear)
 
@@ -504,10 +511,7 @@ private fun ClearButton(
 
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.88f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        animationSpec = motion.springBouncy(),
         label = "clear_button_scale",
     )
 
@@ -580,33 +584,39 @@ private fun ActionButton(
     // Tactile press feel: snappy spring bounce compression
     val pressScale by animateFloatAsState(
         targetValue = if (isPressed) 0.88f else 1.0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        animationSpec = motion.springBouncy(),
         label = "composer_action_press_scale",
     )
 
-    // Breathing pulse during agent execution (Abort / Stop mode)
-    val infiniteTransition = rememberInfiniteTransition(label = "busy_pulse_transition")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.97f,
-        targetValue = 1.04f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 750, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "busy_pulse_scale",
-    )
-    val pulseGlow by infiniteTransition.animateFloat(
-        initialValue = 0.30f,
-        targetValue = 0.65f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 750, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "busy_pulse_glow",
-    )
+    // Breathing pulse during agent execution (Abort / Stop mode), at the
+    // single live pulse period (motion.pulsePeriodMs). The infinite
+    // transition only exists while busy — nothing ticks while idle.
+    val pulseScale: Float
+    val pulseGlow: Float
+    if (busy) {
+        val infiniteTransition = rememberInfiniteTransition(label = "busy_pulse_transition")
+        pulseScale = infiniteTransition.animateFloat(
+            initialValue = 0.97f,
+            targetValue = 1.04f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = motion.pulsePeriodMs, easing = motion.easingStandard),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "busy_pulse_scale",
+        ).value
+        pulseGlow = infiniteTransition.animateFloat(
+            initialValue = 0.30f,
+            targetValue = 0.65f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = motion.pulsePeriodMs, easing = motion.easingStandard),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "busy_pulse_glow",
+        ).value
+    } else {
+        pulseScale = 1f
+        pulseGlow = 0.40f
+    }
 
     val targetBg = when {
         busy -> colors.danger
@@ -616,7 +626,7 @@ private fun ActionButton(
     }
     val backgroundColor by animateColorAsState(
         targetValue = targetBg,
-        animationSpec = tween(durationMillis = motion.quick),
+        animationSpec = motion.tweenQuick(),
         label = "composer_action_bg",
     )
 
@@ -629,20 +639,28 @@ private fun ActionButton(
     }
     val iconTint by animateColorAsState(
         targetValue = targetTint,
-        animationSpec = tween(durationMillis = motion.quick),
+        animationSpec = motion.tweenQuick(),
         label = "composer_action_tint",
     )
 
-    val shadowElevation = when {
-        busy -> 4.dp
-        canSend -> 3.dp
-        else -> 0.dp
-    }
-    val shadowColor = when {
-        busy -> colors.danger.copy(alpha = pulseGlow)
-        canSend -> colors.accent.copy(alpha = 0.40f)
-        else -> Color.Transparent
-    }
+    val shadowElevation by animateDpAsState(
+        targetValue = when {
+            busy -> 4.dp
+            canSend -> 3.dp
+            else -> 0.dp
+        },
+        animationSpec = motion.tweenQuick(),
+        label = "composer_action_shadow_elevation",
+    )
+    val shadowColor by animateColorAsState(
+        targetValue = when {
+            busy -> colors.danger.copy(alpha = pulseGlow)
+            canSend -> colors.accent.copy(alpha = 0.40f)
+            else -> Color.Transparent
+        },
+        animationSpec = motion.tweenQuick(),
+        label = "composer_action_shadow_color",
+    )
 
     val finalScale = pressScale * (if (busy) pulseScale else 1.0f)
     // Disabled state gets a hairline ring so it still reads as a button,
@@ -693,7 +711,7 @@ private fun ActionButton(
                 hasVoice -> ActionState.VOICE
                 else -> ActionState.SEND
             },
-            animationSpec = tween(durationMillis = motion.quick),
+            animationSpec = motion.tweenQuick(),
             label = "composer_action_icon",
         ) { state ->
             when (state) {

@@ -3,18 +3,25 @@ package dev.bidzz.opencode.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -120,7 +128,7 @@ internal fun parseThinkingContent(
 
 /**
  * One chat message styled after modern LLM interfaces (ChatGPT / Claude):
- * - User message: compact system blue bubble on the right with asymmetric rounded corners.
+ * - User message: compact neutral bubble on the right with asymmetric rounded corners.
  * - Assistant message: clean full-width markdown with soft glowing "Thinking" disclosure widget,
  *   smooth transition to streaming answer, branded provenance tag badge, and tool traces.
  * - Error message: tinted warning surface with danger accent and readability hierarchy.
@@ -181,18 +189,19 @@ fun MessageBubble(
                         .background(colors.userBubble)
                         .padding(horizontal = spacing.lg, vertical = spacing.md - 2.dp),
                 ) {
-                    // White selection on the blue bubble: the default
-                    // accent selection handle/background is unreadable
-                    // against the bubble, so this branch alone gets white
-                    // selection colors. Assistant text keeps the default.
+                    // The bubble is neutral now (surfaceRaised, Phase 1 §7),
+                    // so selection is accent-tinted with accent handles in
+                    // both themes — the old white-on-blue selection is
+                    // unreadable on a neutral bubble. Assistant text keeps
+                    // the default.
                     // The message renders as markdown (bold, code, links)
                     // in the bubble-aware variant: prose stays onUserBubble
-                    // on the blue, links stay tappable, and the bubble
-                    // colour itself is untouched.
+                    // on the neutral bubble, links stay tappable, and the
+                    // bubble colour itself is untouched.
                     CompositionLocalProvider(
                         LocalTextSelectionColors provides TextSelectionColors(
-                            handleColor = Color.White,
-                            backgroundColor = Color.White.copy(alpha = 0.35f),
+                            handleColor = colors.accent,
+                            backgroundColor = colors.accent.copy(alpha = 0.22f),
                         ),
                     ) {
                         MarkdownText(
@@ -426,20 +435,37 @@ fun ThinkingDisclosure(
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val hasContent = !reasoningText.isNullOrBlank()
 
-    // Breathing soft glow animation while actively thinking
-    val infiniteTransition = rememberInfiniteTransition(label = "thinking_pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.95f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1100, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse_alpha",
+    // Breathing soft glow animation while actively thinking, on the one
+    // live pulse period (motion.pulsePeriodMs). The infinite transition
+    // only exists while thinking: a finished "Thought for Xs" pill must
+    // not keep an animation running behind a static border.
+    val pulseAlpha = if (isThinkingActive) {
+        val infiniteTransition = rememberInfiniteTransition(label = "thinking_pulse")
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 0.95f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(motion.pulsePeriodMs, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulse_alpha",
+        )
+        alpha
+    } else {
+        0.95f
+    }
+
+    // One glyph rotating 0° (right, collapsed) ↔ 90° (down, expanded)
+    // instead of two glyphs swapping on every tap.
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 90f else 0f,
+        animationSpec = motion.tweenQuick(),
+        label = "thinking_chevron_rotation",
     )
 
     val pillShape = RoundedCornerShape(radius.full)
@@ -455,7 +481,7 @@ fun ThinkingDisclosure(
         colors.surfaceVariant.copy(alpha = 0.45f)
     }
 
-    Column(modifier = modifier.animateContentSize()) {
+    Column(modifier = modifier.animateContentSize(animationSpec = motion.springSmooth())) {
         Box(
             modifier = Modifier
                 .clip(pillShape)
@@ -513,9 +539,10 @@ fun ThinkingDisclosure(
 
                 if (hasContent) {
                     GlyphIcon(
-                        glyph = if (isExpanded) Glyph.ChevronDown else Glyph.ChevronRight,
+                        glyph = Glyph.ChevronRight,
                         tint = colors.onSurfaceFaint,
                         size = 11.dp,
+                        modifier = Modifier.graphicsLayer { rotationZ = chevronRotation },
                     )
                 }
             }
@@ -593,6 +620,7 @@ private fun DeliveryCheckmark(
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val label = stringResource(
         if (delivered) R.string.message_delivered else R.string.message_sent,
     )
@@ -600,16 +628,27 @@ private fun DeliveryCheckmark(
         modifier = modifier.semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
-        if (delivered) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy((-4).dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                GlyphIcon(glyph = Glyph.Check, tint = colors.success, size = 12.dp)
-                GlyphIcon(glyph = Glyph.Check, tint = colors.success, size = 12.dp)
+        AnimatedContent(
+            targetState = delivered,
+            transitionSpec = {
+                (fadeIn(animationSpec = motion.tweenQuick()) +
+                    scaleIn(initialScale = 0.7f, animationSpec = motion.tweenQuick())) togetherWith
+                    (fadeOut(animationSpec = motion.tweenQuick()) +
+                        scaleOut(targetScale = 0.7f, animationSpec = motion.tweenQuick()))
+            },
+            label = "delivery_checkmark",
+        ) { isDelivered ->
+            if (isDelivered) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy((-4).dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    GlyphIcon(glyph = Glyph.Check, tint = colors.success, size = 12.dp)
+                    GlyphIcon(glyph = Glyph.Check, tint = colors.success, size = 12.dp)
+                }
+            } else {
+                GlyphIcon(glyph = Glyph.Check, tint = colors.onSurfaceFaint, size = 12.dp)
             }
-        } else {
-            GlyphIcon(glyph = Glyph.Check, tint = colors.onSurfaceFaint, size = 12.dp)
         }
     }
 }
@@ -664,6 +703,7 @@ private fun CopyButton(
 ) {
     val context = LocalContext.current
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     var copied by remember { mutableStateOf(false) }
@@ -676,15 +716,29 @@ private fun CopyButton(
     }
 
     val pillShape = RoundedCornerShape(radius.full)
-    val contentColor = if (copied) colors.success else colors.onSurfaceMuted
+    val pillBg by animateColorAsState(
+        targetValue = if (copied) colors.success.copy(alpha = 0.12f) else colors.surfaceVariant,
+        animationSpec = motion.tweenQuick(),
+        label = "copy_pill_bg",
+    )
+    val pillBorder by animateColorAsState(
+        targetValue = if (copied) colors.success.copy(alpha = 0.4f) else colors.hairline,
+        animationSpec = motion.tweenQuick(),
+        label = "copy_pill_border",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (copied) colors.success else colors.onSurfaceMuted,
+        animationSpec = motion.tweenQuick(),
+        label = "copy_pill_content",
+    )
 
     Box(
         modifier = modifier
             .clip(pillShape)
-            .background(if (copied) colors.success.copy(alpha = 0.12f) else colors.surfaceVariant)
+            .background(pillBg)
             .border(
                 0.5.dp,
-                if (copied) colors.success.copy(alpha = 0.4f) else colors.hairline,
+                pillBorder,
                 pillShape,
             )
             .clickable {
@@ -704,11 +758,17 @@ private fun CopyButton(
                 tint = contentColor,
                 size = 12.dp,
             )
-            Text(
-                text = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
-                style = OpenCodeTypography.label.copy(fontSize = 11.sp),
-                color = contentColor,
-            )
+            Crossfade(
+                targetState = copied,
+                animationSpec = motion.tweenQuick(),
+                label = "copy_label",
+            ) { isCopied ->
+                Text(
+                    text = stringResource(if (isCopied) R.string.code_copied else R.string.code_copy),
+                    style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                    color = contentColor,
+                )
+            }
         }
     }
 }

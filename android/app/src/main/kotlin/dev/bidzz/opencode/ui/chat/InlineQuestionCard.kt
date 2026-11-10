@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -482,6 +483,7 @@ private fun WriteInOptionRow(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val motion = OpenCodeTheme.tokens.motion
     val shape = RoundedCornerShape(radius.sm)
 
     // Tapping "Other" focuses the field and opens the keyboard; without
@@ -552,8 +554,10 @@ private fun WriteInOptionRow(
 
         AnimatedVisibility(
             visible = isActive,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
+            enter = fadeIn(animationSpec = motion.tweenQuick()) +
+                expandVertically(animationSpec = motion.tweenStandard()),
+            exit = fadeOut(animationSpec = motion.tweenQuick()) +
+                shrinkVertically(animationSpec = motion.tweenQuick()),
         ) {
             Box(
                 modifier = Modifier

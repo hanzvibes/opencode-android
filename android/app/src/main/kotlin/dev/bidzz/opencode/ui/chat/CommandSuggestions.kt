@@ -1,7 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -452,12 +452,12 @@ fun CommandSuggestions(
 
     AnimatedVisibility(
         visible = isVisible,
-        enter = fadeIn(animationSpec = tween(motion.standard)) +
-            slideInVertically(animationSpec = tween(motion.standard)) { it / 3 } +
-            expandVertically(animationSpec = tween(motion.standard), expandFrom = Alignment.Bottom),
-        exit = fadeOut(animationSpec = tween(motion.quick)) +
-            slideOutVertically(animationSpec = tween(motion.quick)) { it / 3 } +
-            shrinkVertically(animationSpec = tween(motion.quick), shrinkTowards = Alignment.Bottom),
+        enter = fadeIn(animationSpec = motion.tweenStandard()) +
+            slideInVertically(animationSpec = motion.tweenStandard()) { it / 3 } +
+            expandVertically(animationSpec = motion.tweenStandard(), expandFrom = Alignment.Bottom),
+        exit = fadeOut(animationSpec = motion.tweenQuick()) +
+            slideOutVertically(animationSpec = motion.tweenQuick()) { it / 3 } +
+            shrinkVertically(animationSpec = motion.tweenQuick(), shrinkTowards = Alignment.Bottom),
         modifier = modifier,
     ) {
         val shape = RoundedCornerShape(radius.lg)
@@ -466,7 +466,9 @@ fun CommandSuggestions(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = spacing.md, vertical = spacing.xs)
-                .shadow(elevation = 8.dp, shape = shape, spotColor = Color.Black.copy(alpha = 0.35f))
+                // No shadow/elevation token exists in Tokens.kt, so the menu keeps
+                // its 8dp elevation with the default shadow colour — no hand-tuned alpha.
+                .shadow(elevation = 8.dp, shape = shape)
                 .clip(shape)
                 .background(colors.surfaceRaised)
                 .border(OpenCodeTheme.tokens.dimensions.hairline, colors.outline.copy(alpha = 0.30f), shape),
@@ -515,6 +517,7 @@ fun CommandSuggestions(
                             isSelected = isSelected,
                             onPick = { onPick(command.name) },
                             onHover = { paletteState.selectIndex(index) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -618,19 +621,25 @@ private fun CommandSuggestionRow(
     isSelected: Boolean,
     onPick: () -> Unit,
     onHover: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val motion = OpenCodeTheme.tokens.motion
 
-    val rowBackground = if (isSelected) {
-        colors.accent.copy(alpha = 0.12f)
-    } else {
-        Color.Transparent
-    }
+    val rowBackground by animateColorAsState(
+        targetValue = if (isSelected) {
+            colors.accent.copy(alpha = 0.12f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = motion.tweenQuick(),
+        label = "palette_row_bg",
+    )
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(rowBackground)
             .clickable(

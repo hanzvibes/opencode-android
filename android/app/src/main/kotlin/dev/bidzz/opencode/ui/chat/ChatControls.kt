@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import dev.bidzz.opencode.R
 import androidx.compose.ui.semantics.Role
@@ -49,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.AgentInfo
 import dev.bidzz.opencode.core.api.dto.ModelInfo
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
@@ -136,6 +140,7 @@ private fun AgentSelector(
     enabled: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
@@ -152,7 +157,14 @@ private fun AgentSelector(
             ?: selectableAgents.firstOrNull()
     }
 
-    val currentPresentation = currentAgent?.let { resolveAgentPresentation(it, colors.accent) }
+    val currentPresentation = currentAgent?.let { resolveAgentPresentation(it, colors) }
+
+    // One glyph rotating 0°↔180° (down = open) instead of a static chevron.
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = motion.tweenQuick(),
+        label = "agent_chevron_rotation",
+    )
     val chipShape = RoundedCornerShape(radius.full)
 
     // Drop-up: the composer chip sits at the bottom of the screen, so the
@@ -218,6 +230,7 @@ private fun AgentSelector(
                 glyph = Glyph.ChevronDown,
                 tint = if (expanded) colors.accent else colors.onSurfaceMuted,
                 size = 11.dp,
+                modifier = Modifier.graphicsLayer { rotationZ = chevronRotation },
             )
         }
 
@@ -269,14 +282,19 @@ private fun AgentSelector(
             ) {
                 selectableAgents.forEach { agent ->
                     val isSelected = agent.id == activeAgent || (activeAgent == null && agent == currentAgent)
-                    val presentation = resolveAgentPresentation(agent, colors.accent)
+                    val presentation = resolveAgentPresentation(agent, colors)
+                    val rowBg by animateColorAsState(
+                        targetValue = if (isSelected) colors.accent.copy(alpha = 0.10f) else Color.Transparent,
+                        animationSpec = motion.tweenQuick(),
+                        label = "agent_row_bg",
+                    )
 
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = spacing.xs, vertical = 2.dp)
                             .clip(RoundedCornerShape(radius.sm))
-                            .background(if (isSelected) colors.accent.copy(alpha = 0.10f) else Color.Transparent)
+                            .background(rowBg)
                             .clickable {
                                 onSelect(agent.id)
                                 expanded = false
@@ -372,6 +390,7 @@ private fun ModelSelector(
     enabled: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
@@ -381,13 +400,13 @@ private fun ModelSelector(
     // Search filters on the rendered name plus the raw identifiers, so
     // "claude", "anthropic" and "gpt-4o" all match; with an empty query
     // the list keeps its default order.
-    val filteredModels = remember(models, modelQuery) {
+    val filteredModels = remember(models, modelQuery, colors) {
         val query = modelQuery.trim().lowercase()
         if (query.isEmpty()) {
             models
         } else {
             models.filter { model ->
-                val presentation = resolveModelPresentation(model)
+                val presentation = resolveModelPresentation(model, colors)
                 listOf(
                     presentation.displayName,
                     presentation.brandTag,
@@ -404,7 +423,14 @@ private fun ModelSelector(
             ?: models.firstOrNull()
     }
 
-    val currentPresentation = currentModel?.let { resolveModelPresentation(it) }
+    val currentPresentation = currentModel?.let { resolveModelPresentation(it, colors) }
+
+    // One glyph rotating 0°↔180° (down = open) instead of a static chevron.
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = motion.tweenQuick(),
+        label = "model_chevron_rotation",
+    )
     val chipShape = RoundedCornerShape(radius.full)
 
     // Drop-up, same as the agent menu: the model chip sits in the composer
@@ -468,6 +494,7 @@ private fun ModelSelector(
                 glyph = Glyph.ChevronDown,
                 tint = if (expanded) colors.accent else colors.onSurfaceMuted,
                 size = 11.dp,
+                modifier = Modifier.graphicsLayer { rotationZ = chevronRotation },
             )
         }
 
@@ -586,14 +613,19 @@ private fun ModelSelector(
                 }
                 filteredModels.forEach { model ->
                     val isSelected = model.ref() == activeModel || (activeModel != null && (model.modelID ?: model.id) == activeModel.id)
-                    val presentation = resolveModelPresentation(model)
+                    val presentation = resolveModelPresentation(model, colors)
+                    val rowBg by animateColorAsState(
+                        targetValue = if (isSelected) colors.accent.copy(alpha = 0.10f) else Color.Transparent,
+                        animationSpec = motion.tweenQuick(),
+                        label = "model_row_bg",
+                    )
 
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = spacing.xs, vertical = 2.dp)
                             .clip(RoundedCornerShape(radius.sm))
-                            .background(if (isSelected) colors.accent.copy(alpha = 0.10f) else Color.Transparent)
+                            .background(rowBg)
                             .clickable {
                                 onSelect(model.ref())
                                 expanded = false
@@ -694,8 +726,10 @@ private data class AgentPresentation(
     val icon: Glyph,
 )
 
-private fun resolveAgentPresentation(agent: AgentInfo, fallbackColor: Color): AgentPresentation {
+private fun resolveAgentPresentation(agent: AgentInfo, colors: OpenCodeColors): AgentPresentation {
     val key = "${agent.id} ${agent.name} ${agent.mode.orEmpty()}".lowercase()
+    // A colour the engine itself sent for this agent wins; the fallbacks
+    // below are design tokens, never hardcoded literals.
     val customColor = parseHexColor(agent.color)
     val customDesc = agent.description?.takeIf { it.isNotBlank() }
 
@@ -704,35 +738,35 @@ private fun resolveAgentPresentation(agent: AgentInfo, fallbackColor: Color): Ag
             title = agent.name.ifBlank { "Build" }.replaceFirstChar { it.uppercase() },
             description = customDesc ?: "Full access to edit files, run commands & build features",
             badge = "Full Access",
-            dotColor = customColor ?: Color(0xFFFF9F0A), // Warm Amber
+            dotColor = customColor ?: colors.warning,
             icon = Glyph.Terminal,
         )
         "plan" in key || "architect" in key || "designer" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Plan" }.replaceFirstChar { it.uppercase() },
             description = customDesc ?: "Analyzes codebase & designs architecture without edits",
             badge = "Read Only",
-            dotColor = customColor ?: Color(0xFFAF52DE), // Violet
+            dotColor = customColor ?: colors.syntaxKeyword,
             icon = Glyph.Pencil,
         )
         "chat" in key || "ask" in key || "general" in key || "discuss" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Chat" }.replaceFirstChar { it.uppercase() },
             description = customDesc ?: "Conversational guidance, reasoning & design advice",
             badge = "Discussion",
-            dotColor = customColor ?: Color(0xFF30D158), // Emerald
+            dotColor = customColor ?: colors.success,
             icon = Glyph.NewChat,
         )
         "review" in key || "audit" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Review" }.replaceFirstChar { it.uppercase() },
             description = customDesc ?: "Inspects code changes & identifies potential issues",
             badge = "Review",
-            dotColor = customColor ?: Color(0xFF0A84FF), // Sky Blue
+            dotColor = customColor ?: colors.accent,
             icon = Glyph.Search,
         )
         else -> AgentPresentation(
             title = agent.name.ifBlank { agent.id }.replaceFirstChar { it.uppercase() },
             description = customDesc ?: "Specialized agent configuration",
             badge = agent.mode?.takeIf { it.isNotBlank() }?.uppercase(),
-            dotColor = customColor ?: fallbackColor,
+            dotColor = customColor ?: colors.accent,
             icon = Glyph.Sliders,
         )
     }
@@ -750,19 +784,25 @@ private data class ModelPresentation(
     val brandColor: Color,
 )
 
-private fun resolveBrand(model: ModelInfo): Triple<String, String, Color> {
+/**
+ * Brand name, tag, and colour for a model. The colour comes from
+ * OpenCodeColors.providerColor (Theme.kt), the single source of truth —
+ * no brand hex lives here.
+ */
+private fun resolveBrand(model: ModelInfo, colors: OpenCodeColors): Triple<String, String, Color> {
     val combined = "${model.providerID} ${model.family.orEmpty()} ${model.name.orEmpty()} ${model.id} ${model.modelID.orEmpty()}".lowercase()
+    val brandColor = colors.providerColor(combined)
     return when {
-        "anthropic" in combined || "claude" in combined -> Triple("Anthropic", "Claude", Color(0xFFCC785C))
-        "openai" in combined || "gpt" in combined || "o1" in combined || "o3" in combined -> Triple("OpenAI", "GPT", Color(0xFF10A37F))
-        "deepseek" in combined -> Triple("DeepSeek", "DeepSeek", Color(0xFF4D6BFE))
-        "google" in combined || "gemini" in combined -> Triple("Google", "Gemini", Color(0xFF3B82F6))
-        "meta" in combined || "llama" in combined -> Triple("Meta", "Llama", Color(0xFF6366F1))
-        "mistral" in combined || "codestral" in combined -> Triple("Mistral", "Mistral", Color(0xFFFF7000))
-        "qwen" in combined || "alibaba" in combined -> Triple("Alibaba", "Qwen", Color(0xFF8B5CF6))
+        "anthropic" in combined || "claude" in combined -> Triple("Anthropic", "Claude", brandColor)
+        "openai" in combined || "gpt" in combined || "o1" in combined || "o3" in combined -> Triple("OpenAI", "GPT", brandColor)
+        "deepseek" in combined -> Triple("DeepSeek", "DeepSeek", brandColor)
+        "google" in combined || "gemini" in combined -> Triple("Google", "Gemini", brandColor)
+        "meta" in combined || "llama" in combined -> Triple("Meta", "Llama", brandColor)
+        "mistral" in combined || "codestral" in combined -> Triple("Mistral", "Mistral", brandColor)
+        "qwen" in combined || "alibaba" in combined -> Triple("Alibaba", "Qwen", brandColor)
         else -> {
             val name = model.providerID.ifBlank { "Model" }.replaceFirstChar { it.uppercase() }
-            Triple(name, name, Color(0xFF8E8E93))
+            Triple(name, name, brandColor)
         }
     }
 }
@@ -853,8 +893,8 @@ private fun resolveModelDescription(text: String, family: String?): String {
     }
 }
 
-private fun resolveModelPresentation(model: ModelInfo): ModelPresentation {
-    val (brandName, brandTag, brandColor) = resolveBrand(model)
+private fun resolveModelPresentation(model: ModelInfo, colors: OpenCodeColors): ModelPresentation {
+    val (brandName, brandTag, brandColor) = resolveBrand(model, colors)
     val rawId = model.modelID ?: model.id
     val rawName = model.name.orEmpty()
     val cleanName = cleanModelName(rawName, rawId)

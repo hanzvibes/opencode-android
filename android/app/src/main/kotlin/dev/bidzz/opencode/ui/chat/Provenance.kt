@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -22,29 +24,34 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.AgentInfo
 import dev.bidzz.opencode.core.api.dto.ModelInfo
 import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
-import dev.bidzz.opencode.core.design.Palette
 
 /**
  * Known AI model providers for branded badge representation.
+ *
+ * Identity only — no colours live here. The brand colour comes from
+ * OpenCodeColors.providerColor (Theme.kt), the single source of truth,
+ * and is used only on the 8dp dot in [ProvenanceBadge].
  */
-enum class ModelProvider(val displayName: String, val brandColor: Color) {
-    ANTHROPIC("Anthropic", Color(0xFFD97757)),
-    OPENAI("OpenAI", Color(0xFF10A37F)),
-    GOOGLE("Google", Color(0xFF4285F4)),
-    DEEPSEEK("DeepSeek", Color(0xFF1E88E5)),
-    META("Meta", Color(0xFF0081FB)),
-    MISTRAL("Mistral", Color(0xFFFF7000)),
-    OPENCODE("OpenCode", Palette.systemBlueDark),
-    OTHER("AI", Palette.systemPurpleDark),
+enum class ModelProvider(val displayName: String) {
+    ANTHROPIC("Anthropic"),
+    OPENAI("OpenAI"),
+    GOOGLE("Google"),
+    DEEPSEEK("DeepSeek"),
+    META("Meta"),
+    MISTRAL("Mistral"),
+    OPENCODE("OpenCode"),
+    OTHER("AI"),
 }
 
 /**
@@ -159,13 +166,17 @@ fun provenanceLabel(
 
 /**
  * Vector provider badge icon drawn on a 24-unit coordinate grid.
+ *
+ * The glyph is drawn in the caller's [tint] — a neutral tone in the badge.
+ * Provider brand colour lives only on the 8dp dot next to it, resolved
+ * through OpenCodeColors.providerColor, never on the glyph itself.
  */
 @Composable
 fun ProviderIcon(
     provider: ModelProvider,
     modifier: Modifier = Modifier,
     size: Dp = 12.dp,
-    tint: Color = provider.brandColor,
+    tint: Color,
 ) {
     Canvas(modifier = modifier.size(size)) {
         val u = this.size.minDimension / 24f
@@ -261,7 +272,13 @@ fun ProviderIcon(
 }
 
 /**
- * Polished provenance tag badge with provider icon, mode, and model tag.
+ * Polished provenance tag badge with provider dot, mode, and model tag.
+ *
+ * The provider brand colour (from OpenCodeColors.providerColor) appears
+ * only on the 8dp dot — never on text, background, or border. The provider
+ * glyph is a neutral shape next to it. When the identity is the "OpenCode"
+ * fallback (no model known yet), the badge is the 20dp logomark instead
+ * of the word "OpenCode".
  */
 @Composable
 fun ProvenanceBadge(
@@ -281,6 +298,11 @@ fun ProvenanceBadge(
 
     val badgeShape = RoundedCornerShape(radius.full)
 
+    // The "OpenCode" fallback identity (no model known): the logomark
+    // carries the brand, so no dot, glyph, or word is needed beside it.
+    val isOpenCodeFallback = tag.provider == ModelProvider.OPENCODE &&
+        tag.model.equals("OpenCode", ignoreCase = true) && tag.mode.isNullOrBlank()
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
@@ -290,18 +312,26 @@ fun ProvenanceBadge(
             .padding(horizontal = spacing.sm, vertical = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
-        // Provider icon badge
-        Box(
-            modifier = Modifier
-                .size(16.dp)
-                .clip(RoundedCornerShape(radius.full))
-                .background(tag.provider.brandColor.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
+        if (isOpenCodeFallback) {
+            Image(
+                painter = painterResource(R.drawable.ic_logomark),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(RoundedCornerShape(radius.sm)),
+            )
+        } else {
+            // Provider brand colour, on the 8dp dot only.
+            val providerColor = colors.providerColor(tag.provider.displayName)
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(providerColor, CircleShape),
+            )
             ProviderIcon(
                 provider = tag.provider,
                 size = 12.dp,
-                tint = tag.provider.brandColor,
+                tint = colors.onSurfaceMuted,
             )
         }
 
@@ -322,12 +352,15 @@ fun ProvenanceBadge(
         // Model name tag, through the same friendly-name mapping the
         // model selector uses — the transcript used to show the raw id
         // ("anthropic/claude-3-7-sonnet") while the selector said
-        // "Claude 3.7 Sonnet".
-        Text(
-            text = tag.model?.let { cleanModelName(it, it) }.orEmpty(),
-            style = OpenCodeTypography.label.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Medium),
-            color = colors.onSurfaceMuted,
-        )
+        // "Claude 3.7 Sonnet". Skipped for the OpenCode fallback above:
+        // the logomark already says it.
+        if (!isOpenCodeFallback) {
+            Text(
+                text = tag.model?.let { cleanModelName(it, it) }.orEmpty(),
+                style = OpenCodeTypography.label.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Medium),
+                color = colors.onSurfaceMuted,
+            )
+        }
 
         // Streaming spinner if generation is ongoing
         if (streaming) {

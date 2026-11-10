@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -43,6 +44,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -90,11 +92,20 @@ fun ToolTrace(
     if (tools.isEmpty()) return
 
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val shape = RoundedCornerShape(radius.md)
 
     var open by rememberSaveable { mutableStateOf(streaming) }
+
+    // One glyph rotating 0° (right, collapsed) ↔ 90° (down, open)
+    // instead of two glyphs swapping on every tap.
+    val headerChevronRotation by animateFloatAsState(
+        targetValue = if (open) 90f else 0f,
+        animationSpec = motion.tweenQuick(),
+        label = "tool_trace_chevron_rotation",
+    )
 
     // Timeline filter, kept in rememberSaveable so it survives collapse,
     // rotation and recomposition: collapsing the trace never resets it.
@@ -126,7 +137,7 @@ fun ToolTrace(
             .background(colors.surfaceSunken)
             .border(
                 width = 0.5.dp,
-                color = if (running.isNotEmpty()) colors.accent.copy(alpha = 0.4f) else colors.hairline,
+                color = if (running.isNotEmpty()) colors.activity.copy(alpha = 0.4f) else colors.hairline,
                 shape = shape,
             ),
     ) {
@@ -148,15 +159,16 @@ fun ToolTrace(
                 contentAlignment = Alignment.Center,
             ) {
                 GlyphIcon(
-                    glyph = if (open) Glyph.ChevronDown else Glyph.ChevronRight,
+                    glyph = Glyph.ChevronRight,
                     tint = colors.onSurfaceFaint,
                     size = 12.dp,
+                    modifier = Modifier.graphicsLayer { rotationZ = headerChevronRotation },
                 )
             }
 
             GlyphIcon(
                 glyph = Glyph.Terminal,
-                tint = if (running.isNotEmpty()) colors.accent else colors.onSurfaceMuted,
+                tint = if (running.isNotEmpty()) colors.activity else colors.onSurfaceMuted,
                 size = 13.dp,
                 modifier = Modifier.padding(start = spacing.xxs),
             )
@@ -188,7 +200,7 @@ fun ToolTrace(
                     fontSize = 12.sp,
                     fontWeight = if (running.isNotEmpty()) FontWeight.SemiBold else FontWeight.Medium,
                 ),
-                color = if (running.isNotEmpty()) colors.accent else colors.onSurfaceMuted,
+                color = if (running.isNotEmpty()) colors.activity else colors.onSurfaceMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -222,9 +234,10 @@ fun ToolTrace(
             }
             if (running.isNotEmpty()) {
                 if (failed > 0) Spacer(Modifier.width(spacing.xs))
-                // Running reads blue (toolRunning = accent) everywhere:
-                // the step badge already is, but this header chip used to
-                // be orange (toolWarning), the system's warning/error colour.
+                // Running reads the single live colour (activity = accent)
+                // everywhere: the step badge already is, but this header
+                // chip used to be orange (toolWarning), the system's
+                // warning/error colour.
                 StatusChip(
                     text = stringResource(R.string.tool_working).removePrefix("· ").trim(),
                     color = colors.toolRunning,
@@ -426,11 +439,24 @@ fun ToolStep(
     isFirst: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
-    var open by rememberSaveable(call.id) { mutableStateOf(false) }
-
     val active = call.status == "running" || call.status == "streaming"
+    // A step that is running right now starts expanded, so its live output
+    // is visible without a tap; a finished step still starts collapsed.
+    var open by rememberSaveable(call.id) { mutableStateOf(active) }
+
+    // A step that starts running after it was composed (pending → running)
+    // opens too. Never force one closed: a user-opened step stays open.
+    LaunchedEffect(active) { if (active) open = true }
+
+    // One glyph rotating 0° (right, collapsed) ↔ 90° (down, open).
+    val stepChevronRotation by animateFloatAsState(
+        targetValue = if (open) 90f else 0f,
+        animationSpec = motion.tweenQuick(),
+        label = "tool_step_chevron_rotation",
+    )
     val isError = call.status == "error"
     val dotColor = when {
         call.status == "completed" -> colors.toolSuccess
@@ -500,7 +526,7 @@ fun ToolStep(
                 contentAlignment = Alignment.Center,
             ) {
                 if (active) {
-                    LivePulseIndicator(color = colors.accent, size = 6.dp)
+                    LivePulseIndicator(color = colors.activity, size = 6.dp)
                 } else if (isError) {
                     // A failed step is more than a slightly bigger dot:
                     // a white × inside the red dot reads as "failed" even
@@ -545,7 +571,7 @@ fun ToolStep(
                         width = if (isError) 1.dp else 0.5.dp,
                         color = when {
                             isError -> colors.danger.copy(alpha = 0.5f)
-                            active -> colors.accent.copy(alpha = 0.5f)
+                            active -> colors.activity.copy(alpha = 0.5f)
                             else -> colors.hairline
                         },
                         shape = RoundedCornerShape(radius.sm),
@@ -603,13 +629,13 @@ fun ToolStep(
                                 style = OpenCodeTypography.codeInline.copy(
                                     fontSize = 11.5.sp,
                                 ),
-                                color = if (active) colors.accent else colors.onSurface,
+                                color = if (active) colors.activity else colors.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             if (active) {
                                 BlinkingCursor(
-                                    color = colors.accent,
+                                    color = colors.activity,
                                     modifier = Modifier.padding(start = spacing.xxs),
                                 )
                             }
@@ -625,7 +651,7 @@ fun ToolStep(
                                 Text(
                                     text = verbText,
                                     style = OpenCodeTypography.label.copy(fontSize = 11.sp),
-                                    color = if (active) colors.accent else if (isError) colors.danger else colors.onSurfaceMuted,
+                                    color = if (active) colors.activity else if (isError) colors.danger else colors.onSurfaceMuted,
                                 )
                             }
                             if (label.target.isNotEmpty()) {
@@ -657,7 +683,7 @@ fun ToolStep(
                                         text = label.target,
                                         style = OpenCodeTypography.codeInline.copy(fontSize = 11.5.sp),
                                         color = if (pathCopied) colors.success
-                                        else if (active) colors.accent else colors.onSurface,
+                                        else if (active) colors.activity else colors.onSurface,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -673,7 +699,7 @@ fun ToolStep(
                             }
                             if (active) {
                                 BlinkingCursor(
-                                    color = colors.accent,
+                                    color = colors.activity,
                                     modifier = Modifier.padding(start = spacing.xxs),
                                 )
                             }
@@ -693,12 +719,12 @@ fun ToolStep(
                                 Row(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(radius.full))
-                                        .background(colors.accent.copy(alpha = 0.12f))
+                                        .background(colors.activity.copy(alpha = 0.12f))
                                         .padding(horizontal = spacing.xs, vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                                 ) {
-                                    LivePulseIndicator(color = colors.accent, size = 4.5.dp)
+                                    LivePulseIndicator(color = colors.activity, size = 4.5.dp)
                                     Text(
                                         text = stringResource(R.string.tool_status_running),
                                         style = OpenCodeTypography.caption.copy(
@@ -706,7 +732,7 @@ fun ToolStep(
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Medium,
                                         ),
-                                        color = colors.accent,
+                                        color = colors.activity,
                                     )
                                 }
                             }
@@ -765,9 +791,10 @@ fun ToolStep(
 
                         if (hasDetails) {
                             GlyphIcon(
-                                glyph = if (open) Glyph.ChevronDown else Glyph.ChevronRight,
+                                glyph = Glyph.ChevronRight,
                                 tint = colors.onSurfaceFaint,
                                 size = 10.dp,
+                                modifier = Modifier.graphicsLayer { rotationZ = stepChevronRotation },
                             )
                         }
                     }
@@ -776,8 +803,10 @@ fun ToolStep(
                 // Expanded Terminal Console Windows
                 AnimatedVisibility(
                     visible = open,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut(),
+                    enter = fadeIn(animationSpec = tween(motion.quick)) +
+                        expandVertically(animationSpec = tween(motion.standard)),
+                    exit = fadeOut(animationSpec = tween(motion.quick)) +
+                        shrinkVertically(animationSpec = tween(motion.standard)),
                 ) {
                     Column(
                         modifier = Modifier
@@ -847,7 +876,8 @@ fun ToolStep(
 
 /**
  * Terminal window console block:
- * - 3-dot window decoration bar (red/yellow/green terminal dots)
+ * - Unified header with the Markdown code-block header: mono title plus one
+ *   status-coloured 8dp dot (no macOS traffic-light dots).
  * - Monospace console typography
  * - Live syntax highlighting for commands, output, JSON, and diffs
  * - Built-in Copy action button
@@ -865,6 +895,7 @@ private fun TerminalConsoleBlock(
     copyText: String = body,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val clipboardManager = LocalClipboardManager.current
@@ -886,6 +917,13 @@ private fun TerminalConsoleBlock(
     // of cut off with no way to see it (the old 220dp cap + 8000-char
     // truncation had no escape hatch at all).
     var showFullOutput by remember { mutableStateOf(false) }
+
+    // One glyph rotating 0° (right) ↔ 90° (down) for show full / less.
+    val showFullRotation by animateFloatAsState(
+        targetValue = if (showFullOutput) 90f else 0f,
+        animationSpec = motion.tweenQuick(),
+        label = "tool_output_expand_rotation",
+    )
 
     val highlightedText = rememberSyntaxHighlightedText(
         language = language,
@@ -913,27 +951,18 @@ private fun TerminalConsoleBlock(
                 .padding(horizontal = spacing.sm, vertical = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // High-tech terminal window dots
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .background(if (isError) colors.danger else Color(0xFFFF5F56), CircleShape),
-                )
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .background(if (isError) colors.danger.copy(alpha = 0.5f) else Color(0xFFFFBD2E), CircleShape),
-                )
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .background(if (isError) colors.danger.copy(alpha = 0.25f) else Color(0xFF27C93F), CircleShape),
-                )
-            }
+            // One status-coloured 8dp dot, like the Markdown code-block
+            // header: error reads danger, anything else the live colour.
+            // The old macOS traffic-light dots (hardcoded red/yellow/
+            // green) are gone.
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(
+                        if (isError) colors.dangerBright else colors.activity,
+                        CircleShape,
+                    ),
+            )
 
             Spacer(Modifier.width(spacing.sm))
 
@@ -1018,9 +1047,10 @@ private fun TerminalConsoleBlock(
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             GlyphIcon(
-                glyph = if (showFullOutput) Glyph.ChevronDown else Glyph.ChevronRight,
+                glyph = Glyph.ChevronRight,
                 tint = colors.onSurfaceMuted,
                 size = 10.dp,
+                modifier = Modifier.graphicsLayer { rotationZ = showFullRotation },
             )
             Text(
                 text = stringResource(
@@ -1064,6 +1094,9 @@ private fun rememberSyntaxHighlightedText(
                             TokenKind.String -> colors.syntaxString
                             TokenKind.Number -> colors.syntaxNumber
                             TokenKind.Comment -> colors.syntaxComment
+                            TokenKind.Function -> colors.syntaxFunction
+                            TokenKind.Type -> colors.syntaxType
+                            TokenKind.Operator -> colors.onSurfaceMuted
                             TokenKind.Plain -> colors.onSurface
                         },
                         fontWeight = when (token.kind) {

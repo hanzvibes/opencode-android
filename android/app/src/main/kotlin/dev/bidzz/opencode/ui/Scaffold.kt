@@ -1,8 +1,6 @@
 package dev.bidzz.opencode.ui
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -162,14 +160,12 @@ fun IconAction(
 ) {
     val colors = OpenCodeTheme.colors
     val dims = OpenCodeTheme.tokens.dimensions
+    val motion = OpenCodeTheme.tokens.motion
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed && enabled) 0.90f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        animationSpec = motion.springBouncy(),
         label = "icon_action_scale",
     )
 
@@ -215,14 +211,12 @@ fun TextAction(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
+    val motion = OpenCodeTheme.tokens.motion
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed && enabled) 0.95f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
+        animationSpec = motion.springBouncy(),
         label = "text_action_scale",
     )
 

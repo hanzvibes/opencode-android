@@ -3,6 +3,8 @@ package dev.bidzz.opencode.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -59,23 +62,13 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
-import dev.bidzz.opencode.core.design.Palette
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
-
-private data class HeadingStyle(
-    val fontSize: TextUnit,
-    val lineHeight: TextUnit,
-    val fontWeight: FontWeight,
-    val topPadding: Dp,
-    val letterSpacing: TextUnit,
-)
 
 /**
  * Renders assistant output.
@@ -99,9 +92,9 @@ fun MarkdownText(
     /**
      * Text colour for prose and inline spans. Null renders on a plain
      * surface ([colors.onSurface]); a caller that renders markdown inside
-     * a coloured bubble (e.g. the blue user bubble) passes its own
-     * on-bubble colour, so bold/code/links stay readable on the bubble
-     * instead of defaulting to dark-on-blue.
+     * the neutral user bubble passes its own on-bubble colour, so
+     * bold/code/links stay readable on the bubble instead of defaulting
+     * to dark-on-bubble.
      */
     textColor: Color? = null,
 ) {
@@ -131,25 +124,18 @@ fun MarkdownText(
                                 else -> spacing.xs
                             }
                             val headingStyle = when (block.level) {
-                                1 -> HeadingStyle(20.sp, 26.sp, FontWeight.Bold, baseTopPadding, (-0.3).sp)
-                                2 -> HeadingStyle(17.sp, 22.sp, FontWeight.Bold, baseTopPadding, (-0.25).sp)
-                                3 -> HeadingStyle(15.sp, 20.sp, FontWeight.SemiBold, baseTopPadding, (-0.15).sp)
-                                // H4–H6 used to be identical; each level now
-                                // steps down so the hierarchy still reads.
-                                4 -> HeadingStyle(14.sp, 18.sp, FontWeight.SemiBold, baseTopPadding, (-0.1).sp)
-                                5 -> HeadingStyle(13.5.sp, 18.sp, FontWeight.SemiBold, baseTopPadding, (-0.1).sp)
-                                else -> HeadingStyle(13.sp, 17.sp, FontWeight.Medium, baseTopPadding, (-0.1).sp)
+                                1 -> OpenCodeTypography.heading1
+                                2 -> OpenCodeTypography.heading2
+                                3 -> OpenCodeTypography.heading3
+                                4 -> OpenCodeTypography.heading4
+                                5 -> OpenCodeTypography.heading5
+                                else -> OpenCodeTypography.heading6
                             }
                             Text(
                                 text = block.spans.toAnnotated(proseColor, onBubble),
-                                style = OpenCodeTypography.body.copy(
-                                    fontSize = headingStyle.fontSize,
-                                    lineHeight = headingStyle.lineHeight,
-                                    fontWeight = headingStyle.fontWeight,
-                                    letterSpacing = headingStyle.letterSpacing,
-                                ),
+                                style = headingStyle,
                                 color = proseColor,
-                                modifier = Modifier.padding(top = headingStyle.topPadding, bottom = spacing.xxs),
+                                modifier = Modifier.padding(top = baseTopPadding, bottom = spacing.xxs),
                             )
                         }
 
@@ -355,6 +341,13 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
     val isLongBlock = lineCount > CODE_COLLAPSE_THRESHOLD
     var collapsedOverride by remember { mutableStateOf<Boolean?>(null) }
     val collapsed = collapsedOverride ?: isLongBlock
+    // The expand arrow is one glyph rotating 0°↔180° (down = expand,
+    // up = collapse) instead of two glyphs swapping on every tap.
+    val expandRotation by animateFloatAsState(
+        targetValue = if (collapsed) 0f else 180f,
+        animationSpec = OpenCodeTheme.tokens.motion.tweenQuick(),
+        label = "code_expand_rotation",
+    )
     val visibleCode = if (collapsed) {
         lines.take(CODE_COLLAPSE_THRESHOLD).joinToString("\n")
     } else {
@@ -377,6 +370,7 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .animateContentSize(animationSpec = OpenCodeTheme.tokens.motion.springSmooth())
             .clip(RoundedCornerShape(radius.lg))
             .background(colors.surfaceSunken)
             .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.lg)),
@@ -452,7 +446,8 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
                     if (isLongBlock) {
                         BlockAction(
                             label = expandLabel,
-                            glyph = if (collapsed) Glyph.ArrowDown else Glyph.ArrowUp,
+                            glyph = Glyph.ArrowDown,
+                            glyphRotation = expandRotation,
                             done = false,
                         ) {
                             collapsedOverride = !collapsed
@@ -618,28 +613,28 @@ private fun formatLanguageName(language: String?): String {
 @Composable
 private fun highlightedCode(language: String?, code: String, streaming: Boolean = false): AnnotatedString {
     val colors = OpenCodeTheme.colors
-    val isDark = colors.background == Palette.darkBackground || colors.surfaceSunken == Palette.darkSurfaceSunken
     // While streaming, long blocks stay plain until the stream finishes
     // (see highlight()); the full highlight runs once, on completion.
     val tokens = remember(code, language, streaming) { highlight(language, code, streaming) }
 
-    val plainColor = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)
-    val keywordColor = if (isDark) Color(0xFFC084FC) else Color(0xFF7C3AED)
-    val stringColor = if (isDark) Color(0xFF86EFAC) else Color(0xFF15803D)
-    val numberColor = if (isDark) Color(0xFFFDBA74) else Color(0xFFC2410C)
-    val commentColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
-
-    return remember(tokens, plainColor, keywordColor, stringColor, numberColor, commentColor) {
+    // Colours come from the design tokens, never a local palette: the old
+    // slate/violet copy drifted from Theme.kt and needed its own theme
+    // check (comparing colour values). There is no theme branch left here,
+    // so no `colors.isDark` check is needed either.
+    return remember(tokens, colors) {
         buildAnnotatedString {
             tokens.forEach { token ->
                 withStyle(
                     SpanStyle(
                         color = when (token.kind) {
-                            TokenKind.Keyword -> keywordColor
-                            TokenKind.String -> stringColor
-                            TokenKind.Number -> numberColor
-                            TokenKind.Comment -> commentColor
-                            TokenKind.Plain -> plainColor
+                            TokenKind.Keyword -> colors.syntaxKeyword
+                            TokenKind.String -> colors.syntaxString
+                            TokenKind.Number -> colors.syntaxNumber
+                            TokenKind.Comment -> colors.syntaxComment
+                            TokenKind.Function -> colors.syntaxFunction
+                            TokenKind.Type -> colors.syntaxType
+                            TokenKind.Operator -> colors.onSurfaceMuted
+                            TokenKind.Plain -> colors.onSurface
                         },
                         fontWeight = when (token.kind) {
                             TokenKind.Keyword -> FontWeight.Medium
@@ -828,6 +823,8 @@ private fun BlockAction(
     glyph: Glyph? = null,
     done: Boolean,
     onClick: () -> Unit,
+    /** Rotation applied to [glyph] (0°↔180° for the expand arrow). */
+    glyphRotation: Float = 0f,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -852,7 +849,12 @@ private fun BlockAction(
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             if (glyph != null) {
-                GlyphIcon(glyph = glyph, tint = tint, size = 11.dp)
+                GlyphIcon(
+                    glyph = glyph,
+                    tint = tint,
+                    size = 11.dp,
+                    modifier = Modifier.graphicsLayer { rotationZ = glyphRotation },
+                )
             }
             Text(
                 text = label,
@@ -897,9 +899,10 @@ private fun List<MdSpan>.toUppercase(): List<MdSpan> = map { span ->
  * Converts inline spans to an [AnnotatedString].
  *
  * [textColor] is the prose colour (surface text by default, the on-bubble
- * colour inside a coloured bubble). On a bubble the code/highlight
- * backgrounds are translucent white instead of surface tones, and links
- * keep the prose colour — the accent colour is unreadable on blue.
+ * colour inside the neutral user bubble). On a bubble the code/highlight
+ * backgrounds are surface tones, not translucent white — the bubble is
+ * neutral now, so white-on-blue affordances would wash out — and links
+ * keep the prose colour + underline.
  */
 @Composable
 private fun List<MdSpan>.toAnnotated(textColor: Color, onBubble: Boolean = false): AnnotatedString {
@@ -929,11 +932,10 @@ private fun List<MdSpan>.toAnnotated(textColor: Color, onBubble: Boolean = false
                         // The global token is untouched — only prose here.
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium,
-                        background = if (onBubble) {
-                            Color.White.copy(alpha = 0.18f)
-                        } else {
-                            colors.surfaceVariant.copy(alpha = 0.8f)
-                        },
+                        // Surface tones on the neutral bubble too: the old
+                        // translucent white (0.18) was a white-on-blue
+                        // leftover and is near-invisible on surfaceRaised.
+                        background = colors.surfaceVariant.copy(alpha = 0.8f),
                         color = textColor,
                         baselineShift = BaselineShift(0.02f),
                     ),
@@ -944,11 +946,10 @@ private fun List<MdSpan>.toAnnotated(textColor: Color, onBubble: Boolean = false
                 }
                 is MdSpan.Highlight -> withStyle(
                     SpanStyle(
-                        background = if (onBubble) {
-                            Color.White.copy(alpha = 0.25f)
-                        } else {
-                            colors.warning.copy(alpha = 0.22f)
-                        },
+                        // Same white-on-blue leftover as inline code: a
+                        // translucent white wash is invisible on the
+                        // neutral bubble, so both themes use the warning tint.
+                        background = colors.warning.copy(alpha = 0.22f),
                         color = textColor,
                         fontWeight = FontWeight.Medium,
                     ),

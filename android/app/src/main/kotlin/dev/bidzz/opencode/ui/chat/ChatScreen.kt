@@ -1,7 +1,9 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -21,6 +23,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -77,7 +81,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -95,6 +98,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -108,6 +112,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.Status
@@ -164,6 +169,7 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
     val listState = rememberLazyListState()
@@ -307,8 +313,10 @@ fun ChatScreen(
 
     /** Closes the drawer, then runs [action]; the drawer must not stay open over the next screen. */
     fun closeThen(action: () -> Unit) {
-        scope.launch { drawerState.close() }
-        action()
+        scope.launch {
+            drawerState.close()
+            action()
+        }
     }
 
     ModalNavigationDrawer(
@@ -429,7 +437,11 @@ fun ChatScreen(
                                     else -> spacing.lg
                                 }
 
-                                Column(modifier = Modifier.padding(top = topSpacing)) {
+                                Column(
+                                    modifier = Modifier
+                                        .padding(top = topSpacing)
+                                        .animateItem(),
+                                ) {
                                     // Date divider (audit C-A): a new day in
                                     // the transcript gets a labelled hairline
                                     // ("Today", "Yesterday", or the date).
@@ -441,10 +453,19 @@ fun ChatScreen(
                                     val showDateDivider = createdAt != null &&
                                         (prevCreatedAt == null || !isSameDay(prevCreatedAt, createdAt))
                                     if (showDateDivider && createdAt != null) {
-                                        DateDivider(
-                                            millis = createdAt,
-                                            modifier = Modifier.padding(bottom = spacing.sm),
-                                        )
+                                        // Fades in on entry instead of
+                                        // popping in with the message.
+                                        androidx.compose.animation.AnimatedVisibility(
+                                            visible = true,
+                                            enter = fadeIn(
+                                                animationSpec = tween(motion.standard),
+                                            ),
+                                        ) {
+                                            DateDivider(
+                                                millis = createdAt,
+                                                modifier = Modifier.padding(bottom = spacing.sm),
+                                            )
+                                        }
                                     }
                                     // Hairline turn divider above the first part
                                     // of a new assistant turn (not the first
@@ -496,27 +517,21 @@ fun ChatScreen(
                                     )
                                 }
                             }
-                            // When busy right after user message, show assistant's turn beginning immediately
-                            if (state.busy && state.messages.lastOrNull()?.role == Role.USER) {
-                                item(key = "working") {
-                                    AssistantWorkingPlaceholder(
-                                        agent = state.activeAgent,
-                                        model = state.activeModel,
-                                        agents = state.agents,
-                                        models = state.models,
-                                        // Same screen-owned timer as the real
-                                        // turn, so the clock does not restart
-                                        // when the placeholder is replaced.
-                                        elapsedSeconds = busyElapsedSeconds,
-                                        // Same 16dp (lg) as a real new turn, so
-                                        // the layout does not jump when the
-                                        // placeholder is replaced by the turn.
-                                        modifier = Modifier.padding(top = spacing.lg),
-                                    )
-                                }
-                            }
-                            if (state.failure != null || state.failureKey != null) {
-                                item(key = "error") {
+                            // Error slot, always present so its
+                            // AnimatedVisibility can play both the enter
+                            // (fade + expand, motion.standard) and the exit
+                            // when the error is dismissed. It sits before
+                            // the turn-tail slot, so targetLastIndex still
+                            // lands on it — never past it on an empty slot.
+                            item(key = "error") {
+                                AnimatedVisibility(
+                                    visible = state.failure != null || state.failureKey != null,
+                                    enter = fadeIn(animationSpec = tween(motion.standard)) +
+                                        expandVertically(animationSpec = tween(motion.standard)),
+                                    exit = fadeOut(animationSpec = tween(motion.quick)) +
+                                        shrinkVertically(animationSpec = tween(motion.quick)),
+                                    modifier = Modifier.animateItem(),
+                                ) {
                                     // Hoisted out of the .semantics {} block below:
                                     // stringResource() is @Composable and cannot be
                                     // called inside a SemanticsPropertyReceiver lambda.
@@ -590,6 +605,50 @@ fun ChatScreen(
                                                 )
                                             }
                                         }
+                                    }
+                                }
+                            }
+                            // Placeholder → answer transition. This slot stays
+                            // in the list so the AnimatedContent can animate
+                            // the working placeholder out (fade + ~8dp slide,
+                            // motion.standard) as the answering turn arrives;
+                            // a slot that is removed the moment busy ends
+                            // cannot animate at all. Keyed on the working
+                            // state vs the answering message's id, so each
+                            // new turn re-triggers it. Empty when idle, and
+                            // it sits last so targetLastIndex never lands on
+                            // it — the follow-scroll math is untouched.
+                            item(key = "turn-tail") {
+                                val tailState = when {
+                                    state.busy && state.messages.lastOrNull()?.role == Role.USER -> "working"
+                                    else -> state.messages.lastOrNull()?.let { "answer-${it.id}" } ?: "empty"
+                                }
+                                AnimatedContent(
+                                    targetState = tailState,
+                                    transitionSpec = {
+                                        (fadeIn(animationSpec = tween(motion.standard)) +
+                                            slideInVertically(animationSpec = tween(motion.standard)) { it / 12 }) togetherWith
+                                            (fadeOut(animationSpec = tween(motion.standard)) +
+                                                slideOutVertically(animationSpec = tween(motion.standard)) { -it / 12 })
+                                    },
+                                    modifier = Modifier.animateItem(),
+                                    label = "placeholder_to_answer",
+                                ) { key ->
+                                    if (key == "working") {
+                                        AssistantWorkingPlaceholder(
+                                            agent = state.activeAgent,
+                                            model = state.activeModel,
+                                            agents = state.agents,
+                                            models = state.models,
+                                            // Same screen-owned timer as the real
+                                            // turn, so the clock does not restart
+                                            // when the placeholder is replaced.
+                                            elapsedSeconds = busyElapsedSeconds,
+                                            // Same 16dp (lg) as a real new turn, so
+                                            // the layout does not jump when the
+                                            // placeholder is replaced by the turn.
+                                            modifier = Modifier.padding(top = spacing.lg),
+                                        )
                                     }
                                 }
                             }
@@ -713,6 +772,29 @@ private fun isSameDay(aMillis: Long, bMillis: Long): Boolean {
         Instant.ofEpochMilli(bMillis).atZone(zone).toLocalDate()
 }
 
+/**
+ * Text-safe status colour: WORKING reads [OpenCodeColors.accentText] in
+ * light (accent #007AFF is only 4.02:1 as text), while READY / ERROR /
+ * IDLE already are the dark AA text variants. Dots, fills, borders and
+ * backgrounds keep [OpenCodeColors.statusColor] — only text goes here.
+ */
+private fun statusTextColor(colors: OpenCodeColors, status: Status): Color =
+    if (status == Status.WORKING) colors.accentText else colors.statusColor(status)
+
+/**
+ * Vivid status colour for dots only: in light the text roles are dark AA
+ * variants, but a dot wants the vivid colour (successBright/dangerBright).
+ * WORKING stays [OpenCodeColors.activity] and IDLE stays neutral — neither
+ * has a Bright role. In dark the Bright roles equal the text roles, so
+ * this is a no-op there.
+ */
+private fun statusDotColor(colors: OpenCodeColors, status: Status): Color = when (status) {
+    Status.READY -> colors.successBright
+    Status.WORKING -> colors.activity
+    Status.ERROR -> colors.dangerBright
+    Status.IDLE -> colors.neutral
+}
+
 /** "Today" / "Yesterday", otherwise the date — in the device locale. */
 @Composable
 private fun dateDividerLabel(millis: Long): String {
@@ -769,35 +851,38 @@ fun ChatHeader(
     workspacePath: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
     val radius = OpenCodeTheme.tokens.radius
     val status = engineState.toStatus(busy)
-    val statusColor = colors.statusColor(status)
+    // The status colour animates between states instead of snapping.
+    val statusColor by animateColorAsState(
+        targetValue = colors.statusColor(status),
+        animationSpec = tween(durationMillis = motion.quick, easing = FastOutSlowInEasing),
+        label = "status_color",
+    )
 
     var showStatusDialog by remember { mutableStateOf(false) }
-    var newChatClickTrigger by remember { mutableIntStateOf(0) }
 
-    val newChatRotation by animateFloatAsState(
-        targetValue = newChatClickTrigger * 360f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
-        label = "new_chat_rotation",
-    )
-
-    val infiniteTransition = rememberInfiniteTransition(label = "status_dot_pulse")
-    val pulsingAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 700, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "status_dot_alpha",
-    )
-    val dotAlpha = if (status == Status.WORKING) pulsingAlpha else 1f
+    // The status dot pulses on the one live period (pulsePeriodMs), and the
+    // infinite transition only exists while WORKING: a ready/error/idle dot
+    // must not keep an animation running behind a static dot.
+    val dotAlpha = if (status == Status.WORKING) {
+        val infiniteTransition = rememberInfiniteTransition(label = "status_dot_pulse")
+        val pulsingAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = motion.pulsePeriodMs, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "status_dot_alpha",
+        )
+        pulsingAlpha
+    } else {
+        1f
+    }
 
     val separatorAlpha by animateFloatAsState(
         targetValue = if (isScrolled) 1f else 0f,
@@ -855,16 +940,23 @@ fun ChatHeader(
                 )
                 // The active session's title, under the project name: the
                 // header used to show the folder only, so two sessions in
-                // the same project looked identical.
-                if (!sessionTitle.isNullOrBlank()) {
-                    Text(
-                        text = sessionTitle,
-                        style = OpenCodeTypography.label.copy(fontSize = 12.sp),
-                        color = colors.onSurfaceMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                    )
+                // the same project looked identical. Crossfades when the
+                // session changes instead of swapping mid-frame.
+                Crossfade(
+                    targetState = sessionTitle,
+                    animationSpec = tween(durationMillis = motion.quick),
+                    label = "session_title",
+                ) { title ->
+                    if (!title.isNullOrBlank()) {
+                        Text(
+                            text = title,
+                            style = OpenCodeTypography.label.copy(fontSize = 12.sp),
+                            color = colors.onSurfaceMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
                 Spacer(Modifier.height(spacing.xxs))
                 val statusLabel = engineState.statusLabel(busy)
@@ -908,13 +1000,13 @@ fun ChatHeader(
                         Modifier
                             .size(dims.statusDotSize)
                             .graphicsLayer { alpha = dotAlpha }
-                            .background(statusColor, CircleShape),
+                            .background(statusDotColor(colors, status), CircleShape),
                     )
                     Spacer(Modifier.width(spacing.xs))
                     Text(
                         text = statusLabel,
                         style = OpenCodeTypography.label.copy(fontSize = 12.sp, lineHeight = 14.sp),
-                        color = statusColor,
+                        color = statusTextColor(colors, status),
                         maxLines = 1,
                     )
                     if (!branch.isNullOrBlank()) {
@@ -940,14 +1032,13 @@ fun ChatHeader(
                 }
             }
 
+            // New chat: no 360° spin. IconAction already scales to 0.90 on
+            // press (its built-in tactile feedback), which is the whole
+            // acknowledgement a tap needs.
             IconAction(
                 glyph = Glyph.NewChat,
                 description = stringResource(R.string.chat_new_session),
-                onClick = {
-                    newChatClickTrigger++
-                    onNewSession()
-                },
-                rotation = newChatRotation,
+                onClick = onNewSession,
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
         }
@@ -986,11 +1077,16 @@ private fun EngineStatusDialog(
     workspacePath: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
     val radius = OpenCodeTheme.tokens.radius
     val status = engineState.toStatus(busy)
-    val statusColor = colors.statusColor(status)
+    val statusColor by animateColorAsState(
+        targetValue = colors.statusColor(status),
+        animationSpec = tween(durationMillis = motion.quick, easing = FastOutSlowInEasing),
+        label = "dialog_status_color",
+    )
     val statusLabel = engineState.statusLabel(busy)
 
     val descRes = when (engineState) {
@@ -1014,7 +1110,7 @@ private fun EngineStatusDialog(
                 Box(
                     Modifier
                         .size(dims.statusDotSize)
-                        .background(statusColor, CircleShape),
+                        .background(statusDotColor(colors, status), CircleShape),
                 )
                 Text(
                     text = stringResource(R.string.chat_status_dialog_title),
@@ -1041,12 +1137,12 @@ private fun EngineStatusDialog(
                     Text(
                         text = statusLabel,
                         style = OpenCodeTypography.label.copy(fontWeight = FontWeight.SemiBold),
-                        color = statusColor,
+                        color = statusTextColor(colors, status),
                     )
                     Text(
                         text = engineState.name,
                         style = OpenCodeTypography.caption,
-                        color = statusColor.copy(alpha = 0.8f),
+                        color = statusTextColor(colors, status).copy(alpha = 0.8f),
                     )
                 }
 
@@ -1094,7 +1190,7 @@ private fun EngineStatusDialog(
             TextButton(onClick = onOpenDiagnostics) {
                 Text(
                     text = stringResource(R.string.chat_status_dialog_diagnostics),
-                    color = colors.accent,
+                    color = colors.accentText,
                 )
             }
         },
@@ -1338,6 +1434,7 @@ private fun ChatDrawer(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .animateItem()
                                 .padding(horizontal = spacing.lg, vertical = spacing.xs),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -1352,7 +1449,7 @@ private fun ChatDrawer(
                             Text(
                                 text = stringResource(group.titleRes()).uppercase(),
                                 style = OpenCodeTypography.label,
-                                color = if (group == SessionDateGroup.PINNED) colors.accent else colors.onSurfaceFaint,
+                                color = if (group == SessionDateGroup.PINNED) colors.accentText else colors.onSurfaceFaint,
                             )
                         }
                     }
@@ -1366,6 +1463,7 @@ private fun ChatDrawer(
                             onPinToggle = { onTogglePinSession(row.id) },
                             onRenameClick = { sessionToRename = row },
                             onDeleteClick = { sessionToDelete = row },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -1430,14 +1528,14 @@ private fun ChatDrawer(
                 Box(
                     modifier = Modifier
                         .size(30.dp)
-                        .clip(CircleShape)
-                        .background(colors.accent),
-                    contentAlignment = Alignment.Center,
+                        .clip(RoundedCornerShape(radius.sm)),
                 ) {
-                    Text(
-                        text = "R",
-                        style = OpenCodeTypography.bodyStrong.copy(fontSize = 13.sp),
-                        color = colors.onAccent,
+                    // The logomark, 30dp, beside the kept name — it replaces
+                    // the "R" initial circle, not the identity.
+                    Image(
+                        painter = painterResource(R.drawable.ic_logomark),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
                 Column(
@@ -1455,7 +1553,7 @@ private fun ChatDrawer(
                     Text(
                         text = "@hanzvibes",
                         style = OpenCodeTypography.caption,
-                        // onSurfaceMuted (#6E6E73) clears AA at 11sp in
+                        // onSurfaceMuted (#5F5F66) clears AA at 11sp in
                         // the light theme; onSurfaceFaint did not.
                         color = colors.onSurfaceMuted,
                         maxLines = 1,
@@ -1534,7 +1632,7 @@ private fun DrawerItem(
         else -> colors.surfaceVariant
     }
     val contentTint = when {
-        active || accent -> colors.accent
+        active || accent -> colors.accentText
         else -> colors.onSurface
     }
     val iconTint = when {
@@ -1601,8 +1699,10 @@ private fun SessionDrawerItem(
     onPinToggle: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
@@ -1612,12 +1712,20 @@ private fun SessionDrawerItem(
     val age = row.age?.label()
     val meta = listOfNotNull(age, row.cost).joinToString(" · ")
 
+    // The selected background animates instead of snapping when the
+    // selection moves between rows.
+    val rowBg by animateColorAsState(
+        targetValue = if (selected) colors.accent.copy(alpha = 0.12f) else Color.Transparent,
+        animationSpec = tween(durationMillis = motion.quick, easing = FastOutSlowInEasing),
+        label = "session_row_bg",
+    )
+
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.sm, vertical = 1.dp)
             .clip(RoundedCornerShape(radius.md))
-            .background(if (selected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
+            .background(rowBg)
             .then(
                 if (selected) {
                     Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
@@ -1655,7 +1763,7 @@ private fun SessionDrawerItem(
                 Text(
                     text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
                     style = if (selected) OpenCodeTypography.bodyStrong else OpenCodeTypography.body,
-                    color = if (selected) colors.accent else colors.onSurface,
+                    color = if (selected) colors.accentText else colors.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -1665,7 +1773,7 @@ private fun SessionDrawerItem(
                 Text(
                     text = meta,
                     style = OpenCodeTypography.label,
-                    color = if (selected) colors.accent.copy(alpha = 0.75f) else colors.onSurfaceFaint,
+                    color = if (selected) colors.accentText.copy(alpha = 0.75f) else colors.onSurfaceFaint,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -1831,12 +1939,14 @@ private fun JumpToLatest(
                 )
             }
         } else if (isBusy) {
+            // Gated behind isBusy (this branch only composes then) and on
+            // the one live period, like the header status dot.
             val infiniteTransition = rememberInfiniteTransition(label = "jump_busy_pulse")
             val pulseAlpha by infiniteTransition.animateFloat(
                 initialValue = 0.35f,
                 targetValue = 1f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 650, easing = LinearEasing),
+                    animation = tween(durationMillis = OpenCodeTheme.tokens.motion.pulsePeriodMs, easing = LinearEasing),
                     repeatMode = RepeatMode.Reverse,
                 ),
                 label = "jump_pulse_alpha",
@@ -1922,7 +2032,7 @@ private fun EmptyChat(
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // Hero Branding with subtle ambient glow and minimalist Apple typography
+                // Hero branding with the logomark and minimalist typography
                 HeroBranding(
                     engineReady = engineReady,
                 )
@@ -2048,7 +2158,7 @@ private fun EmptyChat(
     }
 }
 
-/** Hero branding with subtle glowing gradient and minimalist Apple typography. */
+/** Hero branding with the logomark and minimalist Apple typography. */
 @Composable
 private fun HeroBranding(
     engineReady: Boolean,
@@ -2057,49 +2167,20 @@ private fun HeroBranding(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
-    val dims = OpenCodeTheme.tokens.dimensions
 
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Subtle ambient glowing gradient container behind hero emblem.
-        // 64dp, not 84dp: the hero is a signpost, not the content — the
-        // starter prompts below it are what a new user actually needs.
-        Box(
+        // The logomark, 40dp. No radial accent glow behind it: the quiet
+        // terminal has no halos, and the mark carries its own dark tile.
+        Image(
+            painter = painterResource(R.drawable.ic_logomark),
+            contentDescription = null,
             modifier = Modifier
-                .size(64.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            colors.accent.copy(alpha = 0.22f),
-                            colors.accent.copy(alpha = 0.06f),
-                            Color.Transparent,
-                        ),
-                    ),
-                    shape = CircleShape,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(radius.lg))
-                    .background(colors.surfaceRaised)
-                    .border(
-                        0.5.dp,
-                        colors.accent.copy(alpha = 0.30f),
-                        RoundedCornerShape(radius.lg),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                GlyphIcon(
-                    glyph = Glyph.Code,
-                    tint = colors.accent,
-                    size = dims.iconMedium,
-                )
-            }
-        }
+                .size(40.dp)
+                .clip(RoundedCornerShape(radius.lg)),
+        )
 
         Spacer(Modifier.height(spacing.md))
 
@@ -2146,6 +2227,7 @@ private fun ReadinessStatusRow(
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
@@ -2153,7 +2235,11 @@ private fun ReadinessStatusRow(
 
     val status = engineState.toStatus(busy)
     val statusLabel = engineState.statusLabel(busy)
-    val statusColor = colors.statusColor(status)
+    val statusColor by animateColorAsState(
+        targetValue = colors.statusColor(status),
+        animationSpec = tween(durationMillis = motion.quick, easing = FastOutSlowInEasing),
+        label = "readiness_status_color",
+    )
     val gitBranch = remember(workspacePath) { detectGitBranch(workspacePath) }
     val projectName = headerTitle(workspacePath)
 
@@ -2195,12 +2281,12 @@ private fun ReadinessStatusRow(
         Box(
             modifier = Modifier
                 .size(dims.statusDotSize)
-                .background(statusColor, CircleShape),
+                .background(statusDotColor(colors, status), CircleShape),
         )
         Text(
             text = statusLabel,
             style = OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
-            color = statusColor,
+            color = statusTextColor(colors, status),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             // Capped so a long status label cannot starve the weighted
@@ -2471,11 +2557,16 @@ private fun StatusPillBadge(
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
     val radius = OpenCodeTheme.tokens.radius
     val shape = RoundedCornerShape(radius.full)
-    val statusColor = colors.statusColor(status)
+    val statusColor by animateColorAsState(
+        targetValue = colors.statusColor(status),
+        animationSpec = tween(durationMillis = motion.quick, easing = FastOutSlowInEasing),
+        label = "pill_status_color",
+    )
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -2515,12 +2606,12 @@ private fun StatusPillBadge(
         Box(
             modifier = Modifier
                 .size(dims.statusDotSize)
-                .background(statusColor, CircleShape),
+                .background(statusDotColor(colors, status), CircleShape),
         )
         Text(
             text = label,
             style = OpenCodeTypography.label,
-            color = statusColor,
+            color = statusTextColor(colors, status),
         )
     }
 }
