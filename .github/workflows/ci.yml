@@ -39,11 +39,26 @@ jobs:
         working-directory: android
         run: ./gradlew test --no-daemon
 
-      # Builds, but the APK is NOT a release artifact: app/src/main/jniLibs is
-      # gitignored, so a fresh clone has no engine, git, or ripgrep binary. Those are
-      # 217 MB of staged output and belong in a release, not in git. Packaging here
-      # still catches resource, manifest, and R8 regressions.
-      - name: Compile and package (engine absent by design)
+      - name: Stage native engine binaries from upstream release
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          mkdir -p android/app/src/main/jniLibs/x86_64
+          tmpdir=$(mktemp -d)
+
+          echo "Downloading upstream release APKs..."
+          curl -f -sL "https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases/download/v0.1.1/app-arm64-v8a-release.apk" -o "$tmpdir/arm64.apk"
+          curl -f -sL "https://github.com/BIDZZ-RAWR/OPENCODE-ANDROID/releases/download/v0.1.1/app-x86_64-release.apk" -o "$tmpdir/x86_64.apk"
+
+          echo "Extracting native libraries..."
+          unzip -q -j "$tmpdir/arm64.apk" "lib/arm64-v8a/*" -d android/app/src/main/jniLibs/arm64-v8a/
+          unzip -q -j "$tmpdir/x86_64.apk" "lib/x86_64/*" -d android/app/src/main/jniLibs/x86_64/
+          rm -rf "$tmpdir"
+
+          echo "Staged native libraries:"
+          ls -lh android/app/src/main/jniLibs/arm64-v8a/
+          ls -lh android/app/src/main/jniLibs/x86_64/
+
+      - name: Compile and package
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
 
@@ -61,13 +76,13 @@ jobs:
         continue-on-error: true
         with:
           tag_name: debug-latest
-          name: Debug build (latest)
+          name: OpenCode Android (Latest with Engine)
           prerelease: true
           make_latest: false
           overwrite_files: true
           generate_release_notes: false
           body: |
-            Automated debug APK from CI (no bundled engine/git/rg binaries).
+            Automated build with PrivateLM UI & bundled OpenCode engine binaries (arm64-v8a & x86_64).
             Commit: ${{ github.sha }}
           files: |
             android/app/build/outputs/apk/debug/*.apk
@@ -75,8 +90,7 @@ jobs:
       - name: Fail if the engine binary ever lands in git
         run: |
           if git ls-files | grep -qE 'jniLibs/.*\.so$'; then
-            echo "A staged native binary was committed. libopencode.so is ~217 MB" \
-                 "and must stay out of git — it is produced by stage-engine.ps1." >&2
+            echo "A staged native binary was committed to git." >&2
             exit 1
           fi
 
