@@ -1054,7 +1054,7 @@ private fun ChatDrawer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = spacing.xxs)
+                    .padding(top = spacing.xs)
                     .clip(RoundedCornerShape(radius.md))
                     .clickable(role = SemanticsRole.Button, onClick = onDeveloper)
                     .padding(horizontal = spacing.sm, vertical = spacing.xs),
@@ -1116,19 +1116,24 @@ private fun DrawerFooterButton(
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
 
+    // Footer buttons are a full 48dp touch target (dims.minTouchTarget):
+    // at caption size with only xs vertical padding they used to be ~30dp
+    // tall and read as cramped next to the 40dp composer chips.
     Row(
         modifier = modifier
+            .height(dims.minTouchTarget)
             .clip(RoundedCornerShape(radius.md))
             .background(colors.surfaceVariant.copy(alpha = 0.6f))
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
             .clickable(role = SemanticsRole.Button, onClick = onClick)
-            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            .padding(horizontal = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        GlyphIcon(glyph, tint = colors.onSurfaceMuted, size = dims.iconSmall)
+        GlyphIcon(glyph, tint = colors.onSurfaceMuted, size = dims.iconMedium)
         Text(
             text = label,
-            style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.Medium),
+            style = OpenCodeTypography.label.copy(fontWeight = FontWeight.Medium),
             color = colors.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
