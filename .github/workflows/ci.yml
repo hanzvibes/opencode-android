@@ -62,14 +62,6 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
 
-      - name: Upload debug APK artifact
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: opencode-android-debug
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: ignore
-
       - name: Upload debug APK to rolling release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
