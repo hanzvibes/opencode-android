@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -399,6 +400,11 @@ fun ChatScreen(
                             }
                             if (state.failure != null || state.failureKey != null) {
                                 item(key = "error") {
+                                    // Hoisted out of the .semantics {} block below:
+                                    // stringResource() is @Composable and cannot be
+                                    // called inside a SemanticsPropertyReceiver lambda.
+                                    val closeDescription =
+                                        stringResource(R.string.chat_status_dialog_close)
                                     Box(modifier = Modifier.padding(top = spacing.md)) {
                                         MessageBubble(
                                             role = Role.ERROR,
@@ -419,8 +425,7 @@ fun ChatScreen(
                                                     onClick = onDismissError,
                                                 )
                                                 .semantics {
-                                                    contentDescription =
-                                                        stringResource(R.string.chat_status_dialog_close)
+                                                    contentDescription = closeDescription
                                                 },
                                             contentAlignment = Alignment.Center,
                                         ) {

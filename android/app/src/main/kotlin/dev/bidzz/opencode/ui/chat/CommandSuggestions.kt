@@ -531,6 +531,9 @@ private fun CommandPaletteHeader(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    // Hoisted out of the .semantics {} block below: stringResource() is
+    // @Composable and cannot be called inside a SemanticsPropertyReceiver lambda.
+    val closeDescription = stringResource(R.string.chat_status_dialog_close)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -586,8 +589,7 @@ private fun CommandPaletteHeader(
                         .clip(CircleShape)
                         .clickable(role = Role.Button, onClick = onDismiss)
                         .semantics {
-                            contentDescription =
-                                stringResource(R.string.chat_status_dialog_close)
+                            contentDescription = closeDescription
                         },
                     contentAlignment = Alignment.Center,
                 ) {
