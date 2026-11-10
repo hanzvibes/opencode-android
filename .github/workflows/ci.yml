@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -52,6 +54,23 @@ jobs:
           name: opencode-android-debug
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: ignore
+
+      - name: Upload debug APK to rolling release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          tag_name: debug-latest
+          name: Debug build (latest)
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          generate_release_notes: false
+          body: |
+            Automated debug APK from CI (no bundled engine/git/rg binaries).
+            Commit: ${{ github.sha }}
+          files: |
+            android/app/build/outputs/apk/debug/*.apk
 
       - name: Fail if the engine binary ever lands in git
         run: |
