@@ -15,8 +15,9 @@
 #   ./script/ci/run-local.sh --stage-only    # stage the native libs, stop there
 #   ./script/ci/run-local.sh --help
 #
-# Requirements: JDK 21, Android SDK (platform 35, build-tools 35.0.0), curl,
-# unzip. The Gradle wrapper is used, so Gradle itself is not needed.
+# Requirements: JDK 21, Android SDK (platform 35, build-tools 35.0.0 and
+# 34.0.0 — AGP still resolves 34.0.0 for the unit-test tasks), curl, unzip.
+# The Gradle wrapper is used, so Gradle itself is not needed.
 
 # Keep this script POSIX so it runs under dash, mksh and bash alike. The few
 # conveniences it wants (pipefail, arrays) are opt-in, never assumed.
@@ -25,6 +26,14 @@ set -eu
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
+
+# Force the Gradle wrapper client, daemon and test workers onto IPv4. The
+# daemon and workers are also pinned in android/gradle.properties and
+# android/build.gradle.kts, but the wrapper client itself only reads these
+# environment variables — without them it defaults to IPv6 loopback and the
+# daemon connection fails before any task runs.
+export GRADLE_OPTS="${GRADLE_OPTS:-} -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv4Addresses=true"
+export JAVA_OPTS="${JAVA_OPTS:-} -Djava.net.preferIPv4Stack=true -Djava.net.preferIPv4Addresses=true"
 
 # Keep in sync with .github/workflows/ci.yml — these are the upstream release
 # asset digests published by GitHub for BIDZZ-RAWR/OPENCODE-ANDROID v0.1.1.

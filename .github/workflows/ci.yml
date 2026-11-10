@@ -39,7 +39,11 @@ jobs:
           echo "using $sdkmanager"
           yes | "$sdkmanager" --sdk_root="$ANDROID_HOME" --licenses > /dev/null
           yes | "$sdkmanager" --sdk_root="$ANDROID_HOME" \
-            "platforms;android-35" "build-tools;35.0.0" | tail -2
+            "platforms;android-35" "build-tools;35.0.0" "build-tools;34.0.0" | tail -2
+          # AGP still resolves build-tools 34.0.0 for the unit-test tasks even
+          # though compileSdk is 35; without it the test step fails with
+          # "Failed to install build-tools;34.0.0 ... licences have not been
+          # accepted" on a clean SDK.
 
       # Dependency resolution is forced onto IPv4 by android/gradle.properties.
       # The runner's DNS answers with AAAA records it cannot actually route to,
