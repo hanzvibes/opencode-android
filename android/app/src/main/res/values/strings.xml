@@ -160,9 +160,11 @@
     <string name="question_submit">Submit answer</string>
     <string name="question_answered">Answered</string>
     <string name="bubble_thinking">Thinking…</string>
+    <string name="streaming_typing">Typing…</string>
     <string name="tool_steps_one">%1$d step</string>
     <string name="tool_steps_other">%1$d steps</string>
     <string name="tool_failed">· %1$d failed</string>
+    <string name="tool_summary_succeeded">%1$d succeeded</string>
     <string name="tool_working">· working</string>
     <string name="tool_status_running">Running</string>
     <string name="tool_status_success">Success</string>

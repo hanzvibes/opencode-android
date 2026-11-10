@@ -159,9 +159,11 @@
     <string name="question_submit">Kirim jawaban</string>
     <string name="question_answered">Terjawab</string>
     <string name="bubble_thinking">Berpikir…</string>
+    <string name="streaming_typing">Mengetik…</string>
     <string name="tool_steps_one">%1$d langkah</string>
     <string name="tool_steps_other">%1$d langkah</string>
     <string name="tool_failed">· %1$d gagal</string>
+    <string name="tool_summary_succeeded">%1$d berhasil</string>
     <string name="tool_working">· bekerja</string>
     <string name="tool_status_running">Berjalan</string>
     <string name="tool_status_success">Berhasil</string>
