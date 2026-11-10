@@ -120,6 +120,7 @@ dependencies {
     // Declared directly: `implementation` in :core:engine does not expose
     // coroutines to consumers, and the activity uses CoroutineScope and Flow.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Compose host for the activity. Versions come from the BOM that :core:design
     // exports, so they stay aligned with the design system.

@@ -29,7 +29,7 @@ android {
 dependencies {
     implementation(project(":core:common"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // OkHttp rather than Ktor: the engine's event stream is read line by line off a
     // raw socket, which OkHttp exposes directly through `response.body.source()`.
