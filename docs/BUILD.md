@@ -221,6 +221,36 @@ shared libs via the `LD_LIBRARY_PATH` `EngineEnvironment` already sets.
 No new environment variables. Licence note: GNU tar and binutils are
 GPLv3 — see `THIRD_PARTY_NOTICES.md`.
 
+### 2d. curl (`curl`)
+
+Same source as Node/xz: Termux apt, bionic-native. Staged with the Linux
+script (CI and local builds run the same one):
+
+```bash
+bash script/android/stage-curl.sh --abi arm64-v8a \
+  --jni-out android/app/src/main/jniLibs/arm64-v8a
+bash script/android/stage-curl.sh --abi x86_64 \
+  --jni-out android/app/src/main/jniLibs/x86_64
+```
+
+The script pins `curl`/`libcurl` 8.23.0 and its closure (libnghttp2
+1.71.0, libnghttp3 1.19.0, libngtcp2 1.26.0, libssh2 1.11.1, OpenSSL
+1:3.6.5, zlib 1.4 — the OpenSSL/zlib pins are shared with
+`stage-node.sh`, keep in sync) by version and SHA256 from the Termux
+`stable` index, verifies every download, extracts with `dpkg-deb -x`,
+renames the versioned `.so` names with `patchelf --set-soname` +
+`--replace-needed`, and applies the same ELF gates as §2 (e_machine,
+`PT_LOAD p_align >= 0x4000`, no surviving versioned `DT_NEEDED`). Staged
+closure is ~2.25 MB of new files per ABI plus the shared OpenSSL/zlib
+libs (identical bytes to the Node staging, no duplication in the APK).
+The CLI binary is staged as `libcurl-cli.so` because `libcurl.so` is the
+library itself. TLS uses the CA bundle Node already ships
+(`SSL_CERT_FILE=<files>/engine/node/etc/tls/cert.pem`).
+
+This does NOT enable git over HTTPS: the bundled git was built with
+`NO_CURL`/`NO_OPENSSL`. Rebuilding git needs the Windows-only
+`build-tools.ps1` plus the upstream APK rebuilt — a separate step.
+
 ### 3. Stage into `jniLibs`
 
 ```powershell
@@ -338,10 +368,11 @@ in-app Diagnostics screen instead:
 ```powershell
 adb shell run-as dev.bidzz.opencode ls -l files/engine/tools/bin
 # expect: git -> .../libgit.so, rg -> .../librg.so, node -> .../libnode.so,
-# xz -> .../libxz.so, tar -> .../libtar.so and ar -> .../libar.so (symlinks)
+# xz -> .../libxz.so, tar -> .../libtar.so, ar -> .../libar.so and
+# curl -> .../libcurl-cli.so (symlinks)
 
-adb shell "run-as dev.bidzz.opencode sh -c 'cd /data/user/0/dev.bidzz.opencode/files/engine/tools/bin && ./git --version && ./rg --version | head -1 && ./node --version && ./xz --version | head -1 && ./tar --version | head -1 && ./ar --version | head -1'"
-# expect: git version 2.56.0 / ripgrep 15.1.0 / v24.22.2 / xz (XZ Utils) 5.8.4 / tar (GNU tar) 1.35 / GNU ar (GNU Binutils) 2.47
+adb shell "run-as dev.bidzz.opencode sh -c 'cd /data/user/0/dev.bidzz.opencode/files/engine/tools/bin && ./git --version && ./rg --version | head -1 && ./node --version && ./xz --version | head -1 && ./tar --version | head -1 && ./ar --version | head -1 && ./curl --version | head -1'"
+# expect: git version 2.56.0 / ripgrep 15.1.0 / v24.22.2 / xz (XZ Utils) 5.8.4 / tar (GNU tar) 1.35 / GNU ar (GNU Binutils) 2.47 / curl 8.23.0
 ```
 
 End-to-end, against a real repository:
