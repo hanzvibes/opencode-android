@@ -11,6 +11,7 @@ import dev.bidzz.opencode.core.api.IntegrationApi
 import dev.bidzz.opencode.core.api.ModelApi
 import dev.bidzz.opencode.core.api.PermissionApi
 import dev.bidzz.opencode.core.api.ProviderApi
+import dev.bidzz.opencode.core.api.SkillApi
 import dev.bidzz.opencode.core.api.SessionApi
 import dev.bidzz.opencode.core.engine.EngineCredentials
 import java.util.concurrent.atomic.AtomicReference
@@ -32,6 +33,7 @@ class EngineApi(private val workspaceDirectory: () -> String) {
         val models: ModelApi,
         val agents: AgentApi,
         val commands: CommandApi,
+        val skills: SkillApi,
         val providers: ProviderApi,
         val permissions: PermissionApi,
         val integrations: IntegrationApi,
@@ -59,6 +61,7 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             models = ModelApi(client),
             agents = AgentApi(client),
             commands = CommandApi(client),
+            skills = SkillApi(client),
             providers = ProviderApi(client),
             permissions = PermissionApi(client),
             integrations = IntegrationApi(client),

@@ -54,6 +54,32 @@ data class CommandsResponse(
 )
 
 /**
+ * A skill as advertised by `GET /api/skill` (`Skill.Info`,
+ * docs/API-REFERENCE.md).
+ *
+ * `content` is the skill file's full text — the palette shows only the
+ * name and description and never reads it. `autoinvoke` is true when the
+ * agent may use the skill on its own; the app never activates a skill
+ * itself (activation is an experimental endpoint), it only lists them so
+ * the operator can mention one in a prompt.
+ */
+@Serializable
+data class SkillInfo(
+    val id: String,
+    val name: String = "",
+    val description: String? = null,
+    val autoinvoke: Boolean? = null,
+    val path: String? = null,
+    val content: String? = null,
+)
+
+@Serializable
+data class SkillsResponse(
+    val data: List<SkillInfo> = emptyList(),
+    val location: LocationRef? = null,
+)
+
+/**
  * Body of `POST /api/session/{id}/command`.
  *
  * `name` selects the command; `text` is whatever followed it on the command line. The

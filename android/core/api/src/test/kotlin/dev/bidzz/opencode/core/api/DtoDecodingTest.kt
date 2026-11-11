@@ -7,6 +7,7 @@ import dev.bidzz.opencode.core.api.dto.SavedPermissionsResponse
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
+import dev.bidzz.opencode.core.api.dto.SkillsResponse
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -161,6 +162,26 @@ class DtoDecodingTest {
         assertEquals("bash:ls *", parsed.data[0].resource)
         assertEquals("edit", parsed.data[1].action)
         assertEquals("/storage/emulated/0/Projects/demo/README.md", parsed.data[1].resource)
+    }
+
+    @Test
+    fun `decodes the skill list`() {
+        val raw = """
+            {"data":[
+              {"id":"sk_1","name":"commit","description":"Write a commit message",
+               "autoinvoke":true,"path":"/skills/commit/SKILL.md","content":"# commit\n"},
+              {"id":"sk_2","name":"review-pr","description":"Review a pull request",
+               "autoinvoke":false,"path":"/skills/review-pr/SKILL.md"}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<SkillsResponse>(raw)
+        assertEquals(2, parsed.data.size)
+        assertEquals("commit", parsed.data[0].name)
+        assertEquals(true, parsed.data[0].autoinvoke)
+        assertEquals("Write a commit message", parsed.data[0].description)
+        assertEquals("review-pr", parsed.data[1].name)
+        assertEquals(false, parsed.data[1].autoinvoke)
     }
 
     @Test

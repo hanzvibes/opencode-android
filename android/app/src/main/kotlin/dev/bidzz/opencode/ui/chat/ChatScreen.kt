@@ -969,12 +969,16 @@ fun ChatScreen(
                     val paletteState = rememberCommandPaletteState(
                         commands = state.commands,
                         draft = state.draft,
+                        skills = state.skills,
                     )
 
                     CommandSuggestions(
                         paletteState = paletteState,
                         onPick = { name -> onDraftChange("/$name ") },
                         onDismiss = { dismissPalette() },
+                        // A skill is mentioned in the draft as plain text, not
+                        // run as a command: the agent loads it from the mention.
+                        onSkillPick = { name -> onDraftChange("$name ") },
                     )
 
                     // One attach picker for both entry points: the @ chip
@@ -1127,6 +1131,7 @@ fun ChatScreen(
                                     event = keyEvent,
                                     onPick = { name -> onDraftChange("/$name ") },
                                     onDismiss = { dismissPalette() },
+                                    onSkillPick = { name -> onDraftChange("$name ") },
                                 )
                             }
                         },

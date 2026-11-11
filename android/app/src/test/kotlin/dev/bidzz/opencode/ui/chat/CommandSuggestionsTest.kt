@@ -6,6 +6,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.NativeKeyEvent
 import dev.bidzz.opencode.core.api.dto.CommandInfo
+import dev.bidzz.opencode.core.api.dto.SkillInfo
 import dev.bidzz.opencode.ui.Glyph
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -120,6 +121,61 @@ class CommandSuggestionsTest {
         assertTrue(resolved.any { it.name == "review" })
         assertTrue(resolved.any { it.name == "fix" })
         assertTrue(resolved.any { it.name == "init" })
+    }
+
+    @Test
+    fun `resolveSlashCommands appends skills after commands`() {
+        val skills = listOf(
+            SkillInfo(id = "sk_1", name = "commit", description = "Write a commit message", autoinvoke = true),
+            SkillInfo(id = "sk_2", name = "review-pr", description = "Review a pull request"),
+        )
+
+        val resolved = resolveSlashCommands(emptyList(), skills)
+        val skillRows = resolved.filter { it.isSkill }
+
+        assertEquals(listOf("commit", "review-pr"), skillRows.map { it.name })
+        assertEquals("Write a commit message", skillRows[0].description)
+        assertEquals(Glyph.Sparkles, skillRows[0].glyph)
+        assertEquals("skill", skillRows[0].parameterHint)
+        // Skills come after every command, and no command is marked a skill.
+        assertTrue(resolved.indexOf(skillRows[0]) > resolved.indexOfFirst { it.name == "help" })
+        assertTrue(resolved.filter { !it.isSkill }.none { it.name == "commit" })
+    }
+
+    @Test
+    fun `resolveSlashCommands drops a skill that collides with a command name`() {
+        // The palette keys rows by name: a skill named like a command would
+        // duplicate a key and crash composition on open.
+        val skills = listOf(
+            SkillInfo(id = "sk_1", name = "test", description = "A skill that shares a command name"),
+            SkillInfo(id = "sk_2", name = "Test", description = "Same name, different case"),
+            SkillInfo(id = "sk_3", name = "commit", description = "A skill that survives"),
+        )
+
+        val resolved = resolveSlashCommands(emptyList(), skills)
+
+        assertEquals(1, resolved.count { it.name == "test" })
+        assertFalse(resolved.first { it.name == "test" }.isSkill)
+        assertEquals(listOf("commit"), resolved.filter { it.isSkill }.map { it.name })
+    }
+
+    @Test
+    fun `skills are searchable by description in the palette`() {
+        val resolved = resolveSlashCommands(
+            emptyList(),
+            listOf(SkillInfo(id = "sk_1", name = "commit", description = "Write a commit message")),
+        )
+
+        val matches = filterSlashCommands(resolved, "/commit message")
+        assertTrue(matches.isEmpty()) // a space ends palette mode; the query is the first word only
+        assertTrue(filterSlashCommands(resolved, "/commit").any { it.isSkill && it.name == "commit" })
+        assertTrue(filterSlashCommands(resolved, "/message").any { it.isSkill })
+    }
+
+    @Test
+    fun `resolveSlashCommands without skills is unchanged`() {
+        val engineCmds = listOf(CommandInfo(name = "deploy", description = "Deploy the app"))
+        assertEquals(resolveSlashCommands(engineCmds), resolveSlashCommands(engineCmds, emptyList()))
     }
 
     @Test

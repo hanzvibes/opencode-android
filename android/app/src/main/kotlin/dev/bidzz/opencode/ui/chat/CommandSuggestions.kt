@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.CommandInfo
+import dev.bidzz.opencode.core.api.dto.SkillInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
@@ -89,6 +90,8 @@ data class SlashCommand(
     @StringRes val descriptionRes: Int? = null,
     val parameterHint: String? = null,
     val glyph: Glyph = Glyph.Terminal,
+    /** True for engine skills: picking one mentions it in the draft instead of running a command. */
+    val isSkill: Boolean = false,
 )
 
 /**
@@ -182,8 +185,16 @@ fun parseParameterHint(description: String?): Pair<String?, String?> {
  * Combines engine-advertised commands with the rich built-in catalog.
  *
  * Engine definitions take precedence for descriptions while inheriting parameter hints and glyphs.
+ * Engine skills are appended after the commands: they are not runnable, so
+ * picking one only mentions the skill in the draft. A skill whose name
+ * collides with a command is dropped — the palette keys rows by name, and
+ * a duplicate key crashes composition on open (same reason commands are
+ * deduped above).
  */
-fun resolveSlashCommands(engineCommands: List<CommandInfo>): List<SlashCommand> {
+fun resolveSlashCommands(
+    engineCommands: List<CommandInfo>,
+    skills: List<SkillInfo> = emptyList(),
+): List<SlashCommand> {
     val builtInMap = BUILTIN_SLASH_COMMANDS.associateBy { it.name.lowercase() }
     val result = mutableListOf<SlashCommand>()
     val seen = mutableSetOf<String>()
@@ -223,6 +234,27 @@ fun resolveSlashCommands(engineCommands: List<CommandInfo>): List<SlashCommand> 
         if (!seen.contains(builtin.name.lowercase())) {
             result.add(builtin)
         }
+    }
+
+    for (skill in skills) {
+        val nameLower = skill.name.lowercase().trim().removePrefix("/")
+        // A nameless skill is not mentionable, and a name that collides
+        // with a command (or an earlier skill) would duplicate a row key.
+        if (nameLower.isEmpty() || !seen.add(nameLower)) continue
+        val desc = skill.description?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Use the $nameLower skill"
+        result.add(
+            SlashCommand(
+                name = nameLower,
+                description = desc,
+                // The tag chip reads as the entry's kind, the way the
+                // parameter hint chip does for commands; skills take no
+                // arguments, so there is no hint to show instead.
+                parameterHint = "skill",
+                glyph = Glyph.Sparkles,
+                isSkill = true,
+            )
+        )
     }
 
     return result
@@ -326,12 +358,14 @@ fun buildHighlightedCommandName(
 class CommandPaletteState(
     initialCommands: List<CommandInfo> = emptyList(),
     initialDraft: String = "",
+    initialSkills: List<SkillInfo> = emptyList(),
 ) {
     var rawDraft by mutableStateOf(initialDraft)
     var rawCommands by mutableStateOf(initialCommands)
+    var rawSkills by mutableStateOf(initialSkills)
 
     val allCommands: List<SlashCommand>
-        get() = resolveSlashCommands(rawCommands)
+        get() = resolveSlashCommands(rawCommands, rawSkills)
 
     val isActive: Boolean
         get() = isCommandPaletteActive(rawDraft)
@@ -368,11 +402,17 @@ class CommandPaletteState(
 
     /**
      * Intercepts physical keyboard navigation events (Arrow Up/Down, Tab, Enter, Escape).
+     *
+     * [onSkillPick] receives a picked skill's name; it defaults to [onPick]
+     * so callers that treat every row as a command keep working, but the
+     * chat composer passes a different handler: a skill is mentioned in
+     * the draft as plain text, not run as `/name`.
      */
     fun handleKeyEvent(
         event: KeyEvent,
         onPick: (String) -> Unit,
         onDismiss: () -> Unit = {},
+        onSkillPick: (String) -> Unit = onPick,
     ): Boolean {
         if (!isActive) return false
         if (event.type != KeyEventType.KeyDown) {
@@ -395,7 +435,7 @@ class CommandPaletteState(
             Key.Tab, Key.Enter, Key.NumPadEnter -> {
                 val selected = currentSelectedCommand()
                 if (selected != null) {
-                    onPick(selected.name)
+                    if (selected.isSkill) onSkillPick(selected.name) else onPick(selected.name)
                     true
                 } else {
                     false
@@ -411,16 +451,18 @@ class CommandPaletteState(
 }
 
 /**
- * Remembers a [CommandPaletteState] synchronized with current engine commands and draft text.
+ * Remembers a [CommandPaletteState] synchronized with current engine commands, skills and draft text.
  */
 @Composable
 fun rememberCommandPaletteState(
     commands: List<CommandInfo>,
     draft: String,
+    skills: List<SkillInfo> = emptyList(),
 ): CommandPaletteState {
-    val state = remember { CommandPaletteState(commands, draft) }
+    val state = remember { CommandPaletteState(commands, draft, skills) }
     state.rawDraft = draft
     state.rawCommands = commands
+    state.rawSkills = skills
 
     val matches = state.matches
     LaunchedEffect(matches) {
@@ -433,7 +475,9 @@ fun rememberCommandPaletteState(
  * Pro IDE Command Palette popover anchored above the message composer.
  *
  * Features prefix highlighting, parameter syntax hints, smooth slide/expand animations,
- * keyboard navigation, and single-tap selection.
+ * keyboard navigation, and single-tap selection. [onSkillPick] receives a
+ * picked skill's name; it defaults to [onPick] so a skill is treated like
+ * a command unless the caller says otherwise.
  */
 @Composable
 fun CommandSuggestions(
@@ -442,13 +486,16 @@ fun CommandSuggestions(
     onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit = {},
+    skills: List<SkillInfo> = emptyList(),
+    onSkillPick: (String) -> Unit = onPick,
 ) {
-    val state = rememberCommandPaletteState(commands = commands, draft = draft)
+    val state = rememberCommandPaletteState(commands = commands, draft = draft, skills = skills)
     CommandSuggestions(
         paletteState = state,
         onPick = onPick,
         modifier = modifier,
         onDismiss = onDismiss,
+        onSkillPick = onSkillPick,
     )
 }
 
@@ -474,6 +521,7 @@ fun CommandSuggestions(
     onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit = {},
+    onSkillPick: (String) -> Unit = onPick,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -569,7 +617,7 @@ fun CommandSuggestions(
                             command = command,
                             query = query,
                             isSelected = isSelected,
-                            onPick = { onPick(command.name) },
+                            onPick = { if (command.isSkill) onSkillPick(command.name) else onPick(command.name) },
                             onHover = { paletteState.selectIndex(index) },
                             modifier = Modifier
                                 .animateItem()

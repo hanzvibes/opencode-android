@@ -98,6 +98,8 @@ data class ChatUiState(
     val activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
     /** Slash commands offered by the engine and the project's `commands/` folder. */
     val commands: List<dev.bidzz.opencode.core.api.dto.CommandInfo> = emptyList(),
+    /** Skills offered by the engine (`GET /api/skill`); shown in the `/` palette, read-only. */
+    val skills: List<dev.bidzz.opencode.core.api.dto.SkillInfo> = emptyList(),
     /** Active git branch when inside a version-controlled workspace. */
     val branch: String? = null,
 )
@@ -552,6 +554,12 @@ class ChatViewModel(
                 when (r) {
                     is ApiResult.Success -> _state.value = _state.value.copy(commands = r.value)
                     is ApiResult.Failure -> Unit // commands are optional; an empty set is normal
+                }
+            }
+            h.skills.list().let { r ->
+                when (r) {
+                    is ApiResult.Success -> _state.value = _state.value.copy(skills = r.value)
+                    is ApiResult.Failure -> Unit // skills are optional; an empty set is normal
                 }
             }
         }
