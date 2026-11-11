@@ -52,6 +52,13 @@ jobs:
         working-directory: android
         run: ./gradlew test --no-daemon
 
+      # Opsi C: lint runs on every PR/push so new warnings cannot pile up
+      # silently. It fails only on errors (the AGP default); warnings are
+      # reported in the log.
+      - name: Lint
+        working-directory: android
+        run: ./gradlew lint --no-daemon
+
       # The engine ships as a native library inside the upstream release APKs.
       # This is the only step that pulls executable content off the internet, so
       # the bytes are pinned: the digests below are GitHub's own release-asset
@@ -140,6 +147,12 @@ jobs:
       - name: Compile and package
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
+
+      # Opsi C: the release artifact (R8 + shrinkResources) must build too —
+      # debug-only CI hid release-only failures.
+      - name: Compile release artifact
+        working-directory: android
+        run: ./gradlew :app:assembleRelease --no-daemon
 
       - name: Upload debug APK to rolling release
         if: github.event_name == 'push'
