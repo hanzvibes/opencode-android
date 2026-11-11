@@ -49,6 +49,11 @@ class EngineBinary private constructor(
             "libxz.so" to "xz",
             "libtar.so" to "tar",
             "libar.so" to "ar",
+            // curl (Termux bionic build, staged by
+            // script/android/stage-curl.sh). Staged as libcurl-cli.so
+            // because the name libcurl.so is taken by the library itself;
+            // libcurl and its support libs resolve via LD_LIBRARY_PATH.
+            "libcurl-cli.so" to "curl",
         )
 
         fun resolve(nativeLibraryDir: File, filesDir: File): EngineBinary {

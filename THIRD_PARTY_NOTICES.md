@@ -239,16 +239,44 @@ above is the Termux package source
 https://packages.termux.dev/apt/termux-main/ (pool paths and SHA256 pins are
 in `script/android/stage-xz.sh`).
 
+### curl — `libcurl-cli.so` (+ libcurl and support libs)
+
+The in-app agent needs a working HTTP client for downloads, API calls and
+debugging network issues from the engine shell. curl comes from Termux apt
+(bionic-native, PIE, 16 KB aligned). Staged by
+`script/android/stage-curl.sh` (pinned versions + SHA256, `patchelf`
+renames the versioned `.so` names to `lib<name>.so`).
+
+| Component | Version | Licence | Upstream |
+|---|---|---|---|
+| curl (`curl`, staged as `libcurl-cli.so`) + libcurl | 8.23.0 | MIT (curl licence) | https://curl.se/ |
+| libnghttp2 | 1.71.0 | MIT | https://nghttp2.org/ |
+| libnghttp3 | 1.19.0 | MIT | https://github.com/nghttp2/nghttp3 |
+| libngtcp2 | 1.26.0 | MIT | https://github.com/ngtcp2/ngtcp2 |
+| libssh2 | 1.11.1 | BSD-3-Clause | https://www.libssh2.org/ |
+| OpenSSL (`libssl.so`, `libcrypto.so`, shared with the Node closure) | 3.6.5 | Apache-2.0 | https://www.openssl.org/ |
+| zlib (`libz.so`, shared with the Node closure) | 1.4 | zlib License | https://zlib.net/ |
+
+The CLI binary is staged as `libcurl-cli.so` because the name `libcurl.so`
+is taken by the library itself. TLS verification uses the CA bundle Node
+already ships (`SSL_CERT_FILE=<files>/engine/node/etc/tls/cert.pem`).
+
+This does NOT make `git clone https://` work: the bundled git was built
+with `NO_CURL`/`NO_OPENSSL`, so HTTPS is compiled out of git itself.
+Rebuilding git is a separate step (Windows-only `build-tools.ps1` + the
+upstream APK rebuilt).
+
 ---
 
 ## Not bundled
 
 Deliberately excluded, to keep the APK small and the licence surface narrow:
 
-- **libcurl** — git is built with `NO_CURL` and `NO_OPENSSL`, so network
-  operations (clone/push/fetch over https) are not available. OpenSSL and
-  the CA bundle ARE now bundled (for Node.js, see above), but git was built
-  without them, so it cannot use them yet; wiring git to them is a separate
+- **libcurl for git** — git is built with `NO_CURL` and `NO_OPENSSL`, so
+  network operations (clone/push/fetch over https) are not available from
+  git. libcurl itself IS now bundled (for the `curl` tool, see above), and
+  OpenSSL + the CA bundle are bundled (for Node.js), but git was built
+  without them, so it cannot use them yet; rebuilding git is a separate
   item (Tier 2, item 23 in the runtime fix list).
 - **pcre2 for ripgrep** — ripgrep is built without the pcre2 feature. The engine's search
   paths use the default Rust regex engine. (PCRE2 itself IS now bundled, as a
