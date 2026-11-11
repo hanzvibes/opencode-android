@@ -26,6 +26,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,8 +37,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -64,6 +67,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -197,6 +201,18 @@ fun MessageBubble(
             modifier = modifier.fillMaxWidth(),
             contentAlignment = Alignment.CenterEnd,
         ) {
+            // Pill row scroll (PR #9 follow-up): the row under the bubble
+            // (checkmark + Copy + Edit + Resend) is wider than a narrow
+            // screen once the pills size to their labels, and a plain Row
+            // clips the rightmost pill off the edge. The row scrolls
+            // horizontally instead, and starts scrolled to the end so the
+            // Resend pill — the one that was clipped — is visible first.
+            // The effect re-runs when the scrollable range changes (pills
+            // appearing), which also re-anchors the end after rotation.
+            val userPillScrollState = rememberScrollState()
+            LaunchedEffect(userPillScrollState.maxValue) {
+                userPillScrollState.scrollTo(userPillScrollState.maxValue)
+            }
             val maxBubbleWidth = (maxWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp)
             val userBubbleShape = RoundedCornerShape(
                 topStart = radius.bubble,
@@ -246,7 +262,9 @@ fun MessageBubble(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                        modifier = Modifier.padding(top = spacing.xs),
+                        modifier = Modifier
+                            .padding(top = spacing.xs)
+                            .horizontalScroll(userPillScrollState),
                     ) {
                         DeliveryCheckmark(delivered = delivered)
                         CopyButton(text = markdown)
@@ -289,6 +307,11 @@ fun MessageBubble(
 
             val hasReasoning = effectiveParts.any { it is ChatTurnPart.Reasoning }
             val isThinkingActive = effectiveParts.any { it is ChatTurnPart.Reasoning && it.isActivelyStreaming }
+
+            // Same scroll guard as the user row (PR #9 follow-up): Copy +
+            // Reply cannot clip on a narrow turn. Left-aligned, so no
+            // scroll-to-end — the row starts at Copy as before.
+            val assistantPillScrollState = rememberScrollState()
 
             var elapsedSeconds by remember(streaming) { mutableIntStateOf(0) }
             var recordedDuration by remember { mutableIntStateOf(0) }
@@ -407,7 +430,9 @@ fun MessageBubble(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                    modifier = Modifier.padding(top = spacing.xs),
+                    modifier = Modifier
+                        .padding(top = spacing.xs)
+                        .horizontalScroll(assistantPillScrollState),
                 ) {
                     CopyButton(text = allProse)
                     ReplyButton(
@@ -756,11 +781,13 @@ private fun ReplyButton(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val pillShape = RoundedCornerShape(radius.full)
-    // 48dp hit area (Phase 2, finding 14): the pill stays its visual size,
-    // centred in a 48dp touch target like the other chat controls.
+    // 48dp minimum hit area (Phase 2, finding 14): the pill keeps its
+    // visual size, centred in a touch target that is at least 48dp tall
+    // and grows to fit its label — a fixed 48dp box squeezed the label
+    // and wrapped it ("Co py", "Re ply") on tablet.
     Box(
         modifier = modifier
-            .size(48.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -785,6 +812,9 @@ private fun ReplyButton(
                     text = stringResource(R.string.message_reply),
                     style = OpenCodeTypography.label.copy(fontSize = 11.sp),
                     color = colors.onSurfaceMuted,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -831,12 +861,14 @@ private fun CopyButton(
     )
     val copiedLabel = stringResource(R.string.code_copied)
 
-    // 48dp hit area (Phase 2, finding 14): the pill stays its visual size,
-    // centred in a 48dp touch target like the other chat controls. Copying
-    // announces "Copied" once, on the tap — never on recomposition.
+    // 48dp minimum hit area (Phase 2, finding 14): the pill keeps its
+    // visual size, centred in a touch target that is at least 48dp tall
+    // and grows to fit its label — a fixed 48dp box squeezed the label
+    // and wrapped it ("Co py") on tablet. Copying announces "Copied"
+    // once, on the tap — never on recomposition.
     Box(
         modifier = modifier
-            .size(48.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clickable {
                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                 cm?.setPrimaryClip(ClipData.newPlainText("OpenCode", text))
@@ -875,6 +907,9 @@ private fun CopyButton(
                         text = stringResource(if (isCopied) R.string.code_copied else R.string.code_copy),
                         style = OpenCodeTypography.label.copy(fontSize = 11.sp),
                         color = contentColor,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -901,10 +936,12 @@ private fun UserActionPill(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val pillShape = RoundedCornerShape(radius.full)
-    // 48dp hit area (Phase 2, finding 14), same pattern as Copy/Reply.
+    // 48dp minimum hit area (Phase 2, finding 14), same pattern as
+    // Copy/Reply: at least 48dp tall, growing to fit the label — a fixed
+    // 48dp box squeezed it and wrapped it ("Edi t", "Re se nd") on tablet.
     Box(
         modifier = modifier
-            .size(48.dp)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
@@ -929,6 +966,9 @@ private fun UserActionPill(
                     text = stringResource(labelRes),
                     style = OpenCodeTypography.label.copy(fontSize = 11.sp),
                     color = colors.onSurfaceMuted,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -955,7 +995,10 @@ private fun TurnFooter(
         }
         if (turnDurationMs != null) add(formatStepDuration(turnDurationMs))
         if (usageCostUsd != null) add(formatTurnCost(usageCostUsd))
-        if (!stopReason.isNullOrBlank()) {
+        // A plain "stop" means the turn ended normally and says nothing —
+        // showing it reads as the redundant "stop: stop". Only a real
+        // reason (length, error, ...) earns a segment.
+        if (!stopReason.isNullOrBlank() && !stopReason.equals("stop", ignoreCase = true)) {
             add(stringResource(R.string.turn_footer_stop_reason, stopReason))
         }
     }

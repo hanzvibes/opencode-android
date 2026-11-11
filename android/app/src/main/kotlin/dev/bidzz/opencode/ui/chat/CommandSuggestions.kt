@@ -48,6 +48,8 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
@@ -449,6 +452,19 @@ fun CommandSuggestions(
     )
 }
 
+/** Rows fully visible in the command palette at once. */
+private const val PALETTE_VISIBLE_ROWS = 4
+
+/**
+ * One [CommandSuggestionRow] is 56dp tall: 8dp vertical padding on each
+ * side, and the details column — name line 20sp + 2dp gap + description
+ * line 18sp — is taller than the 28dp icon badge and the trailing hint,
+ * so the content height is 40dp and the row is 16dp + 40dp. The old
+ * 240.dp cap was 4.29 rows, so the last row was sliced mid-glyph.
+ */
+private val PALETTE_ROW_CONTENT_HEIGHT = 40.dp
+private val PALETTE_ROW_VERTICAL_PADDING = 16.dp
+
 /**
  * Overload accepting an explicit [CommandPaletteState] to coordinate with external keyboard input.
  */
@@ -468,6 +484,18 @@ fun CommandSuggestions(
     val matches = paletteState.matches
     val query = extractCommandQuery(paletteState.rawDraft)
     val listState = rememberLazyListState()
+
+    // Palette height is a whole number of rows (PR #9 follow-up): the cap
+    // must never slice the last row in half. The cap is measured from the
+    // first row at runtime so it stays exact at any font scale; the
+    // fallback is the same four rows computed from the font scale, so the
+    // first frame is already right and the measured value only confirms
+    // it — no snap, and no large empty gap when fewer rows match.
+    val density = LocalDensity.current
+    var paletteRowHeight by remember { mutableStateOf<Dp?>(null) }
+    val paletteMaxHeight = paletteRowHeight?.times(PALETTE_VISIBLE_ROWS)
+        ?: (PALETTE_ROW_CONTENT_HEIGHT * density.fontScale + PALETTE_ROW_VERTICAL_PADDING)
+            .times(PALETTE_VISIBLE_ROWS)
 
     // Keep active selection scrolled into view during keyboard navigation
     LaunchedEffect(paletteState.selectedIndex) {
@@ -532,7 +560,7 @@ fun CommandSuggestions(
                     state = listState,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 240.dp),
+                        .heightIn(max = paletteMaxHeight),
                 ) {
                     itemsIndexed(matches, key = { _, item -> item.name }) { index, command ->
                         val isSelected = index == paletteState.selectedIndex
@@ -543,7 +571,18 @@ fun CommandSuggestions(
                             isSelected = isSelected,
                             onPick = { onPick(command.name) },
                             onHover = { paletteState.selectIndex(index) },
-                            modifier = Modifier.animateItem(),
+                            modifier = Modifier
+                                .animateItem()
+                                .then(
+                                    if (index == 0) {
+                                        Modifier.onGloballyPositioned { coords ->
+                                            paletteRowHeight =
+                                                with(density) { coords.size.height.toDp() }
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         )
                     }
                 }
