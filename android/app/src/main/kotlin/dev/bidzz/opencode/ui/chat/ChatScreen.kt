@@ -496,11 +496,14 @@ fun ChatScreen(
     // .py/.md/.json the provider does not call text/* is still pickable
     // and a binary is refused with a message, not by being unpickable.
     // The read runs on IO: a 64 KB file is small, but the resolver can
-    // block on a slow provider.
+    // block on a slow provider. The resolver is read here, in the
+    // composable body — LocalContext.current is a @Composable call and
+    // cannot be used inside the suspend LaunchedEffect below.
+    val safContentResolver = LocalContext.current.contentResolver
     LaunchedEffect(safFilePicked) {
         safFilePicked.collect { uri ->
             val result = withContext(Dispatchers.IO) {
-                readSafFile(LocalContext.current.contentResolver, uri)
+                readSafFile(safContentResolver, uri)
             }
             when (result) {
                 is SafReadResult.Success -> onAttachmentAdded(result.file)
