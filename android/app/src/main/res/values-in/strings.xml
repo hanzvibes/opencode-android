@@ -69,6 +69,12 @@
     <string name="mcp_status_needs_auth">Butuh autentikasi</string>
     <string name="mcp_status_pending">Menunggu</string>
     <string name="mcp_status_unknown">Tidak diketahui</string>
+    <string name="plugin_title">Plugin</string>
+    <string name="plugin_body">Plugin yang aktif di engine, dan statusnya. Cek pembaruan dan update belum tersedia.</string>
+    <string name="plugin_empty">Tidak ada plugin yang aktif di engine.</string>
+    <string name="plugin_status_active">Aktif</string>
+    <string name="plugin_status_failed">Gagal</string>
+    <string name="plugin_status_unknown">Tidak diketahui</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Lewati</string>

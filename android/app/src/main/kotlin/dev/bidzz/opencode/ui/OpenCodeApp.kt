@@ -66,6 +66,8 @@ import dev.bidzz.opencode.ui.files.FileViewScreen
 import dev.bidzz.opencode.ui.files.FileViewViewModel
 import dev.bidzz.opencode.ui.mcp.McpServersScreen
 import dev.bidzz.opencode.ui.mcp.McpServersViewModel
+import dev.bidzz.opencode.ui.plugin.PluginsScreen
+import dev.bidzz.opencode.ui.plugin.PluginsViewModel
 import dev.bidzz.opencode.ui.onboarding.OnboardingScreen
 import dev.bidzz.opencode.ui.onboarding.OnboardingStore
 import dev.bidzz.opencode.ui.onboarding.SampleProject
@@ -102,6 +104,7 @@ internal sealed interface Screen {
     data object Providers : Screen
     data object Diagnostics : Screen
     data object McpServers : Screen
+    data object Plugins : Screen
     data object About : Screen
 }
 
@@ -117,6 +120,7 @@ internal fun Screen.parent(): Screen = when (this) {
     is Screen.Diff -> Screen.DiffList
     Screen.Providers -> Screen.Settings
     Screen.McpServers -> Screen.Settings
+    Screen.Plugins -> Screen.Settings
     Screen.About -> Screen.Chat
     else -> Screen.Chat
 }
@@ -132,7 +136,7 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Sessions -> 1
     Screen.Projects, Screen.Files, Screen.Settings, Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
-    Screen.Providers, Screen.McpServers, Screen.About -> 3
+    Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.About -> 3
     is Screen.Diff -> 4
 }
 
@@ -231,12 +235,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         McpServersViewModel(app.engineApi)
     })
 
+    val pluginsViewModel: PluginsViewModel = viewModel(factory = viewModelFactory { _ ->
+        PluginsViewModel(app.engineApi)
+    })
+
     val explorerState by explorerViewModel.state.collectAsState()
     val fileState by fileViewModel.state.collectAsState()
     val diffState by diffViewModel.state.collectAsState()
     val sessionDiffState by sessionDiffViewModel.state.collectAsState()
     val providersState by providersViewModel.state.collectAsState()
     val mcpServersState by mcpServersViewModel.state.collectAsState()
+    val pluginsState by pluginsViewModel.state.collectAsState()
 
     // Adaptive layout (Phase 3): at >=840dp the chat drawer becomes a
     // persistent sidebar and the sessions/files screens gain a detail
@@ -662,6 +671,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     onProjects = { screen = Screen.Projects },
                     onProviders = { screen = Screen.Providers },
                     onMcpServers = { screen = Screen.McpServers },
+                    onPlugins = { screen = Screen.Plugins },
                     onAbout = { screen = Screen.About },
                 )
 
@@ -692,6 +702,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     state = mcpServersState,
                     onBack = { screen = Screen.Settings },
                     onRefresh = mcpServersViewModel::refresh,
+                )
+
+                Screen.Plugins -> PluginsScreen(
+                    state = pluginsState,
+                    onBack = { screen = Screen.Settings },
+                    onRefresh = pluginsViewModel::refresh,
                 )
                 }
             }

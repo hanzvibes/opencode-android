@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.core.api.dto
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 /**
  * DTOs for the engine's control surface: agents (modes), slash commands, providers.
@@ -104,6 +105,47 @@ data class McpServer(
 @Serializable
 data class McpServersResponse(
     val data: List<McpServer> = emptyList(),
+    val location: LocationRef? = null,
+)
+
+/**
+ * One server plugin (`GET /api/plugin`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/plugin.ts`): `Plugin.Info` is
+ * `{ id?, source, features, state }`. `source` is a tagged union —
+ * builtin | package `{ target, version?, outdated?, updating? }` |
+ * local `{ path }` | sdk — so it is decoded as a [JsonObject] and read
+ * through `pluginSourceLabel` instead of a sealed hierarchy: the engine
+ * gains source kinds without notice. `state` is
+ * `{ status: "active" }` or `{ status: "failed", error, ref? }`.
+ */
+@Serializable
+data class PluginInfo(
+    val id: String? = null,
+    val source: JsonObject = JsonObject(emptyMap()),
+    val features: PluginFeatures = PluginFeatures(),
+    val state: PluginState = PluginState(),
+)
+
+@Serializable
+data class PluginFeatures(
+    val server: Boolean? = null,
+    val tui: Boolean? = null,
+    val rpc: Boolean? = null,
+    val gui: Boolean? = null,
+)
+
+@Serializable
+data class PluginState(
+    val status: String = "",
+    val error: String? = null,
+    val ref: String? = null,
+)
+
+@Serializable
+data class PluginsResponse(
+    val data: List<PluginInfo> = emptyList(),
     val location: LocationRef? = null,
 )
 

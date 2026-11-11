@@ -100,6 +100,7 @@ fun SettingsScreen(
     onProjects: () -> Unit,
     onProviders: () -> Unit,
     onMcpServers: () -> Unit,
+    onPlugins: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -189,6 +190,8 @@ fun SettingsScreen(
     val diagnosticsValue = engineStateWord(status.state).replaceFirstChar { it.uppercase() }
     val mcpTitle = stringResource(R.string.mcp_title)
     val mcpSubtitle = stringResource(R.string.mcp_body)
+    val pluginTitle = stringResource(R.string.plugin_title)
+    val pluginSubtitle = stringResource(R.string.plugin_body)
     val languageTitle = stringResource(R.string.settings_language)
     val languageValue = languageLabel(language)
     val providerTitle = stringResource(R.string.settings_provider_title)
@@ -224,7 +227,8 @@ fun SettingsScreen(
         query, diagnosticsTitle, diagnosticsSubtitle, diagnosticsValue,
     )
     val mcpVisible = matchesSettingsQuery(query, mcpTitle, mcpSubtitle)
-    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible
+    val pluginVisible = matchesSettingsQuery(query, pluginTitle, pluginSubtitle)
+    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible
     val languageVisible = matchesSettingsQuery(query, languageTitle, languageValue)
     val visibleThemeModes = ThemeMode.entries.filter { mode ->
         matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
@@ -404,6 +408,14 @@ fun SettingsScreen(
                             title = mcpTitle,
                             subtitle = mcpSubtitle,
                             onClick = onMcpServers,
+                        )
+                    }
+                    if (pluginVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Sparkle,
+                            title = pluginTitle,
+                            subtitle = pluginSubtitle,
+                            onClick = onPlugins,
                         )
                     }
                 }

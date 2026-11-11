@@ -70,6 +70,12 @@
     <string name="mcp_status_needs_auth">Needs auth</string>
     <string name="mcp_status_pending">Pending</string>
     <string name="mcp_status_unknown">Unknown</string>
+    <string name="plugin_title">Plugins</string>
+    <string name="plugin_body">Plugins enabled on the engine, and their status. Checking for updates and updating are not available yet.</string>
+    <string name="plugin_empty">No plugins enabled on the engine.</string>
+    <string name="plugin_status_active">Active</string>
+    <string name="plugin_status_failed">Failed</string>
+    <string name="plugin_status_unknown">Unknown</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Skip</string>
