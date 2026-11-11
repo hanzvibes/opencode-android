@@ -121,6 +121,13 @@ class OpenCodeApplication : Application() {
             unavailableStatus.value = EngineStatus(lastError = e.message)
             Log.e(TAG, "engine unavailable: ${e.message}")
         }
+
+        // Seed the agent's runtime guide into the workspace (Opsi A): the
+        // engine reads AGENTS.md from the project directory, and the file is
+        // how the agent learns the bundled runtime. Runs even when the engine
+        // failed to resolve — the file is ready for the next successful start.
+        // Non-fatal by design, same as NodeAssets above.
+        runCatching { WorkspaceAgentsMd.ensure(assets, workspaceStore.resolve()) }
     }
 
     /**
@@ -155,6 +162,9 @@ class OpenCodeApplication : Application() {
             return true
         }
         workspaceStore.selectedPath = dir.absolutePath
+        // The new project gets the runtime guide too, before the engine
+        // restarts into it — otherwise only the first workspace ever has one.
+        runCatching { WorkspaceAgentsMd.ensure(assets, dir) }
         Log.i(TAG, "workspace switched to ${dir.absolutePath}, restarting engine")
         sendToService(EngineService.ACTION_RESTART)
         return true
