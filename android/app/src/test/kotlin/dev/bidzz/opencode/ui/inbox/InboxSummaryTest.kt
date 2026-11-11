@@ -26,8 +26,8 @@ class InboxSummaryTest {
         val payload = buildJsonObject {
             put("text", "Review this")
             putJsonArray("files") {
-                addJsonObject { put("mime", "text/plain") }
-                addJsonObject { put("mime", "image/png") }
+                add(buildJsonObject { put("mime", "text/plain") })
+                add(buildJsonObject { put("mime", "image/png") })
             }
         }
         val inbox = item("user", payload)
