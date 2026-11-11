@@ -69,6 +69,24 @@
     <string name="mcp_status_needs_auth">Butuh autentikasi</string>
     <string name="mcp_status_pending">Menunggu</string>
     <string name="mcp_status_unknown">Tidak diketahui</string>
+    <string name="plugin_title">Plugin</string>
+    <string name="plugin_body">Plugin yang aktif di engine, dan statusnya. Cek pembaruan dan update belum tersedia.</string>
+    <string name="plugin_empty">Tidak ada plugin yang aktif di engine.</string>
+    <string name="plugin_status_active">Aktif</string>
+    <string name="plugin_status_failed">Gagal</string>
+    <string name="plugin_status_unknown">Tidak diketahui</string>
+    <string name="worktree_title">Worktree</string>
+    <string name="worktree_body">Worktree yang tersimpan di engine, dikelompokkan per project. Membuat, menghapus dan refresh worktree belum tersedia.</string>
+    <string name="worktree_empty">Tidak ada worktree yang tersimpan di engine.</string>
+    <string name="config_title">Konfigurasi engine</string>
+    <string name="config_body">Dokumen konfigurasi yang dibaca engine, dari prioritas terendah ke tertinggi. Mengubah konfigurasi dari aplikasi belum tersedia.</string>
+    <string name="config_empty">Tidak ada dokumen konfigurasi di engine.</string>
+    <string name="config_directory">Direktori yang dicari — tidak berisi dokumen.</string>
+    <string name="config_field_model">Model</string>
+    <string name="config_field_agent">Agent default</string>
+    <string name="config_field_shell">Shell</string>
+    <string name="config_field_timezone">Zona waktu</string>
+    <string name="config_field_username">Username</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Lewati</string>
@@ -131,6 +149,10 @@
     <string name="chat_status_dialog_branches_loading">Memuat daftar branch…</string>
     <string name="chat_status_dialog_branches_empty">Tidak ada branch.</string>
     <string name="chat_status_dialog_branches_failed">Gagal memuat daftar branch.</string>
+    <string name="chat_status_dialog_vcs_current">Branch saat ini</string>
+    <string name="chat_status_dialog_vcs_default">Branch default</string>
+    <string name="chat_status_dialog_vcs_base">Review base</string>
+    <string name="chat_status_dialog_vcs_failed">Gagal memuat detail VCS.</string>
     <string name="chat_status_dialog_context">Konteks</string>
     <string name="chat_status_dialog_state">Status</string>
     <string name="chat_status_dialog_diagnostics">Diagnostik</string>
@@ -283,6 +305,8 @@
     <string name="tool_stderr">STDERR</string>
     <string name="tool_command">Perintah</string>
     <string name="tool_input">Masukan</string>
+    <string name="tool_todos_title">Daftar tugas</string>
+    <string name="tool_todos_cleared">Daftar tugas dikosongkan</string>
     <string name="tool_show_full">Tampilkan semua output</string>
     <string name="tool_show_less">Tampilkan lebih sedikit</string>
     <string name="tool_filter_all">Semua</string>

@@ -86,3 +86,53 @@ data class VcsBranchesResponse(
     val location: LocationRef? = null,
     val data: List<String> = emptyList(),
 )
+
+/**
+ * Current and default branch for a project (`GET /api/vcs`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/vcs.ts`): `Vcs.Info` is
+ * `{ provider?, branch: { current?, default? } }`. Either name may be
+ * absent — before the first commit there is no current branch — so both
+ * are nullable and the dialog hides a row it does not know.
+ */
+@Serializable
+data class VcsBranch(
+    val current: String? = null,
+    val default: String? = null,
+)
+
+@Serializable
+data class VcsInfo(
+    val provider: String? = null,
+    val branch: VcsBranch = VcsBranch(),
+)
+
+@Serializable
+data class VcsInfoResponse(
+    val location: LocationRef? = null,
+    val data: VcsInfo = VcsInfo(),
+)
+
+/**
+ * The review base for a project (`GET /api/vcs/base`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/vcs.ts`): `Vcs.Base` is
+ * `{ name, ref, source: "reflog" | "default" }`, and the endpoint answers
+ * it nullable — null before the first commit, or when the provider has no
+ * base metadata. `source` says how the engine inferred it: from the
+ * branch-creation history (`reflog`) or the repository default.
+ */
+@Serializable
+data class VcsBase(
+    val name: String,
+    val ref: String = "",
+    val source: String = "",
+)
+
+@Serializable
+data class VcsBaseResponse(
+    val location: LocationRef? = null,
+    val data: VcsBase? = null,
+)

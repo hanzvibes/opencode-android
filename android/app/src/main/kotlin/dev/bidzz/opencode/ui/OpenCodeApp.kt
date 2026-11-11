@@ -66,6 +66,12 @@ import dev.bidzz.opencode.ui.files.FileViewScreen
 import dev.bidzz.opencode.ui.files.FileViewViewModel
 import dev.bidzz.opencode.ui.mcp.McpServersScreen
 import dev.bidzz.opencode.ui.mcp.McpServersViewModel
+import dev.bidzz.opencode.ui.plugin.PluginsScreen
+import dev.bidzz.opencode.ui.plugin.PluginsViewModel
+import dev.bidzz.opencode.ui.config.ConfigScreen
+import dev.bidzz.opencode.ui.config.ConfigViewModel
+import dev.bidzz.opencode.ui.worktree.WorktreesScreen
+import dev.bidzz.opencode.ui.worktree.WorktreesViewModel
 import dev.bidzz.opencode.ui.onboarding.OnboardingScreen
 import dev.bidzz.opencode.ui.onboarding.OnboardingStore
 import dev.bidzz.opencode.ui.onboarding.SampleProject
@@ -102,6 +108,9 @@ internal sealed interface Screen {
     data object Providers : Screen
     data object Diagnostics : Screen
     data object McpServers : Screen
+    data object Plugins : Screen
+    data object Worktrees : Screen
+    data object EngineConfig : Screen
     data object About : Screen
 }
 
@@ -117,6 +126,9 @@ internal fun Screen.parent(): Screen = when (this) {
     is Screen.Diff -> Screen.DiffList
     Screen.Providers -> Screen.Settings
     Screen.McpServers -> Screen.Settings
+    Screen.Plugins -> Screen.Settings
+    Screen.Worktrees -> Screen.Settings
+    Screen.EngineConfig -> Screen.Settings
     Screen.About -> Screen.Chat
     else -> Screen.Chat
 }
@@ -132,7 +144,8 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Sessions -> 1
     Screen.Projects, Screen.Files, Screen.Settings, Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
-    Screen.Providers, Screen.McpServers, Screen.About -> 3
+    Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Worktrees,
+    Screen.EngineConfig, Screen.About -> 3
     is Screen.Diff -> 4
 }
 
@@ -231,12 +244,27 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         McpServersViewModel(app.engineApi)
     })
 
+    val pluginsViewModel: PluginsViewModel = viewModel(factory = viewModelFactory { _ ->
+        PluginsViewModel(app.engineApi)
+    })
+
+    val worktreesViewModel: WorktreesViewModel = viewModel(factory = viewModelFactory { _ ->
+        WorktreesViewModel(app.engineApi)
+    })
+
+    val configViewModel: ConfigViewModel = viewModel(factory = viewModelFactory { _ ->
+        ConfigViewModel(app.engineApi)
+    })
+
     val explorerState by explorerViewModel.state.collectAsState()
     val fileState by fileViewModel.state.collectAsState()
     val diffState by diffViewModel.state.collectAsState()
     val sessionDiffState by sessionDiffViewModel.state.collectAsState()
     val providersState by providersViewModel.state.collectAsState()
     val mcpServersState by mcpServersViewModel.state.collectAsState()
+    val pluginsState by pluginsViewModel.state.collectAsState()
+    val worktreesState by worktreesViewModel.state.collectAsState()
+    val configState by configViewModel.state.collectAsState()
 
     // Adaptive layout (Phase 3): at >=840dp the chat drawer becomes a
     // persistent sidebar and the sessions/files screens gain a detail
@@ -662,6 +690,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     onProjects = { screen = Screen.Projects },
                     onProviders = { screen = Screen.Providers },
                     onMcpServers = { screen = Screen.McpServers },
+                    onPlugins = { screen = Screen.Plugins },
+                    onWorktrees = { screen = Screen.Worktrees },
+                    onEngineConfig = { screen = Screen.EngineConfig },
                     onAbout = { screen = Screen.About },
                 )
 
@@ -692,6 +723,24 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     state = mcpServersState,
                     onBack = { screen = Screen.Settings },
                     onRefresh = mcpServersViewModel::refresh,
+                )
+
+                Screen.Plugins -> PluginsScreen(
+                    state = pluginsState,
+                    onBack = { screen = Screen.Settings },
+                    onRefresh = pluginsViewModel::refresh,
+                )
+
+                Screen.Worktrees -> WorktreesScreen(
+                    state = worktreesState,
+                    onBack = { screen = Screen.Settings },
+                    onRefresh = worktreesViewModel::refresh,
+                )
+
+                Screen.EngineConfig -> ConfigScreen(
+                    state = configState,
+                    onBack = { screen = Screen.Settings },
+                    onRefresh = configViewModel::refresh,
                 )
                 }
             }

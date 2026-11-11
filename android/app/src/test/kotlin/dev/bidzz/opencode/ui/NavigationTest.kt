@@ -11,6 +11,9 @@ class NavigationTest {
         assertEquals(Screen.Files, Screen.DiffList.parent())
         assertEquals(Screen.DiffList, Screen.Diff("a.kt").parent())
         assertEquals(Screen.Settings, Screen.Providers.parent())
+        assertEquals(Screen.Settings, Screen.Plugins.parent())
+        assertEquals(Screen.Settings, Screen.Worktrees.parent())
+        assertEquals(Screen.Settings, Screen.EngineConfig.parent())
     }
 
     @Test
@@ -37,6 +40,9 @@ class NavigationTest {
         assertEquals(2, Screen.Settings.depth())
         assertEquals(3, Screen.Providers.depth())
         assertEquals(3, Screen.McpServers.depth())
+        assertEquals(3, Screen.Plugins.depth())
+        assertEquals(3, Screen.Worktrees.depth())
+        assertEquals(3, Screen.EngineConfig.depth())
         assertEquals(3, Screen.About.depth())
     }
 
@@ -50,6 +56,9 @@ class NavigationTest {
             Screen.Diff("a.kt") to Screen.DiffList,
             Screen.Providers to Screen.Settings,
             Screen.McpServers to Screen.Settings,
+            Screen.Plugins to Screen.Settings,
+            Screen.Worktrees to Screen.Settings,
+            Screen.EngineConfig to Screen.Settings,
         ).forEach { (from, to) ->
             assertEquals(true, from.depth() > to.depth())
         }

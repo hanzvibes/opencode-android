@@ -70,6 +70,24 @@
     <string name="mcp_status_needs_auth">Needs auth</string>
     <string name="mcp_status_pending">Pending</string>
     <string name="mcp_status_unknown">Unknown</string>
+    <string name="plugin_title">Plugins</string>
+    <string name="plugin_body">Plugins enabled on the engine, and their status. Checking for updates and updating are not available yet.</string>
+    <string name="plugin_empty">No plugins enabled on the engine.</string>
+    <string name="plugin_status_active">Active</string>
+    <string name="plugin_status_failed">Failed</string>
+    <string name="plugin_status_unknown">Unknown</string>
+    <string name="worktree_title">Worktrees</string>
+    <string name="worktree_body">Worktrees saved on the engine, grouped by project. Creating, removing and refreshing worktrees are not available yet.</string>
+    <string name="worktree_empty">No worktrees saved on the engine.</string>
+    <string name="config_title">Engine config</string>
+    <string name="config_body">Configuration documents resolved by the engine, lowest to highest priority. Editing config from the app is not available yet.</string>
+    <string name="config_empty">No configuration documents found on the engine.</string>
+    <string name="config_directory">Searched directory — holds no document.</string>
+    <string name="config_field_model">Model</string>
+    <string name="config_field_agent">Default agent</string>
+    <string name="config_field_shell">Shell</string>
+    <string name="config_field_timezone">Timezone</string>
+    <string name="config_field_username">Username</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Skip</string>
@@ -132,6 +150,10 @@
     <string name="chat_status_dialog_branches_loading">Loading branches…</string>
     <string name="chat_status_dialog_branches_empty">No branches found.</string>
     <string name="chat_status_dialog_branches_failed">Couldn’t load branches.</string>
+    <string name="chat_status_dialog_vcs_current">Current branch</string>
+    <string name="chat_status_dialog_vcs_default">Default branch</string>
+    <string name="chat_status_dialog_vcs_base">Review base</string>
+    <string name="chat_status_dialog_vcs_failed">Couldn’t load VCS details.</string>
     <string name="chat_status_dialog_context">Context</string>
     <string name="chat_status_dialog_state">State</string>
     <string name="chat_status_dialog_diagnostics">Diagnostics</string>
@@ -284,6 +306,8 @@
     <string name="tool_stderr">STDERR</string>
     <string name="tool_command">Command</string>
     <string name="tool_input">Input</string>
+    <string name="tool_todos_title">Todo list</string>
+    <string name="tool_todos_cleared">Todos cleared</string>
     <string name="tool_show_full">Show full output</string>
     <string name="tool_show_less">Show less</string>
     <string name="tool_filter_all">All</string>

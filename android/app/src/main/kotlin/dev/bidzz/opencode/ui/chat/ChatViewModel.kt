@@ -111,6 +111,17 @@ data class ChatUiState(
     val branchesLoading: Boolean = false,
     val branchesFailed: Boolean = false,
     /**
+     * Current/default branch and the review base (`GET /api/vcs`,
+     * `GET /api/vcs/base`, Tier 3 item 4); null until loaded. A null base
+     * after a successful load is a fact about the repository (no base
+     * metadata), not a failure — the dialog hides the row instead of
+     * reporting it. [vcsDetailsFailed] is set when either call fails, so a
+     * missing row is never silently blamed on the repository.
+     */
+    val vcsInfo: dev.bidzz.opencode.core.api.dto.VcsInfo? = null,
+    val vcsBase: dev.bidzz.opencode.core.api.dto.VcsBase? = null,
+    val vcsDetailsFailed: Boolean = false,
+    /**
      * Tokens currently in the session's context window (`GET /api/session/{id}/context`),
      * summed over its assistant messages with the turn footer's rule. Null while
      * unknown — the meter hides rather than showing a stale number.
@@ -717,9 +728,14 @@ class ChatViewModel(
         val h = handle ?: return
         if (_state.value.branches != null && branchesWorkspace == path) return
         branchesJob?.cancel()
-        _state.value = _state.value.copy(branchesLoading = true, branchesFailed = false)
+        _state.value = _state.value.copy(
+            branchesLoading = true,
+            branchesFailed = false,
+            vcsDetailsFailed = false,
+        )
         branchesJob = viewModelScope.launch {
-            when (val result = VcsApi(h.client).branches(path)) {
+            val vcs = VcsApi(h.client)
+            when (val result = vcs.branches(path)) {
                 is ApiResult.Success -> {
                     branchesWorkspace = path
                     _state.value = _state.value.copy(
@@ -731,6 +747,22 @@ class ChatViewModel(
                 is ApiResult.Failure -> {
                     _state.value = _state.value.copy(branchesLoading = false, branchesFailed = true)
                 }
+            }
+            // Current/default branch and the review base ride the same load
+            // as the branch list: they describe the same repository, and the
+            // dialog shows them together. Each is independent — one failing
+            // must not hide the others.
+            var detailsFailed = false
+            when (val result = vcs.info(path)) {
+                is ApiResult.Success -> _state.value = _state.value.copy(vcsInfo = result.value)
+                is ApiResult.Failure -> detailsFailed = true
+            }
+            when (val result = vcs.base(path)) {
+                is ApiResult.Success -> _state.value = _state.value.copy(vcsBase = result.value)
+                is ApiResult.Failure -> detailsFailed = true
+            }
+            if (detailsFailed) {
+                _state.value = _state.value.copy(vcsDetailsFailed = true)
             }
         }
     }

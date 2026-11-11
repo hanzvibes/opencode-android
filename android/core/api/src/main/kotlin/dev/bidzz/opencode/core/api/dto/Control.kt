@@ -1,6 +1,8 @@
 package dev.bidzz.opencode.core.api.dto
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * DTOs for the engine's control surface: agents (modes), slash commands, providers.
@@ -105,6 +107,106 @@ data class McpServer(
 data class McpServersResponse(
     val data: List<McpServer> = emptyList(),
     val location: LocationRef? = null,
+)
+
+/**
+ * One server plugin (`GET /api/plugin`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/plugin.ts`): `Plugin.Info` is
+ * `{ id?, source, features, state }`. `source` is a tagged union —
+ * builtin | package `{ target, version?, outdated?, updating? }` |
+ * local `{ path }` | sdk — so it is decoded as a [JsonObject] and read
+ * through `pluginSourceLabel` instead of a sealed hierarchy: the engine
+ * gains source kinds without notice. `state` is
+ * `{ status: "active" }` or `{ status: "failed", error, ref? }`.
+ */
+@Serializable
+data class PluginInfo(
+    val id: String? = null,
+    val source: JsonObject = JsonObject(emptyMap()),
+    val features: PluginFeatures = PluginFeatures(),
+    val state: PluginState = PluginState(),
+)
+
+@Serializable
+data class PluginFeatures(
+    val server: Boolean? = null,
+    val tui: Boolean? = null,
+    val rpc: Boolean? = null,
+    val gui: Boolean? = null,
+)
+
+@Serializable
+data class PluginState(
+    val status: String = "",
+    val error: String? = null,
+    val ref: String? = null,
+)
+
+@Serializable
+data class PluginsResponse(
+    val data: List<PluginInfo> = emptyList(),
+    val location: LocationRef? = null,
+)
+
+/**
+ * One project known to the engine (`GET /api/project`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/project.ts`): `Project.Info` is
+ * `{ id, canonical, vcs?, name?, icon?, commands?, time, sandboxes }`.
+ * Only the fields the UI shows are modelled; the rest are dropped by
+ * `ignoreUnknownKeys`.
+ */
+@Serializable
+data class ProjectInfo(
+    val id: String,
+    val canonical: String,
+    val name: String? = null,
+    val vcs: String? = null,
+)
+
+/**
+ * One saved worktree (`GET /api/worktree`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/worktree.ts`): the list answers
+ * `Worktree.Directory` — `{ directory, strategy? }` — where `strategy`
+ * is the discovery strategy that found it, when the engine records one.
+ */
+@Serializable
+data class WorktreeDirectory(
+    val directory: String,
+    val strategy: String? = null,
+)
+
+/**
+ * One configuration source (`GET /api/config`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/config.ts`): `Config.Entry` is a union of
+ * `Document { type: "document", path?, info: Config.Info }` and
+ * `Directory { type: "directory", path }`. `Config.Info` has ~30 fields;
+ * only the ones the screen shows are modelled, the rest are dropped by
+ * `ignoreUnknownKeys`. `model` is a `ConfigModel.Selection`, which may be
+ * a plain string or an object, so it is decoded as a [JsonElement] and
+ * read through `configModelLabel`.
+ */
+@Serializable
+data class ConfigEntry(
+    val type: String = "",
+    val path: String? = null,
+    val info: ConfigInfoSummary? = null,
+)
+
+@Serializable
+data class ConfigInfoSummary(
+    val model: JsonElement? = null,
+    val default_agent: String? = null,
+    val shell: String? = null,
+    val timezone: String? = null,
+    val username: String? = null,
 )
 
 /**
