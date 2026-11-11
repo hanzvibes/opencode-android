@@ -1127,14 +1127,18 @@ fun ChatScreen(
                         onValueChange = onDraftChange,
                         onSend = submitFromComposer,
                         onStop = onStop,
-                        // A real attach action: the @ chip renders only
-                        // when this is non-null (Composer.kt), and the
-                        // picker opens over the shared workspace index.
+                        // Two separate chips: "@" opens the workspace
+                        // mention picker over the shared file index, and the
+                        // file chip opens the system picker (SAF) via
+                        // [onRequestSafFile] — the picked file arrives as a
+                        // pending attachment, not a mention. Each chip renders
+                        // only when its action is non-null (Composer.kt).
                         onAttachFile = {
                             attachPickerQuery = ""
                             attachSelectedIndex = 0
                             attachPickerOpen = true
                         },
+                        onAttachDeviceFile = onRequestSafFile,
                         attachments = state.pendingAttachments,
                         onRemoveAttachment = onRemoveAttachment,
                         busy = state.busy,

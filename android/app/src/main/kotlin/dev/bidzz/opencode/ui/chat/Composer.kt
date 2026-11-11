@@ -84,7 +84,7 @@ import dev.bidzz.opencode.ui.HairlineSeparator
  * Features:
  * - Flat omnibar (12dp) with a hairline border and an accent focus ring — no glow.
  * - Multi-line auto-expand behavior with comfortable line-height.
- * - Quick action shortcuts: `/` command prefix, file attachment indicator, clear icon.
+ * - Quick action shortcuts: `/` command prefix, `@` mention and file-attach chips, clear icon.
  * - Modern action button (Send / Stop / Voice / Abort) with dynamic colors and haptic-like press feel.
  */
 @Composable
@@ -97,7 +97,10 @@ fun Composer(
     enabled: Boolean,
     modifier: Modifier = Modifier,
     onVoice: (() -> Unit)? = null,
+    /** Opens the workspace mention picker: pick a file to insert as `@path`. */
     onAttachFile: (() -> Unit)? = null,
+    /** Opens the system file picker for a file outside the workspace (SAF). */
+    onAttachDeviceFile: (() -> Unit)? = null,
     /** Files picked from outside the workspace, waiting to be inlined on send. */
     attachments: List<AttachedFile> = emptyList(),
     /** Removes one pending attachment by id. */
@@ -368,19 +371,34 @@ fun Composer(
                     },
                 )
 
-                // The @ chip only exists when a real attach action is wired in.
-                // Without onAttachFile it only inserted a bare "@" into the text
-                // while wearing a file icon and an "Attach file" label — a fake
-                // attach button. No file picker is built here; the chip simply
-                // stays hidden until a caller passes onAttachFile.
+                // Two separate chips, one job each — the old single chip
+                // wore a file icon AND an "@" label while doing both
+                // attach and mention, so it read as two buttons in one.
+                // "@" opens the workspace mention picker (a picked file is
+                // inserted into the draft as `@relative/path` text); the
+                // file chip opens the system picker (SAF) for a file
+                // outside the workspace, which arrives as a pending
+                // attachment instead. Each chip only exists when its real
+                // action is wired in, and each stays hidden otherwise.
                 if (onAttachFile != null) {
                     QuickActionChip(
                         label = "@",
+                        glyph = null,
+                        isActive = false,
+                        enabled = enabled && !busy,
+                        contentDescription = stringResource(R.string.composer_mention),
+                        onClick = { onAttachFile() },
+                    )
+                }
+
+                if (onAttachDeviceFile != null) {
+                    QuickActionChip(
+                        label = "",
                         glyph = Glyph.File,
                         isActive = false,
                         enabled = enabled && !busy,
                         contentDescription = stringResource(R.string.composer_attach),
-                        onClick = { onAttachFile() },
+                        onClick = { onAttachDeviceFile() },
                     )
                 }
 
@@ -643,11 +661,16 @@ private fun QuickActionChip(
                     size = 13.dp,
                 )
             }
-            Text(
-                text = label,
-                style = OpenCodeTypography.caption.copy(fontFamily = OpenCodeTypography.mono),
-                color = contentColor,
-            )
+            // A glyph-only chip (the file-attach chip) renders no label
+            // at all: an empty Text would still take the row's inter-item
+            // spacing and leave the glyph off-centre.
+            if (label.isNotEmpty()) {
+                Text(
+                    text = label,
+                    style = OpenCodeTypography.caption.copy(fontFamily = OpenCodeTypography.mono),
+                    color = contentColor,
+                )
+            }
         }
     }
 }

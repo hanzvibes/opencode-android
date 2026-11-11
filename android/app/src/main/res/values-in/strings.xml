@@ -208,6 +208,7 @@
     <string name="composer_clear">Hapus</string>
     <string name="composer_commands">Perintah</string>
     <string name="composer_attach">Lampirkan berkas</string>
+    <string name="composer_mention">Sebutkan berkas</string>
     <string name="attach_picker_title">Lampirkan berkas</string>
     <string name="attach_picker_hint">Cari file workspace…</string>
     <string name="attach_picker_empty">Tidak ada file yang cocok dengan “%1$s”</string>

@@ -209,6 +209,7 @@
     <string name="composer_clear">Clear</string>
     <string name="composer_commands">Commands</string>
     <string name="composer_attach">Attach file</string>
+    <string name="composer_mention">Mention a file</string>
     <string name="attach_picker_title">Attach file</string>
     <string name="attach_picker_hint">Search workspace files…</string>
     <string name="attach_picker_empty">No files match “%1$s”</string>
