@@ -179,6 +179,11 @@ data class ChatMessage(
      * timestamps — so a tool the client never saw live has no entry here
      * rather than an invented duration. */
     val toolDurations: Map<String, Long> = emptyMap(),
+    /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
+     * item 5): the stamps the durations are computed from, passed through
+     * so a still-running step can show a live elapsed time. A tool the
+     * client never saw live has no entry. */
+    val toolStartedAtMillis: Map<String, Long> = emptyMap(),
 )
 
 /**
@@ -248,6 +253,7 @@ class ChatViewModel(
     private var lastMessagesRef: List<SessionMessage>? = null
     private var lastLiveToolsRef: Map<String, LiveTool>? = null
     private var lastToolDurations: Map<String, Long> = emptyMap()
+    private var lastToolStartedAt: Map<String, Long> = emptyMap()
 
     /** Draft as it was before an edit loaded a message into the composer;
      * cancelling the edit restores it. Not persisted: on process death the
@@ -364,19 +370,24 @@ class ChatViewModel(
      * overlay re-runs on the cached list (item 28). The contiguous merge
      * still runs every time; it is list surgery, not parsing.
      */
-    private fun buildUiMessages(chat: ChatState, toolDurations: Map<String, Long>): List<ChatMessage> {
+    private fun buildUiMessages(
+        chat: ChatState,
+        toolDurations: Map<String, Long>,
+        toolStartedAt: Map<String, Long> = emptyMap(),
+    ): List<ChatMessage> {
         if (chat.messages === lastMessagesRef && chat.liveTools === lastLiveToolsRef &&
-            toolDurations == lastToolDurations
+            toolDurations == lastToolDurations && toolStartedAt == lastToolStartedAt
         ) {
             val overlaid = lastUnmergedMessages.toMutableList()
             applyStreamingOverlay(overlaid, chat.streaming)
             lastUnmergedMessages = overlaid
             return mergeContiguousAssistant(overlaid)
         }
-        lastUnmergedMessages = chat.buildUnmergedMessages(toolDurations)
+        lastUnmergedMessages = chat.buildUnmergedMessages(toolDurations, toolStartedAt)
         lastMessagesRef = chat.messages
         lastLiveToolsRef = chat.liveTools
         lastToolDurations = toolDurations
+        lastToolStartedAt = toolStartedAt
         return mergeContiguousAssistant(lastUnmergedMessages)
     }
 
@@ -440,7 +451,7 @@ class ChatViewModel(
 
         _state.value = previous.copy(
             sessionID = chat.sessionID,
-            messages = buildUiMessages(chat, toolDurations),
+            messages = buildUiMessages(chat, toolDurations, toolStartedAt.toMap()),
             hasMoreOlder = chat.hasMoreOlder,
             loadingEarlier = chat.loadingEarlier,
             busy = chat.busy,
@@ -1161,6 +1172,13 @@ class ChatViewModel(
 
     fun stop() {
         val repo = repository ?: return
+        // A second tap while the first interrupt is still in flight must
+        // not fire a second POST: the engine already stops the run, and a
+        // duplicate only risks a second failure banner for the same tap.
+        // Stopping with nothing running is a no-op for the same reason —
+        // the composer only offers Stop while busy, so this guards callers
+        // that do not check first.
+        if (!_state.value.busy || _state.value.stopping) return
         // "Stopping…" until the run actually ends: the interrupt is async and
         // the button must not flip back to Send while the agent still works.
         // The collector clears it when busy goes false.
@@ -1401,7 +1419,10 @@ class ChatViewModel(
  * path in [ChatViewModel.buildUiMessages] reuses this list and only
  * re-runs the streaming overlay when nothing else moved.
  */
-private fun ChatState.buildUnmergedMessages(toolDurations: Map<String, Long> = emptyMap()): List<ChatMessage> {
+private fun ChatState.buildUnmergedMessages(
+    toolDurations: Map<String, Long> = emptyMap(),
+    toolStartedAt: Map<String, Long> = emptyMap(),
+): List<ChatMessage> {
     val result = mutableListOf<ChatMessage>()
     messages.forEach { message ->
         when {
@@ -1488,6 +1509,7 @@ private fun ChatState.buildUnmergedMessages(toolDurations: Map<String, Long> = e
                         }
                     },
                     toolDurations = toolDurations,
+                    toolStartedAtMillis = toolStartedAt,
                 )
             }
             // `idle` markers are engine bookkeeping, not conversation.
@@ -1516,6 +1538,8 @@ private fun ChatState.buildUnmergedMessages(toolDurations: Map<String, Long> = e
                 parts = parts,
                 streaming = true,
                 createdAtMillis = System.currentTimeMillis(),
+                toolDurations = toolDurations,
+                toolStartedAtMillis = toolStartedAt,
             )
         } else {
             val curr = result[idx]
@@ -1606,6 +1630,7 @@ private fun mergeContiguousAssistant(messages: List<ChatMessage>): List<ChatMess
                 stopReason = msg.stopReason ?: last.stopReason,
                 thinkingSeconds = msg.thinkingSeconds ?: last.thinkingSeconds,
                 toolDurations = last.toolDurations + msg.toolDurations,
+                toolStartedAtMillis = last.toolStartedAtMillis + msg.toolStartedAtMillis,
             )
         } else {
             merged += msg

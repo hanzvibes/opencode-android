@@ -146,6 +146,13 @@
     <string name="suggestion_bug">Cari penyebab sebuah bug</string>
     <string name="suggestion_review">Tinjau perubahan terbaru</string>
     <string name="suggestion_tests">Tulis tes untuk sebuah file</string>
+    <string name="followup_explain_more">Jelasin lebih detail</string>
+    <string name="followup_make_test">Buatin test buat ini</string>
+    <string name="followup_explain_code">Jelasin kode ini</string>
+    <string name="followup_give_example">Kasih contoh</string>
+    <string name="followup_summarize">Ringkasin poin pentingnya</string>
+    <string name="followup_try_another">Coba cara lain</string>
+    <string name="followup_continue">Lanjutin</string>
     <string name="starter_section_heading">Saran</string>
     <string name="starter_explain_title">Jelaskan basis kode</string>
     <string name="starter_explain_desc">Pelajari arsitektur dan struktur proyek</string>

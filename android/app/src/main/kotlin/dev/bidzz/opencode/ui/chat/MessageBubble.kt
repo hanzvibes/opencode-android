@@ -198,6 +198,10 @@ fun MessageBubble(
     onRequestDiffRevert: (String) -> Unit = {},
     /** Saves a code block through the system picker (Fase 1, item 4). */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
+    /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
+     * item 5): the same client-side stamps the durations come from, so a
+     * still-running step can show a live elapsed time. */
+    toolStartedAtMillis: Map<String, Long> = emptyMap(),
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -392,6 +396,7 @@ fun MessageBubble(
                                 streaming = part.streaming,
                                 startedAtMillis = toolsStartedAtMillis,
                                 toolDurations = toolDurations,
+                                toolStartedAtMillis = toolStartedAtMillis,
                                 workspacePath = workspacePath,
                                 onOpenToolFile = onOpenToolFile,
                                 onRequestDiffRevert = onRequestDiffRevert,

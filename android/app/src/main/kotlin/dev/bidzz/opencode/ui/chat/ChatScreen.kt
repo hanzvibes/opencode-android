@@ -845,6 +845,10 @@ fun ChatScreen(
                                         turnDurationMs = message.turnDurationMs,
                                         stopReason = message.stopReason,
                                         toolDurations = message.toolDurations,
+                                        // Live elapsed time for a running step
+                                        // (Fase 2, item 5): the start stamps
+                                        // behind the finished-step durations.
+                                        toolStartedAtMillis = message.toolStartedAtMillis,
                                         // Edit/resend (Phase 2, finding 3):
                                         // user bubbles only.
                                         onEdit = if (message.role == Role.USER) {
@@ -1120,6 +1124,33 @@ fun ChatScreen(
                         // Refocus the composer after a send so the next
                         // message can be typed without tapping it again.
                         composerFocusSignal = System.currentTimeMillis()
+                    }
+
+                    // Follow-up suggestions (Fase 2, item 7): 2–3 chips
+                    // derived from the last finished assistant reply, shown
+                    // only once the turn is over — never while busy, never
+                    // over an error or a pending permission, never while the
+                    // user is typing or editing (a tap sends immediately,
+                    // so it must not overwrite a draft in progress). A tap
+                    // sends through the same chain as the composer, and the
+                    // chips vanish with the send because the run goes busy.
+                    val lastMessage = state.messages.lastOrNull()
+                    val showFollowUps = !state.busy && !state.stopping &&
+                        state.failure == null && state.pendingPermission == null &&
+                        state.editingMessageId == null && state.draft.isBlank() &&
+                        lastMessage?.role == Role.ASSISTANT &&
+                        !lastMessage.streaming && lastMessage.text.isNotBlank()
+                    val followUpRes = remember(lastMessage?.id, lastMessage?.text) {
+                        lastMessage?.let { followUpSuggestions(it.text) } ?: emptyList()
+                    }
+                    if (showFollowUps && followUpRes.isNotEmpty()) {
+                        FollowUpChips(
+                            suggestions = followUpRes,
+                            onPick = { text ->
+                                onDraftChange(text)
+                                submitFromComposer()
+                            },
+                        )
                     }
 
                     Composer(

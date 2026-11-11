@@ -147,6 +147,13 @@
     <string name="suggestion_bug">Find the cause of a bug</string>
     <string name="suggestion_review">Review the latest changes</string>
     <string name="suggestion_tests">Write tests for a file</string>
+    <string name="followup_explain_more">Explain in more detail</string>
+    <string name="followup_make_test">Write a test for this</string>
+    <string name="followup_explain_code">Explain this code</string>
+    <string name="followup_give_example">Give an example</string>
+    <string name="followup_summarize">Summarise the key points</string>
+    <string name="followup_try_another">Try another approach</string>
+    <string name="followup_continue">Continue</string>
     <string name="starter_section_heading">Starters</string>
     <string name="starter_explain_title">Explain codebase</string>
     <string name="starter_explain_desc">Walk through architecture and structure</string>
