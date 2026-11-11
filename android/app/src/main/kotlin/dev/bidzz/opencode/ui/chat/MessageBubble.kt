@@ -202,6 +202,11 @@ fun MessageBubble(
      * item 5): the same client-side stamps the durations come from, so a
      * still-running step can show a live elapsed time. */
     toolStartedAtMillis: Map<String, Long> = emptyMap(),
+    /** Engine `time.created` of this turn, epoch millis (Opsi A): shown
+     * as a short clock time beside the turn's actions — the user pill row
+     * and the assistant header row — so each turn carries its own time.
+     * Null hides the clock; the date divider already covers the day. */
+    createdAtMillis: Long? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -279,6 +284,19 @@ fun MessageBubble(
                             .padding(top = spacing.xs)
                             .horizontalScroll(userPillScrollState),
                     ) {
+                        // Opsi A: the turn's own clock time, mono, ahead of
+                        // the delivery mark — same row as Copy/Edit/Resend.
+                        if (createdAtMillis != null) {
+                            Text(
+                                text = formatClock(createdAtMillis),
+                                style = OpenCodeTypography.caption.copy(
+                                    fontFamily = OpenCodeTypography.mono,
+                                    fontSize = 11.sp,
+                                ),
+                                color = colors.onSurfaceFaint,
+                                maxLines = 1,
+                            )
+                        }
                         DeliveryCheckmark(delivered = delivered)
                         CopyButton(text = markdown)
                         if (onEdit != null) {
@@ -356,22 +374,62 @@ fun MessageBubble(
             // not a label swap. A finished turn with no identity still
             // falls back to "OpenCode".
             val identityKnown = !provenance.isNullOrBlank()
+            // Opsi A turn header: identity badge on the left, the turn's
+            // own clock time on the right (mono, faint). A consecutive
+            // assistant turn has no badge — it is the same turn continuing,
+            // so its time already showed on the first part — and the
+            // streaming row carries the clock instead.
             if (showProvenance && (identityKnown || !streaming)) {
                 val labelText = if (identityKnown) provenance else "OpenCode"
-                ProvenanceBadge(
-                    provenance = labelText,
-                    modelRef = model,
-                    streaming = showStreamingSpinner,
-                    modifier = Modifier.padding(bottom = spacing.sm),
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = spacing.sm),
+                ) {
+                    ProvenanceBadge(
+                        provenance = labelText,
+                        modelRef = model,
+                        streaming = showStreamingSpinner,
+                    )
+                    if (createdAtMillis != null) {
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = formatClock(createdAtMillis),
+                            style = OpenCodeTypography.caption.copy(
+                                fontFamily = OpenCodeTypography.mono,
+                                fontSize = 11.sp,
+                            ),
+                            color = colors.onSurfaceFaint,
+                            maxLines = 1,
+                        )
+                    }
+                }
             } else if (showStreamingSpinner) {
                 // No provenance badge on a consecutive assistant turn, so the
                 // streaming state needs its own marker. The old 8dp spinner
                 // here was practically invisible; an 11dp pulse plus a
                 // "Typing…" label reads at a glance.
-                StreamingTypingRow(
-                    modifier = Modifier.padding(bottom = spacing.xs),
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = spacing.xs),
+                ) {
+                    StreamingTypingRow()
+                    if (createdAtMillis != null) {
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = formatClock(createdAtMillis),
+                            style = OpenCodeTypography.caption.copy(
+                                fontFamily = OpenCodeTypography.mono,
+                                fontSize = 11.sp,
+                            ),
+                            color = colors.onSurfaceFaint,
+                            maxLines = 1,
+                        )
+                    }
+                }
             }
 
             // The last text block of a streaming turn gets the blinking cursor.

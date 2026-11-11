@@ -898,6 +898,9 @@ fun ChatScreen(
                                         // per-tool timestamps, so the trace
                                         // shows when its turn started.
                                         toolsStartedAtMillis = message.createdAtMillis,
+                                        // Opsi A: the turn's own clock time,
+                                        // beside its actions.
+                                        createdAtMillis = message.createdAtMillis,
                                         // Quote into the composer (C-E): the
                                         // quote is appended after the draft,
                                         // never over it.
@@ -3495,7 +3498,10 @@ private fun EmptyChat(
                     engineReady = engineReady,
                 )
 
-                Spacer(Modifier.height(spacing.md))
+                // Opsi A: one even rhythm (lg) between the empty-state
+                // sections — hero, readiness, provider chip, starters —
+                // instead of the mixed md/lg gaps.
+                Spacer(Modifier.height(spacing.lg))
 
                 // One-line readiness status (engine • workspace • git) instead
                 // of the full card: the details are one tap away on this row
@@ -3530,7 +3536,7 @@ private fun EmptyChat(
                     else -> null
                 }
                 if (providerChipText != null) {
-                    Spacer(Modifier.height(spacing.md))
+                    Spacer(Modifier.height(spacing.lg))
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(radius.full))

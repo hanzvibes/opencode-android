@@ -394,9 +394,12 @@ private fun CodeBlock(
         (1..visibleLineCount).joinToString("\n") { it.toString().padStart(digits, ' ') }
     }
 
+    // Opsi A: a touch roomier for reading — 13sp on a 20sp line (was
+    // 12.5sp / 19sp), so dense Kotlin like the mockup's ChatScreen.kt
+    // diff breathes without the block growing a line count.
     val codeStyle = OpenCodeTypography.code.copy(
-        fontSize = 12.5.sp,
-        lineHeight = 19.sp,
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
     )
 
     Column(

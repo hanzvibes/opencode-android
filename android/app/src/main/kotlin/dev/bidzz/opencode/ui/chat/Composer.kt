@@ -211,7 +211,9 @@ fun Composer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = spacing.md, bottom = spacing.sm),
+                // Opsi A: symmetric vertical padding, matching the top —
+                // the omnibar used to sit 4dp tighter at the bottom.
+                .padding(top = spacing.md, bottom = spacing.md),
         ) {
             // Editing header (Phase 2, finding 3): the composer is editing a
             // sent message, not a new draft — Submit sends the edit, Cancel

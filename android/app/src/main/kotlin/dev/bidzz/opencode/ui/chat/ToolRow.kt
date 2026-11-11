@@ -124,7 +124,18 @@ fun ToolTrace(
     val radius = OpenCodeTheme.tokens.radius
     val shape = RoundedCornerShape(radius.md)
 
-    var open by rememberSaveable { mutableStateOf(streaming) }
+    val running = tools.filter { it.status == "running" || it.status == "streaming" }
+    val failed = tools.count { it.status == "error" }
+    val completed = tools.count { it.status == "completed" }
+    val lastCompleted = tools.lastOrNull { it.status == "completed" }
+
+    // Opsi A: the trace defaults to its one-line summary. Open while the
+    // run streams (live progress) or when it failed (an error is never
+    // hidden behind the summary); a finished clean run starts collapsed.
+    var open by rememberSaveable { mutableStateOf(toolTraceInitialOpen(streaming, failed > 0)) }
+    // True once the reader taps the header open by hand: auto-collapse
+    // below must never close a trace the reader opened on purpose.
+    var userExpanded by rememberSaveable { mutableStateOf(false) }
 
     // One glyph rotating 0° (right, collapsed) ↔ 90° (down, open)
     // instead of two glyphs swapping on every tap.
@@ -139,16 +150,17 @@ fun ToolTrace(
     // Only these four kinds exist — no more are added here.
     var filter by rememberSaveable { mutableStateOf(ToolFilter.ALL) }
 
-    val running = tools.filter { it.status == "running" || it.status == "streaming" }
-    val failed = tools.count { it.status == "error" }
-    val completed = tools.count { it.status == "completed" }
-    val lastCompleted = tools.lastOrNull { it.status == "completed" }
-
     // When a run finishes with a failure, open it so an error is never
-    // hidden behind the collapsed summary. Never force a run closed: if
-    // the user opened a clean run mid-stream to watch its output, it
-    // stays open.
-    LaunchedEffect(streaming, failed) { if (!streaming && failed > 0) open = true }
+    // hidden behind the collapsed summary. When a clean run finishes,
+    // collapse it back to the one-line summary — unless the reader
+    // expanded it by hand mid-stream, in which case it stays open.
+    LaunchedEffect(streaming, failed) {
+        if (!streaming && failed > 0) {
+            open = true
+        } else if (shouldAutoCollapseToolTrace(userExpanded, streaming, failed > 0)) {
+            open = false
+        }
+    }
 
     // Collapsed while streaming still shows the most recently finished tool,
     // so the timeline reads as progress (done → running) instead of only
@@ -172,7 +184,10 @@ fun ToolTrace(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(role = Role.Button) { open = !open }
+                .clickable(role = Role.Button) {
+                    open = !open
+                    if (open) userExpanded = true
+                }
                 .padding(
                     start = spacing.sm,
                     end = spacing.sm,
@@ -371,8 +386,11 @@ fun ToolTrace(
 
         // Vertical timeline of steps, narrowed by the active filter. The
         // collapsed summary above is unfiltered — it is the at-a-glance
-        // state of the run, not the filtered view.
-        val filteredVisible = visible.filter { filter.matches(it) }
+        // state of the run, not the filtered view. A finished clean run
+        // shows no steps at all while collapsed (Opsi A): header +
+        // one-line summary only. While streaming the collapsed trace
+        // still shows the live steps, so progress stays visible.
+        val filteredVisible = if (open || streaming) visible.filter { filter.matches(it) } else emptyList()
         if (filteredVisible.isNotEmpty()) {
             Column(
                 modifier = Modifier
@@ -396,8 +414,8 @@ fun ToolTrace(
     }
 }
 
-/** Short clock time ("14:32") in the device timezone, for the trace header. */
-private fun formatClock(millis: Long): String =
+/** Short clock time ("14:32") in the device timezone, for the trace header and turn timestamps. */
+internal fun formatClock(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("HH:mm"))
 
