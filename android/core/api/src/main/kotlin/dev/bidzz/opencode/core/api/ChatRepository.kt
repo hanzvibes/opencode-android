@@ -76,8 +76,14 @@ class ChatRepository(
      * rotation re-arms the buttons) must not answer twice (item 22). */
     private var replyingPermissionId: String? = null
 
-    /** Text received per assistant message id, for the message being streamed. */
-    private val buffers = mutableMapOf<String, StringBuilder>()
+    /**
+     * Text received per (assistant message id, block ordinal), for the message
+     * being streamed. One assistant message carries several text blocks — a
+     * reply before a tool call and one after it, for example — and keying by
+     * id alone mixes them: a delta for block 1 lands in block 0's text, and
+     * TEXT_ENDED for block 1 overwrites block 0 entirely (item 25).
+     */
+    private val buffers = mutableMapOf<Pair<String, Int>, StringBuilder>()
 
     /** Prompt text by message id, for user messages the engine returns without text. */
     private val sentText = mutableMapOf<String, String>()
@@ -193,7 +199,13 @@ class ChatRepository(
             }
             is ApiResult.Failure -> {
                 Log.w(TAG, "resync failed: ${result.message}")
-                _state.value = _state.value.copy(lastFailure = result)
+                // A failed resync must not leave the streaming entry behind:
+                // the run is over, no more deltas are coming, and the entry
+                // would keep the message's spinner and hide its Copy/footer
+                // forever (item 25). The buffers stay — a failed resync on a
+                // reconnect mid-run must not lose the text accumulated so
+                // far; the next delta re-publishes it in full.
+                _state.value = _state.value.copy(lastFailure = result, streaming = emptyMap())
             }
         }
     }
@@ -280,21 +292,24 @@ class ChatRepository(
         when (event.type) {
             EventTypes.TEXT_STARTED -> {
                 val started = event.decode<TextStarted>() ?: return
-                buffers.getOrPut(started.assistantMessageID) { StringBuilder() }
+                buffers.getOrPut(started.assistantMessageID to started.ordinal) { StringBuilder() }
                 publish(started.assistantMessageID)
             }
 
             EventTypes.TEXT_DELTA -> {
                 val delta = event.decode<TextDelta>() ?: return
-                buffers.getOrPut(delta.assistantMessageID) { StringBuilder() }.append(delta.delta)
+                buffers.getOrPut(delta.assistantMessageID to delta.ordinal) { StringBuilder() }
+                    .append(delta.delta)
                 publish(delta.assistantMessageID)
             }
 
             EventTypes.TEXT_ENDED -> {
                 val ended = event.decode<TextEnded>() ?: return
-                // The final text is authoritative: replace whatever the deltas built,
-                // so a dropped delta does not leave a truncated message.
-                buffers[ended.assistantMessageID] = StringBuilder(ended.text)
+                // The final text is authoritative: replace whatever the deltas
+                // built, so a dropped delta does not leave a truncated
+                // message — but only this block's buffer, never the whole
+                // message (item 25).
+                buffers[ended.assistantMessageID to ended.ordinal] = StringBuilder(ended.text)
                 publish(ended.assistantMessageID)
             }
 
@@ -334,6 +349,14 @@ class ChatRepository(
                 // A finished run cannot still be waiting for an answer; drop the
                 // prompt so a dead request does not sit on screen.
                 _state.value = _state.value.copy(busy = false, pendingPermission = null)
+                // The run is over: no more deltas will arrive for its
+                // messages, so their buffers are stale (item 25). The
+                // streaming entries themselves stay until the resync below
+                // lands — clearing them here would blink the just-finished
+                // answer out of the transcript on every turn; the resync
+                // replaces them atomically on success and drops them on
+                // failure, so the indicator can never stick either way.
+                buffers.clear()
                 // Pull the finished message from REST so tool calls and token counts
                 // that never appeared as deltas are included.
                 scope.launch { resync() }
@@ -381,8 +404,16 @@ class ChatRepository(
         _state.value = _state.value.copy(liveTools = tools + (id to LiveTool(messageID, next)))
     }
 
+    /**
+     * Publishes one message's streamed text: its blocks in ordinal order,
+     * joined as paragraphs — the same separator the UI uses when it merges
+     * text segments from history.
+     */
     private fun publish(messageID: String) {
-        val text = buffers[messageID]?.toString() ?: return
+        val text = buffers.entries
+            .filter { it.key.first == messageID }
+            .sortedBy { it.key.second }
+            .joinToString("\n\n") { it.value.toString() }
         _state.value = _state.value.copy(streaming = _state.value.streaming + (messageID to text))
     }
 
