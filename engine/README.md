@@ -61,6 +61,8 @@ The engine shells out to real tools. These are packaged the same way:
 | `sh` | `/system/bin/sh` (system) | — |
 | `git` | Termux aarch64 build | GPLv2 |
 | `rg` | Termux aarch64 build | MIT / Unlicense |
+| `node` | Termux aarch64 build (nodejs-lts 24.22.2) | MIT |
+| `npm` | Termux `npm` 12.2.2 (JS tree in `assets/node/`) | Artistic License 2.0 |
 
 Bundling `git` makes this distribution subject to GPLv2 obligations, so
 `THIRD_PARTY_NOTICES.md` and a written offer for source are required before
@@ -78,7 +80,8 @@ Derived from dependency analysis, not yet all confirmed on device:
 | ripgrep search | expected to work | needs aarch64 binary |
 | File watching | likely unavailable | `@parcel/watcher` has no Android build |
 | PTY / interactive terminal | likely unavailable | node-pty has no Android build |
-| LSP | likely unavailable | language servers need Node or JVM runtimes |
+| LSP | possibly works | Node.js 24 runtime now bundled; TypeScript LSP installable via npm (not yet verified on device) |
+| Node.js / npm | expected to work | Node 24.22.2 + npm 12.2.2 bundled (`script/android/stage-node.sh`); verify `node --version` and `npm install` on device |
 | MCP over stdio | possibly works | child processes run under the bundled Bun |
 | Image processing | likely unavailable | `photon-node` has no Android build |
 

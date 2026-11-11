@@ -16,6 +16,9 @@ android/keystore.properties
 *.jks
 *.keystore
 android/app/src/main/jniLibs/
+# Node.js runtime assets (npm tree + CA bundle), staged by
+# script/android/stage-node.sh — ~10 MB of small files, never committed.
+android/app/src/main/assets/node/
 *.apk
 *.aab
 

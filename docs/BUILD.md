@@ -149,6 +149,46 @@ Both are stripped afterwards: git goes 19 MB → 3.7 MB, rg 31 MB → 4.7 MB.
 The script hard-fails if any produced ELF has the wrong `e_machine` or a
 `PT_LOAD` segment below `0x4000` alignment.
 
+### 2b. Node.js (`node`, `npm`)
+
+Node comes from Termux apt, not from a build script: the official
+linux-arm64 build needs glibc and cannot run on Android, while the Termux
+build is bionic-native. Staged with the Linux script (CI and local builds
+run the same one):
+
+```bash
+bash script/android/stage-node.sh --abi arm64-v8a \
+  --jni-out android/app/src/main/jniLibs/arm64-v8a \
+  --assets-out android/app/src/main/assets/node
+bash script/android/stage-node.sh --abi x86_64 \
+  --jni-out android/app/src/main/jniLibs/x86_64 --no-assets
+```
+
+Requirements: `curl`, `dpkg-deb`, `readelf`, `patchelf` (CI installs it via
+apt; on the VM it lives at `~/workspace/local-ci/tools/bin/patchelf`, pass
+`--patchelf <path>` or set `PATCHELF`).
+
+The script pins `nodejs-lts` 24.22.2-1 + `npm` 12.2.2 and their closure
+(ICU 79.1, OpenSSL 3.6.5, libc++ 30, SQLite 3.54.1, c-ares 1.34.9,
+zlib 1.4, ca-certificates) by version and SHA256 from the Termux `stable`
+index, verifies every download, extracts with `dpkg-deb -x`, renames the
+versioned `.so` names with `patchelf --set-soname` + `--replace-needed`,
+and applies the same ELF gates as §2 (e_machine, `PT_LOAD p_align >=
+0x4000`, no surviving versioned `DT_NEEDED`). Staged closure is ~104.5 MiB
+per ABI (jniLibs) + ~10.5 MB of npm assets. The npm tree and CA bundle go
+to `assets/node/` and are extracted to `files/engine/node/` at first launch
+(`NodeAssets`); they are gitignored, like `jniLibs/`.
+
+Runtime contract (see `EngineEnvironment`): child processes get
+`LD_LIBRARY_PATH=<nativeLibraryDir>` (Node's RUNPATH points at the dead
+Termux prefix), `SSL_CERT_FILE=<files>/engine/node/etc/tls/cert.pem`
+(libcrypto hardcodes the Termux CA path), and `SHELL=/system/bin/sh`.
+npm is invoked as
+`node <files>/engine/node/lib/node_modules/npm/bin/npm-cli.js` — the `.js`
+entry points carry a dead Termux shebang and cannot be executed directly.
+Bare `npm`/`npx` commands need the ELF shim of the fix list (item 11,
+not yet implemented).
+
 ### 3. Stage into `jniLibs`
 
 ```powershell
@@ -265,10 +305,10 @@ in-app Diagnostics screen instead:
 
 ```powershell
 adb shell run-as dev.bidzz.opencode ls -l files/engine/tools/bin
-# expect: git -> .../libgit.so  and  rg -> .../librg.so  (symlinks)
+# expect: git -> .../libgit.so, rg -> .../librg.so and node -> .../libnode.so (symlinks)
 
-adb shell "run-as dev.bidzz.opencode sh -c 'cd /data/user/0/dev.bidzz.opencode/files/engine/tools/bin && ./git --version && ./rg --version | head -1'"
-# expect: git version 2.56.0 / ripgrep 15.1.0
+adb shell "run-as dev.bidzz.opencode sh -c 'cd /data/user/0/dev.bidzz.opencode/files/engine/tools/bin && ./git --version && ./rg --version | head -1 && ./node --version'"
+# expect: git version 2.56.0 / ripgrep 15.1.0 / v24.22.2
 ```
 
 End-to-end, against a real repository:

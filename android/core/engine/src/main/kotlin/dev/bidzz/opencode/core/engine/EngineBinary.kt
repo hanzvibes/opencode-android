@@ -20,6 +20,8 @@ import java.io.File
 class EngineBinary private constructor(
     val executable: File,
     val toolBinDir: File,
+    /** Where the package manager extracted the native libraries (for LD_LIBRARY_PATH). */
+    val nativeLibraryDir: File,
 ) {
     companion object {
         /** Package manager renames `libopencode.so` to `libopencode.so`; keep one constant. */
@@ -36,6 +38,10 @@ class EngineBinary private constructor(
         val TOOL_LIBRARIES: Map<String, String> = mapOf(
             "librg.so" to "rg",
             "libgit.so" to "git",
+            // Node.js (Termux bionic build, staged by script/android/stage-node.sh).
+            // Its shared libs (ICU, OpenSSL, ...) are staged alongside it and
+            // found via LD_LIBRARY_PATH (EngineEnvironment), not this map.
+            "libnode.so" to "node",
         )
 
         fun resolve(nativeLibraryDir: File, filesDir: File): EngineBinary {
@@ -59,14 +65,15 @@ class EngineBinary private constructor(
             val toolBin = File(filesDir, "engine/tools/bin")
             linkTools(nativeLibraryDir, toolBin)
 
-            return EngineBinary(engine, toolBin)
+            return EngineBinary(engine, toolBin, nativeLibraryDir)
         }
 
         /**
-         * Exposes `rg` and `git` under their real names.
+         * Exposes `rg`, `git` and `node` under their real names.
          *
-         * The engine invokes them as `rg` and `git`, but native libraries must be
-         * named `lib*.so`, so the packaged files cannot carry those names.
+         * The engine invokes them as `rg`, `git` and `node`, but native
+         * libraries must be named `lib*.so`, so the packaged files cannot
+         * carry those names.
          *
          * A symlink is used rather than a hard link. This is load-bearing: files
          * in `filesDir` carry the `app_data_file` SELinux label, and `execve` on

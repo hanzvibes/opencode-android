@@ -16,7 +16,9 @@
 #   ./script/ci/run-local.sh --help
 #
 # Requirements: JDK 21, Android SDK (platform 35, build-tools 35.0.0 and
-# 34.0.0 — AGP still resolves 34.0.0 for the unit-test tasks), curl, unzip.
+# 34.0.0 — AGP still resolves 34.0.0 for the unit-test tasks), curl, unzip,
+# dpkg-deb, readelf, patchelf (for the Node.js staging step; pass
+# PATCHELF=<path> if it is not on PATH).
 # The Gradle wrapper is used, so Gradle itself is not needed.
 
 # Keep this script POSIX so it runs under dash, mksh and bash alike. The few
@@ -189,6 +191,19 @@ stage_natives() {
     done
 
     info "jniLibs is gitignored, so nothing here lands in a commit"
+
+    # Node.js (Termux): staged from pinned .deb files by the same script CI
+    # runs. patchelf is not on PATH by default — pass PATCHELF=<path> (on
+    # this VM: ~/workspace/local-ci/tools/bin/patchelf, 0.18.0).
+    log "Staging Node.js from Termux"
+    bash "$REPO_ROOT/script/android/stage-node.sh" --abi arm64-v8a \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/arm64-v8a" \
+        --assets-out "$REPO_ROOT/android/app/src/main/assets/node" \
+        --patchelf "${PATCHELF:-patchelf}"
+    bash "$REPO_ROOT/script/android/stage-node.sh" --abi x86_64 \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
+        --no-assets \
+        --patchelf "${PATCHELF:-patchelf}"
 }
 
 # ------------------------------------------------------------------- build --

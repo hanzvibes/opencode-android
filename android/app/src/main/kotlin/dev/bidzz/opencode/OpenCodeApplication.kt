@@ -102,6 +102,12 @@ class OpenCodeApplication : Application() {
 
         try {
             val binary = EngineBinary.resolve(nativeLibraryDir, filesDir)
+            // Node's npm tree lives in assets/ and must be extracted before
+            // the engine first spawns a child that calls npm. Non-fatal by
+            // design: a build without the staging step still runs the engine
+            // and the node binary, just without npm (NodeAssets logs it).
+            runCatching { NodeAssets.sync(assets, filesDir) }
+                .onFailure { Log.w(TAG, "node assets sync failed: ${it.message}") }
             processManager = ProcessManager(binary, environment)
             Log.i(TAG, "engine resolved at ${binary.executable.absolutePath}")
             Log.i(TAG, "workspace: ${environment.workspace.absolutePath}")
