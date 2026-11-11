@@ -177,6 +177,10 @@
     <string name="drawer_view_all">View all sessions</string>
     <string name="drawer_diagnostics">Diagnostics</string>
     <string name="drawer_switch_workspace">Switch workspace</string>
+    <string name="sidebar_collapse">Collapse sidebar</string>
+    <string name="sidebar_expand">Expand sidebar</string>
+    <string name="sidebar_close">Close sidebar</string>
+    <string name="sidebar_empty_hint">Start a new session to begin</string>
 
     <!-- Session Groups -->
     <string name="session_group_pinned">Pinned</string>

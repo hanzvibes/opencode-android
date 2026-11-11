@@ -654,6 +654,12 @@ private fun ChatDestination(
         fileIndexLoading = fileIndexLoading,
         fileIndexFailed = fileIndexFailed,
         onEnsureFileIndex = onEnsureFileIndex,
+        // Sidebar rows (Opsi 2): previews come from the details lookup
+        // the session view model already runs on load, and the footer
+        // status reuses the chat's own engine state.
+        sessionDetails = sessionsState.details,
+        engineState = chatState.engineState,
+        busy = chatState.busy,
         isExpanded = isExpanded,
         showSidebar = showSidebar,
     )
