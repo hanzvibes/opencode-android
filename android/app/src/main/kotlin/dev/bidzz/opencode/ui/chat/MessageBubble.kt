@@ -195,7 +195,7 @@ fun MessageBubble(
     /** Opens a workspace-relative file from a tool step (Fase 1, item 3). */
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
-    onRequestDiffRevert: (String, String?) -> Unit = {},
+    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
     /** Saves a code block through the system picker (Fase 1, item 4). */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
     /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,

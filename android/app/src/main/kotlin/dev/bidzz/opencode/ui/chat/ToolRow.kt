@@ -109,7 +109,7 @@ fun ToolTrace(
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2): the
      * view model sends the revert request as an ordinary user message. */
-    onRequestDiffRevert: (String, String?) -> Unit = {},
+    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
     /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
      * item 5): the same client-side stamps the durations come from, so a
      * still-running step can show a live elapsed time instead of no
@@ -496,7 +496,7 @@ fun ToolStep(
     /** Opens a workspace-relative file in the file viewer (Fase 1, item 3). */
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
-    onRequestDiffRevert: (String, String?) -> Unit = {},
+    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
     /** Client-side start stamp for this step, epoch millis (Fase 2,
      * item 5). Only read while the step is still running, to show a live
      * elapsed time; a finished step uses [durationMillis] instead. */
