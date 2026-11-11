@@ -112,6 +112,25 @@ fun Composer(
     promptHistory: List<String> = emptyList(),
     /** Follow-up queued while the agent works; sent when the run ends. */
     queuedText: String? = null,
+    /** Composer C suggestion chips (resource ids from [composerSuggestions]):
+     * shown above the text field while the draft is blank; a tap fills the
+     * draft, never sends. Empty means no suggestions for this moment. */
+    suggestions: List<Int> = emptyList(),
+    /** Writes a tapped suggestion chip into the draft. */
+    onSuggestionPick: (String) -> Unit = {},
+    /** Composer C voice input: the recognizer state owned by the screen. */
+    voiceState: VoiceInputState = VoiceInputState.IDLE,
+    /** False when the device has no speech recognition service: the mic
+     * renders as unavailable instead of pretending to work. */
+    voiceAvailable: Boolean = true,
+    /** Elapsed recording time in seconds, while listening. */
+    voiceElapsedSeconds: Int = 0,
+    /** Interim (partial) transcript while listening; display-only. */
+    voiceInterimText: String? = null,
+    /** Stops listening; the final result (or error) follows. */
+    onVoiceStop: () -> Unit = {},
+    /** The unavailable mic was tapped: the screen shows why. */
+    onVoiceUnavailable: () -> Unit = {},
     /** True after Stop was tapped until the run actually ends ("Stopping…"). */
     stopping: Boolean = false,
     /** True while a user message is being edited; shows the editing header. */
@@ -285,6 +304,29 @@ fun Composer(
                         )
                     }
                 }
+            }
+
+            // Composer C suggestion chips: contextual prompts above the
+            // text field. Shown only on a blank draft (a tap fills it,
+            // which hides the row) and only while idle — never while the
+            // agent works, never while editing, and never together with
+            // the follow-up chips, which the caller hides these for.
+            if (suggestions.isNotEmpty() && value.isBlank() && !busy) {
+                ComposerSuggestionChips(
+                    suggestions = suggestions,
+                    onPick = onSuggestionPick,
+                )
+            }
+
+            // Composer C recording bar: live while the recognizer listens —
+            // elapsed time, interim transcript, and a stop button. The final
+            // transcript lands in the draft when listening ends.
+            if (voiceState == VoiceInputState.LISTENING) {
+                VoiceRecordingBar(
+                    elapsedSeconds = voiceElapsedSeconds,
+                    interimText = voiceInterimText,
+                    onStop = onVoiceStop,
+                )
             }
 
             // Multi-line text field with comfortable line height
@@ -479,11 +521,20 @@ fun Composer(
                         // No voice affordance while attachments wait: an
                         // empty draft with files pending means "send the
                         // files", and the mic would swallow that send.
-                        hasVoice = onVoice != null && value.isBlank() && attachments.isEmpty() && !busy,
+                        // Composer C: the mic is only a live affordance
+                        // while the recognizer exists and is not already
+                        // listening; an unavailable mic still shows (grey,
+                        // disabled-looking) so its tap can say why.
+                        hasVoice = onVoice != null && voiceAvailable && value.isBlank() && attachments.isEmpty() && !busy &&
+                            voiceState != VoiceInputState.LISTENING,
+                        voiceListening = voiceState == VoiceInputState.LISTENING,
+                        voiceUnavailable = onVoice != null && !voiceAvailable && value.isBlank() && attachments.isEmpty() && !busy,
                         onClick = {
                             when {
                                 busy -> onStop()
+                                voiceState == VoiceInputState.LISTENING -> onVoiceStop()
                                 canSend -> onSend()
+                                voiceState == VoiceInputState.UNAVAILABLE -> onVoiceUnavailable()
                                 onVoice != null && value.isBlank() -> onVoice()
                             }
                         },
@@ -543,6 +594,14 @@ private fun AttachmentChip(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 160.dp),
             )
+            // Composer C: the size of the text that will be inlined, so a
+            // 64 KB file does not look the same as a 12-byte note.
+            Text(
+                text = formatAttachmentSize(attachmentByteSize(file)),
+                style = OpenCodeTypography.caption,
+                color = colors.onSurfaceFaint,
+                maxLines = 1,
+            )
             Box(
                 modifier = Modifier
                     .size(28.dp)
@@ -563,6 +622,79 @@ private fun AttachmentChip(
                     size = 12.dp,
                 )
             }
+        }
+    }
+}
+
+/**
+ * Composer C recording bar: shown above the text field while the
+ * recognizer listens. A danger dot, the elapsed time, the interim
+ * transcript (display-only — it only enters the draft as a final result),
+ * and a stop button. Stopping delivers the final transcript (or an error);
+ * the bar itself never invents text.
+ */
+@Composable
+private fun VoiceRecordingBar(
+    elapsedSeconds: Int,
+    interimText: String?,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
+    val haptic = LocalHapticFeedback.current
+    val stopDescription = stringResource(R.string.voice_stop_recording)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = spacing.lg, end = spacing.sm, bottom = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .background(colors.danger, CircleShape),
+        )
+        Text(
+            text = stringResource(R.string.voice_recording, formatVoiceElapsed(elapsedSeconds)),
+            style = OpenCodeTypography.label,
+            color = colors.danger,
+            maxLines = 1,
+        )
+        if (!interimText.isNullOrBlank()) {
+            Text(
+                text = interimText,
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Spacer(modifier = Modifier.weight(1f))
+        }
+        Box(
+            modifier = Modifier
+                .size(dims.composerChipTouchTarget)
+                .clip(CircleShape)
+                .clickable(
+                    role = Role.Button,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onStop()
+                    },
+                )
+                .semantics { contentDescription = stopDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                glyph = Glyph.Stop,
+                tint = colors.danger,
+                size = 14.dp,
+            )
         }
     }
 }
@@ -781,6 +913,11 @@ private fun ActionButton(
     modifier: Modifier = Modifier,
     /** True after Stop was tapped until the run ends: reads "Stopping…". */
     stopping: Boolean = false,
+    /** True while the recognizer listens: the button becomes Stop. */
+    voiceListening: Boolean = false,
+    /** True when the device has no recognition service: the mic shows grey
+     * and disabled-looking, and a tap only explains why. */
+    voiceUnavailable: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val dims = OpenCodeTheme.tokens.dimensions
@@ -788,13 +925,15 @@ private fun ActionButton(
     val elevation = OpenCodeTheme.tokens.elevation
     val haptic = LocalHapticFeedback.current
 
-    val active = busy || canSend || hasVoice
+    val active = busy || canSend || hasVoice || voiceListening || voiceUnavailable
     val label = stringResource(
         when {
             stopping -> R.string.composer_stopping
             busy -> R.string.composer_stop
+            voiceListening -> R.string.voice_stop_recording
             canSend -> R.string.composer_send
             hasVoice -> R.string.composer_voice
+            voiceUnavailable -> R.string.voice_unavailable
             else -> R.string.composer_send
         },
     )
@@ -841,6 +980,7 @@ private fun ActionButton(
 
     val targetBg = when {
         busy -> colors.danger
+        voiceListening -> colors.danger
         canSend -> colors.accent
         hasVoice -> colors.accent.copy(alpha = 0.15f)
         else -> colors.fill
@@ -852,10 +992,11 @@ private fun ActionButton(
     )
 
     val targetTint = when {
-        busy || canSend -> Color.White
+        busy || canSend || voiceListening -> Color.White
         hasVoice -> colors.accent
         // Clearly grey and dim when there is nothing to send, so the accent
         // state above reads as "ready" instead of "slightly different grey".
+        // An unavailable mic reads the same way: grey, not accent.
         else -> colors.onSurfaceFaint
     }
     val iconTint by animateColorAsState(
@@ -866,7 +1007,7 @@ private fun ActionButton(
 
     val shadowElevation by animateDpAsState(
         targetValue = when {
-            busy -> elevation.sendButtonBusy
+            busy || voiceListening -> elevation.sendButtonBusy
             canSend -> elevation.sendButton
             else -> 0.dp
         },
@@ -875,7 +1016,7 @@ private fun ActionButton(
     )
     val shadowColor by animateColorAsState(
         targetValue = when {
-            busy -> colors.danger.copy(alpha = pulseGlow)
+            busy || voiceListening -> colors.danger.copy(alpha = pulseGlow)
             canSend -> colors.accent.copy(alpha = 0.40f)
             else -> Color.Transparent
         },
@@ -886,7 +1027,7 @@ private fun ActionButton(
     val finalScale = pressScale * (if (busy) pulseScale else 1.0f)
     // Disabled state gets a hairline ring so it still reads as a button,
     // just an unavailable one, instead of a flat grey dot.
-    val isDisabled = !busy && !canSend && !hasVoice
+    val isDisabled = !busy && !canSend && !hasVoice && !voiceListening
 
     // Hit area is 44dp; the 36dp circle stays the visual, centred inside it.
     Box(
@@ -928,8 +1069,8 @@ private fun ActionButton(
         ) {
         Crossfade(
             targetState = when {
-                busy -> ActionState.BUSY
-                hasVoice -> ActionState.VOICE
+                busy || voiceListening -> ActionState.BUSY
+                hasVoice || voiceUnavailable -> ActionState.VOICE
                 else -> ActionState.SEND
             },
             animationSpec = motion.tweenQuick(),

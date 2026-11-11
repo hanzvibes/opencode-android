@@ -1004,7 +1004,7 @@ class ChatViewModel(
     /** Removes one pending attachment by id; its chip and its fenced block go with it. */
     fun removeAttachment(id: String) {
         _state.value = _state.value.copy(
-            pendingAttachments = _state.value.pendingAttachments.filter { it.id != id },
+            pendingAttachments = withoutAttachment(_state.value.pendingAttachments, id),
         )
     }
 

@@ -633,6 +633,8 @@ private fun ChatDestination(
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
         onRequestSafFile = app::requestSafFile,
         safFilePicked = app.safFilePicked,
+        onRequestVoicePermission = app::requestVoicePermission,
+        voicePermissionResult = app.voicePermissionResult,
         onSessionsClick = { onNavigate(Screen.Sessions) },
         onProjectClick = { onNavigate(Screen.Projects) },
         onFilesClick = { onNavigate(Screen.Files) },

@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -103,6 +104,32 @@ fun isDuplicateAttachment(
     existing: List<AttachedFile>,
     candidate: AttachedFile,
 ): Boolean = existing.any { it.name == candidate.name && it.content == candidate.content }
+
+/**
+ * The list without the attachment with [id] — the chip's X. Pure, so the
+ * removal rule is unit-tested here rather than through the view model;
+ * [buildMessageWithAttachments] only ever sees the list that survives
+ * this filter, so a removed file can never be sent.
+ */
+fun withoutAttachment(
+    attachments: List<AttachedFile>,
+    id: String,
+): List<AttachedFile> = attachments.filter { it.id != id }
+
+/** The file's size in bytes, as the UTF-8 text that will be inlined. */
+fun attachmentByteSize(file: AttachedFile): Int =
+    file.content.toByteArray(Charsets.UTF_8).size
+
+/**
+ * "512 B", "1 KB", "1.5 KB", "64 KB" — the size shown on the pending
+ * attachment chip. One decimal, with a trailing ".0" dropped.
+ */
+fun formatAttachmentSize(bytes: Int): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    val text = String.format(Locale.US, "%.1f", kb).removeSuffix(".0")
+    return "$text KB"
+}
 
 /** What reading one system-picker file produced. */
 sealed interface SafReadResult {

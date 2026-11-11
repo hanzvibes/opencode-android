@@ -33,6 +33,17 @@ class MainActivity : ComponentActivity() {
     private val requestNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
 
+    /**
+     * Microphone permission for voice input (Composer C). The answer goes
+     * back through the application so the chat screen — which owns the
+     * recognizer — can start listening on a grant or show the denial hint
+     * without re-asking. A denial is not fatal: the mic just stays off.
+     */
+    private val requestVoicePermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            (application as OpenCodeApplication).deliverVoicePermissionResult(granted)
+        }
+
     private val requestLegacyStorage =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
@@ -145,6 +156,15 @@ class MainActivity : ComponentActivity() {
                 // never receives a file.
                 runCatching { pickSafFile.launch(arrayOf("*/*")) }
                     .onFailure { Log.w("MainActivity", "SAF picker launch failed", it) }
+            }
+        }
+        lifecycleScope.launch {
+            app.voicePermissionRequest.collect {
+                // Best-effort like the SAF launch above: a finishing
+                // activity must not crash the app; the chat screen simply
+                // never starts listening.
+                runCatching { requestVoicePermission.launch(Manifest.permission.RECORD_AUDIO) }
+                    .onFailure { Log.w("MainActivity", "Voice permission request failed", it) }
             }
         }
         lifecycleScope.launch {
