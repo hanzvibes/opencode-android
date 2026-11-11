@@ -4,7 +4,9 @@ import dev.bidzz.opencode.core.api.dto.CreateSessionRequest
 import dev.bidzz.opencode.core.api.dto.LocationRef
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
+import dev.bidzz.opencode.core.api.dto.PermissionsResponse
 import dev.bidzz.opencode.core.api.dto.PromptRequest
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
@@ -127,6 +129,22 @@ class SessionApi(private val client: EngineClient) {
             .post(client.jsonBody(body))
             .build()
         return client.executeUnit(request)
+    }
+
+    /**
+     * Pending permission requests for a session.
+     *
+     * The engine keeps waiting on these until they are replied to; the client
+     * only learns about them from the `permission.asked` stream event, so a
+     * reconnect or a reopened session would lose the prompt without this call
+     * (item 22). The response is the same `Permission.Request` shape as the
+     * stream event, decoded as [PendingPermission] (unknown fields ignored).
+     */
+    suspend fun listPermissions(sessionID: String): ApiResult<List<PendingPermission>> {
+        val request = client.request("/api/session/$sessionID/permission").get().build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<PermissionsResponse>(raw).data
+        }
     }
 
     /** One session's metadata. */

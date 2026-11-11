@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,7 +138,10 @@ fun PermissionPrompt(
     // `true` from the previous request must never disable its buttons.
     // A failed reply resets it (see the effect below) so the operator can
     // retry — the engine still waits, and the prompt must stay answerable.
-    var replied by remember(request.id) { mutableStateOf(false) }
+    // Saveable, not plain remember (item 22): a rotation recreates the
+    // composable, and a reset `replied` would let the operator answer the
+    // same request twice while the first reply is still in flight.
+    var replied by rememberSaveable(request.id) { mutableStateOf(false) }
     LaunchedEffect(replyFailed) {
         if (replyFailed) replied = false
     }

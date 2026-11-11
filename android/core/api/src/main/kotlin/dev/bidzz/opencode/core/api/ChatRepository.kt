@@ -72,6 +72,10 @@ class ChatRepository(
     private var sessionID: String? = null
     private var streamJob: Job? = null
 
+    /** Request id with a reply in flight: a double-tap (or a tap after a
+     * rotation re-arms the buttons) must not answer twice (item 22). */
+    private var replyingPermissionId: String? = null
+
     /** Text received per assistant message id, for the message being streamed. */
     private val buffers = mutableMapOf<String, StringBuilder>()
 
@@ -172,6 +176,20 @@ class ChatRepository(
                     busy = newest != null && !newest.isIdle && newest.time?.completed == null,
                     lastFailure = null,
                 )
+                // A permission the engine still waits on survives reconnects
+                // and reopens (item 22): the stream only announces new asks,
+                // so restore it from REST. Only ever sets — an empty list
+                // must not wipe a request that arrived via SSE while this
+                // call was in flight, and a failed call leaves the prompt
+                // untouched.
+                when (val pending = sessionApi.listPermissions(id)) {
+                    is ApiResult.Success -> {
+                        pending.value.firstOrNull()?.let { request ->
+                            _state.value = _state.value.copy(pendingPermission = request)
+                        }
+                    }
+                    is ApiResult.Failure -> Log.w(TAG, "permission restore failed: ${pending.message}")
+                }
             }
             is ApiResult.Failure -> {
                 Log.w(TAG, "resync failed: ${result.message}")
@@ -231,15 +249,29 @@ class ChatRepository(
     suspend fun replyPermission(decision: String, message: String? = null): ApiResult<Unit> {
         val pending = _state.value.pendingPermission
             ?: return ApiResult.Failure(code = -1, tag = "NoPendingPermission")
-        return when (val result = sessionApi.replyPermission(pending.sessionID, pending.id, decision, message)) {
-            is ApiResult.Success -> {
-                _state.value = _state.value.copy(pendingPermission = null)
-                ApiResult.Success(Unit)
+        // A reply for this request is already on its way: the in-flight one
+        // covers it, and a second POST would only fail against the engine
+        // (already answered) and re-arm a dead prompt.
+        if (replyingPermissionId == pending.id) return ApiResult.Success(Unit)
+        replyingPermissionId = pending.id
+        try {
+            return when (val result = sessionApi.replyPermission(pending.sessionID, pending.id, decision, message)) {
+                is ApiResult.Success -> {
+                    // Clear by id (item 22): a newer request may have arrived
+                    // via SSE while this reply was in flight, and wiping it
+                    // would leave the run blocked with no prompt on screen.
+                    _state.value = _state.value.copy(
+                        pendingPermission = _state.value.pendingPermission?.takeIf { it.id != pending.id },
+                    )
+                    ApiResult.Success(Unit)
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(lastFailure = result)
+                    result
+                }
             }
-            is ApiResult.Failure -> {
-                _state.value = _state.value.copy(lastFailure = result)
-                result
-            }
+        } finally {
+            replyingPermissionId = null
         }
     }
 

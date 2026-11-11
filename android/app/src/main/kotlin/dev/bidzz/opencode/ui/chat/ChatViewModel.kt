@@ -256,6 +256,13 @@ class ChatViewModel(
                         queuedPrompts = emptyList(),
                         draft = restoredDraft,
                         editingMessageId = null,
+                        // The engine is gone, so a prompt it was waiting on
+                        // is dead too (item 22): leaving it would show
+                        // buttons that silently do nothing — the repository
+                        // is closed and replyPermission has nowhere to go.
+                        pendingPermission = null,
+                        deferredPermission = null,
+                        permissionReplyFailed = false,
                         retryKind = RetryKind.NONE,
                         failureKey = when {
                             returned.isNotEmpty() -> R.string.chat_queued_returned
@@ -995,7 +1002,7 @@ class ChatViewModel(
         // and the stop state belong to the old session too. Pending
         // attachments go with the draft: they were picked for the old
         // session's message, and the refusal notice with them.
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         // The abandoned session must not come back on the next resume:
         // without this, switching workspaces reopened the old workspace's
@@ -1029,7 +1036,7 @@ class ChatViewModel(
         // session starts with an empty composer — and no retry target from
         // the previous session. Pending attachments belong to the old
         // session's message too, and the refusal notice with them.
-        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, deferredPermission = null, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         repo.open(sessionID)
         // The id-only path has no SessionInfo to sync from, so the session's
