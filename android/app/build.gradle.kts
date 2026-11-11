@@ -128,7 +128,7 @@ dependencies {
     implementation(libs.activity.compose)
     // WindowSizeClass for the adaptive tablet layout (persistent sidebar +
     // list-detail at >=840dp). Version comes from the Compose BOM above.
-    implementation(libs.material3.window.size.class)
+    implementation(libs.material3.window.size)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
 
