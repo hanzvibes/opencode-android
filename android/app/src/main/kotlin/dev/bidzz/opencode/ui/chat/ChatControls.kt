@@ -1076,6 +1076,7 @@ private fun resolveBrand(model: ModelInfo, colors: OpenCodeColors): Triple<Strin
     val combined = "${model.providerID} ${model.family.orEmpty()} ${model.name.orEmpty()} ${model.id} ${model.modelID.orEmpty()}".lowercase()
     val brandColor = colors.providerColor(combined)
     return when {
+        "antigravity" in combined -> Triple("Google", "Antigravity", brandColor)
         "anthropic" in combined || "claude" in combined -> Triple("Anthropic", "Claude", brandColor)
         "openai" in combined || "gpt" in combined || "o1" in combined || "o3" in combined -> Triple("OpenAI", "GPT", brandColor)
         "deepseek" in combined -> Triple("DeepSeek", "DeepSeek", brandColor)
@@ -1112,6 +1113,14 @@ internal fun cleanModelName(rawName: String, rawId: String): String {
     val candidate = rawName.ifBlank { rawId }.substringAfterLast('/')
     val lower = candidate.lowercase()
     return when {
+        "antigravity-gemini-3.8-flash-high" in lower -> "Gemini 3.8 Flash (High)"
+        "antigravity-gemini-3.8-flash-medium" in lower -> "Gemini 3.8 Flash (Med)"
+        "antigravity-gemini-3.8-flash" in lower -> "Gemini 3.8 Flash"
+        "antigravity-gemini-3.1-pro-low" in lower -> "Gemini 3.1 Pro (Low)"
+        "antigravity-gemini-3.1-pro-high" in lower -> "Gemini 3.1 Pro (High)"
+        "antigravity-gemini-3.1-pro" in lower -> "Gemini 3.1 Pro"
+        "antigravity-claude-opus-4-6-thinking" in lower -> "Claude Opus 4.6 (Thinking)"
+        "antigravity-claude" in lower -> "Claude (Antigravity)"
         // Current generation (added Phase 2): Claude 4, GPT-5, Nemotron.
         // No "Claude 4 / GPT-5 / Nemotron" entry existed before — the old
         // table stopped at Claude 3.7 / GPT-4o — so an engine advertising
@@ -1160,8 +1169,8 @@ private fun formatContextWindow(limitContext: Long?, rawText: String): String? {
     }
     val lower = rawText.lowercase()
     return when {
+        "antigravity" in lower || "gemini-1.5-pro" in lower || "gemini-2.0" in lower || "gemini-1.5" in lower -> "1M"
         "gpt-5" in lower -> "400k"
-        "gemini-1.5-pro" in lower || "gemini-2.0" in lower || "gemini-1.5" in lower -> "1M"
         "3-7-sonnet" in lower || "3-5-sonnet" in lower || "haiku" in lower || "claude" in lower -> "200k"
         "gpt-4o" in lower || "4o" in lower || "o1" in lower || "o3" in lower -> "128k"
         "deepseek-r1" in lower || "deepseek" in lower -> "128k"
@@ -1173,6 +1182,8 @@ private fun formatContextWindow(limitContext: Long?, rawText: String): String? {
 private fun resolveTierBadge(text: String): Int? {
     val lower = text.lowercase()
     return when {
+        "antigravity" in lower && "thinking" in lower -> R.string.model_tier_reasoning
+        "antigravity" in lower -> R.string.model_tier_pro
         "gpt-5" in lower -> R.string.model_tier_pro
         "r1" in lower || "o1" in lower || "o3" in lower || "thinking" in lower || "reasoning" in lower || "3-7" in lower || "3.7" in lower -> R.string.model_tier_reasoning
         "mini" in lower || "haiku" in lower || "flash" in lower || "small" in lower -> R.string.model_tier_fast
@@ -1190,6 +1201,7 @@ private data class ModelDescription(@StringRes val res: Int, val arg: String? = 
 private fun resolveModelDescription(text: String, family: String?): ModelDescription {
     val lower = text.lowercase()
     return when {
+        "antigravity" in lower -> ModelDescription(R.string.model_desc_gemini)
         "claude-opus-4" in lower || "opus-4" in lower -> ModelDescription(R.string.model_desc_opus4)
         "claude-sonnet-4" in lower || "sonnet-4" in lower -> ModelDescription(R.string.model_desc_sonnet4)
         "claude-haiku-4" in lower || "haiku-4" in lower -> ModelDescription(R.string.model_desc_haiku4)

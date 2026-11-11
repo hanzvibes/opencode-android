@@ -83,6 +83,50 @@ class EngineEnvironment(
             throw EngineStartupException("Workspace is not writable: ${projectDir.absolutePath}")
         }
         writeGitConfig()
+        patchAntigravityPlugin()
+    }
+
+    /**
+     * Patches `opencode-antigravity-auth` plugin files if present in the cache,
+     * resolving the leaked Generative Language API call bug where non-string Request/URL
+     * objects bypass request interception and cause "API key not valid" errors.
+     */
+    fun patchAntigravityPlugin() {
+        val npmDir = File(cacheHome, "opencode/npm")
+        if (!npmDir.exists()) return
+        npmDir.walkTopDown().forEach { file ->
+            if (file.name == "request.js" && file.path.contains("opencode-antigravity-auth")) {
+                runCatching {
+                    var text = file.readText()
+                    var changed = false
+                    val oldFn = "typeof input === \"string\" && input.includes(\"generativelanguage.googleapis.com\")"
+                    val newFn = "((typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : \"\"))).includes(\"generativelanguage.googleapis.com\"))"
+                    if (text.contains(oldFn)) {
+                        text = text.replace(oldFn, newFn)
+                        changed = true
+                    }
+                    val oldMatch = "const match = input.match(/\\/models\\/([^:]+):(\\w+)/);"
+                    val newMatch = "const _inUrl = typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : \"\")); const match = _inUrl.match(/\\/models\\/([^:]+):(\\w+)/);"
+                    if (text.contains(oldMatch)) {
+                        text = text.replace(oldMatch, newMatch)
+                        changed = true
+                    }
+                    if (changed) {
+                        file.writeText(text)
+                    }
+                }
+            } else if (file.name == "v2.js" && file.path.contains("opencode-antigravity-auth")) {
+                runCatching {
+                    var text = file.readText()
+                    val oldFetch = "input instanceof URL ? input.toString() : input"
+                    val newFetch = "typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : input))"
+                    if (text.contains(oldFetch)) {
+                        text = text.replace(oldFetch, newFetch)
+                        file.writeText(text)
+                    }
+                }
+            }
+        }
     }
 
     /**

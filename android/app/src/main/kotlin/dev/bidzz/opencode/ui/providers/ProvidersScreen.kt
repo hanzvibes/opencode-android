@@ -111,8 +111,8 @@ private val FEATURED_PROVIDERS = listOf(
     ),
     FeaturedProviderDef(
         id = "google",
-        name = "Google Gemini",
-        subtitle = "Gemini 1.5 Pro, 2.0 Flash",
+        name = "Google",
+        subtitle = "Gemini API & Antigravity OAuth",
         brandColor = Color(0xFF4285F4),
     ),
 )
@@ -148,6 +148,7 @@ fun ProvidersScreen(
     var manageFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var replaceFor by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
     var confirmDelete by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
+    var googleDetailsFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var customFormPrefill by remember { mutableStateOf<CustomFormInitial?>(null) }
     var query by remember { mutableStateOf("") }
 
@@ -243,8 +244,10 @@ fun ProvidersScreen(
                     val isCustomConfigured = state.customProviders.any {
                         it.id.contains(def.id, ignoreCase = true) || it.name.contains(def.name, ignoreCase = true)
                     }
+                    val isGoogle = def.id == "google"
+                    val isAntigravityConnected = isGoogle && (state.activeAntigravityEmail != null || state.antigravityAccounts.isNotEmpty())
 
-                    val isConnected = (integration?.connected == true && stored.isNotEmpty()) || isCustomConfigured || (integration?.connected == true)
+                    val isConnected = (integration?.connected == true && stored.isNotEmpty()) || isCustomConfigured || (integration?.connected == true) || isAntigravityConnected
                     val status = when {
                         isConnected -> ProviderStatus.CONNECTED
                         def.isFreeTier -> ProviderStatus.FREE_TIER
@@ -252,6 +255,7 @@ fun ProvidersScreen(
                     }
 
                     val detail = when {
+                        isAntigravityConnected -> state.activeAntigravityEmail?.let { "Antigravity OAuth ($it)" } ?: "Antigravity Connected"
                         isConnected && stored.isNotEmpty() ->
                             stringResource(
                                 if (stored.size == 1) R.string.providers_keys_one else R.string.providers_keys_other,
@@ -268,6 +272,7 @@ fun ProvidersScreen(
                         subtitle = detail,
                         status = status,
                         onClick = when {
+                            isGoogle -> ({ googleDetailsFor = integration ?: IntegrationInfo(id = "google", name = "Google", methods = listOf(IntegrationMethod(type = "key"))) })
                             isConnected && stored.isNotEmpty() && integration != null -> ({ manageFor = integration })
                             integration != null && integration.acceptsKey -> ({ keyFor = integration })
                             def.id == "ollama" && !isConnected -> ({
@@ -483,6 +488,93 @@ fun ProvidersScreen(
             dismissButton = {
                 TextButton(onClick = { confirmDelete = null }) {
                     Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
+                }
+            },
+        )
+    }
+
+    googleDetailsFor?.let { integration ->
+        val storedKeys = rowsFor(state.credentials, integration.id)
+        val hasAntigravity = state.antigravityAccounts.isNotEmpty()
+
+        LocalizedAlertDialog(
+            onDismissRequest = { googleDetailsFor = null },
+            title = {
+                Text(
+                    text = "Google (Gemini & Antigravity)",
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    if (hasAntigravity) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.accent),
+                            )
+                            Text(
+                                text = "Antigravity OAuth: Connected",
+                                style = OpenCodeTypography.bodyStrong,
+                                color = colors.accent,
+                            )
+                        }
+                        state.activeAntigravityEmail?.let { email ->
+                            Text(
+                                text = "Active Account: $email",
+                                style = OpenCodeTypography.caption,
+                                color = colors.onSurface,
+                            )
+                        }
+                        Text(
+                            text = "Models like Gemini 3.8 Flash, Gemini 3.1 Pro, and Claude Opus 4.6 Thinking authenticate via Google Antigravity OAuth tokens automatically. No API key is required.",
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                        )
+                    } else {
+                        Text(
+                            text = "Use Gemini with your Google API Key, or configure Antigravity OAuth in the engine config.",
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                        )
+                    }
+
+                    if (storedKeys.isNotEmpty()) {
+                        Text(
+                            text = "${storedKeys.size} Gemini API key(s) configured.",
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceMuted,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val target = googleDetailsFor
+                        googleDetailsFor = null
+                        if (storedKeys.isNotEmpty()) {
+                            manageFor = target
+                        } else {
+                            keyFor = target
+                        }
+                    },
+                ) {
+                    Text(
+                        text = if (storedKeys.isNotEmpty()) "Manage API Keys" else "Add API Key",
+                        color = colors.accent,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { googleDetailsFor = null }) {
+                    Text(stringResource(R.string.common_done), color = colors.onSurfaceMuted)
                 }
             },
         )
