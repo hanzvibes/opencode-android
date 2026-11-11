@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
@@ -75,6 +76,14 @@ import dev.bidzz.opencode.ui.GlyphIcon
 data class SlashCommand(
     val name: String,
     val description: String,
+    /**
+     * Localised description for built-in commands. When set, the palette
+     * shows this string instead of [description] (which stays as the
+     * English fallback, used for search matching and for engine commands
+     * that fall back to a built-in). Engine-advertised commands carry
+     * dynamic text, so theirs stays null.
+     */
+    @StringRes val descriptionRes: Int? = null,
     val parameterHint: String? = null,
     val glyph: Glyph = Glyph.Terminal,
 )
@@ -88,48 +97,56 @@ val BUILTIN_SLASH_COMMANDS: List<SlashCommand> = listOf(
     SlashCommand(
         name = "init",
         description = "Initialize project workspace or configuration",
+        descriptionRes = R.string.cmd_init_desc,
         parameterHint = "[template | path]",
         glyph = Glyph.Folder,
     ),
     SlashCommand(
         name = "test",
         description = "Run test suite or target test spec",
+        descriptionRes = R.string.cmd_test_desc,
         parameterHint = "[filter]",
         glyph = Glyph.Terminal,
     ),
     SlashCommand(
         name = "review",
         description = "Review changes, git diff, or pull request",
+        descriptionRes = R.string.cmd_review_desc,
         parameterHint = "[diff | branch]",
         glyph = Glyph.Code,
     ),
     SlashCommand(
         name = "fix",
         description = "Diagnose errors and apply automatic fixes",
+        descriptionRes = R.string.cmd_fix_desc,
         parameterHint = "[issue | error]",
         glyph = Glyph.Pencil,
     ),
     SlashCommand(
         name = "clear",
         description = "Clear conversation messages and reset context",
+        descriptionRes = R.string.cmd_clear_desc,
         parameterHint = null,
         glyph = Glyph.NewChat,
     ),
     SlashCommand(
         name = "undo",
         description = "Revert last assistant modifications",
+        descriptionRes = R.string.cmd_undo_desc,
         parameterHint = "[step]",
         glyph = Glyph.ArrowLeft,
     ),
     SlashCommand(
         name = "help",
         description = "Show available commands and usage guide",
+        descriptionRes = R.string.cmd_help_desc,
         parameterHint = "[command]",
         glyph = Glyph.Info,
     ),
     SlashCommand(
         name = "model",
         description = "Switch active model or provider",
+        descriptionRes = R.string.cmd_model_desc,
         parameterHint = "<provider/model>",
         glyph = Glyph.Sliders,
     ),
@@ -183,12 +200,16 @@ fun resolveSlashCommands(engineCommands: List<CommandInfo>): List<SlashCommand> 
             builtin != null -> builtin.description
             else -> "Execute /$nameLower"
         }
+        // Only the built-in fallback carries a localised description: an
+        // engine-supplied description is dynamic text and stays as-is.
+        val descRes = if (!parsedDesc.isNullOrBlank()) null else builtin?.descriptionRes
         val hint = parsedHint ?: builtin?.parameterHint
         val glyph = builtin?.glyph ?: Glyph.Terminal
         result.add(
             SlashCommand(
                 name = nameLower,
                 description = desc,
+                descriptionRes = descRes,
                 parameterHint = hint,
                 glyph = glyph,
             )
@@ -712,7 +733,7 @@ private fun CommandSuggestionRow(
 
             if (command.description.isNotBlank()) {
                 Text(
-                    text = command.description,
+                    text = command.descriptionRes?.let { stringResource(it) } ?: command.description,
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                     maxLines = 1,

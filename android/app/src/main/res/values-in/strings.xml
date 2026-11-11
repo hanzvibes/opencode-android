@@ -497,4 +497,12 @@
     <string name="providers_name_taken">Penyedia dengan nama ini sudah ada</string>
     <string name="providers_config_shadowed">Tersimpan, tetapi `opencode.jsonc` di sebelahnya lebih diutamakan. Engine akan membaca berkas itu, bukan yang ini.</string>
     <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
+    <string name="cmd_init_desc">Inisialisasi workspace atau konfigurasi proyek</string>
+    <string name="cmd_test_desc">Jalankan test suite atau target test</string>
+    <string name="cmd_review_desc">Tinjau perubahan, git diff, atau pull request</string>
+    <string name="cmd_fix_desc">Diagnosis error dan terapkan perbaikan otomatis</string>
+    <string name="cmd_clear_desc">Hapus pesan percakapan dan reset konteks</string>
+    <string name="cmd_undo_desc">Kembalikan perubahan terakhir asisten</string>
+    <string name="cmd_help_desc">Tampilkan perintah yang tersedia dan panduan penggunaannya</string>
+    <string name="cmd_model_desc">Ganti model atau provider aktif</string>
 </resources>
