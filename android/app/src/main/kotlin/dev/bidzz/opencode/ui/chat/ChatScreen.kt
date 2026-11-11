@@ -994,37 +994,39 @@ fun ChatScreen(
                             ?.name?.takeIf { it.isNotBlank() } ?: state.activeAgent
                     }
 
+                    // IME Send and Ctrl/Cmd+Enter share one chain (item 17):
+                    // palette → mention → edit-submit → send. The
+                    // Ctrl/Cmd+Enter branch used to call onSend() raw, so
+                    // "/te" + Ctrl+Enter sent the raw token, and Ctrl+Enter
+                    // while editing sent a new prompt while editingMessageId
+                    // stayed set, wedging the composer in Editing mode.
+                    val submitFromComposer: () -> Unit = {
+                        val picked = if (paletteActive) paletteState.currentSelectedCommand() else null
+                        // Complete the selected mention, mirroring the command
+                        // palette above — but only when there is a match.
+                        val pickedMention = if (mentionActive) {
+                            mentionResults.getOrNull(attachSelectedIndex)
+                        } else {
+                            null
+                        }
+                        if (picked != null) {
+                            onDraftChange("/${picked.name} ")
+                        } else if (pickedMention != null) {
+                            onDraftChange(insertMention(state.draft, pickedMention.path))
+                        } else if (state.editingMessageId != null) {
+                            onSubmitEdit()
+                        } else {
+                            onSend()
+                        }
+                        // Refocus the composer after a send so the next
+                        // message can be typed without tapping it again.
+                        composerFocusSignal = System.currentTimeMillis()
+                    }
+
                     Composer(
                         value = state.draft,
                         onValueChange = onDraftChange,
-                        // IME Send must not bypass the command palette: with "/"
-                        // open, the soft keyboard's Send key used to submit the
-                        // raw draft instead of completing the selected command
-                        // (physical Enter is handled separately above and keeps
-                        // its Ctrl/Cmd+Enter behaviour).
-                        onSend = {
-                            val picked = if (paletteActive) paletteState.currentSelectedCommand() else null
-                            // IME Send completes the selected mention,
-                            // mirroring the command palette above — but
-                            // only when there is a match to complete.
-                            val pickedMention = if (mentionActive) {
-                                mentionResults.getOrNull(attachSelectedIndex)
-                            } else {
-                                null
-                            }
-                            if (picked != null) {
-                                onDraftChange("/${picked.name} ")
-                            } else if (pickedMention != null) {
-                                onDraftChange(insertMention(state.draft, pickedMention.path))
-                            } else if (state.editingMessageId != null) {
-                                onSubmitEdit()
-                            } else {
-                                onSend()
-                            }
-                            // Refocus the composer after a send so the next
-                            // message can be typed without tapping it again.
-                            composerFocusSignal = System.currentTimeMillis()
-                        },
+                        onSend = submitFromComposer,
                         onStop = onStop,
                         // A real attach action: the @ chip renders only
                         // when this is non-null (Composer.kt), and the
@@ -1057,11 +1059,13 @@ fun ChatScreen(
                         onKeyEvent = { keyEvent ->
                             // Ctrl/Cmd+Enter sends from a physical keyboard; a plain
                             // Enter stays a newline and is left to the text field.
+                            // It runs the same chain as IME Send (item 17) — palette,
+                            // mention, edit-submit — never the raw onSend().
                             if (keyEvent.type == KeyEventType.KeyDown &&
                                 (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter) &&
                                 (keyEvent.isCtrlPressed || keyEvent.isMetaPressed)
                             ) {
-                                onSend()
+                                submitFromComposer()
                                 true
                             } else if (mentionActive) {
                                 // Typing-@ picker owns the navigation keys,
