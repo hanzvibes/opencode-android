@@ -514,6 +514,7 @@
     <string name="error_unreachable">Cannot reach the engine</string>
     <string name="error_request_failed">Request failed (%1$d)</string>
     <string name="error_binary_file">Binary file (%1$d bytes)</string>
+    <string name="error_not_utf8">This file is not valid UTF-8, so it can\'t be edited here.</string>
     <string name="error_reread_failed">Could not re-read the file to check whether it changed, so nothing was overwritten.</string>
     <string name="providers_config_write_failed">Could not write the config file</string>
     <string name="providers_config_shadowed">Saved, but an `opencode.jsonc` beside it takes precedence. The engine will read that file instead of this one.</string>
