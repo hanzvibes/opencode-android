@@ -214,6 +214,16 @@ stage_natives() {
     bash "$REPO_ROOT/script/android/stage-xz.sh" --abi x86_64 \
         --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
         --patchelf "${PATCHELF:-patchelf}"
+
+    # curl (Termux): staged from pinned .deb files by the same script CI
+    # runs (patchelf via PATCHELF as above).
+    log "Staging curl from Termux"
+    bash "$REPO_ROOT/script/android/stage-curl.sh" --abi arm64-v8a \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/arm64-v8a" \
+        --patchelf "${PATCHELF:-patchelf}"
+    bash "$REPO_ROOT/script/android/stage-curl.sh" --abi x86_64 \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
+        --patchelf "${PATCHELF:-patchelf}"
 }
 
 # ------------------------------------------------------------------- build --

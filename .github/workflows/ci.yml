@@ -180,6 +180,20 @@ jobs:
           echo "arm64-v8a staged: $(ls -1 android/app/src/main/jniLibs/arm64-v8a | tr '\n' ' ')"
           echo "x86_64 staged: $(ls -1 android/app/src/main/jniLibs/x86_64 | tr '\n' ' ')"
 
+      # curl ships as a Termux native library, staged from .deb files by
+      # script/android/stage-curl.sh (same pattern as Node/xz above:
+      # pinned versions + SHA256, patchelf renames, ELF gates). The script
+      # fails loudly on a missing lib or a failed gate.
+      - name: Stage curl from Termux
+        run: |
+          set -euo pipefail
+          bash script/android/stage-curl.sh --abi arm64-v8a \
+            --jni-out android/app/src/main/jniLibs/arm64-v8a
+          bash script/android/stage-curl.sh --abi x86_64 \
+            --jni-out android/app/src/main/jniLibs/x86_64
+          echo "arm64-v8a staged: $(ls -1 android/app/src/main/jniLibs/arm64-v8a | tr '\n' ' ')"
+          echo "x86_64 staged: $(ls -1 android/app/src/main/jniLibs/x86_64 | tr '\n' ' ')"
+
       - name: Compile and package
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
