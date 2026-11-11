@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Process
 import android.os.StatFs
 import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.PaddingValues
@@ -151,6 +152,7 @@ private fun classifyLogLevel(line: String): LogLevel {
  * - Tool binary & runtime probe diagnostics.
  * - "Copy All" full Markdown report export.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DiagnosticsScreen(
     app: OpenCodeApplication,
@@ -930,6 +932,13 @@ private fun LogViewerControls(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
+    // Hoisted out of the .semantics {} lambdas below: stringResource is
+    // @Composable and cannot be called from a SemanticsPropertyReceiver.
+    val clearSearchDescription = stringResource(R.string.diag_log_search_clear)
+    val followDescription = stringResource(
+        if (follow) R.string.diag_log_follow_off else R.string.diag_log_follow_on,
+    )
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -975,7 +984,7 @@ private fun LogViewerControls(
                         .size(48.dp)
                         .clip(CircleShape)
                         .clickable(role = Role.Button) { onQueryChange("") }
-                        .semantics { contentDescription = stringResource(R.string.diag_log_search_clear) },
+                        .semantics { contentDescription = clearSearchDescription },
                     contentAlignment = Alignment.Center,
                 ) {
                     GlyphIcon(Glyph.Close, tint = colors.onSurfaceMuted, size = 16.dp)
@@ -1060,9 +1069,7 @@ private fun LogViewerControls(
                         .background(if (follow) colors.accent else colors.fill)
                         .clickable(role = Role.Button) { onFollowChange(!follow) }
                         .semantics {
-                            contentDescription = stringResource(
-                                if (follow) R.string.diag_log_follow_off else R.string.diag_log_follow_on,
-                            )
+                            contentDescription = followDescription
                         }
                         .padding(horizontal = spacing.md, vertical = spacing.xs),
                     contentAlignment = Alignment.Center,
@@ -1104,6 +1111,7 @@ private fun LogLineRow(
 
     val lower = text.trim().lowercase()
     val textColor = when (level) {
+        LogLevel.ALL -> colors.onSurfaceMuted
         LogLevel.ERROR -> colors.danger
         LogLevel.WARNING -> colors.warning
         LogLevel.INFO -> if (lower.contains("info") || lower.contains("ready") || lower.contains("listening")) {

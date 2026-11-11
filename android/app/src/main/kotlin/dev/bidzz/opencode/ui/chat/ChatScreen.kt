@@ -1830,7 +1830,6 @@ private fun ChatDrawerContent(
                 .height(0.5.dp)
                 .background(colors.hairline),
         )
-    }
 
     // Grouped conversation history, capped at DRAWER_SESSIONS: the
     // drawer used to render every session the engine knew, and the
@@ -1907,6 +1906,7 @@ private fun ChatDrawerContent(
                 onClick = onAllSessions,
             )
         }
+    }
     }
 
     Box(

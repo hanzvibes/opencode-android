@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui
 
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
@@ -30,6 +31,7 @@ val PersistentSidebarWidth: Dp = 320.dp
 val ListPaneWidth: Dp = 360.dp
 
 /** Window size class for the current window, recomputed when its size changes. */
+@OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun rememberWindowSizeClass(): WindowSizeClass {
     val config = LocalConfiguration.current
