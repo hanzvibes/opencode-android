@@ -263,6 +263,8 @@
     <string name="code_saved">Saved</string>
     <string name="code_copy">Copy</string>
     <string name="code_copied">Copied</string>
+    <string name="code_save">Save</string>
+    <string name="code_save_failed">Could not save the file.</string>
     <string name="code_highlight_off">Highlight off (large file)</string>
 
     <!-- Project -->
@@ -361,6 +363,11 @@
     <string name="tool_diff_changes">Changes</string>
     <string name="tool_diff_show_full">Show full diff</string>
     <string name="tool_diff_show_less">Show less</string>
+    <string name="tool_diff_accept">Accept</string>
+    <string name="tool_diff_reject">Reject</string>
+    <string name="tool_diff_accepted">Accepted</string>
+    <string name="tool_diff_rejected">Revert requested</string>
+    <string name="tool_diff_decision_note">Accept keeps the change. Reject asks the agent to revert this file.</string>
     <string name="turn_footer_tokens">%1$s tokens</string>
     <string name="turn_footer_stop_reason">stop: %1$s</string>
     <string name="prompt_history_previous">Previous prompt</string>

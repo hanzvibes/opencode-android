@@ -189,6 +189,12 @@ fun ChatScreen(
     onResendMessage: (String) -> Unit = {},
     /** Answers a question card without touching the draft (item 9). */
     onAnswerQuestion: (String) -> Unit = {},
+    /** Opens a workspace-relative file from a tool step (Fase 1, item 3). */
+    onOpenToolFile: (String) -> Unit = {},
+    /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
+    onRequestDiffRevert: (String) -> Unit = {},
+    /** Saves a code block through the system picker (Fase 1, item 4). */
+    onSaveCode: (String, String) -> Unit = { _, _ -> },
     /** Submit / cancel the edit in progress in the composer. */
     onSubmitEdit: () -> Unit = {},
     onCancelEdit: () -> Unit = {},
@@ -853,6 +859,10 @@ fun ChatScreen(
                                             onDraftChange(prefix + quote)
                                         },
                                         onAnswerQuestion = onAnswerQuestion,
+                                        workspacePath = state.workspacePath,
+                                        onOpenToolFile = onOpenToolFile,
+                                        onRequestDiffRevert = onRequestDiffRevert,
+                                        onSaveCode = onSaveCode,
                                     )
                                 }
                             }
