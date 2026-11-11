@@ -505,4 +505,8 @@
     <string name="cmd_undo_desc">Kembalikan perubahan terakhir asisten</string>
     <string name="cmd_help_desc">Tampilkan perintah yang tersedia dan panduan penggunaannya</string>
     <string name="cmd_model_desc">Ganti model atau provider aktif</string>
+    <string name="fileview_lines_one">%1$d baris</string>
+    <string name="fileview_lines_unsaved_one">%1$d baris · belum disimpan</string>
+    <string name="fileview_lines_truncated_one">%1$d dari %2$d baris</string>
+    <string name="code_show_more_one">Tampilkan semua %1$d baris</string>
 </resources>

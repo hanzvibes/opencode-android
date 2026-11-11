@@ -506,4 +506,8 @@
     <string name="cmd_undo_desc">Revert last assistant modifications</string>
     <string name="cmd_help_desc">Show available commands and usage guide</string>
     <string name="cmd_model_desc">Switch active model or provider</string>
+    <string name="fileview_lines_one">%1$d line</string>
+    <string name="fileview_lines_unsaved_one">%1$d line · unsaved</string>
+    <string name="fileview_lines_truncated_one">%1$d of %2$d line</string>
+    <string name="code_show_more_one">Show all %1$d line</string>
 </resources>
