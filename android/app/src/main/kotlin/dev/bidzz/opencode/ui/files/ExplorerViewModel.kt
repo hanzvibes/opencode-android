@@ -10,6 +10,7 @@ import dev.bidzz.opencode.core.api.VcsApi
 import dev.bidzz.opencode.core.api.dto.FileDiffInfo
 import dev.bidzz.opencode.core.api.dto.FsEntry
 import dev.bidzz.opencode.core.api.dto.VcsFileStatus
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,6 +80,18 @@ class ExplorerViewModel(
 
     private var currentPath: String = ""
 
+    /** In-flight directory load, cancelled when a fresh load starts. */
+    private var loadJob: Job? = null
+
+    /**
+     * Increments on every load(): a load whose calls were already in flight
+     * when a newer load started must drop its results instead of
+     * overwriting the newer listing (item 26). Cancellation alone does not
+     * cover it — a blocked HTTP call returns after its job was cancelled,
+     * and the code after it still runs.
+     */
+    private var loadGeneration = 0
+
     /** Quick-open index state: built lazily on first palette open, not on every listing. */
     private var quickOpenLoaded: Boolean = false
     private var quickOpenLoading: Boolean = false
@@ -129,8 +142,16 @@ class ExplorerViewModel(
                     }
                 }
             }
-            quickOpenLoaded = true
+            // The workspace may have changed during the walk: an index built
+            // for the old directory must not land on the new one (item 26).
+            // The loading flag is still cleared, so the next palette open
+            // starts a fresh walk for the current workspace.
             quickOpenLoading = false
+            if (directory != workspace()) {
+                _state.value = _state.value.copy(quickOpenLoading = false)
+                return@launch
+            }
+            quickOpenLoaded = true
             _state.value = _state.value.copy(
                 quickOpenIndex = found.sortedBy { it.path.lowercase() },
                 quickOpenLoading = false,
@@ -144,24 +165,31 @@ class ExplorerViewModel(
             return
         }
         val directory = workspace()
+        // Captured now: the launch below runs later, and navigating in the
+        // meantime must not make this load list the new directory while the
+        // state still describes the old one (item 26).
+        val path = currentPath
         val files = FileApi(handle.client)
         val vcs = VcsApi(handle.client)
+        val generation = ++loadGeneration
+        loadJob?.cancel()
 
         // A root reload means the tree may have changed (the agent writes files),
         // so the quick-open snapshot is dropped and rebuilt on next palette open.
-        if (currentPath.isEmpty()) quickOpenLoaded = false
+        if (path.isEmpty()) quickOpenLoaded = false
         _state.value = _state.value.copy(
             loading = true,
             failure = null, failureKey = null,
-            currentPath = currentPath,
-            breadcrumbs = buildCrumbs(currentPath),
-            quickOpenIndex = if (currentPath.isEmpty()) emptyList() else _state.value.quickOpenIndex,
+            currentPath = path,
+            breadcrumbs = buildCrumbs(path),
+            quickOpenIndex = if (path.isEmpty()) emptyList() else _state.value.quickOpenIndex,
         )
 
-        viewModelScope.launch {
-            val entries = when (val result = files.list(directory, currentPath)) {
+        loadJob = viewModelScope.launch {
+            val entries = when (val result = files.list(directory, path)) {
                 is ApiResult.Success -> result.value
                 is ApiResult.Failure -> {
+                    if (generation != loadGeneration) return@launch
                     _state.value = _state.value.copy(loading = false, failure = result)
                     return@launch
                 }
@@ -179,6 +207,7 @@ class ExplorerViewModel(
             val isRepo = files.hasRepository(directory)
             val gitAvailable = isRepo && changed.isNotEmpty()
 
+            if (generation != loadGeneration) return@launch
             _state.value = _state.value.copy(
                 loading = false,
                 rows = sortEntries(entries, changed),
@@ -253,6 +282,9 @@ class FileViewViewModel(
     private val _state = MutableStateFlow(FileViewState())
     val state: StateFlow<FileViewState> = _state.asStateFlow()
 
+    /** In-flight file read, cancelled when another file is opened. */
+    private var loadJob: Job? = null
+
     fun load(path: String) {
         load(path, allowFull = false)
     }
@@ -308,8 +340,16 @@ class FileViewViewModel(
         }
         _state.value = FileViewState(loading = true, path = path)
 
-        viewModelScope.launch {
-            when (val result = FileApi(handle.client).readText(workspace(), path)) {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            val result = FileApi(handle.client).readText(workspace(), path)
+            // Another file was opened while this read was in flight: its
+            // content must not land in the viewer afterwards (item 26).
+            // The state path is set synchronously by every load(), so a
+            // newer load is visible here even if this job was never
+            // cancelled in time.
+            if (_state.value.path != path) return@launch
+            when (result) {
                 is ApiResult.Success -> {
                     // Large files are shown as a preview, never held in full by
                     // default — see LargeFileGuard. The full line count is kept so
@@ -456,6 +496,9 @@ class DiffViewModel(
     private val _state = MutableStateFlow(DiffUiState())
     val state: StateFlow<DiffUiState> = _state.asStateFlow()
 
+    /** In-flight diff load, cancelled when another file's diff is asked for. */
+    private var loadJob: Job? = null
+
     fun load(file: String) {
         val handle = api.handle() ?: run {
             _state.value = _state.value.copy(loading = false, failureKey = R.string.error_engine_not_running)
@@ -463,9 +506,14 @@ class DiffViewModel(
         }
         _state.value = DiffUiState(loading = true, file = file)
 
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             val vcs = VcsApi(handle.client)
-            when (val result = vcs.diff(workspace())) {
+            val result = vcs.diff(workspace())
+            // Another file's diff was asked for while this one was in
+            // flight: it must not overwrite the newer file's diff (item 26).
+            if (_state.value.file != file) return@launch
+            when (result) {
                 is ApiResult.Success -> {
                     val info: FileDiffInfo? = result.value.firstOrNull { it.file == file }
                     if (info == null) {
@@ -473,6 +521,7 @@ class DiffViewModel(
                         // engine returns an empty list for both, so ask directly
                         // rather than showing an empty diff and calling it "no changes".
                         val isRepo = vcs.hasRepository(workspace())
+                        if (_state.value.file != file) return@launch
                         _state.value = _state.value.copy(
                             loading = false,
                             gitUnavailable = !isRepo,

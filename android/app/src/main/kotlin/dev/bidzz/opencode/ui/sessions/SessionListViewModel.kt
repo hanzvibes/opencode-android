@@ -65,6 +65,18 @@ class SessionListViewModel(
     /** In-flight detail lookup, cancelled when a fresh list loads. */
     private var detailsJob: Job? = null
 
+    /** In-flight list load, cancelled when a fresh list loads. */
+    private var loadJob: Job? = null
+
+    /**
+     * Increments on every load(): a load whose network call was already in
+     * flight when a newer load started must drop its result instead of
+     * overwriting the newer list (item 26). Cancellation alone does not
+     * cover it — a blocked HTTP call returns after its job was cancelled,
+     * and the code after it still runs.
+     */
+    private var loadGeneration = 0
+
     /** @param scopedToWorkspace when true, only the current project's sessions. */
     fun load(scopedToWorkspace: Boolean) {
         val handle = api.handle() ?: run {
@@ -72,21 +84,25 @@ class SessionListViewModel(
             return
         }
         val directory = if (scopedToWorkspace) workspace() else null
+        val generation = ++loadGeneration
         detailsJob?.cancel()
+        loadJob?.cancel()
         _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, filterDirectory = directory, details = emptyMap())
 
-        viewModelScope.launch {
+        loadJob = viewModelScope.launch {
             when (val result = handle.sessions.list(directory = directory, limit = 50)) {
                 is ApiResult.Success -> {
+                    if (generation != loadGeneration) return@launch
                     val pinned = pinnedStore?.getPinnedIds().orEmpty()
                     _state.value = _state.value.copy(
                         loading = false,
                         rows = result.value.map { it.toRow(isPinned = pinned.contains(it.id)) },
                         failure = null, failureKey = null,
                     )
-                    loadDetails(result.value)
+                    loadDetails(result.value, generation)
                 }
                 is ApiResult.Failure -> {
+                    if (generation != loadGeneration) return@launch
                     _state.value = _state.value.copy(loading = false, failure = result)
                 }
             }
@@ -107,7 +123,7 @@ class SessionListViewModel(
      * the whole list — and a session whose history is genuinely empty has
      * no preview at all, which the row already handles.
      */
-    private fun loadDetails(infos: List<SessionInfo>) {
+    private fun loadDetails(infos: List<SessionInfo>, generation: Int) {
         detailsJob?.cancel()
         detailsJob = viewModelScope.launch {
             val handle = api.handle() ?: return@launch
@@ -134,6 +150,9 @@ class SessionListViewModel(
                         )
                     }
                 }
+                // A newer load replaced the rows while this lookup was in
+                // flight: its previews belong to the old list (item 26).
+                if (generation != loadGeneration) return@launch
                 _state.value = _state.value.copy(details = filled.toMap())
             }
         }

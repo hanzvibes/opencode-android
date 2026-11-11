@@ -150,6 +150,12 @@ class ChatRepository(
         val id = sessionID ?: return
         when (val result = sessionApi.messages(id)) {
             is ApiResult.Success -> {
+                // The session may have changed while the call was in flight:
+                // the terminal-event resync is launched on the repository
+                // scope, not the stream job, so close() does not cancel it.
+                // An old transcript must never overwrite the new session's
+                // (item 26) — and neither must its failure or permission.
+                if (sessionID != id) return
                 // The engine returns history newest-first (idle, assistant, user...).
                 // Reversing here means the UI and every consumer can assume
                 // oldest-first, which is the only order a chat transcript can use.
@@ -190,6 +196,7 @@ class ChatRepository(
                 // untouched.
                 when (val pending = sessionApi.listPermissions(id)) {
                     is ApiResult.Success -> {
+                        if (sessionID != id) return
                         pending.value.firstOrNull()?.let { request ->
                             _state.value = _state.value.copy(pendingPermission = request)
                         }
@@ -198,6 +205,7 @@ class ChatRepository(
                 }
             }
             is ApiResult.Failure -> {
+                if (sessionID != id) return
                 Log.w(TAG, "resync failed: ${result.message}")
                 // A failed resync must not leave the streaming entry behind:
                 // the run is over, no more deltas are coming, and the entry
