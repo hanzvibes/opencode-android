@@ -1,11 +1,14 @@
 package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.InboxResponse
+import dev.bidzz.opencode.core.api.dto.InstructionEntriesResponse
 import dev.bidzz.opencode.core.api.dto.MoveSessionRequest
+import dev.bidzz.opencode.core.api.dto.PutInstructionRequest
 import dev.bidzz.opencode.core.api.dto.SessionStatsResponse
 import dev.bidzz.opencode.core.api.dto.SessionTransferResponse
 import dev.bidzz.opencode.core.api.dto.UsageLimitsResponse
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -204,5 +207,42 @@ class Tier3bDecodingTest {
         )
         assertNull(parsed.data?.go)
         assertTrue(parsed.data?.budgets?.isEmpty() == true)
+    }
+
+    @Test
+    fun `decodes instruction entries`() {
+        val raw = """
+            {"data":[
+              {"key":"notes","value":"Prefer short answers"},
+              {"key":"style","value":{"tone":"formal"}},
+              {"key":"count","value":3}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<InstructionEntriesResponse>(raw)
+        assertEquals(3, parsed.data.size)
+        assertEquals("notes", parsed.data[0].key)
+        assertEquals(
+            "Prefer short answers",
+            (parsed.data[0].value as? JsonPrimitive)?.content,
+        )
+        assertEquals("formal", (parsed.data[1].value as? kotlinx.serialization.json.JsonObject)?.get("tone")?.let {
+            (it as? JsonPrimitive)?.content
+        })
+        assertEquals(3, (parsed.data[2].value as? JsonPrimitive)?.content?.toInt())
+    }
+
+    @Test
+    fun `instruction entries decode tolerates an empty list`() {
+        val parsed = ApiJson.decodeFromString<InstructionEntriesResponse>("""{"data":[]}""")
+        assertTrue(parsed.data.isEmpty())
+    }
+
+    @Test
+    fun `put instruction request sends the value as JSON`() {
+        val encoded = ApiJson.encodeToString(
+            PutInstructionRequest(value = JsonPrimitive("Prefer short answers")),
+        )
+        assertEquals("""{"value":"Prefer short answers"}""", encoded)
     }
 }

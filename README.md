@@ -55,6 +55,12 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 | **Plugins** | See the engine's enabled server plugins and their status in Settings. Checking for updates and updating are not available yet. |
 | **Worktrees** | See the engine's saved worktrees grouped by project in Settings. Creating, removing and refreshing are not available yet. |
 | **Engine config** | See the engine's configuration documents and their key settings in Settings. Editing config from the app is not available yet. |
+| **Session inbox** | See a session's queued work — prompts, notes, compactions and moves — from its action menu. Cancelling an item and changing its delivery are not available yet. |
+| **Move session** | Move a session to another project from its action menu; its history is kept. |
+| **Session stats** | Aggregate session activity, usage and tool reliability in Settings. |
+| **Export session** | Copy a session's complete transcript as verbatim JSON from its action menu. Import is not available yet. |
+| **Usage limits** | OpenCode Go allowance meters and Console budgets in Settings. Workspaces that are not signed in to Console show an empty state. |
+| **Session instructions** | Attach, edit and remove per-session instruction entries from a session's action menu. Values over 256 KB are refused with a friendly message. |
 | **First-run onboarding** | A three-step first run — project, provider, permissions — and a sample project you can seed to try the agent on. |
 | **Tablet layout** | On wide screens (≥840dp) the session list stays visible beside the chat, with list-detail navigation; content caps at 720dp everywhere else. |
 | **Survives the swipe** | A foreground service keeps the engine alive when you leave the app or swipe it from recents. |

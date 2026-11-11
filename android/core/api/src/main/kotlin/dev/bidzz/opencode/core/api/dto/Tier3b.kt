@@ -262,3 +262,37 @@ data class UsageBudgetModel(
     val name: String = "",
     val spent: Double? = null,
 )
+
+/**
+ * Per-session instruction entries
+ * (`/api/experimental/session/{id}/instructions/entries`).
+ *
+ * Verified against the engine fork source at pin 92b2ca0
+ * (`packages/protocol/src/groups/session.ts` — the
+ * `session.instructions.entry.*` endpoints — and
+ * `packages/schema/src/instruction-entry.ts`): list answers
+ * `{data: InstructionEntry.Info[]}`; put takes `{ value: Json }` at
+ * `.../entries/{key}` and answers 204; delete answers 204. A key
+ * matches `^[a-z0-9][a-z0-9._-]*$` (the server derives the namespaced
+ * key `api/<key>`). `value` is arbitrary JSON — the app sends the
+ * user's text as a JSON string and reads a string value back as text,
+ * anything else as compact JSON. Put fails with 413
+ * (`InstructionEntryValueTooLargeError`, max 256 KB) when the value is
+ * too large; the UI words that as a friendly message instead of
+ * showing the engine's error body.
+ */
+@Serializable
+data class InstructionEntriesResponse(
+    val data: List<InstructionEntry> = emptyList(),
+)
+
+@Serializable
+data class InstructionEntry(
+    val key: String = "",
+    val value: JsonElement? = null,
+)
+
+@Serializable
+data class PutInstructionRequest(
+    val value: JsonElement,
+)

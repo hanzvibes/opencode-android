@@ -80,6 +80,7 @@ fun SessionListScreen(
     onInbox: (SessionRow) -> Unit = {},
     onMove: (SessionRow) -> Unit = {},
     onExport: (SessionRow) -> Unit = {},
+    onInstructions: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     /**
      * Animation C shared-element pilot: the scopes for the session-title
@@ -108,6 +109,7 @@ fun SessionListScreen(
             onInbox = onInbox,
             onMove = onMove,
             onExport = onExport,
+            onInstructions = onInstructions,
             details = details,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
@@ -137,6 +139,7 @@ fun SessionListPane(
     onInbox: (SessionRow) -> Unit = {},
     onMove: (SessionRow) -> Unit = {},
     onExport: (SessionRow) -> Unit = {},
+    onInstructions: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     selectedSessionId: String? = null,
     /**
@@ -341,6 +344,7 @@ fun SessionListPane(
                                 onInboxClick = { onInbox(row) },
                                 onMoveClick = { onMove(row) },
                                 onExportClick = { onExport(row) },
+                                onInstructionsClick = { onInstructions(row) },
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
                             )
@@ -378,6 +382,7 @@ private fun SessionRowItem(
     onInboxClick: (() -> Unit)? = null,
     onMoveClick: (() -> Unit)? = null,
     onExportClick: (() -> Unit)? = null,
+    onInstructionsClick: (() -> Unit)? = null,
     detail: SessionDetail? = null,
     /** Accent background for the session open in the detail pane beside the list. */
     selected: Boolean = false,
@@ -553,6 +558,7 @@ private fun SessionRowItem(
                     onInboxClick = onInboxClick,
                     onMoveClick = onMoveClick,
                     onExportClick = onExportClick,
+                    onInstructionsClick = onInstructionsClick,
                 )
             }
         }

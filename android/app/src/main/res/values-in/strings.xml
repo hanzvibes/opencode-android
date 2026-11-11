@@ -221,6 +221,7 @@
     <string name="session_action_inbox">Kotak masuk</string>
     <string name="session_action_move">Pindahkan</string>
     <string name="session_action_export">Ekspor</string>
+    <string name="session_action_instructions">Instruksi</string>
     <string name="session_rename_title">Ganti nama obrolan</string>
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
@@ -278,6 +279,16 @@
     <string name="export_size">%1$d karakter</string>
     <string name="export_copy">Salin JSON</string>
     <string name="export_copied">Disalin</string>
+
+    <!-- Instruksi sesi -->
+    <string name="instructions_title">Instruksi sesi</string>
+    <string name="instructions_body">Instruksi tambahan untuk sesi ini. Instruksi diumumkan ke model pada batas langkah berikutnya.</string>
+    <string name="instructions_empty">Tidak ada instruksi untuk sesi ini.</string>
+    <string name="instructions_key_hint">Kunci, contohnya notes</string>
+    <string name="instructions_value_hint">Nilai</string>
+    <string name="instructions_save">Simpan</string>
+    <string name="instructions_key_invalid">Kunci diawali huruf kecil atau angka, lalu huruf kecil, angka, titik, garis bawah, atau strip.</string>
+    <string name="instructions_too_large">Nilai itu terlalu besar. Maksimum 256 KB.</string>
 
     <!-- Batas pemakaian -->
     <string name="usage_title">Batas pemakaian</string>

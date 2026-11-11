@@ -222,6 +222,7 @@
     <string name="session_action_inbox">Inbox</string>
     <string name="session_action_move">Move</string>
     <string name="session_action_export">Export</string>
+    <string name="session_action_instructions">Instructions</string>
     <string name="session_rename_title">Rename chat</string>
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
@@ -279,6 +280,16 @@
     <string name="export_size">%1$d characters</string>
     <string name="export_copy">Copy JSON</string>
     <string name="export_copied">Copied</string>
+
+    <!-- Session instructions -->
+    <string name="instructions_title">Session instructions</string>
+    <string name="instructions_body">Extra instructions attached to this session. They are announced to the model at the next step boundary.</string>
+    <string name="instructions_empty">No instructions attached to this session.</string>
+    <string name="instructions_key_hint">Key, for example notes</string>
+    <string name="instructions_value_hint">Value</string>
+    <string name="instructions_save">Save</string>
+    <string name="instructions_key_invalid">Keys start with a lowercase letter or digit, then lowercase letters, digits, dots, underscores, or hyphens.</string>
+    <string name="instructions_too_large">That value is too large. The maximum is 256 KB.</string>
 
     <!-- Usage limits -->
     <string name="usage_title">Usage limits</string>
