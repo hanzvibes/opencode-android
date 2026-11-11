@@ -21,33 +21,32 @@ class ZombieReapTest {
 
     private val executable = "/data/data/dev.bidzz.opencode/lib/libopencode.so"
 
-    private fun procEntry(pid: String, cmdline: String?): File {
-        val dir = tmp.newFolder(pid)
+    private fun procEntry(procRoot: File, pid: String, cmdline: String?) {
+        val dir = File(procRoot, pid).apply { mkdirs() }
         if (cmdline != null) File(dir, "cmdline").writeBytes(cmdline.toByteArray(Charsets.UTF_8))
-        return dir
     }
 
     @Test
     fun `scan finds only the engine argv among proc entries`() {
         val procRoot = tmp.newFolder("proc")
         // The engine: exact binary path + "serve".
-        procEntry("123", "$executable\u0000serve\u0000--port\u00001234\u0000")
+        procEntry(procRoot, "123", "$executable\u0000serve\u0000--port\u00001234\u0000")
         // Same binary, different argv: not a running engine.
-        procEntry("124", "$executable\u0000--version\u0000")
+        procEntry(procRoot, "124", "$executable\u0000--version\u0000")
         // "serve" from another binary: not ours.
-        procEntry("125", "/system/bin/sh\u0000serve\u0000")
+        procEntry(procRoot, "125", "/system/bin/sh\u0000serve\u0000")
         // The engine, but it is us: never a candidate.
-        procEntry("126", "$executable\u0000serve\u0000")
+        procEntry(procRoot, "126", "$executable\u0000serve\u0000")
         // Non-numeric entries (kernel threads, "self") are skipped.
-        procEntry("self", "$executable\u0000serve\u0000")
+        procEntry(procRoot, "self", "$executable\u0000serve\u0000")
         // No cmdline at all (a process that just exited): skipped.
-        procEntry("127", null)
+        procEntry(procRoot, "127", null)
         // Empty cmdline (a kernel thread): skipped, and must not crash the split.
-        procEntry("128", "")
+        procEntry(procRoot, "128", "")
 
         val found = scanForEnginePids(executable, procRoot, ownPid = 126)
 
-        assertEquals(listOf(123), found)
+        assertEquals(listOf(123), found.sorted())
     }
 
     @Test
@@ -59,7 +58,7 @@ class ZombieReapTest {
     @Test
     fun `scan returns empty when no engine runs`() {
         val procRoot = tmp.newFolder("proc")
-        procEntry("200", "/system/bin/sh\u0000")
+        procEntry(procRoot, "200", "/system/bin/sh\u0000")
         assertTrue(scanForEnginePids(executable, procRoot, ownPid = -1).isEmpty())
     }
 }
