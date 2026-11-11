@@ -284,6 +284,8 @@
     <string name="tool_stderr">STDERR</string>
     <string name="tool_command">Command</string>
     <string name="tool_input">Input</string>
+    <string name="tool_todos_title">Todo list</string>
+    <string name="tool_todos_cleared">Todos cleared</string>
     <string name="tool_show_full">Show full output</string>
     <string name="tool_show_less">Show less</string>
     <string name="tool_filter_all">All</string>

@@ -283,6 +283,8 @@
     <string name="tool_stderr">STDERR</string>
     <string name="tool_command">Perintah</string>
     <string name="tool_input">Masukan</string>
+    <string name="tool_todos_title">Daftar tugas</string>
+    <string name="tool_todos_cleared">Daftar tugas dikosongkan</string>
     <string name="tool_show_full">Tampilkan semua output</string>
     <string name="tool_show_less">Tampilkan lebih sedikit</string>
     <string name="tool_filter_all">Semua</string>

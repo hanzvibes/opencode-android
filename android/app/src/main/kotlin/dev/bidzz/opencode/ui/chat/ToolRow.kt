@@ -1016,6 +1016,17 @@ fun ToolStep(
                         val isShell = toolKind == ToolKind.SHELL
                         val commandText = if (isShell) extractCommand(call) else null
                         val inputBody = commandText ?: call.inputText?.takeIf { it.isNotBlank() }
+                        // A `todowrite` step renders as a checklist, not raw
+                        // input JSON (Tier 3, item 1). Null when the input
+                        // is not a usable todos array — the raw block below
+                        // is then shown instead, so nothing is hidden.
+                        val todoList = remember(call.inputText) {
+                            if (call.name.equals("todowrite", ignoreCase = true)) {
+                                parseTodoList(call.inputText)
+                            } else {
+                                null
+                            }
+                        }
 
                         // 1. Edit/write change, as a concise unified diff
                         // (audit finding 4) — not the raw input JSON. When
@@ -1047,6 +1058,8 @@ fun ToolStep(
                                     },
                                 )
                             }
+                        } else if (todoList != null) {
+                            TodoChecklist(todos = todoList)
                         } else if (!inputBody.isNullOrBlank()) {
                             val inputLang = if (isShell) "bash" else if (inputBody.trim().startsWith("{")) "json" else null
                             val prompt = if (isShell) "$ " else null
