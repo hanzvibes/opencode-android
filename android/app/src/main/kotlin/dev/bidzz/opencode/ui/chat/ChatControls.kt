@@ -19,9 +19,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -129,18 +130,10 @@ private sealed interface SelectorEntry {
     data class ModelRow(val model: ModelInfo) : SelectorEntry
 }
 
-private fun selectorEntryKey(entry: SelectorEntry): Any = when (entry) {
-    is SelectorEntry.Header -> "header:${entry.text}"
-    is SelectorEntry.AgentRow -> "agent:${entry.agent.id}"
-    is SelectorEntry.ModelRow -> "model:${entry.model.providerID}/${entry.model.modelID ?: entry.model.id}"
-}
-
 /**
- * Menu keys are built from the engine's identifiers, so a list the engine
- * advertises twice (same provider + model id, same agent id) hands
- * LazyColumn a duplicate key and the menu crashes on open with
- * `IllegalArgumentException: Key ... was already used`. Drop the later
- * copies, keeping the first — the entries are identical by key.
+ * The engine may advertise the same model twice (same provider + model
+ * id) or the same agent id twice; the menu would then show the row twice.
+ * Drop the later copies, keeping the first.
  */
 internal fun dedupeModels(models: List<ModelInfo>): List<ModelInfo> =
     models.distinctBy { "${it.providerID}/${it.modelID ?: it.id}" }
@@ -262,21 +255,22 @@ private fun AgentSelector(
     }
 
     // Scroll-to-selected: opening the menu lands on the active agent
-    // instead of the top of the list.
-    val selectedEntryIndex = entries.indexOfFirst { entry ->
+    // instead of the top of the list. The selected row carries the
+    // requester (see the row below); bringIntoView scrolls the menu's
+    // Column just enough to reveal it.
+    val hasSelectedEntry = entries.any { entry ->
         entry is SelectorEntry.AgentRow &&
             (entry.agent.id == activeAgent || (activeAgent == null && entry.agent == currentAgent))
     }
-    val menuListState = rememberLazyListState()
+    val selectedRowBringIntoView = remember { BringIntoViewRequester() }
+    val menuScrollState = rememberScrollState()
     LaunchedEffect(expanded) {
-        if (expanded && selectedEntryIndex >= 0) {
-            // The index was computed from an earlier composition; if the
-            // list shrank since (agents refetched while the menu was
-            // opening), scrolling past the end throws — open at the top.
+        if (expanded && hasSelectedEntry) {
             try {
-                menuListState.scrollToItem(selectedEntryIndex)
-            } catch (_: IllegalArgumentException) {
-                // Entries changed under us; no scroll is the right fallback.
+                selectedRowBringIntoView.bringIntoView()
+            } catch (_: IllegalStateException) {
+                // The selected row left the composition before the scroll
+                // ran; the menu simply opens at the top.
             }
         }
     }
@@ -450,26 +444,29 @@ private fun AgentSelector(
                 }
             }
 
-            LazyColumn(
-                state = menuListState,
+            // A LazyColumn cannot live here: DropdownMenu sizes its content
+            // with intrinsic measurements, and a lazy list (a SubcomposeLayout)
+            // throws IllegalStateException on any intrinsic query — opening
+            // the menu crashed the app. A plain Column with a scroll state
+            // measures fine; the lists are short (tens of rows at most).
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 380.dp)
+                    .verticalScroll(menuScrollState)
                     .padding(vertical = spacing.xxs),
             ) {
                 if (entries.isEmpty()) {
-                    item(key = "empty") {
-                        Text(
-                            text = stringResource(R.string.agent_search_no_results, agentQuery.trim()),
-                            style = OpenCodeTypography.body,
-                            color = colors.onSurfaceMuted,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = spacing.md, vertical = spacing.md),
-                        )
-                    }
+                    Text(
+                        text = stringResource(R.string.agent_search_no_results, agentQuery.trim()),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = spacing.md, vertical = spacing.md),
+                    )
                 }
-                items(entries, key = { selectorEntryKey(it) }) { entry ->
+                entries.forEach { entry ->
                     when (entry) {
                         is SelectorEntry.Header -> {
                             Text(
@@ -497,6 +494,7 @@ private fun AgentSelector(
                                     .padding(horizontal = spacing.xs, vertical = 2.dp)
                                     .clip(RoundedCornerShape(radius.sm))
                                     .background(rowBg)
+                                    .then(if (isSelected) Modifier.bringIntoViewRequester(selectedRowBringIntoView) else Modifier)
                                     .clickable {
                                         recentAgentIds = storeRecentRef(prefs, RECENT_AGENTS_KEY, agent.id)
                                         onSelect(agent.id)
@@ -674,22 +672,23 @@ internal fun ModelSelector(
     }
 
     // Scroll-to-selected: opening the menu lands on the active model
-    // instead of the top of the list.
-    val selectedEntryIndex = entries.indexOfFirst { entry ->
+    // instead of the top of the list. The selected row carries the
+    // requester (see the row below); bringIntoView scrolls the menu's
+    // Column just enough to reveal it.
+    val hasSelectedEntry = entries.any { entry ->
         entry is SelectorEntry.ModelRow &&
             (entry.model.ref() == activeModel ||
                 (activeModel != null && (entry.model.modelID ?: entry.model.id) == activeModel.id))
     }
-    val menuListState = rememberLazyListState()
+    val selectedRowBringIntoView = remember { BringIntoViewRequester() }
+    val menuScrollState = rememberScrollState()
     LaunchedEffect(expanded) {
-        if (expanded && selectedEntryIndex >= 0) {
-            // The index was computed from an earlier composition; if the
-            // list shrank since (models refetched while the menu was
-            // opening), scrolling past the end throws — open at the top.
+        if (expanded && hasSelectedEntry) {
             try {
-                menuListState.scrollToItem(selectedEntryIndex)
-            } catch (_: IllegalArgumentException) {
-                // Entries changed under us; no scroll is the right fallback.
+                selectedRowBringIntoView.bringIntoView()
+            } catch (_: IllegalStateException) {
+                // The selected row left the composition before the scroll
+                // ran; the menu simply opens at the top.
             }
         }
     }
@@ -885,26 +884,29 @@ internal fun ModelSelector(
                 }
             }
 
-            LazyColumn(
-                state = menuListState,
+            // A LazyColumn cannot live here: DropdownMenu sizes its content
+            // with intrinsic measurements, and a lazy list (a SubcomposeLayout)
+            // throws IllegalStateException on any intrinsic query — opening
+            // the menu crashed the app. A plain Column with a scroll state
+            // measures fine; the lists are short (tens of rows at most).
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 380.dp)
+                    .verticalScroll(menuScrollState)
                     .padding(vertical = spacing.xxs),
             ) {
                 if (entries.isEmpty()) {
-                    item(key = "empty") {
-                        Text(
-                            text = stringResource(R.string.model_search_no_results, modelQuery.trim()),
-                            style = OpenCodeTypography.body,
-                            color = colors.onSurfaceMuted,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = spacing.md, vertical = spacing.md),
-                        )
-                    }
+                    Text(
+                        text = stringResource(R.string.model_search_no_results, modelQuery.trim()),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = spacing.md, vertical = spacing.md),
+                    )
                 }
-                items(entries, key = { selectorEntryKey(it) }) { entry ->
+                entries.forEach { entry ->
                     when (entry) {
                         is SelectorEntry.Header -> {
                             Text(
@@ -932,6 +934,7 @@ internal fun ModelSelector(
                                     .padding(horizontal = spacing.xs, vertical = 2.dp)
                                     .clip(RoundedCornerShape(radius.sm))
                                     .background(rowBg)
+                                    .then(if (isSelected) Modifier.bringIntoViewRequester(selectedRowBringIntoView) else Modifier)
                                     .clickable {
                                         recentModelRefs = storeRecentRef(prefs, RECENT_MODELS_KEY, modelRefKey(model))
                                         onSelect(model.ref())
