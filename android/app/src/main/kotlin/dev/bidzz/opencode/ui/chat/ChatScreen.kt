@@ -3235,7 +3235,10 @@ private fun ReadinessStatusRow(
                     Modifier
                 },
             )
-            .padding(horizontal = spacing.md, vertical = spacing.sm),
+            // No vertical padding: the 48dp project-name box below already
+            // sets the row height, so this stays a one-line row instead of
+            // growing to 48dp plus padding.
+            .padding(horizontal = spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
@@ -3258,14 +3261,15 @@ private fun ReadinessStatusRow(
         // Tapping the project name still switches workspace, as the old
         // card's workspace row did; tapping anywhere else on the row opens
         // diagnostics. The inner click wins over the row click in Compose.
-        Text(
-            text = projectName,
-            style = OpenCodeTypography.bodySmall,
-            color = colors.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        // The name is the flexible middle: it absorbs the leftover width
+        // so the branch + chevron sit flush right, and it keeps its full
+        // 48dp tap area. The text is centred inside that tall box — a
+        // Text draws its line at the TOP of its own box, so the minHeight
+        // used to sit on the Text itself and pushed "workspace" to the
+        // top of the pill while everything else stayed centred.
+        Box(
             modifier = Modifier
-                .weight(1f, fill = false)
+                .weight(1f)
                 .defaultMinSize(minHeight = dims.minTouchTarget)
                 .then(
                     if (onProjectClick != null) {
@@ -3277,7 +3281,16 @@ private fun ReadinessStatusRow(
                         Modifier
                     },
                 ),
-        )
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                text = projectName,
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Text(text = "•", style = OpenCodeTypography.bodySmall, color = colors.onSurfaceFaint)
         Text(
             text = gitBranch ?: stringResource(R.string.workspace_git_untracked),
@@ -3285,10 +3298,13 @@ private fun ReadinessStatusRow(
             color = if (gitBranch != null) colors.onSurface else colors.onSurfaceFaint,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            // Weighted like the project name, so the two share whatever
-            // space is left instead of the branch taking its full intrinsic
-            // width first and squeezing the project name to zero.
-            modifier = Modifier.weight(1f, fill = false),
+            // No weight: the project name already absorbs the leftover
+            // width, so a second weight(1f, fill = false) here would
+            // leave its unused share trailing after the chevron instead
+            // of pushing it to the right edge (same pattern as the
+            // timeline pill bug). Capped instead, so a very long branch
+            // cannot squeeze the project name to zero.
+            modifier = Modifier.widthIn(max = 180.dp),
         )
         GlyphIcon(
             glyph = Glyph.ChevronRight,
