@@ -88,6 +88,21 @@ object Markdown {
     private val rule = Regex("^\\s*([-*_])\\s*\\1\\s*\\1[\\s\\-*_]*$")
     private val hrTag = Regex("^\\s*<hr\\s*/?>\\s*$", RegexOption.IGNORE_CASE)
 
+    /** Schemes a model-written link may open (item 2). */
+    private val openableSchemes = setOf("http", "https", "mailto", "tel")
+
+    /**
+     * True when [url] names a destination this app can actually open.
+     *
+     * Anything else — empty, relative, `javascript:`, `intent:`, `file:` —
+     * stays plain text instead of a link that crashes on tap, because the
+     * default UriHandler throws when no app can handle the URI.
+     */
+    internal fun isOpenableLink(url: String): Boolean {
+        val scheme = url.substringBefore(':').lowercase()
+        return scheme in openableSchemes && url.length > scheme.length + 1
+    }
+
     /**
      * Parses [text] into blocks.
      *
@@ -392,7 +407,11 @@ object Markdown {
                     val close = text.indexOf(']', i + 1)
                     val open = if (close > 0) text.indexOf('(', close) else -1
                     val end = if (open > 0) text.indexOf(')', open) else -1
-                    if (close > i + 1 && open == close + 1 && end > open) {
+                    // A URL the app cannot open is not a link at all (item 2):
+                    // it renders as plain text instead of crashing on tap.
+                    if (close > i + 1 && open == close + 1 && end > open &&
+                        isOpenableLink(text.substring(open + 1, end))
+                    ) {
                         flushPlain()
                         spans += MdSpan.Link(
                             text = text.substring(i + 1, close),
