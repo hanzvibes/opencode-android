@@ -80,6 +80,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.announceForAccessibility
+import dev.bidzz.opencode.ui.browser.shareText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -556,6 +557,7 @@ fun MessageBubble(
                             onQuote("> $snippet")
                         },
                     )
+                    ShareButton(text = allProse)
                 }
             }
 
@@ -923,6 +925,57 @@ private fun ReplyButton(
                 )
                 Text(
                     text = stringResource(R.string.message_reply),
+                    style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                    color = colors.onSurfaceMuted,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Shares the turn's prose through the system chooser (Native C). Same
+ * pill shape as Reply, same 48dp hit area; no feedback state — the
+ * chooser itself is the confirmation.
+ */
+@Composable
+private fun ShareButton(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val pillShape = RoundedCornerShape(radius.full)
+    Box(
+        modifier = modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable { shareText(context, text) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(pillShape)
+                .background(colors.surfaceVariant)
+                .border(0.5.dp, colors.hairline, pillShape)
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Share,
+                    tint = colors.onSurfaceMuted,
+                    size = 12.dp,
+                )
+                Text(
+                    text = stringResource(R.string.message_share),
                     style = OpenCodeTypography.label.copy(fontSize = 11.sp),
                     color = colors.onSurfaceMuted,
                     maxLines = 1,

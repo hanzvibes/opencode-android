@@ -272,6 +272,30 @@ class OpenCodeApplication : Application() {
     val codeSaveRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
 
     /**
+     * Text shared into the app from another app (ACTION_SEND, Native C).
+     * Same bridge shape as the SAF attach flow above: the activity owns
+     * the intent, the UI owns what happens with the text. One-shot, so a
+     * recreated activity never re-shares the same text.
+     */
+    fun deliverSharedText(text: String) {
+        sharedTextReceived.tryEmit(text)
+    }
+
+    /** Text shared from another app; the chat screen drafts it. */
+    val sharedTextReceived = MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    /**
+     * Session id from an opencode://session/{id} deep link (Native C).
+     * Same bridge shape as the share above.
+     */
+    fun deliverSessionOpen(sessionID: String) {
+        sessionOpenRequested.tryEmit(sessionID)
+    }
+
+    /** Session ids from deep links; the chat screen opens them. */
+    val sessionOpenRequested = MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    /**
      * Delivers a command to [EngineService].
      *
      * `startForegroundService` is used for both actions, not just start: the

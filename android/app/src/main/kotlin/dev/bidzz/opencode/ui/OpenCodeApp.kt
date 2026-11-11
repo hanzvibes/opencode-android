@@ -93,6 +93,7 @@ import dev.bidzz.opencode.ui.sessions.SessionListViewModel
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import dev.bidzz.opencode.ui.settings.SettingsScreen
 import java.io.File
+import kotlinx.coroutines.launch
 
 /**
  * Top-level navigation.
@@ -306,6 +307,27 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
     LaunchedEffect(chatState.sessionID) {
         chatState.sessionID?.let { app.lastSessionID = it }
+    }
+
+    // External entries (Native C): shared text and deep links arrive via
+    // the application flows, not navigation arguments — the activity can
+    // be re-created for them while the UI is already composed. A share
+    // starts a fresh session with the text as the draft (editable before
+    // sending); a deep link opens its session.
+    LaunchedEffect(Unit) {
+        launch {
+            app.sharedTextReceived.collect { text ->
+                chatViewModel.newSession()
+                chatViewModel.onDraftChange(text)
+                screen = Screen.Chat
+            }
+        }
+        launch {
+            app.sessionOpenRequested.collect { sessionID ->
+                chatViewModel.openSession(sessionID)
+                screen = Screen.Chat
+            }
+        }
     }
 
     // Load history whenever the screen is shown, and reload when the scope flips.

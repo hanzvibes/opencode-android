@@ -117,6 +117,43 @@ class MainActivity : ComponentActivity() {
         setContent {
             OpenCodeApp(app = application as OpenCodeApplication)
         }
+
+        handleExternalIntent(intent)
+    }
+
+    /**
+     * A share or deep link arriving while the app is already open.
+     * singleTop in the manifest routes it here instead of recreating
+     * the activity (and the engine survives either way).
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleExternalIntent(intent)
+    }
+
+    /**
+     * External entries (Native C): a text share becomes a fresh draft,
+     * an opencode://session/{id} link opens that session. Both travel
+     * through the application flows, so the UI picks them up whenever
+     * it is composed. Anything unrecognised is ignored, never crashed on.
+     */
+    private fun handleExternalIntent(intent: Intent) {
+        val app = application as OpenCodeApplication
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                if (intent.type?.startsWith("text/") != true) return
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                    ?.takeIf { it.isNotBlank() } ?: return
+                app.deliverSharedText(text)
+            }
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data ?: return
+                if (uri.scheme != "opencode" || uri.host != "session") return
+                val sessionID = uri.lastPathSegment?.takeIf { it.isNotBlank() } ?: return
+                app.deliverSessionOpen(sessionID)
+            }
+        }
     }
 
     /**
