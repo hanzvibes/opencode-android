@@ -88,4 +88,47 @@ class AttachedFileTest {
     fun `nothing pending means no duplicate`() {
         assertTrue(!isDuplicateAttachment(emptyList(), file("notes.txt", "hello")))
     }
+
+    @Test
+    fun `removing one attachment by id keeps the others`() {
+        val pending = listOf(file("a.txt", "A"), file("b.txt", "B"))
+        val remaining = withoutAttachment(pending, "id-a.txt")
+        assertEquals(listOf(file("b.txt", "B")), remaining)
+    }
+
+    @Test
+    fun `removing an unknown id changes nothing`() {
+        val pending = listOf(file("a.txt", "A"))
+        assertEquals(pending, withoutAttachment(pending, "id-nope"))
+    }
+
+    @Test
+    fun `a removed attachment is never sent`() {
+        val pending = listOf(file("a.txt", "A"), file("b.txt", "B"))
+        val sent = buildMessageWithAttachments(
+            typedText = "",
+            attachments = withoutAttachment(pending, "id-a.txt"),
+        )
+        assertEquals("```b.txt\nB\n```", sent)
+    }
+
+    @Test
+    fun `attachment size is the UTF-8 byte count of its text`() {
+        assertEquals(5, attachmentByteSize(file("a.txt", "hello")))
+        assertEquals(0, attachmentByteSize(file("empty.txt", "")))
+    }
+
+    @Test
+    fun `attachment size formats as bytes under one KiB`() {
+        assertEquals("0 B", formatAttachmentSize(0))
+        assertEquals("512 B", formatAttachmentSize(512))
+        assertEquals("1023 B", formatAttachmentSize(1023))
+    }
+
+    @Test
+    fun `attachment size formats as kilobytes with one decimal`() {
+        assertEquals("1 KB", formatAttachmentSize(1024))
+        assertEquals("1.5 KB", formatAttachmentSize(1536))
+        assertEquals("64 KB", formatAttachmentSize(65_536))
+    }
 }
