@@ -1,6 +1,8 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -120,6 +122,8 @@ import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
 import dev.bidzz.opencode.ui.IconAction
+import dev.bidzz.opencode.ui.files.FileRow
+import dev.bidzz.opencode.ui.files.rankQuickOpen
 import dev.bidzz.opencode.ui.PersistentSidebarWidth
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.message
@@ -130,9 +134,11 @@ import dev.bidzz.opencode.ui.sessions.SessionDateGroup
 import dev.bidzz.opencode.ui.sessions.groupSessions
 import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The main screen: a conversation with the agent.
@@ -180,6 +186,25 @@ fun ChatScreen(
     /** Defer a permission request, and bring a deferred one back. */
     onDeferPermission: () -> Unit = {},
     onRestoreDeferredPermission: () -> Unit = {},
+    /** Workspace file index for the @-mention / attach picker: the
+     * explorer's quick-open index, shared — the picker never builds its
+     * own listing. Empty until the index is built. */
+    fileIndex: List<FileRow> = emptyList(),
+    /** True while that index is being built. */
+    fileIndexLoading: Boolean = false,
+    /** Builds the index lazily on first picker open; no-op once built. */
+    onEnsureFileIndex: () -> Unit = {},
+    /**
+     * SAF attachments (files outside the workspace): the screen owns the
+     * system picker launcher and the read — the view model owns the state
+     * and never sees a Context or a Uri. [onAttachmentAdded] receives a
+     * file already read in as text; [onAttachmentRefused] receives the
+     * refusal string plus the filename to format into it.
+     */
+    onRemoveAttachment: (String) -> Unit = {},
+    onAttachmentAdded: (AttachedFile) -> Unit = {},
+    onAttachmentRefused: (Int, String?) -> Unit = { _, _ -> },
+    onDismissAttachNotice: () -> Unit = {},
     modifier: Modifier = Modifier,
     /**
      * True at >=840dp wide (see [dev.bidzz.opencode.ui.isExpandedWidth]):
@@ -399,6 +424,83 @@ fun ChatScreen(
     // System back closes the palette non-destructively; it never exits the
     // screen or clears the draft while the palette is open.
     BackHandler(enabled = paletteActive) { dismissPalette() }
+
+    // Attach / @-mention picker: one picker, two entry points — the @ chip
+    // opens it as a dialog with its own search field, typing @ in the draft
+    // opens it inline with the composer as the search field. The mention
+    // query is derived from the draft, so no extra composer state is kept.
+    var attachPickerOpen by remember { mutableStateOf(false) }
+    var attachPickerQuery by remember { mutableStateOf("") }
+    var attachSelectedIndex by remember { mutableIntStateOf(0) }
+
+    val mentionQuery = remember(state.draft) { extractMentionQuery(state.draft) }
+    // The command palette wins over a mention: a draft cannot be both, but
+    // "/@x" would otherwise match both patterns.
+    val mentionActive = mentionQuery != null && !paletteActive && !attachPickerOpen
+    val mentionResults = remember(fileIndex, mentionQuery) {
+        if (mentionQuery == null) emptyList() else rankQuickOpen(fileIndex, mentionQuery)
+    }
+    val attachResults = remember(fileIndex, attachPickerQuery) {
+        rankQuickOpen(fileIndex, attachPickerQuery)
+    }
+
+    // The index is built lazily on first picker open, not on entering chat:
+    // opening the picker is the first moment it is needed.
+    LaunchedEffect(attachPickerOpen, mentionActive) {
+        if (attachPickerOpen || mentionActive) onEnsureFileIndex()
+    }
+
+    // A session change ends the dialog picker's context: the draft it
+    // would insert into belongs to the old session (a switch clears it,
+    // and the lazy first-session creation on send moves the draft to a new
+    // one). The inline picker needs nothing — it is derived from the draft
+    // and dies with it.
+    LaunchedEffect(state.sessionID) { attachPickerOpen = false }
+
+    /** Picks a file into the draft as an `@relative/path` mention. */
+    fun pickAttachFile(row: FileRow) {
+        onDraftChange(insertMention(state.draft, row.path))
+        attachPickerOpen = false
+        // Focus returns to the composer so typing continues without a tap:
+        // the picker's search field held focus in dialog mode.
+        composerFocusSignal = System.currentTimeMillis()
+    }
+
+    /** Dismisses the inline mention picker by dropping the `@query` token. */
+    fun dismissMention() {
+        onDraftChange(removeMentionToken(state.draft))
+    }
+
+    BackHandler(enabled = attachPickerOpen) { attachPickerOpen = false }
+    BackHandler(enabled = mentionActive) { dismissMention() }
+
+    // System file picker for files outside the workspace (SAF): reached
+    // from the "Browse device files" row at the foot of the attach picker.
+    // OpenDocument (not GetContent): same contract family the app already
+    // uses for the workspace folder (MainActivity), and it returns a
+    // content:// URI the resolver can read without any storage permission.
+    // "*/*" on purpose — the text check happens after the pick (see
+    // readSafFile), so a .py/.md/.json the provider does not call text/*
+    // is still pickable and a binary is refused with a message, not by
+    // being unpickable. The read runs on IO: a 64 KB file is small, but
+    // the resolver can block on a slow provider.
+    val attachContext = LocalContext.current
+    val safPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                readSafFile(attachContext.contentResolver, uri)
+            }
+            when (result) {
+                is SafReadResult.Success -> onAttachmentAdded(result.file)
+                is SafReadResult.TooLarge -> onAttachmentRefused(R.string.attach_file_too_large, result.name)
+                is SafReadResult.NotText -> onAttachmentRefused(R.string.attach_not_text_file, result.name)
+                is SafReadResult.Unreadable -> onAttachmentRefused(R.string.attach_unreadable_file, result.name)
+            }
+        }
+    }
 
     /** Closes the drawer, then runs [action]; the drawer must not stay open over the next screen. */
     fun closeThen(action: () -> Unit) {
@@ -826,6 +928,49 @@ fun ChatScreen(
                         onDismiss = { dismissPalette() },
                     )
 
+                    // One attach picker for both entry points: the @ chip
+                    // (dialog mode, its own search field) and typing @ in
+                    // the draft (inline mode, the composer is the field).
+                    if (attachPickerOpen || mentionActive) {
+                        AttachFilePicker(
+                            results = if (attachPickerOpen) attachResults else mentionResults,
+                            totalFiles = fileIndex.size,
+                            loading = fileIndexLoading,
+                            query = if (attachPickerOpen) attachPickerQuery else mentionQuery.orEmpty(),
+                            onQueryChange = { if (attachPickerOpen) attachPickerQuery = it },
+                            selectedIndex = attachSelectedIndex,
+                            onSelectedIndexChange = { attachSelectedIndex = it },
+                            onPick = { pickAttachFile(it) },
+                            onClose = {
+                                if (attachPickerOpen) attachPickerOpen = false else dismissMention()
+                            },
+                            showSearchField = attachPickerOpen,
+                            // Device files live outside the workspace, so
+                            // they are not @-mentions: close this panel
+                            // first, then open the system picker — the
+                            // picked file is read in as text and inlined.
+                            onBrowseDeviceFiles = {
+                                attachPickerOpen = false
+                                safPickerLauncher.launch(arrayOf("*/*"))
+                            },
+                        )
+                    }
+
+                    // A refused attachment (too large, not a text file,
+                    // unreadable): a slim dismissable row above the
+                    // composer, not the pinned error banner — that banner
+                    // is for engine failures, and this file never reached
+                    // the engine at all.
+                    state.attachNoticeKey?.let { noticeKey ->
+                        AttachNoticeRow(
+                            message = state.attachNoticeArg?.let { arg ->
+                                stringResource(noticeKey, arg)
+                            } ?: stringResource(noticeKey),
+                            onDismiss = onDismissAttachNotice,
+                            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
+                        )
+                    }
+
                     // Placeholder names the model/agent (Phase 2, finding 24):
                     // the human model label when the catalog knows it, else
                     // the raw model id; the agent name the same way.
@@ -848,8 +993,18 @@ fun ChatScreen(
                         // its Ctrl/Cmd+Enter behaviour).
                         onSend = {
                             val picked = if (paletteActive) paletteState.currentSelectedCommand() else null
+                            // IME Send completes the selected mention,
+                            // mirroring the command palette above — but
+                            // only when there is a match to complete.
+                            val pickedMention = if (mentionActive) {
+                                mentionResults.getOrNull(attachSelectedIndex)
+                            } else {
+                                null
+                            }
                             if (picked != null) {
                                 onDraftChange("/${picked.name} ")
+                            } else if (pickedMention != null) {
+                                onDraftChange(insertMention(state.draft, pickedMention.path))
                             } else if (state.editingMessageId != null) {
                                 onSubmitEdit()
                             } else {
@@ -860,6 +1015,16 @@ fun ChatScreen(
                             composerFocusSignal = System.currentTimeMillis()
                         },
                         onStop = onStop,
+                        // A real attach action: the @ chip renders only
+                        // when this is non-null (Composer.kt), and the
+                        // picker opens over the shared workspace index.
+                        onAttachFile = {
+                            attachPickerQuery = ""
+                            attachSelectedIndex = 0
+                            attachPickerOpen = true
+                        },
+                        attachments = state.pendingAttachments,
+                        onRemoveAttachment = onRemoveAttachment,
                         busy = state.busy,
                         stopping = state.stopping,
                         enabled = state.workspaceReady,
@@ -881,6 +1046,21 @@ fun ChatScreen(
                             ) {
                                 onSend()
                                 true
+                            } else if (mentionActive) {
+                                // Typing-@ picker owns the navigation keys,
+                                // mirroring the command palette below.
+                                handleAttachPickerKeyEvent(
+                                    event = keyEvent,
+                                    results = mentionResults,
+                                    selectedIndex = attachSelectedIndex,
+                                    onSelectedIndexChange = { attachSelectedIndex = it },
+                                    onPickSelected = {
+                                        mentionResults.getOrNull(attachSelectedIndex)?.let { row ->
+                                            onDraftChange(insertMention(state.draft, row.path))
+                                        }
+                                    },
+                                    onClose = { dismissMention() },
+                                )
                             } else {
                                 paletteState.handleKeyEvent(
                                     event = keyEvent,
@@ -1103,6 +1283,64 @@ private fun DeferredPermissionRow(
             style = OpenCodeTypography.label,
             color = colors.accent,
         )
+    }
+}
+
+/**
+ * Slim row for a refused attachment (file too large, not a text file,
+ * unreadable): the file never reached the engine, so this is not the
+ * pinned error banner — it is a local refusal with its reason, one tap
+ * to dismiss. Mirrors [DeferredPermissionRow]'s shape; the danger tint
+ * marks it as a refusal rather than a waiting request.
+ */
+@Composable
+private fun AttachNoticeRow(
+    message: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = dims.minTouchTarget)
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surface)
+            .border(0.5.dp, colors.danger.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
+            .padding(start = spacing.md, top = spacing.xs, bottom = spacing.xs, end = spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        GlyphIcon(
+            glyph = Glyph.Warning,
+            tint = colors.danger,
+            size = 16.dp,
+        )
+        Text(
+            text = message,
+            style = OpenCodeTypography.bodySmall,
+            color = colors.onSurfaceMuted,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clickable(
+                    role = SemanticsRole.Button,
+                    onClick = onDismiss,
+                )
+                .semantics { contentDescription = stringResource(R.string.chat_status_dialog_close) },
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                glyph = Glyph.Close,
+                tint = colors.onSurfaceMuted,
+                size = 12.dp,
+            )
+        }
     }
 }
 

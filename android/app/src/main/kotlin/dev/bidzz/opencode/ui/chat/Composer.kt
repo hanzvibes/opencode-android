@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,6 +98,10 @@ fun Composer(
     modifier: Modifier = Modifier,
     onVoice: (() -> Unit)? = null,
     onAttachFile: (() -> Unit)? = null,
+    /** Files picked from outside the workspace, waiting to be inlined on send. */
+    attachments: List<AttachedFile> = emptyList(),
+    /** Removes one pending attachment by id. */
+    onRemoveAttachment: (String) -> Unit = {},
     onKeyEvent: ((androidx.compose.ui.input.key.KeyEvent) -> Boolean)? = null,
     controls: @Composable () -> Unit = {},
     /** Prompts sent in this session, oldest first, for history navigation (C-F).
@@ -147,7 +152,9 @@ fun Composer(
         historyIndex = -1
     }
 
-    val canSend = enabled && value.isNotBlank() && !busy
+    // A message that is only attachments still sends: picking a file and
+    // hitting Send with no typed text means "show the agent this file".
+    val canSend = enabled && (value.isNotBlank() || attachments.isNotEmpty()) && !busy
     // Phase 1 flat omnibar: radius.md (12dp). The old 22dp capsule token
     // (radius.composer) was deleted in Wave 1 — do not re-add it.
     val shape = RoundedCornerShape(radius.md)
@@ -251,6 +258,28 @@ fun Composer(
                         .fillMaxWidth()
                         .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs),
                 )
+            }
+
+            // Pending attachments (SAF, outside the workspace): one
+            // removable chip per file, above the text field. The chip is
+            // the pending send payload made visible — dismissing it removes
+            // the file from the next send.
+            if (attachments.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    attachments.forEach { attachment ->
+                        AttachmentChip(
+                            file = attachment,
+                            onRemove = { onRemoveAttachment(attachment.id) },
+                        )
+                    }
+                }
             }
 
             // Multi-line text field with comfortable line height
@@ -427,7 +456,10 @@ fun Composer(
                         busy = busy,
                         stopping = stopping,
                         canSend = canSend,
-                        hasVoice = onVoice != null && value.isBlank() && !busy,
+                        // No voice affordance while attachments wait: an
+                        // empty draft with files pending means "send the
+                        // files", and the mic would swallow that send.
+                        hasVoice = onVoice != null && value.isBlank() && attachments.isEmpty() && !busy,
                         onClick = {
                             when {
                                 busy -> onStop()
@@ -437,6 +469,79 @@ fun Composer(
                         },
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * One pending attachment (SAF, outside the workspace): a file pill with
+ * its name and a dismiss cross. Same 28dp pill / hairline / mono-name
+ * language as [QuickActionChip], so the row reads as composer chrome, not
+ * a new component. Only the cross removes the file — tapping the name
+ * does nothing, so a stray tap cannot silently drop the pending payload.
+ * The row is 40dp tall like the other composer controls; the cross itself
+ * is a 28dp target inside the pill, matching the clear button's visual.
+ */
+@Composable
+private fun AttachmentChip(
+    file: AttachedFile,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val radius = OpenCodeTheme.tokens.radius
+    val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
+    val haptic = LocalHapticFeedback.current
+    val removeDescription = stringResource(R.string.attach_chip_remove, file.name)
+
+    Box(
+        modifier = modifier.height(dims.composerChipTouchTarget),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .height(28.dp)
+                .clip(RoundedCornerShape(radius.full))
+                .background(colors.fill)
+                .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
+                .padding(start = spacing.sm, end = spacing.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
+        ) {
+            GlyphIcon(
+                glyph = Glyph.File,
+                tint = colors.onSurfaceMuted,
+                size = 13.dp,
+            )
+            Text(
+                text = file.name,
+                style = OpenCodeTypography.caption.copy(fontFamily = OpenCodeTypography.mono),
+                color = colors.onSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 160.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        role = Role.Button,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onRemove()
+                        },
+                    )
+                    .semantics { contentDescription = removeDescription },
+                contentAlignment = Alignment.Center,
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Close,
+                    tint = colors.onSurfaceMuted,
+                    size = 12.dp,
+                )
             }
         }
     }

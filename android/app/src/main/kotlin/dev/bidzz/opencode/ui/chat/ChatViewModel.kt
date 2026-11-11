@@ -34,6 +34,22 @@ data class ChatUiState(
     val workspacePath: String? = null,
     val draft: String = "",
     /**
+     * Files picked from outside the workspace, read in as text and waiting
+     * to be inlined into the next send as fenced blocks (see
+     * [buildMessageWithAttachments]). Per session, like the draft: a
+     * session switch or a new session clears them, and the palette
+     * draft-restore path never touches them.
+     */
+    val pendingAttachments: List<AttachedFile> = emptyList(),
+    /**
+     * A refused attachment, as a string resource id plus the filename to
+     * format into it (file too large, not a text file, unreadable). Shown
+     * as a dismissable row above the composer — not the pinned error
+     * banner, which is for engine failures. Null when nothing was refused.
+     */
+    val attachNoticeKey: Int? = null,
+    val attachNoticeArg: String? = null,
+    /**
      * The last prompt actually sent, kept so a failed send can be retried.
      * It is the text that was sent — not the draft, which the user may
      * have edited since — so retrying never sends a half-edited message
@@ -444,49 +460,98 @@ class ChatViewModel(
 
     /** Sends the draft, creating a session first if there is none. */
     fun send() {
-        val text = _state.value.draft.trim()
-        if (text.isEmpty()) return
+        val typed = _state.value.draft.trim()
+        val attachments = _state.value.pendingAttachments
+        val full = buildMessageWithAttachments(typed, attachments)
+        if (full.isBlank()) return
         // While the agent works the composer stays typable, and sending queues
         // the follow-up instead of dropping it: the queue flushes when the
         // run ends (see onRepoState). The draft is cleared so the queued text
-        // is not also still sitting in the composer.
+        // is not also still sitting in the composer. The attachments are
+        // baked into the queued text and cleared with it, so the flush —
+        // which puts the queued text back into the draft and calls send()
+        // again — cannot append them a second time.
         if (_state.value.busy || sendInFlight) {
-            _state.value = _state.value.copy(queuedPrompt = text)
+            _state.value = _state.value.copy(queuedPrompt = full, pendingAttachments = emptyList())
             clearDraft()
             return
         }
-        sendText(text)
+        sendText(full, typed, attachments)
     }
 
     private var sendInFlight = false
 
     /**
-     * Sends [text] as a new prompt, recording it as the retry target and in
-     * prompt history. Shared by [send], [submitEdit] and [resendMessage] so
-     * all three record the same retry state.
+     * Sends [fullText] as a new prompt, recording it as the retry target and
+     * the typed part in prompt history. Shared by [send], [submitEdit] and
+     * [resendMessage] so all three record the same retry state.
+     *
+     * [fullText] is what the engine receives — typed text plus any fenced
+     * attachment blocks — so a retry re-sends exactly what was sent,
+     * attachments included. [typedText] is what the user typed: only that
+     * goes into history navigation, so pressing Up never restores a 64 KB
+     * file dump into the composer. [attachments] are the files baked into
+     * [fullText]; they are cleared once the engine accepts the prompt, by
+     * id, so a file picked mid-send survives.
      */
-    private fun sendText(text: String) {
+    private fun sendText(fullText: String, typedText: String, attachments: List<AttachedFile>) {
         val repo = repository ?: run {
             _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
             return
         }
         _state.value = _state.value.copy(
-            lastSentText = text,
+            lastSentText = fullText,
             // Consecutive duplicates add nothing to history navigation.
-            sentPrompts = if (_state.value.sentPrompts.lastOrNull() == text) {
+            // A send that is only attachments adds no typed text at all.
+            sentPrompts = if (typedText.isBlank() || _state.value.sentPrompts.lastOrNull() == typedText) {
                 _state.value.sentPrompts
             } else {
-                (_state.value.sentPrompts + text).takeLast(50)
+                (_state.value.sentPrompts + typedText).takeLast(50)
             },
         )
         sendInFlight = true
         viewModelScope.launch {
             try {
-                sendNow(repo, text)
+                sendNow(repo, fullText, typedText, attachments)
             } finally {
                 sendInFlight = false
             }
         }
+    }
+
+    /**
+     * Adds a file the system picker returned (already read in as text by
+     * [readSafFile]). A re-pick of the same file — same name and same
+     * content — is ignored instead of stacking a duplicate chip; a
+     * different file with the same name is kept, so two folders' notes
+     * can share a filename. Adding a file clears any refusal notice: the
+     * notice was about the previous pick, not this one.
+     */
+    fun addAttachment(file: AttachedFile) {
+        val current = _state.value.pendingAttachments
+        if (isDuplicateAttachment(current, file)) return
+        _state.value = _state.value.copy(
+            pendingAttachments = current + file,
+            attachNoticeKey = null,
+            attachNoticeArg = null,
+        )
+    }
+
+    /** Removes one pending attachment by id; its chip and its fenced block go with it. */
+    fun removeAttachment(id: String) {
+        _state.value = _state.value.copy(
+            pendingAttachments = _state.value.pendingAttachments.filter { it.id != id },
+        )
+    }
+
+    /** Shows a refusal for a file the picker returned but we would not attach. */
+    fun reportAttachRefusal(@androidx.annotation.StringRes key: Int, filename: String?) {
+        _state.value = _state.value.copy(attachNoticeKey = key, attachNoticeArg = filename)
+    }
+
+    /** Dismisses the attachment refusal row above the composer. */
+    fun dismissAttachNotice() {
+        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null)
     }
 
     /**
@@ -531,12 +596,17 @@ class ChatViewModel(
         }
         draftBeforeEdit = null
         _state.value = _state.value.copy(editingMessageId = null)
+        // An edit submits like a send, attachments included: a file picked
+        // while editing is part of the message being submitted, not the
+        // draft that was there before the edit.
+        val attachments = _state.value.pendingAttachments
+        val full = buildMessageWithAttachments(text, attachments)
         if (_state.value.busy || sendInFlight) {
-            _state.value = _state.value.copy(queuedPrompt = text)
+            _state.value = _state.value.copy(queuedPrompt = full, pendingAttachments = emptyList())
             clearDraft()
             return
         }
-        sendText(text)
+        sendText(full, text, attachments)
     }
 
     /** Re-sends one user message's text (its own Resend pill). */
@@ -549,7 +619,7 @@ class ChatViewModel(
             _state.value = _state.value.copy(queuedPrompt = text)
             return
         }
-        sendText(text)
+        sendText(text, text, emptyList())
     }
 
     /**
@@ -572,7 +642,10 @@ class ChatViewModel(
         sendInFlight = true
         viewModelScope.launch {
             try {
-                sendNow(repo, text)
+                // A retry re-sends the recorded prompt verbatim — typed text
+                // plus any attachment blocks it already contains — so it
+                // never re-appends the (already cleared) pending files.
+                sendNow(repo, text, text, emptyList())
             } finally {
                 sendInFlight = false
             }
@@ -623,7 +696,12 @@ class ChatViewModel(
         repo.open(id)
     }
 
-    private suspend fun sendNow(repo: ChatRepository, text: String) {
+    private suspend fun sendNow(
+        repo: ChatRepository,
+        text: String,
+        typedText: String,
+        attachments: List<AttachedFile>,
+    ) {
         val sessionID = _state.value.sessionID ?: createSession(repo) ?: return
         if (repository?.state?.value?.sessionID != sessionID) {
             repo.open(sessionID)
@@ -640,7 +718,10 @@ class ChatViewModel(
         }
         when (result) {
             is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
-            is ApiResult.Success -> clearSentDraft(text)
+            is ApiResult.Success -> {
+                clearSentDraft(typedText)
+                clearSentAttachments(attachments)
+            }
         }
     }
 
@@ -655,6 +736,19 @@ class ChatViewModel(
         if (_state.value.draft.trim() == sent) {
             clearDraft()
         }
+    }
+
+    /**
+     * Removes exactly the attachments that were sent, by id. A file picked
+     * while the send was in flight was not part of the sent prompt, so it
+     * stays pending instead of being swept away with the sent ones.
+     */
+    private fun clearSentAttachments(sent: List<AttachedFile>) {
+        if (sent.isEmpty()) return
+        val sentIds = sent.map { it.id }.toSet()
+        _state.value = _state.value.copy(
+            pendingAttachments = _state.value.pendingAttachments.filter { it.id !in sentIds },
+        )
     }
 
     /** Surfaces a control-API failure instead of swallowing it. */
@@ -771,8 +865,10 @@ class ChatViewModel(
         // the user into the fresh session. The last sent text goes with it:
         // retrying it in a new session would send the old session's prompt.
         // The queued follow-up, the edit in progress, any deferred permission
-        // and the stop state belong to the old session too.
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
+        // and the stop state belong to the old session too. Pending
+        // attachments go with the draft: they were picked for the old
+        // session's message, and the refusal notice with them.
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
     }
 
@@ -800,8 +896,9 @@ class ChatViewModel(
         val repo = repository ?: return
         // A draft belongs to the session it was typed in; opening another
         // session starts with an empty composer — and no retry target from
-        // the previous session.
-        _state.value = _state.value.copy(draft = "", lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, retryKind = RetryKind.NONE)
+        // the previous session. Pending attachments belong to the old
+        // session's message too, and the refusal notice with them.
+        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         repo.open(sessionID)
         // The id-only path has no SessionInfo to sync from, so the session's

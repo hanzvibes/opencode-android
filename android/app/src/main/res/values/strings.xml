@@ -201,6 +201,16 @@
     <string name="composer_clear">Clear</string>
     <string name="composer_commands">Commands</string>
     <string name="composer_attach">Attach file</string>
+    <string name="attach_picker_title">Attach file</string>
+    <string name="attach_picker_hint">Search workspace files…</string>
+    <string name="attach_picker_empty">No files match “%1$s”</string>
+    <string name="attach_picker_no_files">No files in this workspace</string>
+    <string name="attach_picker_results">%1$d of %2$d files</string>
+    <string name="attach_browse_files">Browse device files</string>
+    <string name="attach_file_too_large">“%1$s” is too large to attach. Only files up to 64 KB can be inlined into a message.</string>
+    <string name="attach_not_text_file">“%1$s” is not a text file. Only text files can be attached — the agent reads the file as text.</string>
+    <string name="attach_unreadable_file">Could not read “%1$s”.</string>
+    <string name="attach_chip_remove">Remove %1$s</string>
     <string name="permission_title">Permission required</string>
     <string name="permission_allow_once">Allow once</string>
     <string name="permission_always">Always</string>

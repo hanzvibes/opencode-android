@@ -260,6 +260,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onNavigate = { screen = it },
                 isExpanded = isExpanded,
                 showSidebar = true,
+                fileIndex = explorerState.quickOpenIndex,
+                fileIndexLoading = explorerState.quickOpenLoading,
+                onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
             )
 
             Screen.Files -> ExplorerScreen(
@@ -383,6 +386,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                             onNavigate = { screen = it },
                             isExpanded = true,
                             showSidebar = false,
+                            fileIndex = explorerState.quickOpenIndex,
+                            fileIndexLoading = explorerState.quickOpenLoading,
+                            onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
                         )
                     }
                 }
@@ -499,6 +505,10 @@ private fun ChatDestination(
     onNavigate: (Screen) -> Unit,
     isExpanded: Boolean,
     showSidebar: Boolean,
+    /** Workspace file index for the @-mention / attach picker. */
+    fileIndex: List<dev.bidzz.opencode.ui.files.FileRow> = emptyList(),
+    fileIndexLoading: Boolean = false,
+    onEnsureFileIndex: () -> Unit = {},
 ) {
     ChatScreen(
         state = chatState,
@@ -522,6 +532,10 @@ private fun ChatDestination(
         onCancelEdit = chatViewModel::cancelEdit,
         onDeferPermission = chatViewModel::deferPermission,
         onRestoreDeferredPermission = chatViewModel::restoreDeferredPermission,
+        onRemoveAttachment = chatViewModel::removeAttachment,
+        onAttachmentAdded = chatViewModel::addAttachment,
+        onAttachmentRefused = { key, filename -> chatViewModel.reportAttachRefusal(key, filename) },
+        onDismissAttachNotice = chatViewModel::dismissAttachNotice,
         onSessionsClick = { onNavigate(Screen.Sessions) },
         onProjectClick = { onNavigate(Screen.Projects) },
         onFilesClick = { onNavigate(Screen.Files) },
@@ -540,6 +554,9 @@ private fun ChatDestination(
         onTogglePinSession = { id ->
             sessionViewModel.togglePin(id)
         },
+        fileIndex = fileIndex,
+        fileIndexLoading = fileIndexLoading,
+        onEnsureFileIndex = onEnsureFileIndex,
         isExpanded = isExpanded,
         showSidebar = showSidebar,
     )

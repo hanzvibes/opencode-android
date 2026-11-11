@@ -200,6 +200,16 @@
     <string name="composer_clear">Hapus</string>
     <string name="composer_commands">Perintah</string>
     <string name="composer_attach">Lampirkan berkas</string>
+    <string name="attach_picker_title">Lampirkan berkas</string>
+    <string name="attach_picker_hint">Cari file workspace…</string>
+    <string name="attach_picker_empty">Tidak ada file yang cocok dengan “%1$s”</string>
+    <string name="attach_picker_no_files">Tidak ada file di workspace ini</string>
+    <string name="attach_picker_results">%1$d dari %2$d file</string>
+    <string name="attach_browse_files">Telusuri berkas perangkat</string>
+    <string name="attach_file_too_large">“%1$s” terlalu besar untuk dilampirkan. Hanya berkas hingga 64 KB yang dapat disisipkan ke dalam pesan.</string>
+    <string name="attach_not_text_file">“%1$s” bukan berkas teks. Hanya berkas teks yang dapat dilampirkan — agen membaca berkas sebagai teks.</string>
+    <string name="attach_unreadable_file">Tidak dapat membaca “%1$s”.</string>
+    <string name="attach_chip_remove">Hapus %1$s</string>
     <string name="permission_title">Izin diperlukan</string>
     <string name="permission_allow_once">Izinkan sekali</string>
     <string name="permission_always">Selalu</string>
