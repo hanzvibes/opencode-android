@@ -125,6 +125,8 @@ class ProcessManager(
         private const val STARTUP_TIMEOUT_MS = 60_000L
         private const val HEALTH_INTERVAL_MS = 2_000L
         private const val HEALTH_FAILURE_LIMIT = 5
+        /** Extra consecutive failures while DEGRADED before escalating to FAILED (item 21). */
+        private const val DEGRADED_ESCALATION_LIMIT = 5
         private const val SHUTDOWN_GRACE_MS = 5_000L
         private const val MAX_OUTPUT_LINES = 200
         /** The stdout line the engine prints its password on. Shared with [redactEnginePassword]. */
@@ -360,9 +362,31 @@ class ProcessManager(
                 }
             } else {
                 failures++
-                if (failures >= HEALTH_FAILURE_LIMIT && _status.value.state == EngineState.RUNNING) {
-                    Log.w(TAG, "engine unhealthy $failures times, marking DEGRADED")
-                    transition(EngineState.DEGRADED, error = "Health check failing")
+                when (_status.value.state) {
+                    EngineState.RUNNING -> {
+                        if (failures >= HEALTH_FAILURE_LIMIT) {
+                            Log.w(TAG, "engine unhealthy $failures times, marking DEGRADED")
+                            transition(EngineState.DEGRADED, error = "Health check failing")
+                        }
+                    }
+                    EngineState.DEGRADED -> {
+                        // A server that stays unhealthy does not heal (item 21):
+                        // after a second full failure window the supervisor
+                        // stops waiting and escalates to FAILED, so the
+                        // resurrect path brings a fresh engine and the
+                        // composer stops accepting sends that would hang
+                        // until the 120s timeout. The process is terminated
+                        // first — FAILED with a live process would resurrect
+                        // a second engine next to it.
+                        if (failures >= HEALTH_FAILURE_LIMIT + DEGRADED_ESCALATION_LIMIT) {
+                            Log.w(TAG, "engine unhealthy $failures times while DEGRADED, escalating to FAILED")
+                            terminate(proc)
+                            process.compareAndSet(proc, null)
+                            transition(EngineState.FAILED, error = "Engine stayed unhealthy")
+                            return
+                        }
+                    }
+                    else -> Unit
                 }
             }
         }

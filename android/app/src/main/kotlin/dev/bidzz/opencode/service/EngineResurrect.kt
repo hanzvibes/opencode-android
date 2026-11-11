@@ -14,6 +14,8 @@ import dev.bidzz.opencode.core.engine.EngineState
  *
  * Only `FAILED` qualifies. `DEGRADED` keeps a live process and its credentials, and
  * restarting it would throw away a server that may recover on the next health check.
+ * That window is bounded: the supervisor escalates a DEGRADED engine that keeps
+ * failing health checks to FAILED (item 21), so a dead server still ends up here.
  * `STOPPED` and `STOPPING` mean somebody asked for this — a user stop must not be
  * undone by an auto-resurrect that races the shutdown transition.
  */
