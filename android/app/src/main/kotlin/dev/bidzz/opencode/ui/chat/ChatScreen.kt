@@ -51,6 +51,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListItemInfo
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -76,6 +78,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -305,6 +308,18 @@ fun ChatScreen(
         }
     }
 
+    // List-space twin of firstUnreadIndex: the LazyColumn has one extra
+    // head item while older messages are windowed out ("load earlier"),
+    // so message indices are shifted by one in list space. The divider
+    // above still compares message indices, but the visibility check
+    // and the jump scroll below compare LazyColumn indices.
+    val firstUnreadListIndex by remember {
+        derivedStateOf {
+            if (firstUnreadIndex < 0) -1
+            else firstUnreadIndex + (if (state.hasMoreOlder) 1 else 0)
+        }
+    }
+
     // The badge stays until the reader actually reaches the unread message:
     // once the first unread item is on screen it counts as read and the
     // watermark advances past it, so the badge drains as the reader scrolls
@@ -313,8 +328,8 @@ fun ChatScreen(
     // once, and the effect must re-run for each one it advances past.
     val firstUnreadVisible by remember {
         derivedStateOf {
-            if (firstUnreadIndex < 0) false
-            else listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadIndex }
+            if (firstUnreadListIndex < 0) false
+            else listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadListIndex }
         }
     }
     LaunchedEffect(firstUnreadVisible, firstUnreadIndex) {
@@ -380,9 +395,16 @@ fun ChatScreen(
     val targetLastIndex by remember {
         derivedStateOf {
             val hasWorking = state.busy && state.messages.lastOrNull()?.role == Role.USER
+            // One extra head item while older messages are windowed out
+            // ("load earlier"), so message indices are shifted by one in
+            // list space; without the shift the follow scroll targets the
+            // second-to-last message and the newest one hangs below the
+            // fold. The turn-tail slot always sits last and is already
+            // counted by the hasWorking term below.
+            val headOffset = if (state.hasMoreOlder) 1 else 0
             // No error term: the error is a pinned banner above the list
             // now, not a tail item, so it never takes a list index.
-            val totalCount = state.messages.size + (if (hasWorking) 1 else 0)
+            val totalCount = headOffset + state.messages.size + (if (hasWorking) 1 else 0)
             (totalCount - 1).coerceAtLeast(0)
         }
     }
@@ -396,13 +418,18 @@ fun ChatScreen(
         state.messages.lastOrNull()?.parts?.size,
         state.busy,
     ) {
-        if (state.messages.isNotEmpty() && nearBottom) {
-            // Instant while busy so a tap on Jump-to-latest is not fought
-            // by a per-token snap; animated only when idle.
+        // Never fight an in-progress gesture: a token landing mid-drag
+        // used to yank the list out from under the reader's finger, which
+        // is half of the "stuck scroll" feeling. After the gesture ends
+        // the next token re-evaluates and follows normally.
+        if (state.messages.isNotEmpty() && nearBottom && !listState.isScrollInProgress) {
+            // Bottom-pin, not top-pin (see scrollToItemBottom): instant
+            // while busy so a tap on Jump-to-latest is not fought by a
+            // per-token snap; animated only when idle.
             if (state.busy) {
-                listState.scrollToItem(targetLastIndex)
+                listState.scrollToItemBottom(targetLastIndex)
             } else {
-                listState.animateScrollToItem(targetLastIndex)
+                listState.animateScrollToItemBottom(targetLastIndex)
             }
         }
     }
@@ -417,7 +444,7 @@ fun ChatScreen(
     var scrolledSessionID by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.sessionID, state.messages.size) {
         if (state.messages.isNotEmpty() && scrolledSessionID != state.sessionID) {
-            listState.scrollToItem(targetLastIndex)
+            listState.scrollToItemBottom(targetLastIndex)
             lastReadMessageCount = state.messages.size
             scrolledSessionID = state.sessionID
         }
@@ -891,12 +918,13 @@ fun ChatScreen(
                                     scope.launch {
                                         // First unread, not the bottom: the
                                         // reader asked to resume where they
-                                        // left off. With nothing unread it
-                                        // still falls through to the latest.
-                                        if (firstUnreadIndex >= 0) {
-                                            listState.animateScrollToItem(firstUnreadIndex)
+                                        // left off, so it stays top-pinned.
+                                        // With nothing unread it still falls
+                                        // through to the latest, bottom-pinned.
+                                        if (firstUnreadListIndex >= 0) {
+                                            listState.animateScrollToItem(firstUnreadListIndex)
                                         } else {
-                                            listState.animateScrollToItem(targetLastIndex)
+                                            listState.animateScrollToItemBottom(targetLastIndex)
                                         }
                                     }
                                 },
@@ -2650,6 +2678,76 @@ private fun AssistantWorkingPlaceholder(
             elapsedSeconds = elapsedSeconds,
         )
     }
+}
+
+/**
+ * Scrolls so the BOTTOM edge of the item at [index] sits at the viewport
+ * bottom — the newest content — instead of [LazyListState.scrollToItem]'s
+ * default of pinning the item's TOP to the viewport top.
+ *
+ * Why this exists: the follow effect used to call scrollToItem(last) on
+ * every streamed token. For a reply taller than the viewport that shows
+ * the START of the reply and hides every new token below the fold — and
+ * once the reader scrolled down, nearBottom flipped true and the next
+ * token snapped the list back to the top of the message. That snap is
+ * the jump-to-top / stuck-scroll bug: scroll down, snap to top, scroll
+ * down, snap to top, forever. Pinning the bottom keeps the newest token
+ * visible and keeps nearBottom true, so following is a steady pin
+ * instead of a yank.
+ *
+ * The fast path (item already laid out, the streaming case) measures the
+ * item from layoutInfo and scrolls once with the exact offset — no
+ * intermediate top-pin frame, so no flicker. The slow path (item not
+ * laid out yet, e.g. opening a session) snaps it into view first,
+ * waits for a layout pass, then corrects the offset; up to three frames
+ * are tried because the first frame after a scroll may not have laid
+ * the item out yet.
+ */
+private suspend fun LazyListState.scrollToItemBottom(index: Int) {
+    val visible = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    if (visible != null) {
+        scrollToItem(index, bottomOffsetFor(visible))
+        return
+    }
+    scrollToItem(index)
+    repeat(3) {
+        withFrameNanos { }
+        val laidOut = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@repeat
+        val offset = bottomOffsetFor(laidOut)
+        if (offset > 0) scrollToItem(index, offset)
+        return
+    }
+}
+
+/** Animated twin of [scrollToItemBottom]: same bottom pin, smooth. */
+private suspend fun LazyListState.animateScrollToItemBottom(index: Int) {
+    val visible = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    if (visible != null) {
+        animateScrollToItem(index, bottomOffsetFor(visible))
+        return
+    }
+    animateScrollToItem(index)
+    repeat(3) {
+        withFrameNanos { }
+        val laidOut = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@repeat
+        val offset = bottomOffsetFor(laidOut)
+        if (offset > 0) animateScrollToItem(index, offset)
+        return
+    }
+}
+
+/**
+ * The scrollOffset that pins [item]'s bottom edge to the viewport
+ * bottom: how far the item must be scrolled past the viewport start.
+ * Zero when the item fits — plain scrollToItem already lands at the
+ * true bottom then, because the list clamps to its max scroll.
+ * Uses the same coordinate space as nearBottom (offsets against
+ * viewportStart/EndOffset, which already exclude content padding).
+ */
+private fun LazyListState.bottomOffsetFor(item: LazyListItemInfo): Int {
+    val info = layoutInfo
+    val viewportHeight = (info.viewportEndOffset - info.viewportStartOffset).coerceAtLeast(0)
+    return (item.size - viewportHeight).coerceAtLeast(0)
 }
 
 /** A floating button with entry/exit animation and unread/busy badge that returns to the newest message. */
