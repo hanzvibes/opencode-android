@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="logo/icon%20logo.png" alt="OpenCode Android" width="132" />
+<img src="logo/icon-logo-redesign.png" alt="OpenCode Android" width="132" />
 
 # OpenCode Android
 
