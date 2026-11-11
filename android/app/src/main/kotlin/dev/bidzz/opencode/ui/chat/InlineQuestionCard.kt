@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,9 +23,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,11 +37,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
@@ -65,11 +75,15 @@ fun InlineQuestionCard(
     val radius = OpenCodeTheme.tokens.radius
     val shape = RoundedCornerShape(radius.md)
 
-    var submittedAnswer by rememberSaveable(call.id) { mutableStateOf<String?>(null) }
-    val isDone = call.isDone || submittedAnswer != null
+    // One answer per question, indexed by qIndex ("" = unanswered). A single
+    // shared answer used to mark every question done — and show the same
+    // answer on all of them — as soon as the first one was submitted.
+    var submittedAnswers by rememberSaveable(call.id) { mutableStateOf(listOf<String>()) }
 
-    // Answer from previous run output if available
-    val resolvedAnswer = submittedAnswer ?: call.output?.takeIf { it.isNotBlank() }
+    // The card stays "open" while any question is still unanswered.
+    val anyPending = questions.indices.any { qIndex ->
+        !call.isDone && submittedAnswers.getOrNull(qIndex).isNullOrBlank()
+    }
 
     Column(
         modifier = modifier
@@ -78,22 +92,45 @@ fun InlineQuestionCard(
             .background(colors.surfaceSunken)
             .border(
                 width = 0.5.dp,
-                color = if (!isDone) colors.accent.copy(alpha = 0.45f) else colors.hairline,
+                color = if (anyPending) colors.accent.copy(alpha = 0.45f) else colors.hairline,
                 shape = shape,
             )
             .padding(spacing.md),
         verticalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         questions.forEachIndexed { qIndex, item ->
-            SingleQuestionSection(
-                item = item,
-                isDone = isDone,
-                resolvedAnswer = resolvedAnswer,
-                onSubmit = { answerText ->
-                    submittedAnswer = answerText
+            // Per-section done state and answer: only this question is
+            // resolved by its own submission. A previous run's output is a
+            // fallback for history reloads, where no per-question answers
+            // were recorded.
+            val sectionAnswer = submittedAnswers.getOrNull(qIndex)?.takeIf { it.isNotBlank() }
+            // The old run's output is a fallback for history reloads only
+            // when there is a single question: with several questions the
+            // same output would be stamped on every section.
+            val sectionResolved = sectionAnswer
+                ?: call.output?.takeIf { questions.size == 1 && it.isNotBlank() && call.isDone }
+            // "Answered" only when there is actually an answer to show;
+            // a finished call with a blank output is not an answered one.
+            val sectionDone = sectionResolved != null
+            // Keyed per question: without the key, a section's selected
+            // option / write-in state could survive into the next question
+            // when the list changes.
+            key(qIndex) {
+                SingleQuestionSection(
+                    item = item,
+                    qIndex = qIndex,
+                    totalQuestions = questions.size,
+                    isDone = sectionDone,
+                    resolvedAnswer = sectionResolved,
+                    onSubmit = { answerText ->
+                    val updated = submittedAnswers.toMutableList()
+                    while (updated.size <= qIndex) updated.add("")
+                    updated[qIndex] = answerText
+                    submittedAnswers = updated
                     onAnswer(answerText)
                 },
-            )
+                )
+            }
         }
     }
 }
@@ -101,6 +138,8 @@ fun InlineQuestionCard(
 @Composable
 private fun SingleQuestionSection(
     item: QuestionItem,
+    qIndex: Int,
+    totalQuestions: Int,
     isDone: Boolean,
     resolvedAnswer: String?,
     onSubmit: (String) -> Unit,
@@ -109,9 +148,31 @@ private fun SingleQuestionSection(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
-    var selectedOptionIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var writeInText by rememberSaveable { mutableStateOf("") }
-    var writeInActive by rememberSaveable { mutableStateOf(false) }
+    // Keyed by question index, so each question keeps its own selection
+    // and write-in instead of inheriting the previous one's.
+    var selectedOptionIds by rememberSaveable(qIndex) { mutableStateOf(emptyList<String>()) }
+    var writeInText by rememberSaveable(qIndex) { mutableStateOf("") }
+    // A question with no options has nothing to tap: the write-in column
+    // opens active by default, with the keyboard, so the user can answer
+    // straight away instead of finding the "Other" row first.
+    var writeInActive by rememberSaveable(qIndex) {
+        mutableStateOf(item.options.isEmpty())
+    }
+
+    /** Builds "Header: answer1, answer2" and hands it to the card. */
+    fun submitAnswer(selected: List<String>, writeIn: String, writeInOn: Boolean) {
+        val chosenLabels = item.options
+            .filter { it.id in selected }
+            .map { it.label }
+        val allAnswers = chosenLabels + (if (writeInOn && writeIn.isNotBlank()) listOf(writeIn.trim()) else emptyList())
+        val answerSummary = allAnswers.joinToString(", ")
+        val formatted = if (item.header != null) {
+            "${item.header}: $answerSummary"
+        } else {
+            answerSummary
+        }
+        onSubmit(formatted)
+    }
 
     // Header Row
     Row(
@@ -140,9 +201,28 @@ private fun SingleQuestionSection(
                 fontSize = 12.sp,
             ),
             color = colors.accent,
+            // A long header used to push the "1/3" counter and the badge
+            // out of the row; it now ellipsises instead.
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
 
         Spacer(Modifier.weight(1f))
+
+        // "2/3" — with several questions in one card, the reader needs
+        // to know which one this is and how many are left.
+        if (totalQuestions > 1) {
+            Text(
+                text = "${qIndex + 1}/$totalQuestions",
+                style = OpenCodeTypography.caption.copy(
+                    fontFamily = OpenCodeTypography.mono,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+                color = colors.onSurfaceFaint,
+            )
+        }
 
         // Badge: Multi-choice / Single-choice / Answered
         val badgeText = when {
@@ -228,8 +308,13 @@ private fun SingleQuestionSection(
                                 selectedOptionIds + option.id
                             }
                         } else {
+                            // Single-choice submits on the tap itself: a
+                            // second tap on a small Submit button in the
+                            // corner was the whole interaction, with no
+                            // hint that it was required.
                             selectedOptionIds = listOf(option.id)
                             writeInActive = false
+                            submitAnswer(listOf(option.id), "", false)
                         }
                     },
                 )
@@ -247,33 +332,33 @@ private fun SingleQuestionSection(
                     }
                 },
                 onValueChange = { writeInText = it },
+                onDone = {
+                    if (writeInText.isNotBlank()) {
+                        submitAnswer(selectedOptionIds, writeInText, true)
+                    }
+                },
             )
         }
 
-        // Submit Button Row
+        // Submit Button Row: full-width and 48dp tall, so it is a real
+        // target instead of a ~30dp pill in the corner. Single-choice
+        // answers submit on the option tap above; this stays for
+        // multi-choice and write-in answers.
         val hasSelection = selectedOptionIds.isNotEmpty() || (writeInActive && writeInText.isNotBlank())
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = spacing.xs),
-            contentAlignment = Alignment.CenterEnd,
+            contentAlignment = Alignment.Center,
         ) {
             Box(
                 modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
                     .clip(RoundedCornerShape(radius.sm))
                     .background(if (hasSelection) colors.accent else colors.fill)
                     .clickable(enabled = hasSelection, role = Role.Button) {
-                        val chosenLabels = item.options
-                            .filter { it.id in selectedOptionIds }
-                            .map { it.label }
-                        val allAnswers = chosenLabels + (if (writeInActive && writeInText.isNotBlank()) listOf(writeInText.trim()) else emptyList())
-                        val answerSummary = allAnswers.joinToString(", ")
-                        val formatted = if (item.header != null) {
-                            "${item.header}: $answerSummary"
-                        } else {
-                            answerSummary
-                        }
-                        onSubmit(formatted)
+                        submitAnswer(selectedOptionIds, writeInText, writeInActive)
                     }
                     .padding(horizontal = spacing.md, vertical = spacing.sm - 2.dp),
                 contentAlignment = Alignment.Center,
@@ -319,12 +404,13 @@ private fun SelectableOptionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
             .clip(shape)
             .background(bgColor)
             .border(if (isSelected) 1.dp else 0.5.dp, borderColor, shape)
             .clickable(role = Role.RadioButton, onClick = onToggle)
             .padding(horizontal = spacing.sm, vertical = spacing.sm),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
     ) {
         // Radio / Checkbox Indicator
@@ -392,11 +478,20 @@ private fun WriteInOptionRow(
     isMultiple: Boolean,
     onActiveChange: (Boolean) -> Unit,
     onValueChange: (String) -> Unit,
+    onDone: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val motion = OpenCodeTheme.tokens.motion
     val shape = RoundedCornerShape(radius.sm)
+
+    // Tapping "Other" focuses the field and opens the keyboard; without
+    // this the write-in row stayed closed and the field never took focus.
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(isActive) {
+        if (isActive) focusRequester.requestFocus()
+    }
 
     val borderColor = if (isActive) colors.accent else colors.hairline
     val bgColor = if (isActive) colors.accent.copy(alpha = 0.08f) else colors.surfaceVariant.copy(alpha = 0.2f)
@@ -459,8 +554,10 @@ private fun WriteInOptionRow(
 
         AnimatedVisibility(
             visible = isActive,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
+            enter = fadeIn(animationSpec = motion.tweenQuick()) +
+                expandVertically(animationSpec = motion.tweenStandard()),
+            exit = fadeOut(animationSpec = motion.tweenQuick()) +
+                shrinkVertically(animationSpec = motion.tweenQuick()),
         ) {
             Box(
                 modifier = Modifier
@@ -486,7 +583,12 @@ private fun WriteInOptionRow(
                         color = colors.onSurface,
                     ),
                     cursorBrush = SolidColor(colors.accent),
-                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onDone() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester),
                 )
             }
         }

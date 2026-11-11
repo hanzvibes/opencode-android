@@ -1,7 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +47,10 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -54,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.CommandInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -447,12 +452,12 @@ fun CommandSuggestions(
 
     AnimatedVisibility(
         visible = isVisible,
-        enter = fadeIn(animationSpec = tween(motion.standard)) +
-            slideInVertically(animationSpec = tween(motion.standard)) { it / 3 } +
-            expandVertically(animationSpec = tween(motion.standard), expandFrom = Alignment.Bottom),
-        exit = fadeOut(animationSpec = tween(motion.quick)) +
-            slideOutVertically(animationSpec = tween(motion.quick)) { it / 3 } +
-            shrinkVertically(animationSpec = tween(motion.quick), shrinkTowards = Alignment.Bottom),
+        enter = fadeIn(animationSpec = motion.tweenStandard()) +
+            slideInVertically(animationSpec = motion.tweenStandard()) { it / 3 } +
+            expandVertically(animationSpec = motion.tweenStandard(), expandFrom = Alignment.Bottom),
+        exit = fadeOut(animationSpec = motion.tweenQuick()) +
+            slideOutVertically(animationSpec = motion.tweenQuick()) { it / 3 } +
+            shrinkVertically(animationSpec = motion.tweenQuick(), shrinkTowards = Alignment.Bottom),
         modifier = modifier,
     ) {
         val shape = RoundedCornerShape(radius.lg)
@@ -461,7 +466,9 @@ fun CommandSuggestions(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = spacing.md, vertical = spacing.xs)
-                .shadow(elevation = 8.dp, shape = shape, spotColor = Color.Black.copy(alpha = 0.35f))
+                // Menu elevation comes from the token (Tokens.Elevation.menu),
+                // same 8dp as before — no hand-tuned alpha on the shadow.
+                .shadow(elevation = OpenCodeTheme.tokens.elevation.menu, shape = shape)
                 .clip(shape)
                 .background(colors.surfaceRaised)
                 .border(OpenCodeTheme.tokens.dimensions.hairline, colors.outline.copy(alpha = 0.30f), shape),
@@ -470,6 +477,7 @@ fun CommandSuggestions(
             CommandPaletteHeader(
                 matchesCount = matches.size,
                 totalCount = paletteState.allCommands.size,
+                onDismiss = onDismiss,
             )
 
             // Content list or empty notification
@@ -509,6 +517,7 @@ fun CommandSuggestions(
                             isSelected = isSelected,
                             onPick = { onPick(command.name) },
                             onHover = { paletteState.selectIndex(index) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -521,9 +530,13 @@ fun CommandSuggestions(
 private fun CommandPaletteHeader(
     matchesCount: Int,
     totalCount: Int,
+    onDismiss: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+    // Hoisted out of the .semantics {} block below: stringResource() is
+    // @Composable and cannot be called inside a SemanticsPropertyReceiver lambda.
+    val closeDescription = stringResource(R.string.chat_status_dialog_close)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -570,6 +583,26 @@ private fun CommandPaletteHeader(
                     style = OpenCodeTypography.caption,
                     color = colors.onSurfaceFaint,
                 )
+
+                // Explicit close: dismissing the palette only cancels palette
+                // mode and restores the draft that was there before it.
+                // 48dp hit area around the 12dp close glyph.
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .clickable(role = Role.Button, onClick = onDismiss)
+                        .semantics {
+                            contentDescription = closeDescription
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(
+                        glyph = Glyph.Close,
+                        tint = colors.onSurfaceMuted,
+                        size = 12.dp,
+                    )
+                }
             }
         }
 
@@ -589,19 +622,25 @@ private fun CommandSuggestionRow(
     isSelected: Boolean,
     onPick: () -> Unit,
     onHover: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val motion = OpenCodeTheme.tokens.motion
 
-    val rowBackground = if (isSelected) {
-        colors.accent.copy(alpha = 0.12f)
-    } else {
-        Color.Transparent
-    }
+    val rowBackground by animateColorAsState(
+        targetValue = if (isSelected) {
+            colors.accent.copy(alpha = 0.12f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = motion.tweenQuick(),
+        label = "palette_row_bg",
+    )
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(rowBackground)
             .clickable(

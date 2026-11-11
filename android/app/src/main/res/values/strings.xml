@@ -35,6 +35,13 @@
     <string name="settings_section_language">Language</string>
     <string name="settings_language">App language</string>
     <string name="settings_language_dialog_title">Choose language</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_system_hint">Follows the phone</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_dark_hint">Always dark</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_light_hint">Always light</string>
     <string name="settings_section_provider">Provider</string>
     <string name="settings_provider_title">Connect a provider</string>
     <string name="settings_provider_body">Add an API key. Without one the agent is limited to opencode\'s free tier.</string>
@@ -47,6 +54,30 @@
     <string name="settings_section_about">About</string>
     <string name="settings_about_title">About the developer</string>
     <string name="settings_about_body">Portfolio and ways to get in touch.</string>
+    <string name="settings_saved_permissions">Saved permissions</string>
+    <string name="settings_saved_permissions_body">Permissions saved with “Always”. Revoke one to be asked again next time.</string>
+    <string name="settings_saved_permissions_empty">No saved permissions yet. Saved permissions live on the engine, which does not expose the list yet, so nothing can be listed or revoked from here.</string>
+    <string name="settings_saved_permissions_revoke">Revoke</string>
+
+    <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
+    <string name="onboarding_title">Welcome to OpenCode</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_step_of">Step %1$d of %2$d</string>
+    <string name="onboarding_project_title">Pick a project</string>
+    <string name="onboarding_project_body">The agent works inside one project folder. Start with the built-in workspace, pick a folder of your own, or create a small sample project to try things out.</string>
+    <string name="onboarding_create_sample">Create sample project</string>
+    <string name="onboarding_sample_created">Sample project created in %1$s</string>
+    <string name="onboarding_choose_folder">Choose a folder</string>
+    <string name="onboarding_use_default">Use the default project</string>
+    <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_provider_title">Connect a provider</string>
+    <string name="onboarding_provider_body">Without an API key the agent runs on opencode\'s free tier, which rate-limits quickly. Add a key to use your own model — or keep going and add one later from Settings.</string>
+    <string name="onboarding_open_providers">Add a provider key</string>
+    <string name="onboarding_permissions_title">Let the agent reach your files</string>
+    <string name="onboarding_permissions_body">All-files access lets you open any folder on the device as a project. Without it, only the built-in workspace is available.</string>
+    <string name="onboarding_grant_access">Grant all-files access</string>
+    <string name="onboarding_access_granted">All-files access is already granted.</string>
+    <string name="onboarding_finish">Start chatting</string>
 
     <!-- About the developer -->
     <string name="about_title">About the developer</string>
@@ -65,6 +96,16 @@
     <string name="chat_menu">Menu</string>
     <string name="chat_new_session">New session</string>
     <string name="chat_jump_latest">Jump to latest message</string>
+    <string name="chat_jump_latest_unread">Jump to latest message, %1$d unread</string>
+    <string name="chat_new_messages">New messages</string>
+    <string name="chat_retry">Retry</string>
+    <string name="chat_rate_limited_guidance">Rate limited — switch model or wait a moment, then send again.</string>
+    <string name="a11y_run_finished">Run finished</string>
+    <string name="a11y_run_failed">Run failed</string>
+    <string name="a11y_permission_arrived">Permission requested</string>
+    <string name="chat_reconnecting">Reconnecting…</string>
+    <string name="chat_question_waiting_one">1 question waiting</string>
+    <string name="chat_question_waiting_other">%1$d questions waiting</string>
     <string name="chat_working">Working…</string>
     <string name="chat_status_working">Working</string>
     <string name="chat_status_ready">Ready</string>
@@ -117,6 +158,7 @@
     <string name="drawer_no_sessions">No sessions yet</string>
     <string name="drawer_untitled">Untitled</string>
     <string name="drawer_all_sessions">All sessions</string>
+    <string name="drawer_view_all">View all sessions</string>
     <string name="drawer_diagnostics">Diagnostics</string>
     <string name="drawer_developer">Developer</string>
     <string name="drawer_switch_workspace">Switch workspace</string>
@@ -136,22 +178,54 @@
     <string name="session_rename_title">Rename chat</string>
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
-    <string name="session_delete_message">Are you sure you want to delete this chat? This action cannot be undone.</string>
+    <string name="session_delete_message">Are you sure you want to delete “%1$s”? This action cannot be undone.</string>
+    <string name="session_actions">Session actions</string>
     <string name="session_action_cancel">Cancel</string>
     <string name="session_action_save">Save</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <string name="composer_hint">Ask anything about this project</string>
+    <string name="composer_hint_named">Ask %1$s…</string>
+    <string name="composer_stopping">Stopping…</string>
+    <string name="composer_queued">Queued: %1$s</string>
+    <string name="composer_editing">Editing message</string>
     <string name="composer_send">Send</string>
+    <string name="model_search_hint">Search models</string>
+    <string name="model_search_no_results">No models match “%1$s”</string>
+    <string name="agent_search_hint">Search agents</string>
+    <string name="agent_search_no_results">No agents match “%1$s”</string>
+    <string name="chat_recent">Recent</string>
+    <string name="empty_state_provider_model">%1$s · %2$s</string>
     <string name="composer_stop">Stop</string>
     <string name="composer_voice">Voice</string>
     <string name="composer_clear">Clear</string>
     <string name="composer_commands">Commands</string>
     <string name="composer_attach">Attach file</string>
+    <string name="attach_picker_title">Attach file</string>
+    <string name="attach_picker_hint">Search workspace files…</string>
+    <string name="attach_picker_empty">No files match “%1$s”</string>
+    <string name="attach_picker_no_files">No files in this workspace</string>
+    <string name="attach_picker_results">%1$d of %2$d files</string>
+    <string name="attach_browse_files">Browse device files</string>
+    <string name="attach_file_too_large">“%1$s” is too large to attach. Only files up to 64 KB can be inlined into a message.</string>
+    <string name="attach_not_text_file">“%1$s” is not a text file. Only text files can be attached — the agent reads the file as text.</string>
+    <string name="attach_unreadable_file">Could not read “%1$s”.</string>
+    <string name="attach_chip_remove">Remove %1$s</string>
     <string name="permission_title">Permission required</string>
     <string name="permission_allow_once">Allow once</string>
     <string name="permission_always">Always</string>
     <string name="permission_reject">Reject</string>
+    <string name="permission_explainer">Always saves this permission for this project, so it won\'t be asked again. Reject lets the agent continue without this tool.</string>
+    <string name="permission_save_note">Will be saved: %1$s</string>
+    <string name="permission_answer_later">Answer later</string>
+    <string name="permission_deferred">Permission request deferred</string>
+    <string name="permission_deferred_action">Answer now</string>
+    <string name="permission_risk_high">High risk</string>
+    <string name="permission_risk_medium">Medium risk</string>
+    <string name="permission_risk_low">Low risk</string>
+    <string name="permission_risk_high_note">Can delete files or change things outside this request. Check it before allowing.</string>
+    <string name="permission_risk_medium_note">Changes files or runs a command. Nothing is deleted outright.</string>
+    <string name="permission_risk_low_note">Only reads information. Nothing is changed.</string>
     <string name="question_title">Agent Question</string>
     <string name="question_single_choice">Select an option</string>
     <string name="question_multi_choice">Select one or more options</string>
@@ -178,11 +252,19 @@
     <string name="tool_input">Input</string>
     <string name="tool_output">Output</string>
     <string name="tool_error">Error</string>
+    <string name="tool_show_full">Show full output</string>
+    <string name="tool_show_less">Show less</string>
+    <string name="tool_filter_all">All</string>
+    <string name="tool_filter_failed">Failed</string>
+    <string name="tool_filter_edit">Edit</string>
+    <string name="tool_filter_read">Read</string>
+    <string name="code_show_more">Show all %1$d lines</string>
     <string name="code_label">code</string>
     <string name="code_download">Download</string>
     <string name="code_saved">Saved</string>
     <string name="code_copy">Copy</string>
     <string name="code_copied">Copied</string>
+    <string name="code_highlight_off">Highlight off (large file)</string>
 
     <!-- Project -->
     <string name="project_current">Current</string>
@@ -223,6 +305,24 @@
     <string name="fileview_discard_confirm">Discard</string>
     <string name="fileview_discard_dismiss">Keep editing</string>
     <string name="fileview_dirty_badge">Unsaved</string>
+    <string name="files_quick_open">Quick open</string>
+    <string name="files_quick_open_hint">Search files by name…</string>
+    <string name="files_quick_open_empty">No files match \"%1$s\"</string>
+    <string name="files_quick_open_loading">Indexing workspace files…</string>
+    <string name="files_quick_open_results">%1$d of %2$d files</string>
+    <string name="files_quick_open_close">Close quick open</string>
+    <string name="files_detail_empty">Select a file to view it here.</string>
+    <string name="fileview_find">Find</string>
+    <string name="fileview_find_hint">Find in file…</string>
+    <string name="fileview_find_count">%1$d of %2$d</string>
+    <string name="fileview_find_none">No matches</string>
+    <string name="fileview_find_partial">Searching the loaded preview only</string>
+    <string name="fileview_find_prev">Previous match</string>
+    <string name="fileview_find_next">Next match</string>
+    <string name="fileview_find_close">Close find</string>
+    <string name="fileview_large_warning">Large file (over 1 MB). Showing the first %1$d of %2$d lines — find searches this preview only. Load the full file to edit or search it all.</string>
+    <string name="fileview_load_full">Load full file</string>
+    <string name="fileview_lines_truncated">%1$d of %2$d lines</string>
 
     <!-- Diff -->
     <string name="diff_loading">Loading diff…</string>
@@ -244,6 +344,25 @@
     <string name="history_all_projects">All projects</string>
     <string name="history_loading">Loading conversations…</string>
     <string name="history_empty">No conversations yet.\nSend a message to start one.</string>
+    <string name="history_search_hint">Search sessions</string>
+    <string name="history_search_no_results">No sessions match "%1$s"</string>
+    <string name="history_showing">Showing %1$d of %2$d</string>
+
+    <!-- Date dividers, delivery status, reply, prompt history (audit C) -->
+    <string name="date_today">Today</string>
+    <string name="date_yesterday">Yesterday</string>
+    <string name="message_sent">Sent</string>
+    <string name="message_delivered">Delivered</string>
+    <string name="message_reply">Reply</string>
+    <string name="message_edit">Edit</string>
+    <string name="message_resend">Resend</string>
+    <string name="tool_diff_changes">Changes</string>
+    <string name="tool_diff_show_full">Show full diff</string>
+    <string name="tool_diff_show_less">Show less</string>
+    <string name="turn_footer_tokens">%1$s tokens</string>
+    <string name="turn_footer_stop_reason">stop: %1$s</string>
+    <string name="prompt_history_previous">Previous prompt</string>
+    <string name="prompt_history_next">Next prompt</string>
 
     <!-- Providers -->
     <string name="providers_title">Providers</string>
@@ -309,6 +428,9 @@
     <string name="diag_section_health">System Health</string>
     <string name="diag_restart_engine">Restart Engine</string>
     <string name="diag_restarting">Restarting…</string>
+    <string name="diag_restart_timeout">Restart timed out — the engine did not reach a running state.</string>
+    <string name="diag_password_show">Show password</string>
+    <string name="diag_password_hide">Hide password</string>
     <string name="diag_copy_all">Copy All</string>
     <string name="diag_copy_logs">Copy Logs</string>
     <string name="diag_copied_toast">Copied to clipboard</string>
@@ -346,6 +468,18 @@
     <string name="diag_section_paths">Paths</string>
     <string name="diag_section_output">Engine output (this process)</string>
     <string name="diag_section_log">Engine log (on disk)</string>
+    <string name="diag_log_search_hint">Search logs</string>
+    <string name="diag_log_search_clear">Clear search</string>
+    <string name="diag_log_match_count">%1$d of %2$d</string>
+    <string name="diag_log_no_match">No lines match this filter</string>
+    <string name="diag_log_follow">Follow</string>
+    <string name="diag_log_follow_on">Follow new log lines</string>
+    <string name="diag_log_follow_off">Stop following new log lines</string>
+    <string name="diag_log_jump_latest">Jump to latest</string>
+    <string name="diag_log_level_all">All</string>
+    <string name="diag_log_level_info">Info</string>
+    <string name="diag_log_level_warning">Warning</string>
+    <string name="diag_log_level_error">Error</string>
 
     <!-- Tool timeline verbs. Present while the tool runs, past once it has finished.
          "step_target" joins a verb to a file name or command; a language that needs the

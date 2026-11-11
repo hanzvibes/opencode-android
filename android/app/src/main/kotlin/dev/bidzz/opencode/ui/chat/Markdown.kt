@@ -8,19 +8,20 @@ package dev.bidzz.opencode.ui.chat
  *
  * - fenced code blocks (``` or ~~~), with an optional language tag
  * - inline code (`code`)
- * - bold (**text** or __text__), italic (*text* or _text_)
+ * - bold (**text** or __text__), italic (*text* or _text_), strikethrough (~~text~~)
  * - highlighted text (==text== or <mark>text</mark>)
  * - headings (# .. ######)
  * - blockquotes (> text)
  * - unordered and ordered lists
- * - links ([text](url))
+ * - links ([text](url)) and bare URLs (https://… autolinks)
  * - horizontal rules / dividers (---, ***, ___ or <hr>)
  * - pipe tables with a `| --- | --- |` separator row
  *
  * What it deliberately does **not** handle: images, nested lists, HTML, footnotes,
- * task lists, cell alignment, merged cells. A table needs a header row plus a
+ * task lists, merged cells. A table needs a header row plus a
  * separator row; anything less is left as literal text, because rendering a
- * half-recognised table is worse than showing the pipes.
+ * half-recognised table is worse than showing the pipes. Column alignment
+ * (`:---:`, `---:`) is read from the separator row and kept on the table.
  *
  * Parsing is line-oriented, which is enough for the subset above and keeps the
  * renderer free of a second AST pass.
@@ -38,7 +39,7 @@ sealed interface MdBlock {
 
     data class Bullet(val items: List<List<MdSpan>>) : MdBlock
 
-    data class Numbered(val items: List<List<MdSpan>>) : MdBlock
+    data class Numbered(val items: List<List<MdSpan>>, val start: Int = 1) : MdBlock
 
     /** A horizontal rule. */
     data object Rule : MdBlock
@@ -46,13 +47,24 @@ sealed interface MdBlock {
     /**
      * A pipe table. Every row holds exactly [columns] cells; short rows are padded
      * rather than rejected, since models drop trailing pipes constantly.
+     * [alignments] holds one [TableAlign] per column, read from the separator
+     * row (`:---:` centre, `---:` right, anything else left); missing entries
+     * are left-aligned.
      */
     data class Table(
         val header: List<List<MdSpan>>,
         val rows: List<List<List<MdSpan>>>,
+        val alignments: List<TableAlign> = emptyList(),
     ) : MdBlock {
         val columns: Int get() = header.size
     }
+}
+
+/** Horizontal alignment of one table column, read from the separator row. */
+enum class TableAlign {
+    LEFT,
+    CENTER,
+    RIGHT,
 }
 
 /** Inline formatting inside a block. */
@@ -63,6 +75,7 @@ sealed interface MdSpan {
     data class Code(val text: String) : MdSpan
     data class Link(val text: String, val url: String) : MdSpan
     data class Highlight(val text: String) : MdSpan
+    data class Strikethrough(val text: String) : MdSpan
 }
 
 object Markdown {
@@ -90,7 +103,17 @@ object Markdown {
 
         fun flushParagraph() {
             if (paragraph.isEmpty()) return
-            val joined = paragraph.joinToString("\n").trim()
+            // Soft-wrapped prose joins with a space, like list items
+            // already do; only a line ending in two spaces is a hard
+            // break (its trailing spaces are dropped, the newline kept).
+            val joined = buildString {
+                paragraph.forEachIndexed { idx, line ->
+                    if (idx > 0) {
+                        append(if (paragraph[idx - 1].endsWith("  ")) "\n" else " ")
+                    }
+                    append(if (idx < paragraph.size - 1 && line.endsWith("  ")) line.trimEnd() else line)
+                }
+            }.trim()
             if (joined.isNotEmpty()) blocks += MdBlock.Paragraph(inline(joined))
             paragraph.clear()
         }
@@ -135,9 +158,14 @@ object Markdown {
             val headingMatch = heading.find(line)
             if (headingMatch != null) {
                 flushParagraph()
+                // Closing ATX hashes ("## Title ##") are decoration, not
+                // text — but only when separated by a space, so "C#" keeps
+                // its hash.
+                val headingText = headingMatch.groupValues[2].trim()
+                    .replace(Regex("\\s+#+$"), "")
                 blocks += MdBlock.Heading(
                     level = headingMatch.groupValues[1].length,
-                    spans = inline(headingMatch.groupValues[2].trim()),
+                    spans = inline(headingText),
                 )
                 i++
                 continue
@@ -166,6 +194,13 @@ object Markdown {
                 flushParagraph()
                 val header = splitCells(line)
                 val width = header.size
+                val alignments = splitCells(lines[i + 1]).map { cell ->
+                    when {
+                        cell.startsWith(':') && cell.endsWith(':') -> TableAlign.CENTER
+                        cell.endsWith(':') -> TableAlign.RIGHT
+                        else -> TableAlign.LEFT
+                    }
+                }
                 i += 2
                 val rows = mutableListOf<List<String>>()
                 while (i < lines.size && lines[i].contains('|') && lines[i].isNotBlank()) {
@@ -179,6 +214,7 @@ object Markdown {
                         // relies on it to keep columns square.
                         (0 until width).map { inline(row.getOrElse(it) { "" }) }
                     },
+                    alignments = alignments,
                 )
                 continue
             }
@@ -206,6 +242,9 @@ object Markdown {
 
             if (numbered.containsMatchIn(line)) {
                 flushParagraph()
+                // The model's own start number is kept ("3." stays 3.),
+                // instead of renumbering every list 1, 2, 3.
+                val start = numbered.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: 1
                 val items = mutableListOf<List<MdSpan>>()
                 while (i < lines.size) {
                     val m = numbered.find(lines[i]) ?: break
@@ -220,7 +259,7 @@ object Markdown {
                     }
                     items += inline(itemLines.joinToString(" "))
                 }
-                blocks += MdBlock.Numbered(items)
+                blocks += MdBlock.Numbered(items, start = start)
                 continue
             }
 
@@ -295,6 +334,18 @@ object Markdown {
                     }
                 }
 
+                // Strikethrough: ~~...~~
+                c == '~' && i + 1 < text.length && text[i + 1] == '~' -> {
+                    val end = text.indexOf("~~", i + 2)
+                    if (end > i + 2) {
+                        flushPlain()
+                        spans += MdSpan.Strikethrough(text.substring(i + 2, end))
+                        i = end + 2
+                    } else {
+                        plain.append(c); i++
+                    }
+                }
+
                 // Highlight: ==...== or <mark>...</mark>
                 c == '=' && i + 1 < text.length && text[i + 1] == '=' -> {
                     val end = text.indexOf("==", i + 2)
@@ -318,6 +369,24 @@ object Markdown {
                     }
                 }
 
+                // Autolink: a bare https://… URL becomes a link. Trailing
+                // punctuation (.,;:!?) and an unmatched closing paren are
+                // left as plain text so they are not swallowed into the URL.
+                c == 'h' && (text.startsWith("http://", i) || text.startsWith("https://", i)) -> {
+                    val match = Regex("""https?://[^\s<>"']+""").find(text, i)
+                    if (match != null && match.range.first == i) {
+                        var url = match.value.trimEnd('.', ',', ';', ':', '!', '?')
+                        if (url.endsWith(")") && url.count { it == '(' } < url.count { it == ')' }) {
+                            url = url.dropLast(1)
+                        }
+                        flushPlain()
+                        spans += MdSpan.Link(url, url)
+                        i += url.length
+                    } else {
+                        plain.append(c); i++
+                    }
+                }
+
                 // Link: [text](url)
                 c == '[' -> {
                     val close = text.indexOf(']', i + 1)
@@ -336,9 +405,18 @@ object Markdown {
                 }
 
                 // Italic: *...* or _..._
+                // Guarded, or snake_case and arithmetic read as emphasis:
+                // the opener must follow the start, whitespace or
+                // punctuation, the closer must not follow a space, and
+                // `_` must not be flanked by alphanumerics on either side
+                // (my_variable_name and 2 * 3 * 4 stay literal).
                 (c == '*' || c == '_') -> {
+                    val prev = if (i == 0) null else text[i - 1]
+                    val openerOk = prev == null || prev.isWhitespace() || !prev.isLetterOrDigit()
                     val end = text.indexOf(c, i + 1)
-                    if (end > i + 1) {
+                    val closerOk = end > i + 1 && text[end - 1] != ' ' && text[end - 1] != '\n' &&
+                        !(c == '_' && end + 1 < text.length && text[end + 1].isLetterOrDigit())
+                    if (openerOk && closerOk) {
                         flushPlain()
                         spans += MdSpan.Italic(text.substring(i + 1, end))
                         i = end + 1

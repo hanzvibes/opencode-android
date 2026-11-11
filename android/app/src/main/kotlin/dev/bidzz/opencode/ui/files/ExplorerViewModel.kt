@@ -46,9 +46,21 @@ data class ExplorerUiState(
     val isRepository: Boolean = false,
     /** Set when git says nothing useful, so the UI can explain rather than show "clean". */
     val vcsNote: VcsNote? = null,
+    /** Workspace-wide file index for quick-open; empty until the palette is opened. */
+    val quickOpenIndex: List<FileRow> = emptyList(),
+    /** True while the quick-open index is being built. */
+    val quickOpenLoading: Boolean = false,
 ) {
     data class Crumb(val label: String, val path: String)
 }
+
+/** Bounds for the quick-open index walk — see [ExplorerViewModel.ensureQuickOpenIndex]. */
+private const val QuickOpenMaxFiles: Int = 2_000
+private const val QuickOpenMaxDirs: Int = 200
+private val QuickOpenSkippedDirs: Set<String> = setOf(
+    ".git", "node_modules", ".gradle", "build", ".idea", ".dart_tool",
+    "target", "dist", "out", "vendor", "Pods", ".cxx",
+)
 
 /**
  * File browser over the engine's filesystem API.
@@ -67,9 +79,63 @@ class ExplorerViewModel(
 
     private var currentPath: String = ""
 
+    /** Quick-open index state: built lazily on first palette open, not on every listing. */
+    private var quickOpenLoaded: Boolean = false
+    private var quickOpenLoading: Boolean = false
+
     fun open(path: String = "") {
         currentPath = path
         load()
+    }
+
+    /**
+     * Builds the workspace-wide file index quick-open searches, by walking the tree
+     * breadth-first through the same list endpoint the explorer uses.
+     *
+     * Bounded on purpose: at most [QuickOpenMaxDirs] directories and
+     * [QuickOpenMaxFiles] files, generated/dependency directories skipped, so a
+     * large monorepo cannot turn opening the palette into hundreds of requests.
+     * The index is a snapshot — files created after it is built appear once the
+     * root listing reloads (which clears it) and the palette is opened again.
+     */
+    fun ensureQuickOpenIndex() {
+        if (quickOpenLoaded || quickOpenLoading) return
+        val handle = api.handle() ?: return
+        val directory = workspace()
+        quickOpenLoading = true
+        _state.value = _state.value.copy(quickOpenLoading = true)
+
+        viewModelScope.launch {
+            val files = FileApi(handle.client)
+            val found = mutableListOf<FileRow>()
+            val queue = ArrayDeque<String>()
+            queue.add("")
+            var dirsVisited = 0
+            while (queue.isNotEmpty() && found.size < QuickOpenMaxFiles && dirsVisited < QuickOpenMaxDirs) {
+                val dir = queue.removeFirst()
+                dirsVisited++
+                val entries = when (val result = files.list(directory, dir)) {
+                    is ApiResult.Success -> result.value
+                    is ApiResult.Failure -> continue
+                }
+                for (entry in entries) {
+                    val relative = entry.path.trimEnd('/')
+                    if (entry.isDirectory) {
+                        if (entry.name !in QuickOpenSkippedDirs && !entry.name.startsWith(".")) {
+                            queue.add(relative)
+                        }
+                    } else if (found.size < QuickOpenMaxFiles) {
+                        found.add(FileRow(path = relative, name = entry.name, isDirectory = false))
+                    }
+                }
+            }
+            quickOpenLoaded = true
+            quickOpenLoading = false
+            _state.value = _state.value.copy(
+                quickOpenIndex = found.sortedBy { it.path.lowercase() },
+                quickOpenLoading = false,
+            )
+        }
     }
 
     fun load() {
@@ -81,11 +147,15 @@ class ExplorerViewModel(
         val files = FileApi(handle.client)
         val vcs = VcsApi(handle.client)
 
+        // A root reload means the tree may have changed (the agent writes files),
+        // so the quick-open snapshot is dropped and rebuilt on next palette open.
+        if (currentPath.isEmpty()) quickOpenLoaded = false
         _state.value = _state.value.copy(
             loading = true,
             failure = null, failureKey = null,
             currentPath = currentPath,
             breadcrumbs = buildCrumbs(currentPath),
+            quickOpenIndex = if (currentPath.isEmpty()) emptyList() else _state.value.quickOpenIndex,
         )
 
         viewModelScope.launch {
@@ -184,6 +254,21 @@ class FileViewViewModel(
     val state: StateFlow<FileViewState> = _state.asStateFlow()
 
     fun load(path: String) {
+        load(path, allowFull = false)
+    }
+
+    /**
+     * Loads the full file after the large-file guard truncated it. This re-reads
+     * from the engine: the preview deliberately dropped the rest, so there is
+     * nothing to restore from. Only ever called from the banner's explicit action.
+     */
+    fun loadFull() {
+        val s = _state.value
+        if (!s.truncated || s.loading) return
+        load(s.path, allowFull = true)
+    }
+
+    private fun load(path: String, allowFull: Boolean) {
         val handle = api.handle() ?: run {
             _state.value = FileViewState(loading = false, path = path, failureKey = R.string.error_engine_not_running)
             return
@@ -192,11 +277,24 @@ class FileViewViewModel(
 
         viewModelScope.launch {
             when (val result = FileApi(handle.client).readText(workspace(), path)) {
-                is ApiResult.Success -> _state.value = FileViewState(
-                    loading = false,
-                    path = path,
-                    content = result.value,
-                )
+                is ApiResult.Success -> {
+                    // Large files are shown as a preview, never held in full by
+                    // default — see LargeFileGuard. The full line count is kept so
+                    // the banner can say how much was held back.
+                    val (shown, totalLines) = LargeFileGuard.preview(result.value)
+                    // Line-based preview: only actually cut when there are more
+                    // lines than the preview keeps (see LargeFileGuard).
+                    val truncated = !allowFull &&
+                        LargeFileGuard.isLarge(result.value) &&
+                        totalLines > LargeFileGuard.PreviewLines
+                    _state.value = FileViewState(
+                        loading = false,
+                        path = path,
+                        content = if (truncated) shown else result.value,
+                        truncated = truncated,
+                        totalLines = if (truncated) totalLines else 0,
+                    )
+                }
                 is ApiResult.Failure -> _state.value = FileViewState(
                     loading = false,
                     path = path,
@@ -209,6 +307,9 @@ class FileViewViewModel(
     fun startEditing() {
         val s = _state.value
         if (s.loading || s.failure != null || s.failureKey != null || s.editing) return
+        // A truncated preview must never become a draft: saving it would write
+        // the preview back over the real file. Load the full file first.
+        if (s.truncated) return
         _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false)
     }
 

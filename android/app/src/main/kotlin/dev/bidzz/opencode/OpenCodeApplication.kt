@@ -2,6 +2,7 @@ package dev.bidzz.opencode
 
 import android.app.Application
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import dev.bidzz.opencode.core.engine.EngineBinary
 import dev.bidzz.opencode.core.engine.EngineEnvironment
@@ -11,6 +12,7 @@ import dev.bidzz.opencode.core.engine.ProcessManager
 import dev.bidzz.opencode.service.EngineService
 import dev.bidzz.opencode.workspace.WorkspaceStore
 import java.io.File
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -170,6 +172,20 @@ class OpenCodeApplication : Application() {
      */
     val workspaceFolderRequest = MutableStateFlow(0L)
     val allFilesAccessRequest = MutableStateFlow(0L)
+
+    /** Opens the system file picker for a file outside the workspace (SAF). The result arrives in the activity. */
+    fun requestSafFile() {
+        safFileRequest.value = System.currentTimeMillis()
+    }
+
+    /** Delivers the URI picked in the system file picker. */
+    fun deliverSafFile(uri: Uri) {
+        safFilePicked.tryEmit(uri)
+    }
+
+    val safFileRequest = MutableStateFlow(0L)
+    /** URIs picked in the system file picker; the chat screen reads them in as text. */
+    val safFilePicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
 
     /**
      * Delivers a command to [EngineService].

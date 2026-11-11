@@ -34,6 +34,13 @@
     <string name="settings_section_language">Bahasa</string>
     <string name="settings_language">Bahasa aplikasi</string>
     <string name="settings_language_dialog_title">Pilih bahasa</string>
+    <string name="settings_section_appearance">Tampilan</string>
+    <string name="settings_theme_system">Sistem</string>
+    <string name="settings_theme_system_hint">Mengikuti ponsel</string>
+    <string name="settings_theme_dark">Gelap</string>
+    <string name="settings_theme_dark_hint">Selalu gelap</string>
+    <string name="settings_theme_light">Terang</string>
+    <string name="settings_theme_light_hint">Selalu terang</string>
     <string name="settings_section_provider">Penyedia</string>
     <string name="settings_provider_title">Hubungkan penyedia</string>
     <string name="settings_provider_body">Tambahkan kunci API. Tanpa kunci, agen hanya bisa memakai paket gratis opencode.</string>
@@ -46,6 +53,30 @@
     <string name="settings_section_about">Tentang</string>
     <string name="settings_about_title">Tentang pengembang</string>
     <string name="settings_about_body">Portofolio dan cara menghubungi.</string>
+    <string name="settings_saved_permissions">Izin tersimpan</string>
+    <string name="settings_saved_permissions_body">Izin yang disimpan dengan “Selalu”. Cabut salah satu agar ditanya lagi lain kali.</string>
+    <string name="settings_saved_permissions_empty">Belum ada izin tersimpan. Izin tersimpan ada di engine, yang belum menyediakan daftarnya, jadi belum ada yang bisa dicantumkan atau dicabut dari sini.</string>
+    <string name="settings_saved_permissions_revoke">Cabut</string>
+
+    <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
+    <string name="onboarding_title">Selamat datang di OpenCode</string>
+    <string name="onboarding_skip">Lewati</string>
+    <string name="onboarding_step_of">Langkah %1$d dari %2$d</string>
+    <string name="onboarding_project_title">Pilih proyek</string>
+    <string name="onboarding_project_body">Agen bekerja di dalam satu folder proyek. Mulai dengan workspace bawaan, pilih folder sendiri, atau buat proyek contoh kecil untuk mencoba.</string>
+    <string name="onboarding_create_sample">Buat proyek contoh</string>
+    <string name="onboarding_sample_created">Proyek contoh dibuat di %1$s</string>
+    <string name="onboarding_choose_folder">Pilih folder</string>
+    <string name="onboarding_use_default">Pakai proyek bawaan</string>
+    <string name="onboarding_continue">Lanjut</string>
+    <string name="onboarding_provider_title">Hubungkan penyedia</string>
+    <string name="onboarding_provider_body">Tanpa kunci API, agen berjalan di paket gratis opencode yang cepat mencapai batas laju. Tambahkan kunci untuk memakai model sendiri — atau lanjut dulu dan tambahkan nanti dari Pengaturan.</string>
+    <string name="onboarding_open_providers">Tambah kunci penyedia</string>
+    <string name="onboarding_permissions_title">Beri agen akses ke file Anda</string>
+    <string name="onboarding_permissions_body">Akses semua file memungkinkan Anda membuka folder mana pun di perangkat sebagai proyek. Tanpa akses ini, hanya workspace bawaan yang tersedia.</string>
+    <string name="onboarding_grant_access">Beri akses semua file</string>
+    <string name="onboarding_access_granted">Akses semua file sudah diberikan.</string>
+    <string name="onboarding_finish">Mulai mengobrol</string>
 
     <!-- About the developer -->
     <string name="about_title">Tentang pengembang</string>
@@ -64,6 +95,16 @@
     <string name="chat_menu">Menu</string>
     <string name="chat_new_session">Sesi baru</string>
     <string name="chat_jump_latest">Ke pesan terbaru</string>
+    <string name="chat_jump_latest_unread">Ke pesan terbaru, %1$d belum dibaca</string>
+    <string name="chat_new_messages">Pesan baru</string>
+    <string name="chat_retry">Coba lagi</string>
+    <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="a11y_run_finished">Proses selesai</string>
+    <string name="a11y_run_failed">Proses gagal</string>
+    <string name="a11y_permission_arrived">Izin diminta</string>
+    <string name="chat_reconnecting">Menghubungkan ulang…</string>
+    <string name="chat_question_waiting_one">1 pertanyaan menunggu</string>
+    <string name="chat_question_waiting_other">%1$d pertanyaan menunggu</string>
     <string name="chat_working">Sedang bekerja…</string>
     <string name="chat_status_working">Bekerja</string>
     <string name="chat_status_ready">Siap</string>
@@ -116,6 +157,7 @@
     <string name="drawer_no_sessions">Belum ada sesi</string>
     <string name="drawer_untitled">Tanpa judul</string>
     <string name="drawer_all_sessions">Semua sesi</string>
+    <string name="drawer_view_all">Lihat semua sesi</string>
     <string name="drawer_diagnostics">Diagnostik</string>
     <string name="drawer_developer">Pengembang</string>
     <string name="drawer_switch_workspace">Ganti ruang kerja</string>
@@ -135,22 +177,54 @@
     <string name="session_rename_title">Ganti nama obrolan</string>
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
-    <string name="session_delete_message">Apakah Anda yakin ingin menghapus obrolan ini? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="session_delete_message">Apakah Anda yakin ingin menghapus “%1$s”? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="session_actions">Tindakan sesi</string>
     <string name="session_action_cancel">Batal</string>
     <string name="session_action_save">Simpan</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <string name="composer_hint">Tanyakan apa saja tentang proyek ini</string>
+    <string name="composer_hint_named">Tanya %1$s…</string>
+    <string name="composer_stopping">Menghentikan…</string>
+    <string name="composer_queued">Antrean: %1$s</string>
+    <string name="composer_editing">Mengedit pesan</string>
     <string name="composer_send">Kirim</string>
+    <string name="model_search_hint">Cari model</string>
+    <string name="model_search_no_results">Tidak ada model yang cocok dengan “%1$s”</string>
+    <string name="agent_search_hint">Cari agen</string>
+    <string name="agent_search_no_results">Tidak ada agen yang cocok dengan “%1$s”</string>
+    <string name="chat_recent">Terbaru</string>
+    <string name="empty_state_provider_model">%1$s · %2$s</string>
     <string name="composer_stop">Berhenti</string>
     <string name="composer_voice">Suara</string>
     <string name="composer_clear">Hapus</string>
     <string name="composer_commands">Perintah</string>
     <string name="composer_attach">Lampirkan berkas</string>
+    <string name="attach_picker_title">Lampirkan berkas</string>
+    <string name="attach_picker_hint">Cari file workspace…</string>
+    <string name="attach_picker_empty">Tidak ada file yang cocok dengan “%1$s”</string>
+    <string name="attach_picker_no_files">Tidak ada file di workspace ini</string>
+    <string name="attach_picker_results">%1$d dari %2$d file</string>
+    <string name="attach_browse_files">Telusuri berkas perangkat</string>
+    <string name="attach_file_too_large">“%1$s” terlalu besar untuk dilampirkan. Hanya berkas hingga 64 KB yang dapat disisipkan ke dalam pesan.</string>
+    <string name="attach_not_text_file">“%1$s” bukan berkas teks. Hanya berkas teks yang dapat dilampirkan — agen membaca berkas sebagai teks.</string>
+    <string name="attach_unreadable_file">Tidak dapat membaca “%1$s”.</string>
+    <string name="attach_chip_remove">Hapus %1$s</string>
     <string name="permission_title">Izin diperlukan</string>
     <string name="permission_allow_once">Izinkan sekali</string>
     <string name="permission_always">Selalu</string>
     <string name="permission_reject">Tolak</string>
+    <string name="permission_explainer">Selalu menyimpan izin ini untuk proyek ini, jadi tidak ditanya lagi. Tolak membuat agen melanjutkan tanpa tool ini.</string>
+    <string name="permission_save_note">Akan disimpan: %1$s</string>
+    <string name="permission_answer_later">Jawab nanti</string>
+    <string name="permission_deferred">Permintaan izin ditunda</string>
+    <string name="permission_deferred_action">Jawab sekarang</string>
+    <string name="permission_risk_high">Risiko tinggi</string>
+    <string name="permission_risk_medium">Risiko sedang</string>
+    <string name="permission_risk_low">Risiko rendah</string>
+    <string name="permission_risk_high_note">Dapat menghapus berkas atau mengubah hal di luar permintaan ini. Periksa dulu sebelum mengizinkan.</string>
+    <string name="permission_risk_medium_note">Mengubah berkas atau menjalankan perintah. Tidak ada yang langsung dihapus.</string>
+    <string name="permission_risk_low_note">Hanya membaca informasi. Tidak ada yang diubah.</string>
     <string name="question_title">Pertanyaan Agen</string>
     <string name="question_single_choice">Pilih salah satu opsi</string>
     <string name="question_multi_choice">Pilih satu atau beberapa opsi</string>
@@ -177,11 +251,19 @@
     <string name="tool_input">Masukan</string>
     <string name="tool_output">Keluaran</string>
     <string name="tool_error">Galat</string>
+    <string name="tool_show_full">Tampilkan semua output</string>
+    <string name="tool_show_less">Tampilkan lebih sedikit</string>
+    <string name="tool_filter_all">Semua</string>
+    <string name="tool_filter_failed">Gagal</string>
+    <string name="tool_filter_edit">Edit</string>
+    <string name="tool_filter_read">Baca</string>
+    <string name="code_show_more">Tampilkan semua %1$d baris</string>
     <string name="code_label">kode</string>
     <string name="code_download">Unduh</string>
     <string name="code_saved">Tersimpan</string>
     <string name="code_copy">Salin</string>
     <string name="code_copied">Tersalin</string>
+    <string name="code_highlight_off">Highlight mati (berkas besar)</string>
 
     <!-- Project -->
     <string name="project_current">Saat ini</string>
@@ -222,6 +304,24 @@
     <string name="fileview_discard_confirm">Buang</string>
     <string name="fileview_discard_dismiss">Lanjut mengedit</string>
     <string name="fileview_dirty_badge">Belum disimpan</string>
+    <string name="files_quick_open">Buka cepat</string>
+    <string name="files_quick_open_hint">Cari file berdasarkan nama…</string>
+    <string name="files_quick_open_empty">Tidak ada file yang cocok dengan \"%1$s\"</string>
+    <string name="files_quick_open_loading">Mengindeks file workspace…</string>
+    <string name="files_quick_open_results">%1$d dari %2$d file</string>
+    <string name="files_quick_open_close">Tutup buka cepat</string>
+    <string name="files_detail_empty">Pilih file untuk melihatnya di sini.</string>
+    <string name="fileview_find">Cari</string>
+    <string name="fileview_find_hint">Cari di file…</string>
+    <string name="fileview_find_count">%1$d dari %2$d</string>
+    <string name="fileview_find_none">Tidak ada yang cocok</string>
+    <string name="fileview_find_partial">Hanya mencari di pratinjau yang dimuat</string>
+    <string name="fileview_find_prev">Cocokan sebelumnya</string>
+    <string name="fileview_find_next">Cocokan berikutnya</string>
+    <string name="fileview_find_close">Tutup pencarian</string>
+    <string name="fileview_large_warning">File besar (lebih dari 1 MB). Menampilkan %1$d baris pertama dari %2$d baris — pencarian hanya mencakup pratinjau ini. Muat seluruh file untuk mengedit atau mencari semuanya.</string>
+    <string name="fileview_load_full">Muat seluruh file</string>
+    <string name="fileview_lines_truncated">%1$d dari %2$d baris</string>
 
     <!-- Diff -->
     <string name="diff_loading">Memuat diff…</string>
@@ -243,6 +343,25 @@
     <string name="history_all_projects">Semua proyek</string>
     <string name="history_loading">Memuat percakapan…</string>
     <string name="history_empty">Belum ada percakapan.\nKirim pesan untuk memulai.</string>
+    <string name="history_search_hint">Cari sesi</string>
+    <string name="history_search_no_results">Tidak ada sesi yang cocok dengan "%1$s"</string>
+    <string name="history_showing">Menampilkan %1$d dari %2$d</string>
+
+    <!-- Pembatas tanggal, status terkirim, balas, riwayat prompt (audit C) -->
+    <string name="date_today">Hari ini</string>
+    <string name="date_yesterday">Kemarin</string>
+    <string name="message_sent">Terkirim</string>
+    <string name="message_delivered">Diterima</string>
+    <string name="message_reply">Balas</string>
+    <string name="message_edit">Edit</string>
+    <string name="message_resend">Kirim ulang</string>
+    <string name="tool_diff_changes">Perubahan</string>
+    <string name="tool_diff_show_full">Tampilkan semua diff</string>
+    <string name="tool_diff_show_less">Tampilkan lebih sedikit</string>
+    <string name="turn_footer_tokens">%1$s token</string>
+    <string name="turn_footer_stop_reason">berhenti: %1$s</string>
+    <string name="prompt_history_previous">Prompt sebelumnya</string>
+    <string name="prompt_history_next">Prompt berikutnya</string>
 
     <!-- Providers -->
     <string name="providers_title">Penyedia</string>
@@ -308,6 +427,9 @@
     <string name="diag_section_health">Kesehatan Sistem</string>
     <string name="diag_restart_engine">Mulai Ulang Mesin</string>
     <string name="diag_restarting">Memulai ulang…</string>
+    <string name="diag_restart_timeout">Restart kehabisan waktu — mesin tidak mencapai status berjalan.</string>
+    <string name="diag_password_show">Tampilkan sandi</string>
+    <string name="diag_password_hide">Sembunyikan sandi</string>
     <string name="diag_copy_all">Salin Semua</string>
     <string name="diag_copy_logs">Salin Log</string>
     <string name="diag_copied_toast">Disalin ke papan klip</string>
@@ -345,6 +467,18 @@
     <string name="diag_section_paths">Path</string>
     <string name="diag_section_output">Keluaran engine (proses ini)</string>
     <string name="diag_section_log">Log engine (di disk)</string>
+    <string name="diag_log_search_hint">Cari log</string>
+    <string name="diag_log_search_clear">Hapus pencarian</string>
+    <string name="diag_log_match_count">%1$d dari %2$d</string>
+    <string name="diag_log_no_match">Tidak ada baris yang cocok dengan filter ini</string>
+    <string name="diag_log_follow">Ikuti</string>
+    <string name="diag_log_follow_on">Ikuti baris log baru</string>
+    <string name="diag_log_follow_off">Berhenti mengikuti baris log baru</string>
+    <string name="diag_log_jump_latest">Ke terbaru</string>
+    <string name="diag_log_level_all">Semua</string>
+    <string name="diag_log_level_info">Info</string>
+    <string name="diag_log_level_warning">Peringatan</string>
+    <string name="diag_log_level_error">Error</string>
 
     <!-- Kata kerja timeline tool. Bentuk sekarang saat tool berjalan, lampau setelah selesai.
          "step_target" menyambung kata kerja dengan nama berkas atau perintah; bahasa yang

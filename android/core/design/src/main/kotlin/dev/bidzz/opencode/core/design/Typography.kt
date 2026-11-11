@@ -2,6 +2,7 @@ package dev.bidzz.opencode.core.design
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -19,11 +20,18 @@ import androidx.compose.ui.unit.sp
  */
 object OpenCodeTypography {
 
-    /** Prose and UI chrome. Platform default; no font asset to ship or license. */
-    val ui: FontFamily = FontFamily.SansSerif
+    /**
+     * Prose and UI chrome. Bundled Inter (SIL OFL 1.1, see
+     * `assets/fonts/OFL.txt`); weights 400/500/600/700 in `res/font/inter.xml`.
+     */
+    val ui: FontFamily = FontFamily(Font(R.font.inter))
 
-    /** Code, paths, and anything copyable. */
-    val mono: FontFamily = FontFamily.Monospace
+    /**
+     * Code, paths, and anything copyable. Bundled JetBrains Mono (SIL OFL 1.1,
+     * see `assets/fonts/OFL.txt`); weights 400/500/700 in
+     * `res/font/jetbrains_mono.xml`.
+     */
+    val mono: FontFamily = FontFamily(Font(R.font.jetbrains_mono))
 
     /** Base body text for chat messages. */
     val body: TextStyle = TextStyle(
@@ -100,7 +108,7 @@ object OpenCodeTypography {
     /** Inline code inside prose: same family, slightly smaller to sit on the baseline. */
     val codeInline: TextStyle = TextStyle(
         fontFamily = mono,
-        fontSize = 13.5.sp,
+        fontSize = 13.sp,
         lineHeight = 20.sp,
         fontWeight = FontWeight.Normal,
         letterSpacing = 0.sp,
@@ -113,6 +121,60 @@ object OpenCodeTypography {
         lineHeight = 22.sp,
         fontWeight = FontWeight.Normal,
         letterSpacing = (-0.15).sp,
+    )
+
+    /**
+     * Markdown heading scale, moved here from MarkdownText so the sizes live
+     * in one place. Same values the chat renderer used before: each level
+     * steps down so the hierarchy still reads, and H4–H6 are no longer
+     * identical. Top padding stays with the caller (first block gets none).
+     */
+    val heading1: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 20.sp,
+        lineHeight = 26.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.3).sp,
+    )
+
+    val heading2: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 17.sp,
+        lineHeight = 22.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.25).sp,
+    )
+
+    val heading3: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.15).sp,
+    )
+
+    val heading4: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 14.sp,
+        lineHeight = 18.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.1).sp,
+    )
+
+    val heading5: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 13.5.sp,
+        lineHeight = 18.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.1).sp,
+    )
+
+    val heading6: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 13.sp,
+        lineHeight = 17.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = (-0.1).sp,
     )
 
     /** Material3 typography, mapped so Material components match the scale above. */

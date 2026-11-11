@@ -3,6 +3,8 @@ package dev.bidzz.opencode.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,20 +15,24 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,35 +43,32 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
-import dev.bidzz.opencode.core.design.Palette
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
-
-private data class HeadingStyle(
-    val fontSize: TextUnit,
-    val lineHeight: TextUnit,
-    val fontWeight: FontWeight,
-    val topPadding: Dp,
-    val letterSpacing: TextUnit,
-)
 
 /**
  * Renders assistant output.
@@ -86,11 +89,21 @@ fun MarkdownText(
      * of a copy/selection and does not jump when the markdown re-parses.
      */
     streaming: Boolean = false,
+    /**
+     * Text colour for prose and inline spans. Null renders on a plain
+     * surface ([colors.onSurface]); a caller that renders markdown inside
+     * the neutral user bubble passes its own on-bubble colour, so
+     * bold/code/links stay readable on the bubble instead of defaulting
+     * to dark-on-bubble.
+     */
+    textColor: Color? = null,
 ) {
     val blocks = remember(markdown) { Markdown.parse(markdown) }
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val proseColor = textColor ?: colors.onSurface
+    val onBubble = textColor != null
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         SelectionContainer {
@@ -98,9 +111,9 @@ fun MarkdownText(
                 blocks.forEachIndexed { blockIndex, block ->
                     when (block) {
                         is MdBlock.Paragraph -> Text(
-                            text = block.spans.toAnnotated(),
+                            text = block.spans.toAnnotated(proseColor, onBubble),
                             style = OpenCodeTypography.body,
-                            color = colors.onSurface,
+                            color = proseColor,
                         )
 
                         is MdBlock.Heading -> {
@@ -111,21 +124,18 @@ fun MarkdownText(
                                 else -> spacing.xs
                             }
                             val headingStyle = when (block.level) {
-                                1 -> HeadingStyle(20.sp, 26.sp, FontWeight.Bold, baseTopPadding, (-0.3).sp)
-                                2 -> HeadingStyle(17.sp, 22.sp, FontWeight.Bold, baseTopPadding, (-0.25).sp)
-                                3 -> HeadingStyle(15.sp, 20.sp, FontWeight.SemiBold, baseTopPadding, (-0.15).sp)
-                                else -> HeadingStyle(14.sp, 18.sp, FontWeight.SemiBold, baseTopPadding, (-0.1).sp)
+                                1 -> OpenCodeTypography.heading1
+                                2 -> OpenCodeTypography.heading2
+                                3 -> OpenCodeTypography.heading3
+                                4 -> OpenCodeTypography.heading4
+                                5 -> OpenCodeTypography.heading5
+                                else -> OpenCodeTypography.heading6
                             }
                             Text(
-                                text = block.spans.toAnnotated(),
-                                style = OpenCodeTypography.body.copy(
-                                    fontSize = headingStyle.fontSize,
-                                    lineHeight = headingStyle.lineHeight,
-                                    fontWeight = headingStyle.fontWeight,
-                                    letterSpacing = headingStyle.letterSpacing,
-                                ),
-                                color = colors.onSurface,
-                                modifier = Modifier.padding(top = headingStyle.topPadding, bottom = spacing.xxs),
+                                text = block.spans.toAnnotated(proseColor, onBubble),
+                                style = headingStyle,
+                                color = proseColor,
+                                modifier = Modifier.padding(top = baseTopPadding, bottom = spacing.xxs),
                             )
                         }
 
@@ -151,12 +161,12 @@ fun MarkdownText(
                                 ),
                         ) {
                             Text(
-                                text = block.spans.toAnnotated(),
+                                text = block.spans.toAnnotated(proseColor, onBubble),
                                 style = OpenCodeTypography.body.copy(
                                     fontStyle = FontStyle.Italic,
                                     lineHeight = 22.sp,
                                 ),
-                                color = colors.onSurface,
+                                color = proseColor,
                             )
                         }
 
@@ -214,9 +224,9 @@ fun MarkdownText(
                                         }
                                     }
                                     Text(
-                                        text = item.toAnnotated(),
+                                        text = item.toAnnotated(proseColor, onBubble),
                                         style = OpenCodeTypography.body.copy(lineHeight = 22.sp),
-                                        color = if (isTask && isChecked) colors.onSurfaceMuted else colors.onSurface,
+                                        color = if (isTask && isChecked) colors.onSurfaceMuted else proseColor,
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
@@ -233,7 +243,7 @@ fun MarkdownText(
                                     verticalAlignment = Alignment.Top,
                                 ) {
                                     Text(
-                                        text = "${index + 1}.",
+                                        text = "${block.start + index}.",
                                         style = OpenCodeTypography.bodySmall.copy(
                                             fontFamily = OpenCodeTypography.mono,
                                             fontWeight = FontWeight.Medium,
@@ -245,9 +255,9 @@ fun MarkdownText(
                                             .padding(top = 1.dp, end = spacing.xs),
                                     )
                                     Text(
-                                        text = item.toAnnotated(),
+                                        text = item.toAnnotated(proseColor, onBubble),
                                         style = OpenCodeTypography.body.copy(lineHeight = 22.sp),
-                                        color = colors.onSurface,
+                                        color = proseColor,
                                         modifier = Modifier.weight(1f),
                                     )
                                 }
@@ -256,14 +266,22 @@ fun MarkdownText(
 
                         is MdBlock.Rule -> DividerBlock()
 
-                        is MdBlock.Code -> CodeBlock(language = block.language, code = block.code)
+                        is MdBlock.Code -> CodeBlock(
+                            language = block.language,
+                            code = block.code,
+                            streaming = streaming && blockIndex == blocks.lastIndex,
+                        )
 
-                        is MdBlock.Table -> TableBlock(block)
+                        is MdBlock.Table -> TableBlock(block, proseColor, onBubble)
                     }
                 }
             }
         }
-        if (streaming) {
+        // The lone cursor below the blocks is only shown when the last block
+        // is not a code window: while streaming inside a code block the
+        // cursor lives inside the window instead (see CodeBlock), so it
+        // never reads as a stray mark under a finished block.
+        if (streaming && blocks.lastOrNull() !is MdBlock.Code) {
             Row(
                 modifier = Modifier.padding(top = spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
@@ -277,6 +295,9 @@ fun MarkdownText(
     }
 }
 
+/** Code blocks longer than this many lines start collapsed (B-1). */
+private const val CODE_COLLAPSE_THRESHOLD = 30
+
 /**
  * A fenced code block: sunken surface, editor window title bar with file icon/language badge,
  * action pills, line numbers support, and soft-contrast modern syntax highlighting.
@@ -285,12 +306,21 @@ fun MarkdownText(
  * and inset hairline borders.
  */
 @Composable
-private fun CodeBlock(language: String?, code: String) {
+private fun CodeBlock(language: String?, code: String, streaming: Boolean = false) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val context = LocalContext.current
     var copied by remember(code) { mutableStateOf(false) }
+
+    // "Copied" is ephemeral feedback: it resets after 1.5s so the next
+    // copy shows the feedback again instead of staying green forever.
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
 
     val defaultCodeLabel = stringResource(R.string.code_label)
     val displayLanguage = remember(language, defaultCodeLabel) {
@@ -303,10 +333,33 @@ private fun CodeBlock(language: String?, code: String) {
 
     val lines = remember(code) { code.lines() }
     val lineCount = lines.size
-    val showLineNumbers = lineCount > 1
-    val digits = remember(lineCount) { lineCount.toString().length.coerceAtLeast(2) }
-    val lineNumbersText = remember(lineCount, digits) {
-        (1..lineCount).joinToString("\n") { it.toString().padStart(digits, ' ') }
+    // Long blocks (>30 lines) start collapsed and can be expanded. The
+    // choice is plain remember — deliberately not keyed on `code`, so a
+    // block that grows past 30 lines while streaming collapses on its own
+    // and the user's expand/collapse tap is not reset by the next token.
+    // The 360dp height cap (A-8) still applies on top of this.
+    val isLongBlock = lineCount > CODE_COLLAPSE_THRESHOLD
+    var collapsedOverride by remember { mutableStateOf<Boolean?>(null) }
+    val collapsed = collapsedOverride ?: isLongBlock
+    // The expand arrow is one glyph rotating 0°↔180° (down = expand,
+    // up = collapse) instead of two glyphs swapping on every tap.
+    val expandRotation by animateFloatAsState(
+        targetValue = if (collapsed) 0f else 180f,
+        animationSpec = OpenCodeTheme.tokens.motion.tweenQuick(),
+        label = "code_expand_rotation",
+    )
+    val visibleCode = if (collapsed) {
+        lines.take(CODE_COLLAPSE_THRESHOLD).joinToString("\n")
+    } else {
+        code
+    }
+    val visibleLineCount = if (collapsed) CODE_COLLAPSE_THRESHOLD else lineCount
+    val showLineNumbers = visibleLineCount > 1
+    // Locked to at least 3 digits so the gutter never shifts width when
+    // the count crosses 9→10 or 99→100 mid-stream.
+    val digits = remember(visibleLineCount) { visibleLineCount.toString().length.coerceAtLeast(3) }
+    val lineNumbersText = remember(visibleLineCount, digits) {
+        (1..visibleLineCount).joinToString("\n") { it.toString().padStart(digits, ' ') }
     }
 
     val codeStyle = OpenCodeTypography.code.copy(
@@ -317,6 +370,7 @@ private fun CodeBlock(language: String?, code: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .animateContentSize(animationSpec = OpenCodeTheme.tokens.motion.springSmooth())
             .clip(RoundedCornerShape(radius.lg))
             .background(colors.surfaceSunken)
             .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.lg)),
@@ -352,23 +406,63 @@ private fun CodeBlock(language: String?, code: String) {
                         letterSpacing = 0.15.sp,
                     ),
                     color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 180.dp),
+                )
+            }
+
+            // A block past the highlight cutoff renders plain on purpose;
+            // say so, so it does not read as a broken highlighter.
+            if (code.length > MAX_HIGHLIGHT_CHARS) {
+                Text(
+                    text = stringResource(R.string.code_highlight_off),
+                    style = OpenCodeTypography.caption.copy(fontSize = 10.sp),
+                    color = colors.onSurfaceFaint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = spacing.xs),
                 )
             }
 
             Spacer(Modifier.weight(1f))
 
-            // Action pills (Copy)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BlockAction(
-                    label = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
-                    glyph = if (copied) Glyph.Check else Glyph.Copy,
-                    done = copied,
+            // The expand/collapse pill is always available for long blocks,
+            // even while streaming: collapsing a still-growing block shows
+            // its first 30 lines and keeps new lines out of the way.
+            // No Copy pill while streaming: the code is still arriving, so
+            // copying here would hand out a partial snippet. Copy always
+            // hands out the full block, collapsed or not.
+            if (!streaming || isLongBlock) {
+                val expandLabel = if (collapsed) {
+                    stringResource(R.string.code_show_more, lineCount)
+                } else {
+                    stringResource(R.string.tool_show_less)
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    copyToClipboard(context, code)
-                    copied = true
+                    if (isLongBlock) {
+                        BlockAction(
+                            label = expandLabel,
+                            glyph = Glyph.ArrowDown,
+                            glyphRotation = expandRotation,
+                            done = false,
+                            onClick = { collapsedOverride = !collapsed },
+                        )
+                    }
+                    if (!streaming) {
+                        BlockAction(
+                            label = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
+                            glyph = if (copied) Glyph.Check else Glyph.Copy,
+                            done = copied,
+                            onClick = {
+                                copyToClipboard(context, code)
+                                copied = true
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -381,7 +475,17 @@ private fun CodeBlock(language: String?, code: String) {
                 .background(colors.hairline),
         )
 
-        // Monospace code with line numbers and horizontal scroll
+        // Monospace code with line numbers and horizontal scroll.
+        // Long blocks are capped in height (360dp, 420dp on wide/tablet
+        // screens) and scroll vertically instead of pushing the rest of the
+        // answer off-screen.
+        val isWide = LocalConfiguration.current.screenWidthDp >= 600
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = if (isWide) 420.dp else 360.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -403,6 +507,14 @@ private fun CodeBlock(language: String?, code: String) {
                         ),
                     )
                 }
+                // Hairline between the gutter and the code, so the numbers
+                // read as a column instead of text floating beside the code.
+                Box(
+                    modifier = Modifier
+                        .width(0.5.dp)
+                        .fillMaxHeight()
+                        .background(colors.hairline),
+                )
             }
 
             Box(
@@ -410,29 +522,54 @@ private fun CodeBlock(language: String?, code: String) {
                     .weight(1f)
                     .horizontalScroll(rememberScrollState()),
             ) {
-                Text(
-                    text = highlightedCode(language, code),
-                    style = codeStyle,
-                    softWrap = false,
-                    modifier = Modifier.padding(
-                        start = if (showLineNumbers) spacing.xs else spacing.lg,
-                        end = spacing.lg,
-                        top = spacing.sm,
-                        bottom = spacing.sm,
-                    ),
-                )
+                Column {
+                    Text(
+                        text = highlightedCode(language, visibleCode, streaming),
+                        style = codeStyle,
+                        softWrap = false,
+                        modifier = Modifier.padding(
+                            start = if (showLineNumbers) spacing.xs else spacing.lg,
+                            end = spacing.lg,
+                            top = spacing.sm,
+                            bottom = if (streaming) 0.dp else spacing.sm,
+                        ),
+                    )
+                    // While streaming, the cursor sits inside the window on
+                    // its own line below the last code line, bottom-aligned
+                    // with the code area — like a terminal prompt waiting
+                    // for the next line — instead of under the window.
+                    if (streaming) {
+                        Row(
+                            modifier = Modifier.padding(
+                                start = if (showLineNumbers) spacing.xs else spacing.lg,
+                                bottom = spacing.sm,
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            BlinkingCursor(
+                                color = colors.accent,
+                                height = 12.dp,
+                            )
+                        }
+                    }
+                }
             }
+        }
         }
     }
 }
 
-private fun isShell(language: String?): Boolean = when (language?.trim()?.lowercase()) {
+private fun isShell(language: String?): Boolean = when (language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()) {
     "sh", "bash", "zsh", "shell", "console", "terminal" -> true
     else -> false
 }
 
 private fun formatLanguageName(language: String?): String {
-    val raw = language?.trim()?.lowercase() ?: return "Code"
+    // Only the first token is the language: fences like
+    // ```kotlin:Main.kt or ```python /app/main.py carry a file/path
+    // suffix that must never be shown as the language name.
+    val raw = language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()
+        ?: return "Code"
     return when (raw) {
         "kt", "kotlin" -> "Kotlin"
         "py", "python" -> "Python"
@@ -474,28 +611,30 @@ private fun formatLanguageName(language: String?): String {
  * copy button and text selection still hand out exactly what the model emitted.
  */
 @Composable
-private fun highlightedCode(language: String?, code: String): AnnotatedString {
+private fun highlightedCode(language: String?, code: String, streaming: Boolean = false): AnnotatedString {
     val colors = OpenCodeTheme.colors
-    val isDark = colors.background == Palette.darkBackground || colors.surfaceSunken == Palette.darkSurfaceSunken
-    val tokens = remember(code, language) { highlight(language, code) }
+    // While streaming, long blocks stay plain until the stream finishes
+    // (see highlight()); the full highlight runs once, on completion.
+    val tokens = remember(code, language, streaming) { highlight(language, code, streaming) }
 
-    val plainColor = if (isDark) Color(0xFFE2E8F0) else Color(0xFF1E293B)
-    val keywordColor = if (isDark) Color(0xFFC084FC) else Color(0xFF7C3AED)
-    val stringColor = if (isDark) Color(0xFF86EFAC) else Color(0xFF15803D)
-    val numberColor = if (isDark) Color(0xFFFDBA74) else Color(0xFFC2410C)
-    val commentColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
-
-    return remember(tokens, plainColor, keywordColor, stringColor, numberColor, commentColor) {
+    // Colours come from the design tokens, never a local palette: the old
+    // slate/violet copy drifted from Theme.kt and needed its own theme
+    // check (comparing colour values). There is no theme branch left here,
+    // so no `colors.isDark` check is needed either.
+    return remember(tokens, colors) {
         buildAnnotatedString {
             tokens.forEach { token ->
                 withStyle(
                     SpanStyle(
                         color = when (token.kind) {
-                            TokenKind.Keyword -> keywordColor
-                            TokenKind.String -> stringColor
-                            TokenKind.Number -> numberColor
-                            TokenKind.Comment -> commentColor
-                            TokenKind.Plain -> plainColor
+                            TokenKind.Keyword -> colors.syntaxKeyword
+                            TokenKind.String -> colors.syntaxString
+                            TokenKind.Number -> colors.syntaxNumber
+                            TokenKind.Comment -> colors.syntaxComment
+                            TokenKind.Function -> colors.syntaxFunction
+                            TokenKind.Type -> colors.syntaxType
+                            TokenKind.Operator -> colors.onSurfaceMuted
+                            TokenKind.Plain -> colors.onSurface
                         },
                         fontWeight = when (token.kind) {
                             TokenKind.Keyword -> FontWeight.Medium
@@ -515,16 +654,31 @@ private fun highlightedCode(language: String?, code: String): AnnotatedString {
  * A pipe table.
  *
  * Polished layout with clean outer border, header caps, alternating row background,
- * vertical & horizontal hairline dividers, bold keys, and responsive horizontal scrolling.
+ * vertical & horizontal hairline dividers, and responsive horizontal scrolling.
+ * The first column is bold only for two-column (key–value) tables; with more
+ * columns the first column is data, not a key. Column alignment from the
+ * separator row (`:---:` centre, `---:` right) is applied to header and body.
  */
 @Composable
-private fun TableBlock(table: MdBlock.Table) {
+private fun TableBlock(
+    table: MdBlock.Table,
+    proseColor: Color = OpenCodeTheme.colors.onSurface,
+    onBubble: Boolean = false,
+) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
 
     val colCount = table.columns.coerceAtLeast(1)
+    val isKeyValueTable = colCount == 2
+    fun columnAlign(colIdx: Int): TextAlign = when (
+        table.alignments.getOrNull(colIdx) ?: TableAlign.LEFT
+    ) {
+        TableAlign.CENTER -> TextAlign.Center
+        TableAlign.RIGHT -> TextAlign.Right
+        TableAlign.LEFT -> TextAlign.Start
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val availableWidth = if (maxWidth != Dp.Infinity && maxWidth > 0.dp) maxWidth else 360.dp
@@ -574,13 +728,18 @@ private fun TableBlock(table: MdBlock.Table) {
                                     .padding(horizontal = spacing.md, vertical = 10.dp),
                             ) {
                                 Text(
-                                    text = cell.toUppercase().toAnnotated(),
+                                    text = cell.toUppercase().toAnnotated(proseColor, onBubble),
                                     style = OpenCodeTypography.label.copy(
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         letterSpacing = 0.5.sp,
                                     ),
-                                    color = colors.onSurfaceMuted,
+                                    color = if (onBubble) {
+                                        proseColor.copy(alpha = 0.75f)
+                                    } else {
+                                        colors.onSurfaceMuted
+                                    },
+                                    textAlign = columnAlign(colIdx),
                                 )
                             }
                         }
@@ -611,7 +770,8 @@ private fun TableBlock(table: MdBlock.Table) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         row.forEachIndexed { colIdx, cell ->
-                            val isKeyCol = colIdx == 0
+                            // Bold first column only for key–value tables.
+                            val isKeyCol = isKeyValueTable && colIdx == 0
                             val cellWidth = colWidths.getOrElse(colIdx) { 120.dp }
                             Box(
                                 modifier = Modifier
@@ -619,13 +779,14 @@ private fun TableBlock(table: MdBlock.Table) {
                                     .padding(horizontal = spacing.md, vertical = 10.dp),
                             ) {
                                 Text(
-                                    text = cell.toAnnotated(),
+                                    text = cell.toAnnotated(proseColor, onBubble),
                                     style = if (isKeyCol) {
                                         OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.Medium)
                                     } else {
                                         OpenCodeTypography.bodySmall
                                     },
-                                    color = colors.onSurface,
+                                    color = proseColor,
+                                    textAlign = columnAlign(colIdx),
                                 )
                             }
                         }
@@ -662,6 +823,8 @@ private fun BlockAction(
     glyph: Glyph? = null,
     done: Boolean,
     onClick: () -> Unit,
+    /** Rotation applied to [glyph] (0°↔180° for the expand arrow). */
+    glyphRotation: Float = 0f,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -673,11 +836,12 @@ private fun BlockAction(
 
     Box(
         modifier = Modifier
+            .sizeIn(minHeight = 32.dp)
             .clip(RoundedCornerShape(radius.full))
             .background(pillBg)
             .border(0.5.dp, pillBorder, RoundedCornerShape(radius.full))
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = spacing.sm, vertical = spacing.xxs + 1.dp),
+            .padding(horizontal = spacing.sm, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(
@@ -685,7 +849,12 @@ private fun BlockAction(
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             if (glyph != null) {
-                GlyphIcon(glyph = glyph, tint = tint, size = 11.dp)
+                GlyphIcon(
+                    glyph = glyph,
+                    tint = tint,
+                    size = 11.dp,
+                    modifier = Modifier.graphicsLayer { rotationZ = glyphRotation },
+                )
             }
             Text(
                 text = label,
@@ -717,15 +886,26 @@ private fun List<MdSpan>.toUppercase(): List<MdSpan> = map { span ->
         is MdSpan.Text -> MdSpan.Text(span.text.uppercase())
         is MdSpan.Bold -> MdSpan.Bold(span.text.uppercase())
         is MdSpan.Italic -> MdSpan.Italic(span.text.uppercase())
-        is MdSpan.Code -> MdSpan.Code(span.text.uppercase())
+        // Code stays verbatim: uppercasing it turns `config.yaml` into
+        // `CONFIG.YAML`, which is a different file.
+        is MdSpan.Code -> span
         is MdSpan.Link -> MdSpan.Link(span.text.uppercase(), span.url)
         is MdSpan.Highlight -> MdSpan.Highlight(span.text.uppercase())
+        is MdSpan.Strikethrough -> MdSpan.Strikethrough(span.text.uppercase())
     }
 }
 
-/** Converts inline spans to an [AnnotatedString]. */
+/**
+ * Converts inline spans to an [AnnotatedString].
+ *
+ * [textColor] is the prose colour (surface text by default, the on-bubble
+ * colour inside the neutral user bubble). On a bubble the code/highlight
+ * backgrounds are surface tones, not translucent white — the bubble is
+ * neutral now, so white-on-blue affordances would wash out — and links
+ * keep the prose colour + underline.
+ */
 @Composable
-private fun List<MdSpan>.toAnnotated(): AnnotatedString {
+private fun List<MdSpan>.toAnnotated(textColor: Color, onBubble: Boolean = false): AnnotatedString {
     val colors = OpenCodeTheme.colors
 
     return buildAnnotatedString {
@@ -735,7 +915,7 @@ private fun List<MdSpan>.toAnnotated(): AnnotatedString {
                 is MdSpan.Bold -> withStyle(
                     SpanStyle(
                         fontWeight = FontWeight.Bold,
-                        color = colors.onSurface,
+                        color = textColor,
                     ),
                 ) {
                     append(span.text)
@@ -746,10 +926,17 @@ private fun List<MdSpan>.toAnnotated(): AnnotatedString {
                 is MdSpan.Code -> withStyle(
                     SpanStyle(
                         fontFamily = OpenCodeTypography.mono,
-                        fontSize = OpenCodeTypography.codeInline.fontSize,
+                        // Inline code sits at 12.5sp like block code; the
+                        // shared codeInline token is 13.5sp, larger than
+                        // the block it is supposed to be smaller than.
+                        // The global token is untouched — only prose here.
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium,
-                        background = colors.surfaceVariant.copy(alpha = 0.65f),
-                        color = colors.onSurface,
+                        // Surface tones on the neutral bubble too: the old
+                        // translucent white (0.18) was a white-on-blue
+                        // leftover and is near-invisible on surfaceRaised.
+                        background = colors.surfaceVariant.copy(alpha = 0.8f),
+                        color = textColor,
                         baselineShift = BaselineShift(0.02f),
                     ),
                 ) {
@@ -759,17 +946,33 @@ private fun List<MdSpan>.toAnnotated(): AnnotatedString {
                 }
                 is MdSpan.Highlight -> withStyle(
                     SpanStyle(
+                        // Same white-on-blue leftover as inline code: a
+                        // translucent white wash is invisible on the
+                        // neutral bubble, so both themes use the warning tint.
                         background = colors.warning.copy(alpha = 0.22f),
-                        color = colors.onSurface,
+                        color = textColor,
                         fontWeight = FontWeight.Medium,
                     ),
                 ) {
                     append(span.text)
                 }
-                is MdSpan.Link -> withStyle(
-                    SpanStyle(color = colors.accent, textDecoration = TextDecoration.Underline),
+                is MdSpan.Strikethrough -> withStyle(
+                    SpanStyle(textDecoration = TextDecoration.LineThrough),
                 ) {
                     append(span.text)
+                }
+                // withLink makes the span a real tappable link (opened via
+                // the ambient UriHandler); styling alone used to render links
+                // that did nothing when tapped.
+                is MdSpan.Link -> withLink(LinkAnnotation.Url(span.url)) {
+                    withStyle(
+                        SpanStyle(
+                            color = if (onBubble) textColor else colors.accent,
+                            textDecoration = TextDecoration.Underline,
+                        ),
+                    ) {
+                        append(span.text)
+                    }
                 }
             }
         }

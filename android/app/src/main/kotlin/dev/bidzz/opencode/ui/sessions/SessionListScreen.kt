@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,20 +14,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +52,11 @@ import dev.bidzz.opencode.ui.message
  *
  * Grouped cleanly by date (Pinned, Today, Yesterday, Previous 7 days, Older)
  * with a quick action menu on every session for Rename, Delete, and Pin.
+ *
+ * @param details per-session preview/model/status by session id (see
+ * [SessionDetail]). The engine's list endpoint returns none of these, so
+ * they are supplied separately; when absent a row shows title + age/cost only
+ * and search falls back to matching titles.
  */
 @Composable
 fun SessionListScreen(
@@ -56,6 +68,50 @@ fun SessionListScreen(
     onRename: (SessionRow, String) -> Unit = { _, _ -> },
     onDelete: (SessionRow) -> Unit = {},
     onTogglePin: (SessionRow) -> Unit = {},
+    details: Map<String, SessionDetail> = emptyMap(),
+) {
+    ScreenScaffold(
+        title = stringResource(R.string.history_title),
+        onBack = onBack,
+        // The body cap lives here now (see ScreenScaffold): the inner rows
+        // keep their own 720dp caps as well, so the layout is the same
+        // centred column on tablets as before.
+        contentMaxWidth = 720.dp,
+        actions = { TextAction(stringResource(R.string.history_new), onNewSession) },
+    ) {
+        SessionListPane(
+            state = state,
+            onOpen = onOpen,
+            onToggleScope = onToggleScope,
+            onRename = onRename,
+            onDelete = onDelete,
+            onTogglePin = onTogglePin,
+            details = details,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+
+/**
+ * The session list without its scaffold: search, scope toggle and the
+ * grouped history. Used by [SessionListScreen] and, at expanded widths,
+ * as the list pane of the sessions list-detail layout (see OpenCodeApp),
+ * where selecting a row opens it in the chat pane beside it instead of
+ * navigating away. [selectedSessionId] highlights the open session;
+ * null (the full screen) highlights nothing.
+ */
+@Composable
+fun SessionListPane(
+    state: SessionListUiState,
+    onOpen: (SessionRow) -> Unit,
+    onToggleScope: () -> Unit,
+    onRename: (SessionRow, String) -> Unit = { _, _ -> },
+    onDelete: (SessionRow) -> Unit = {},
+    onTogglePin: (SessionRow) -> Unit = {},
+    details: Map<String, SessionDetail> = emptyMap(),
+    selectedSessionId: String? = null,
+    modifier: Modifier = Modifier,
 ) {
     val spacing = OpenCodeTheme.tokens.spacing
     val colors = OpenCodeTheme.colors
@@ -85,15 +141,75 @@ fun SessionListScreen(
         )
     }
 
-    ScreenScaffold(
-        title = stringResource(R.string.history_title),
-        onBack = onBack,
-        actions = { TextAction(stringResource(R.string.history_new), onNewSession) },
+    // Search matches titles and, when supplied, transcript previews,
+    // model names and outcomes — the drawer only shows the latest 20, so
+    // anything older was unreachable without scrolling the whole list.
+    var query by rememberSaveable { mutableStateOf("") }
+    val filteredRows = remember(state.rows, query, details) {
+        filterSessionRows(state.rows, query, details)
+    }
+    Column(
+        modifier = modifier.fillMaxSize(),
     ) {
+        // Search field
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 720.dp)
+                .align(Alignment.CenterHorizontally)
+                .padding(horizontal = spacing.lg, vertical = spacing.sm)
+                .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
+                .background(colors.surface)
+                .border(0.5.dp, colors.hairline, RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
+                .padding(horizontal = spacing.md, vertical = spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            GlyphIcon(
+                glyph = Glyph.Search,
+                tint = colors.onSurfaceMuted,
+                size = 16.dp,
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.history_search_hint),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurfaceFaint,
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
+                    cursorBrush = SolidColor(colors.accent),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (query.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.sm))
+                        .clickable(role = Role.Button) { query = "" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    GlyphIcon(
+                        glyph = Glyph.Close,
+                        tint = colors.onSurfaceMuted,
+                        size = 14.dp,
+                    )
+                }
+            }
+        }
+
         // Scope toggle: "this project" and "everything".
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .widthIn(max = 720.dp)
+                .align(Alignment.CenterHorizontally)
                 .padding(horizontal = spacing.lg, vertical = spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
@@ -113,12 +229,31 @@ fun SessionListScreen(
             state.loading -> CenteredMessage(stringResource(R.string.history_loading))
             state.failure != null -> CenteredMessage(state.failure.message(), isError = true)
             state.failureKey != null -> CenteredMessage(stringResource(state.failureKey), isError = true)
-            state.rows.isEmpty() -> CenteredMessage(stringResource(R.string.history_empty))
+            filteredRows.isEmpty() -> CenteredMessage(
+                if (query.isBlank()) stringResource(R.string.history_empty)
+                else stringResource(R.string.history_search_no_results, query),
+            )
             else -> {
-                val grouped = remember(state.rows) { groupSessions(state.rows) }
+                val grouped = remember(filteredRows) { groupSessions(filteredRows) }
+
+                // The list endpoint caps at 50 with no pagination, so the
+                // count names what was loaded, not the whole history.
+                Text(
+                    text = stringResource(R.string.history_showing, filteredRows.size, state.rows.size),
+                    style = OpenCodeTypography.caption,
+                    color = colors.onSurfaceFaint,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 720.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                )
 
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 720.dp)
+                        .align(Alignment.CenterHorizontally),
                     contentPadding = PaddingValues(
                         start = spacing.lg,
                         end = spacing.lg,
@@ -157,6 +292,8 @@ fun SessionListScreen(
                         itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
                             SessionRowItem(
                                 row = row,
+                                selected = row.id == selectedSessionId,
+                                detail = details[row.id],
                                 showDirectory = state.filterDirectory == null,
                                 isFirst = index == 0,
                                 isLast = index == rows.lastIndex,
@@ -194,6 +331,9 @@ private fun SessionRowItem(
     onPinToggle: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    detail: SessionDetail? = null,
+    /** Accent background for the session open in the detail pane beside the list. */
+    selected: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -212,13 +352,19 @@ private fun SessionRowItem(
         ?.takeIf { showDirectory }
         ?.substringAfterLast('/')
         ?.takeIf { it.isNotEmpty() }
-    val meta = listOfNotNull(age, directory, row.cost).joinToString(" · ")
+    val meta = listOfNotNull(detail?.model, detail?.status, age, directory, row.cost).joinToString(" · ")
+    val preview = detail?.preview?.trim()?.takeIf { it.isNotEmpty() }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.surface),
+            .background(if (selected) colors.accent.copy(alpha = 0.12f) else colors.surface)
+            .then(
+                if (selected) {
+                    Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), shape)
+                } else Modifier
+            ),
     ) {
         if (!isFirst) RowDivider(inset = spacing.md)
         Row(
@@ -244,8 +390,8 @@ private fun SessionRowItem(
                     }
                     Text(
                         text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
-                        style = OpenCodeTypography.body,
-                        color = colors.onSurface,
+                        style = if (selected) OpenCodeTypography.bodyStrong else OpenCodeTypography.body,
+                        color = if (selected) colors.accentText else colors.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
@@ -261,13 +407,27 @@ private fun SessionRowItem(
                         modifier = Modifier.padding(top = spacing.xxs),
                     )
                 }
+                if (preview != null) {
+                    Text(
+                        text = preview,
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = spacing.xxs),
+                    )
+                }
             }
+            // Hoisted: stringResource() is @Composable and cannot be
+            // called inside a .semantics {} block.
+            val actionsDescription = stringResource(R.string.session_actions)
             Box(modifier = Modifier.padding(start = spacing.xs)) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(48.dp)
                         .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.sm))
-                        .clickable(role = Role.Button) { menuExpanded = true },
+                        .clickable(role = Role.Button) { menuExpanded = true }
+                        .semantics { contentDescription = actionsDescription },
                     contentAlignment = Alignment.Center,
                 ) {
                     GlyphIcon(
@@ -322,7 +482,9 @@ private fun CenteredMessage(text: String, isError: Boolean = false) {
             style = OpenCodeTypography.body,
             color = if (isError) colors.danger else colors.onSurfaceMuted,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(spacing.xxl),
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .padding(spacing.xxl),
         )
     }
 }

@@ -23,6 +23,44 @@ enum class SessionDateGroup {
 }
 
 /**
+ * Extra per-session detail the list API does not return with the rows.
+ *
+ * The engine's session list carries no transcript text, model or outcome, so
+ * previews and model/status come from a separate lookup (first message per
+ * session, via the messages endpoint) supplied by the caller. Until that
+ * lookup is wired, every field is null and the row falls back to title-only.
+ */
+data class SessionDetail(
+    /** First user message, trimmed — the row preview. */
+    val preview: String? = null,
+    /** Model that ran the session, e.g. "anthropic/claude-sonnet-4". */
+    val model: String? = null,
+    /** Last known outcome, e.g. "succeeded" / "failed". */
+    val status: String? = null,
+)
+
+/** True when [query] matches the title, the transcript preview, the model, the status or the directory. */
+fun matchesSessionQuery(query: String, row: SessionRow, detail: SessionDetail? = null): Boolean {
+    if (query.isBlank()) return true
+    val needle = query.trim()
+    return row.title.contains(needle, ignoreCase = true)
+        || detail?.preview?.contains(needle, ignoreCase = true) == true
+        || detail?.model?.contains(needle, ignoreCase = true) == true
+        || detail?.status?.contains(needle, ignoreCase = true) == true
+        || row.directory?.contains(needle, ignoreCase = true) == true
+}
+
+/** Filters rows by [query] across titles and transcript previews (see [matchesSessionQuery]). */
+fun filterSessionRows(
+    rows: List<SessionRow>,
+    query: String,
+    details: Map<String, SessionDetail> = emptyMap(),
+): List<SessionRow> {
+    if (query.isBlank()) return rows
+    return rows.filter { matchesSessionQuery(query, it, details[it.id]) }
+}
+
+/**
  * Groups session rows into date-based buckets:
  * Pinned -> Today -> Yesterday -> Previous 7 days -> Older.
  */

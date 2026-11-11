@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -34,6 +35,7 @@ import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
@@ -61,6 +63,8 @@ fun SettingsScreen(
     app: OpenCodeApplication,
     language: AppLanguage,
     onLanguageChange: (AppLanguage) -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit,
     onDiagnostics: () -> Unit,
     onProjects: () -> Unit,
@@ -72,6 +76,16 @@ fun SettingsScreen(
     val status by app.engineStatus.collectAsState()
     var pickingLanguage by remember { mutableStateOf(false) }
     val hasAllFiles = app.workspaceStore.hasAllFilesAccess()
+
+    // PLACEHOLDER data source — there is no saved-permission store or API
+    // to read from yet. Answering "Always" persists the permission on the
+    // engine server, and the API wrapper (SessionApi) exposes no endpoint
+    // to list or revoke saved permissions, so the app cannot show real
+    // entries. The section below renders from this list with a working
+    // revoke affordance per entry; when a list/revoke endpoint (or a
+    // local store) lands, replace this state with that source and wire
+    // onRevoke to it. Do not seed fake entries here.
+    var savedPermissions by remember { mutableStateOf<List<SavedPermission>>(emptyList()) }
 
     // Apple-style categorized badge colors
     val blueBadge = Color(0xFF007AFF)
@@ -86,6 +100,8 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .widthIn(max = 720.dp)
+                .align(Alignment.CenterHorizontally)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.lg, vertical = spacing.sm),
         ) {
@@ -113,6 +129,41 @@ fun SettingsScreen(
                     onClick = if (hasAllFiles) null else app::requestAllFilesAccess,
                     divider = true,
                 )
+            }
+
+            // Saved permissions ("Always" answers), each revocable.
+            Section(R.string.settings_saved_permissions) {
+                Text(
+                    text = stringResource(R.string.settings_saved_permissions_body),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                    modifier = Modifier.padding(
+                        horizontal = spacing.md,
+                        vertical = spacing.sm,
+                    ),
+                )
+                if (savedPermissions.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.settings_saved_permissions_empty),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceFaint,
+                        modifier = Modifier.padding(
+                            start = spacing.md,
+                            end = spacing.md,
+                            bottom = spacing.md,
+                        ),
+                    )
+                } else {
+                    savedPermissions.forEachIndexed { index, saved ->
+                        if (index > 0) RowDivider(inset = spacing.md)
+                        SavedPermissionRow(
+                            saved = saved,
+                            onRevoke = {
+                                savedPermissions = savedPermissions - saved
+                            },
+                        )
+                    }
+                }
             }
 
             // Engine & Connectivity
@@ -159,6 +210,21 @@ fun SettingsScreen(
                     value = languageLabel(language),
                     onClick = { pickingLanguage = true },
                 )
+            }
+
+            // Appearance (Phase 3): the theme is picked inline, not in a
+            // dialog — three radio rows, one tap to switch, applied at once
+            // over the whole tree (see OpenCodeApp). System follows the
+            // phone; Dark / Light pin the palette.
+            Section(R.string.settings_section_appearance) {
+                ThemeMode.entries.forEachIndexed { index, mode ->
+                    if (index > 0) RowDivider(inset = spacing.md)
+                    ThemeModeRow(
+                        mode = mode,
+                        selected = mode == themeMode,
+                        onSelect = { if (mode != themeMode) onThemeModeChange(mode) },
+                    )
+                }
             }
 
             Section(R.string.settings_section_provider) {
@@ -326,6 +392,113 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
         AppLanguage.Indonesian -> R.string.language_indonesian
     },
 )
+
+/** One inline theme row: radio + label + hint, 48dp, whole row tappable. */
+@Composable
+private fun ThemeModeRow(
+    mode: ThemeMode,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.RadioButton, onClick = onSelect)
+            .padding(horizontal = spacing.md, vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            colors = RadioButtonDefaults.colors(
+                selectedColor = colors.accent,
+                unselectedColor = colors.onSurfaceMuted,
+            ),
+        )
+        Column(
+            modifier = Modifier.padding(start = spacing.md),
+        ) {
+            Text(
+                text = stringResource(
+                    when (mode) {
+                        ThemeMode.System -> R.string.settings_theme_system
+                        ThemeMode.Dark -> R.string.settings_theme_dark
+                        ThemeMode.Light -> R.string.settings_theme_light
+                    },
+                ),
+                style = OpenCodeTypography.body,
+                color = colors.onSurface,
+            )
+            Text(
+                text = stringResource(
+                    when (mode) {
+                        ThemeMode.System -> R.string.settings_theme_system_hint
+                        ThemeMode.Dark -> R.string.settings_theme_dark_hint
+                        ThemeMode.Light -> R.string.settings_theme_light_hint
+                    },
+                ),
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+            )
+        }
+    }
+}
+
+/** One permission saved with "Always": what was allowed, and for which scope. */
+data class SavedPermission(
+    /** Tool pattern that was allowed, e.g. "bash" or "read". */
+    val pattern: String,
+    /** Where it applies, e.g. the project path. */
+    val scope: String,
+)
+
+/** One saved permission with a revoke affordance. */
+@Composable
+private fun SavedPermissionRow(
+    saved: SavedPermission,
+    onRevoke: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 54.dp)
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = spacing.xs),
+        ) {
+            Text(
+                text = saved.pattern,
+                style = OpenCodeTypography.body,
+                color = colors.onSurface,
+            )
+            Text(
+                text = saved.scope,
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        TextButton(onClick = onRevoke) {
+            Text(
+                text = stringResource(R.string.settings_saved_permissions_revoke),
+                style = OpenCodeTypography.label,
+                color = colors.danger,
+            )
+        }
+    }
+}
 
 /** Language picker dialog. */
 @Composable

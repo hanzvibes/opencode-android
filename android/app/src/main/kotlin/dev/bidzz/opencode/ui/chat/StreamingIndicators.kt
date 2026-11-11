@@ -1,6 +1,5 @@
 package dev.bidzz.opencode.ui.chat
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -48,26 +47,37 @@ fun LivePulseIndicator(
     color: Color,
     modifier: Modifier = Modifier,
     size: Dp = 6.dp,
+    /** False renders a static dot — the infinite transition is not created. */
+    active: Boolean = true,
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 2.2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "pulseScale",
-    )
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.65f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "pulseAlpha",
-    )
+    val motion = OpenCodeTheme.tokens.motion
+    // The one live pulse period (1000ms); the transition only exists while active.
+    val scale: Float
+    val alpha: Float
+    if (active) {
+        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+        scale = infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 2.2f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = motion.pulsePeriodMs, easing = motion.easingStandard),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "pulseScale",
+        ).value
+        alpha = infiniteTransition.animateFloat(
+            initialValue = 0.65f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = motion.pulsePeriodMs, easing = motion.easingStandard),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "pulseAlpha",
+        ).value
+    } else {
+        scale = 1f
+        alpha = 0.65f
+    }
 
     Box(
         modifier = modifier.size(size * 2),
@@ -102,17 +112,26 @@ fun BlinkingCursor(
     color: Color,
     modifier: Modifier = Modifier,
     height: Dp = 12.dp,
+    /** False renders a solid cursor — the infinite transition is not created. */
+    active: Boolean = true,
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "cursor")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "cursorAlpha",
-    )
+    val motion = OpenCodeTheme.tokens.motion
+    // Sole exception to the live pulse period: the terminal cursor blink.
+    val alpha: Float
+    if (active) {
+        val infiniteTransition = rememberInfiniteTransition(label = "cursor")
+        alpha = infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = motion.cursorBlinkPeriodMs, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "cursorAlpha",
+        ).value
+    } else {
+        alpha = 1f
+    }
     Box(
         modifier = modifier
             .width(5.dp)

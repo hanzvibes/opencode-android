@@ -22,6 +22,12 @@ import androidx.compose.ui.unit.dp
  *
  * The scales are deliberately short. A small set used everywhere reads as
  * designed; a large set used inconsistently reads as generated.
+ *
+ * Phase 1 ("The quiet terminal"): flat hairline surfaces, Zed model.
+ * Glassmorphism and elevation halos are dead — they had zero consumers —
+ * so the Glassmorphism / ElevationHalos classes were deleted, not deprecated.
+ * Do not reintroduce blur/glow tokens; depth comes from the three opaque
+ * surfaces in [Palette] plus a 0.5dp hairline.
  */
 
 /** 4dp base grid. Named by role, not by size, so a change stays meaningful. */
@@ -48,9 +54,14 @@ data class Spacing(
 /**
  * Corner radii.
  *
- * `plan.md` §12 bans "excessive rounded cards". The scale tops out at 16dp for
- * surfaces and uses a full pill only for chips and the send button, which is where
- * a pill is conventional on Android rather than decorative.
+ * `plan.md` §12 bans "excessive rounded cards". The ladder tops out at 16dp
+ * for surfaces. Only two exceptions survive: the user bubble (asymmetric,
+ * 18dp with a 4dp tail corner — geometry owned by MessageBubble, not this
+ * ladder) and the full pill for chips and the send button, where a pill is
+ * conventional on Android rather than decorative.
+ *
+ * The old 22dp composer capsule token was deleted in Phase 1: the composer
+ * moves to [md] (12dp) in the next wave. Do not re-add a composer radius.
  */
 @Immutable
 data class Radius(
@@ -59,13 +70,13 @@ data class Radius(
     val md: Dp = 12.dp,
     val lg: Dp = 16.dp,
     /**
-     * Deliberate exceptions to the 16dp surface cap above: the user bubble
-     * (asymmetric, 18dp with a 4dp tail corner) and the composer capsule
-     * (22dp). Named here so a hardcoded 18.dp / 22.dp in a screen is still
-     * a bug, but the values themselves are a conscious choice, not an accident.
+     * Deliberate exception to the 16dp surface cap above: the user bubble
+     * (asymmetric, 18dp with a 4dp tail corner). Named here so a hardcoded
+     * 18.dp in a screen is still a bug, but the value itself is a conscious
+     * choice, not an accident. Bubble geometry is out of scope for the
+     * radius ladder — see Phase 1 §7.
      */
     val bubble: Dp = 18.dp,
-    val composer: Dp = 22.dp,
     /** Pills: chips, send button. */
     val full: Dp = 999.dp,
 )
@@ -84,6 +95,23 @@ data class Motion(
     val standard: Int = 220,
     /** Screen transitions (320ms). */
     val emphasized: Int = 320,
+
+    /**
+     * THE one live pulse period (1000ms). Every pulsing live indicator —
+     * status dot, thinking pill, jump-to-latest, busy send button — uses
+     * this period so the app breathes at a single rate. Call sites still
+     * hardcode their own durations today (e.g. LivePulseIndicator's 1200ms
+     * tween); the next wave wires them to this token. Do not invent a
+     * second pulse period.
+     */
+    val pulsePeriodMs: Int = 1000,
+    /**
+     * Sole exception to [pulsePeriodMs]: the terminal cursor blink (500ms).
+     * A cursor is not a live indicator — it blinks at the terminal's own
+     * rate. BlinkingCursor already uses a 500ms tween; the next wave wires
+     * it to this token. No other animation may use 500ms as a pulse.
+     */
+    val cursorBlinkPeriodMs: Int = 500,
 
     // ---- Easing Curves ----
     /** Snappy responsive curve for user-initiated micro-interactions. */
@@ -138,39 +166,24 @@ data class Motion(
         tween(durationMillis = emphasized, delayMillis = delayMillis, easing = easingEmphasized)
 }
 
-/** Glassmorphism blur, transparency, and border tokens. */
+/**
+ * Shadow / elevation values.
+ *
+ * Phase 3: the two surviving flat shadow values, tokenised so a menu and
+ * the send button cannot drift apart. These are plain elevations, NOT the
+ * Phase 1 glass/halo language — no blur, no glow, no coloured halo. The
+ * composer body itself stays flat (hairline only); only the floating menu
+ * and the send button lift off the surface, and only by these amounts.
+ */
 @Immutable
-data class Glassmorphism(
-    /** Subtle blur for floating toolbars, floating pills, or badges (8dp). */
-    val blurSubtle: Dp = 8.dp,
-    /** Standard frosted glass blur for cards and headers (16dp). */
-    val blurStandard: Dp = 16.dp,
-    /** Heavy frosted glass blur for modal overlays and backdrop sheets (24dp). */
-    val blurHeavy: Dp = 24.dp,
-    /** Hairline glass border thickness (0.5dp). */
-    val strokeWidth: Dp = 0.5.dp,
+data class Elevation(
+    /** Floating menus: command palette, selector menus, session menu. */
+    val menu: Dp = 8.dp,
+    /** Send button while it can send. */
+    val sendButton: Dp = 3.dp,
+    /** Send button while a run is in progress (stop state). */
+    val sendButtonBusy: Dp = 4.dp,
 )
-
-/** Subtle elevation halos and glow tokens for soft depth without harsh drop-shadows. */
-@Immutable
-data class ElevationHalos(
-    /** Subtle halo for card edges and hover states (4dp). */
-    val haloRadiusSubtle: Dp = 4.dp,
-    /** Standard halo for dropdowns, popups, and elevated bars (8dp). */
-    val haloRadiusStandard: Dp = 8.dp,
-    /** Prominent halo for modal dialogs and bottom sheets (16dp). */
-    val haloRadiusProminent: Dp = 16.dp,
-    /** Ambient diffuse glow for active tools or accents (24dp). */
-    val haloRadiusGlow: Dp = 24.dp,
-    /** Low elevation vertical offset (1dp). */
-    val haloOffsetSubtle: Dp = 1.dp,
-    /** Standard elevation vertical offset (2dp). */
-    val haloOffsetStandard: Dp = 2.dp,
-    /** Elevated modal vertical offset (6dp). */
-    val haloOffsetElevated: Dp = 6.dp,
-)
-
-/** Fixed component dimensions, so rows line up across screens. */
 @Immutable
 data class Dimensions(
     /** Minimum touch target. Below this, Android accessibility guidance is violated. */
@@ -180,7 +193,7 @@ data class Dimensions(
     val composerMaxHeight: Dp = 160.dp,
     val avatarSize: Dp = 28.dp,
     val statusDotSize: Dp = 8.dp,
-    /** Streaming indicator pulse (11dp dot, 22dp animated halo). Large enough to
+    /** Streaming indicator pulse (11dp dot, 22dp animated pulse ring). Large enough to
      *  read at a glance while the assistant is typing, unlike the 8dp status dot. */
     val streamingIndicatorSize: Dp = 11.dp,
     /** Touch target for the composer send/stop button. Visual stays 36dp; the
@@ -206,6 +219,5 @@ data class OpenCodeTokens(
     val radius: Radius = Radius(),
     val motion: Motion = Motion(),
     val dimensions: Dimensions = Dimensions(),
-    val glass: Glassmorphism = Glassmorphism(),
-    val halos: ElevationHalos = ElevationHalos(),
+    val elevation: Elevation = Elevation(),
 )

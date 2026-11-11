@@ -55,6 +55,7 @@ fun SessionActionMenu(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
+    val elevation = OpenCodeTheme.tokens.elevation
 
     DropdownMenu(
         expanded = expanded,
@@ -63,7 +64,7 @@ fun SessionActionMenu(
         shape = RoundedCornerShape(radius.md),
         containerColor = colors.surfaceRaised,
         tonalElevation = 0.dp,
-        shadowElevation = 8.dp,
+        shadowElevation = elevation.menu,
         border = BorderStroke(0.5.dp, colors.hairline),
         modifier = modifier.widthIn(min = 170.dp),
     ) {
@@ -252,10 +253,14 @@ fun DeleteSessionDialog(
             )
         },
         text = {
+            // The title is shown, not just passed in: deleting the wrong
+            // session is one tap away when every dialog reads the same.
             Text(
-                text = stringResource(R.string.session_delete_message),
+                text = stringResource(R.string.session_delete_message, sessionTitle),
                 style = OpenCodeTypography.bodySmall,
                 color = colors.onSurfaceMuted,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         },
         confirmButton = {

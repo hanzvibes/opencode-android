@@ -18,7 +18,7 @@ package dev.bidzz.opencode.ui.chat
  */
 
 /** The role a run of source plays. */
-enum class TokenKind { Plain, Keyword, String, Number, Comment }
+enum class TokenKind { Plain, Keyword, String, Number, Comment, Function, Type, Operator }
 
 internal const val MAX_HIGHLIGHT_CHARS = 20_000
 
@@ -31,12 +31,17 @@ data class Token(val text: String, val kind: TokenKind)
  * The input is whatever the model streamed, so it is frequently mid-statement: an
  * unterminated string stops at the end of its line rather than running to the end of
  * the block, which keeps one stray quote from colouring everything below it.
+ *
+ * While [streaming], a block over 4000 characters is rendered plain until the
+ * stream finishes: re-highlighting the whole block on every delta is the
+ * expensive part, and a half-coloured block is no better than a plain one.
  */
-fun highlight(language: String?, code: String): List<Token> {
+fun highlight(language: String?, code: String, streaming: Boolean = false): List<Token> {
     if (code.isEmpty()) return emptyList()
     // ponytail: past this size colouring is skipped; it runs on the UI thread on every
     // streamed delta. Move to a background dispatcher if big blocks need colour.
     if (code.length > MAX_HIGHLIGHT_CHARS) return listOf(Token(code, TokenKind.Plain))
+    if (streaming && code.length > 4_000) return listOf(Token(code, TokenKind.Plain))
     val dialect = dialectOf(language) ?: return listOf(Token(code, TokenKind.Plain))
 
     val tokens = TokenList()
@@ -58,7 +63,14 @@ fun highlight(language: String?, code: String): List<Token> {
         }
         if (dialect.block && c == '/' && code.startsWith("/*", i)) {
             val close = code.indexOf("*/", i + 2)
-            val end = if (close < 0) code.length else close + 2
+            // An unterminated block comment stops at the end of its line,
+            // like an unterminated string: one stray "/*" mid-stream must
+            // not paint the whole rest of the block as a comment.
+            val end = if (close < 0) {
+                code.indexOf('\n', i).let { if (it < 0) code.length else it }
+            } else {
+                close + 2
+            }
             tokens.add(code.substring(i, end), TokenKind.Comment)
             i = end
             continue
@@ -82,8 +94,28 @@ fun highlight(language: String?, code: String): List<Token> {
             var end = i
             while (end < code.length && (code[end].isLetterOrDigit() || code[end] == '_' || code[end] == '$')) end++
             val word = code.substring(i, end)
-            tokens.add(word, if (word in dialect.keywords) TokenKind.Keyword else TokenKind.Plain)
+            val kind = when {
+                word in dialect.keywords -> TokenKind.Keyword
+                // A word followed by "(" is a call: `foo()`, `obj.bar()`.
+                // Keywords win above, so `if (` / `fun foo(` stay keywords.
+                isCallStart(code, end) -> TokenKind.Function
+                // Capitalised words are type/class names in the dialects
+                // here (`String`, `Foo`); constants read as types too, which
+                // is the accepted cost of a one-pass heuristic.
+                word[0].isUpperCase() -> TokenKind.Type
+                else -> TokenKind.Plain
+            }
+            tokens.add(word, kind)
             i = end
+            continue
+        }
+
+        // Operators are single characters; adjacent runs merge in TokenList,
+        // so `==` / `->` / `&&` stay one run. Comment/string openers are
+        // handled above, so `/` here is division, never a comment start.
+        if (c in OperatorChars) {
+            tokens.add(c.toString(), TokenKind.Operator)
+            i++
             continue
         }
 
@@ -92,6 +124,17 @@ fun highlight(language: String?, code: String): List<Token> {
     }
     return tokens.toList()
 }
+
+/** True when the next non-blank character after [end] opens a call. */
+private fun isCallStart(code: String, end: Int): Boolean {
+    var j = end
+    while (j < code.length && (code[j] == ' ' || code[j] == '\t')) j++
+    return j < code.length && code[j] == '('
+}
+
+private val OperatorChars = setOf(
+    '+', '-', '*', '/', '%', '=', '<', '>', '!', '&', '|', '^', '~', '?', ':',
+)
 
 /**
  * End of the string starting at [start], exclusive.
@@ -202,6 +245,14 @@ private val ShellKeywords = setOf(
 
 private val JsonKeywords = setOf("true", "false", "null")
 
+private val RubyKeywords = setOf(
+    "alias", "and", "begin", "break", "case", "class", "def", "defined?", "do",
+    "else", "elsif", "end", "ensure", "false", "for", "if", "in", "module",
+    "next", "nil", "not", "or", "redo", "require", "rescue", "retry", "return",
+    "self", "super", "then", "true", "undef", "unless", "until", "when",
+    "while", "yield",
+)
+
 private val DialectClike = Dialect(ClikeKeywords, lineSlash = true, block = true)
 private val DialectPython = Dialect(PythonKeywords, hash = true, triple = true)
 private val DialectShell = Dialect(ShellKeywords, hash = true)
@@ -209,17 +260,26 @@ private val DialectShell = Dialect(ShellKeywords, hash = true)
 private val DialectHashData = Dialect(emptySet(), hash = true)
 private val DialectJson = Dialect(JsonKeywords, singleQuote = false)
 private val DialectJsonc = Dialect(JsonKeywords, lineSlash = true, singleQuote = false)
+private val DialectRuby = Dialect(RubyKeywords, hash = true)
 
-private fun dialectOf(language: String?): Dialect? = when (language?.trim()?.lowercase()) {
+private fun dialectOf(language: String?): Dialect? {
+    // Strip a fence filename/path suffix first: ```kotlin:Main.kt and
+    // ```python /app/main.py name the language, and the suffix used to
+    // silently kill highlighting (no dialect matched "kotlin:main.kt").
+    // Same stripping as formatLanguageName() in MarkdownText.kt.
+    val tag = language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()
+    return when (tag) {
     "kt", "kts", "kotlin", "java", "js", "jsx", "mjs", "ts", "tsx", "typescript",
     "javascript", "swift", "rust", "rs", "go", "c", "h", "cpp", "cc", "cxx", "hpp",
-    "cs", "csharp", "scala", "dart", "php" -> DialectClike
+    "c++", "cs", "c#", "csharp", "scala", "dart", "php" -> DialectClike
     "py", "python" -> DialectPython
-    "sh", "bash", "zsh", "shell", "console" -> DialectShell
+    "rb", "ruby" -> DialectRuby
+    "sh", "bash", "zsh", "shell", "console", "terminal" -> DialectShell
     "yaml", "yml", "toml", "dockerfile", "ini", "conf", "properties" -> DialectHashData
     "json" -> DialectJson
     "jsonc" -> DialectJsonc
     // No tag, or one this does not know: plain text. Deliberate — an unrecognised tag
     // is more likely to be prose-ish than to share C's comment syntax.
     else -> null
+    }
 }

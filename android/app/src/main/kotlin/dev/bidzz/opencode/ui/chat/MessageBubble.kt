@@ -3,18 +3,25 @@ package dev.bidzz.opencode.ui.chat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,10 +39,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -48,8 +58,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -61,6 +74,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.announceForAccessibility
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -115,7 +129,7 @@ internal fun parseThinkingContent(
 
 /**
  * One chat message styled after modern LLM interfaces (ChatGPT / Claude):
- * - User message: compact system blue bubble on the right with asymmetric rounded corners.
+ * - User message: compact neutral bubble on the right with asymmetric rounded corners.
  * - Assistant message: clean full-width markdown with soft glowing "Thinking" disclosure widget,
  *   smooth transition to streaming answer, branded provenance tag badge, and tool traces.
  * - Error message: tinted warning surface with danger accent and readability hierarchy.
@@ -134,6 +148,44 @@ fun MessageBubble(
     reasoning: String? = null,
     parts: List<ChatTurnPart> = emptyList(),
     onAnswerQuestion: (String) -> Unit = {},
+    /**
+     * Seconds since this run started, owned by the screen — not by this
+     * bubble. A bubble-local timer reset to 0 every time the streaming
+     * flag toggled, so "Thought for 12s" could jump back to "Thinking…"
+     * mid-run; the screen's timer runs from busy false→true and survives
+     * the placeholder→turn transition. Since Phase 2 the screen passes each
+     * turn's own stored [thinkingSeconds] (see [ChatMessage]) and only
+     * falls back to the live timer while that turn streams — null keeps
+     * the old local timer.
+     */
+    thinkingElapsedSeconds: Int? = null,
+    /** Local delivery state (C-B): true once an assistant turn follows
+     * this user message. A local read receipt, not a server status. */
+    delivered: Boolean = false,
+    /** Engine `time.created` of this turn, for the tool-trace start time (C-C). */
+    toolsStartedAtMillis: Long? = null,
+    /** Quote this turn into the composer (C-E). Receives the "> quote" text. */
+    onQuote: (String) -> Unit = {},
+    /** Turn footer (Phase 2, finding 6): usage/cost/duration/stop-reason for
+     * this assistant turn. These are the exact nullable fields the
+     * integration agent adds to [ChatMessage] and fills from the engine's
+     * `tokens`/`cost`/`finish` — null until then, and the footer hides
+     * entirely while all four are null, so nothing breaks before that lands. */
+    usageTokens: Long? = null,
+    usageCostUsd: Double? = null,
+    turnDurationMs: Long? = null,
+    stopReason: String? = null,
+    /** Edit/resend affordances (Phase 2, finding 3): the callbacks the
+     * ViewModel wires to the composer's editing mode (edit — the edited text
+     * is re-sent as a new prompt, the transcript is never rewritten) and to
+     * re-sending the message's text (resend). Null hides the pill — the
+     * behaviour itself lives in the ViewModel, not here. */
+    onEdit: (() -> Unit)? = null,
+    onResend: (() -> Unit)? = null,
+    /** Per-tool durations in milliseconds, keyed by tool id (Phase 2,
+     * finding 20): client-side stamps from the ViewModel. Empty until a
+     * tool is seen live; a finished step without one shows no duration. */
+    toolDurations: Map<String, Long> = emptyMap(),
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -152,27 +204,74 @@ fun MessageBubble(
                 bottomStart = radius.bubble,
                 bottomEnd = radius.xs,
             )
-            Box(
-                modifier = Modifier
-                    .padding(start = dims.minTouchTarget)
-                    .widthIn(max = maxBubbleWidth)
-                    .clip(userBubbleShape)
-                    .background(colors.userBubble)
-                    .padding(horizontal = spacing.lg, vertical = spacing.md - 2.dp),
-            ) {
-                SelectionContainer {
-                    Text(
-                        text = markdown,
-                        style = OpenCodeTypography.body,
-                        color = colors.onUserBubble,
-                    )
+            Column(horizontalAlignment = Alignment.End) {
+                Box(
+                    modifier = Modifier
+                        .padding(start = dims.minTouchTarget)
+                        .widthIn(max = maxBubbleWidth)
+                        .clip(userBubbleShape)
+                        .background(colors.userBubble)
+                        .padding(horizontal = spacing.lg, vertical = spacing.md - 2.dp),
+                ) {
+                    // The bubble is neutral now (surfaceRaised, Phase 1 §7),
+                    // so selection is accent-tinted with accent handles in
+                    // both themes — the old white-on-blue selection is
+                    // unreadable on a neutral bubble. Assistant text keeps
+                    // the default.
+                    // The message renders as markdown (bold, code, links)
+                    // in the bubble-aware variant: prose stays onUserBubble
+                    // on the neutral bubble, links stay tappable, and the
+                    // bubble colour itself is untouched.
+                    CompositionLocalProvider(
+                        LocalTextSelectionColors provides TextSelectionColors(
+                            handleColor = colors.accent,
+                            backgroundColor = colors.accent.copy(alpha = 0.22f),
+                        ),
+                    ) {
+                        MarkdownText(
+                            markdown = markdown,
+                            textColor = colors.onUserBubble,
+                        )
+                    }
+                }
+                // Same copy affordance as assistant replies, right-aligned
+                // under the user's own bubble, next to the delivery mark:
+                // one check while unanswered, two once an assistant turn
+                // follows (C-B). Local only — the engine reports no status.
+                // Edit/Resend (Phase 2, finding 3, UI half) sit in the same
+                // row, in the same quiet pill style, and only appear once
+                // the integration agent wires their callbacks — the pills
+                // call back out, they do not implement editing or re-running.
+                if (markdown.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                        modifier = Modifier.padding(top = spacing.xs),
+                    ) {
+                        DeliveryCheckmark(delivered = delivered)
+                        CopyButton(text = markdown)
+                        if (onEdit != null) {
+                            UserActionPill(
+                                glyph = Glyph.Pencil,
+                                labelRes = R.string.message_edit,
+                                onClick = onEdit,
+                            )
+                        }
+                        if (onResend != null) {
+                            UserActionPill(
+                                glyph = Glyph.Refresh,
+                                labelRes = R.string.message_resend,
+                                onClick = onResend,
+                            )
+                        }
+                    }
                 }
             }
         }
 
         Role.ASSISTANT -> Column(modifier = modifier.fillMaxWidth()) {
             val effectiveParts = remember(parts, markdown, tools, reasoning, streaming) {
-                if (parts.isNotEmpty()) parts
+                val built = if (parts.isNotEmpty()) parts
                 else buildTurnParts(
                     content = emptyList(),
                     streamingText = markdown,
@@ -181,6 +280,11 @@ fun MessageBubble(
                     explicitReasoning = reasoning,
                     fallbackText = markdown,
                 )
+                // One trace card per turn (Phase 2, finding 20): a text
+                // block between two tool calls splits the turn into several
+                // ToolGroups, and each one used to render its own ToolTrace.
+                // The groups collapse here — prose order is untouched.
+                mergeToolGroups(built)
             }
 
             val hasReasoning = effectiveParts.any { it is ChatTurnPart.Reasoning }
@@ -202,13 +306,22 @@ fun MessageBubble(
                 }
             }
 
-            val finalDuration = if (recordedDuration > 0) recordedDuration else elapsedSeconds
+            // The screen-owned timer wins when provided; the local one is
+            // only a fallback for callers that do not pass it.
+            val finalDuration = thinkingElapsedSeconds
+                ?: if (recordedDuration > 0) recordedDuration else elapsedSeconds
             val hasTextContent = effectiveParts.any { it is ChatTurnPart.Text && it.markdown.isNotBlank() }
             val showStreamingSpinner = streaming && hasTextContent
 
             // 1. Author Identity Header: Branded provenance badge
-            if (showProvenance) {
-                val labelText = if (!provenance.isNullOrBlank()) provenance else "OpenCode"
+            // While streaming with no identity yet, the badge stays hidden
+            // instead of showing "OpenCode" and then jumping to
+            // "Build · model" once the identity arrives — one appearance,
+            // not a label swap. A finished turn with no identity still
+            // falls back to "OpenCode".
+            val identityKnown = !provenance.isNullOrBlank()
+            if (showProvenance && (identityKnown || !streaming)) {
+                val labelText = if (identityKnown) provenance else "OpenCode"
                 ProvenanceBadge(
                     provenance = labelText,
                     modelRef = model,
@@ -245,6 +358,8 @@ fun MessageBubble(
                             ToolTrace(
                                 tools = part.tools,
                                 streaming = part.streaming,
+                                startedAtMillis = toolsStartedAtMillis,
+                                toolDurations = toolDurations,
                                 modifier = Modifier.padding(bottom = spacing.sm),
                             )
                         }
@@ -276,7 +391,11 @@ fun MessageBubble(
                 }
             }
 
-            // 3. Response Actions: Quiet copy button when complete
+            // 3. Response Actions: Quiet copy button when complete, plus
+            // Reply, which quotes a line of this turn into the composer
+            // (C-E). Long-press quoting is deliberately not added: the
+            // text is already selectable, and a long-press gesture would
+            // fight text selection.
             val allProse = effectiveParts
                 .filterIsInstance<ChatTurnPart.Text>()
                 .map { it.markdown }
@@ -285,8 +404,34 @@ fun MessageBubble(
                 .ifEmpty { markdown }
 
             if (!streaming && allProse.isNotBlank()) {
-                CopyButton(
-                    text = allProse,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    modifier = Modifier.padding(top = spacing.xs),
+                ) {
+                    CopyButton(text = allProse)
+                    ReplyButton(
+                        onClick = {
+                            val flat = allProse.replace("\n", " ").trim()
+                            val snippet = flat.take(120)
+                                .let { if (flat.length > 120) "$it…" else it }
+                            onQuote("> $snippet")
+                        },
+                    )
+                }
+            }
+
+            // 4. Turn footer (Phase 2, finding 6, UI half): mono usage line
+            // under the turn — "12,4k tokens · 8,2s · $0,02" plus the stop
+            // reason. Hidden entirely while every field is null, so a turn
+            // renders exactly as before until the integration agent fills
+            // the fields from the engine.
+            if (!streaming) {
+                TurnFooter(
+                    usageTokens = usageTokens,
+                    usageCostUsd = usageCostUsd,
+                    turnDurationMs = turnDurationMs,
+                    stopReason = stopReason,
                     modifier = Modifier.padding(top = spacing.xs),
                 )
             }
@@ -325,6 +470,24 @@ fun MessageBubble(
                                 color = colors.danger,
                             )
                         }
+                        // Rate limit (Phase 3): the free-tier 429 surfaces
+                        // here as an assistant error bubble, never as a
+                        // banner failure, so the banner's typed retry never
+                        // sees it. The bubble shows the same switch-model /
+                        // wait guidance the banner shows for RATE_LIMITED
+                        // (chat_rate_limited_guidance). There is no retry
+                        // button yet — the bubble has no path to the model
+                        // picker or the view model (see isRateLimitError),
+                        // so the guidance is the fix and the affordance is
+                        // documented as remaining work.
+                        if (isRateLimitError(markdown)) {
+                            Text(
+                                text = stringResource(R.string.chat_rate_limited_guidance),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceMuted,
+                                modifier = Modifier.padding(top = spacing.xs),
+                            )
+                        }
                         if (!provenance.isNullOrBlank()) {
                             ProvenanceBadge(
                                 provenance = provenance,
@@ -353,20 +516,46 @@ fun ThinkingDisclosure(
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val hasContent = !reasoningText.isNullOrBlank()
 
-    // Breathing soft glow animation while actively thinking
-    val infiniteTransition = rememberInfiniteTransition(label = "thinking_pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.95f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1100, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse_alpha",
+    // Auto-expand while thinking, collapse when done (Phase 2, finding 7):
+    // the reasoning is the live activity while the model thinks, and a
+    // quiet "Thought for Xs" pill once it has answered. The effect only
+    // fires on the transition, so tapping to collapse mid-thought still
+    // works until the next transition.
+    LaunchedEffect(isThinkingActive) {
+        isExpanded = isThinkingActive
+    }
+
+    // Breathing soft glow animation while actively thinking, on the one
+    // live pulse period (motion.pulsePeriodMs). The infinite transition
+    // only exists while thinking: a finished "Thought for Xs" pill must
+    // not keep an animation running behind a static border.
+    val pulseAlpha = if (isThinkingActive) {
+        val infiniteTransition = rememberInfiniteTransition(label = "thinking_pulse")
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 0.95f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(motion.pulsePeriodMs, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulse_alpha",
+        )
+        alpha
+    } else {
+        0.95f
+    }
+
+    // One glyph rotating 0° (right, collapsed) ↔ 90° (down, expanded)
+    // instead of two glyphs swapping on every tap.
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 90f else 0f,
+        animationSpec = motion.tweenQuick(),
+        label = "thinking_chevron_rotation",
     )
 
     val pillShape = RoundedCornerShape(radius.full)
@@ -382,7 +571,7 @@ fun ThinkingDisclosure(
         colors.surfaceVariant.copy(alpha = 0.45f)
     }
 
-    Column(modifier = modifier.animateContentSize()) {
+    Column(modifier = modifier.animateContentSize(animationSpec = motion.springSmooth())) {
         Box(
             modifier = Modifier
                 .clip(pillShape)
@@ -440,9 +629,10 @@ fun ThinkingDisclosure(
 
                 if (hasContent) {
                     GlyphIcon(
-                        glyph = if (isExpanded) Glyph.ChevronDown else Glyph.ChevronRight,
+                        glyph = Glyph.ChevronRight,
                         tint = colors.onSurfaceFaint,
                         size = 11.dp,
+                        modifier = Modifier.graphicsLayer { rotationZ = chevronRotation },
                     )
                 }
             }
@@ -510,6 +700,98 @@ private fun ThoughtSparkleIcon(
 }
 
 /**
+ * Delivery mark under a user bubble (C-B): one faint check while the
+ * message is unanswered, two green checks once an assistant turn follows
+ * it. Local only — the engine reports no delivery status.
+ */
+@Composable
+private fun DeliveryCheckmark(
+    delivered: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
+    val label = stringResource(
+        if (delivered) R.string.message_delivered else R.string.message_sent,
+    )
+    Box(
+        modifier = modifier.semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = delivered,
+            transitionSpec = {
+                (fadeIn(animationSpec = motion.tweenQuick()) +
+                    scaleIn(initialScale = 0.7f, animationSpec = motion.tweenQuick())) togetherWith
+                    (fadeOut(animationSpec = motion.tweenQuick()) +
+                        scaleOut(targetScale = 0.7f, animationSpec = motion.tweenQuick()))
+            },
+            label = "delivery_checkmark",
+        ) { isDelivered ->
+            if (isDelivered) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy((-4).dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    GlyphIcon(glyph = Glyph.Check, tint = colors.success, size = 12.dp)
+                    GlyphIcon(glyph = Glyph.Check, tint = colors.success, size = 12.dp)
+                }
+            } else {
+                GlyphIcon(glyph = Glyph.Check, tint = colors.onSurfaceFaint, size = 12.dp)
+            }
+        }
+    }
+}
+
+/**
+ * Reply pill next to Copy on a finished assistant turn (C-E): quotes the
+ * first 120 characters of the turn into the composer as "> …".
+ */
+@Composable
+private fun ReplyButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val pillShape = RoundedCornerShape(radius.full)
+    // 48dp hit area (Phase 2, finding 14): the pill stays its visual size,
+    // centred in a 48dp touch target like the other chat controls.
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(pillShape)
+                .background(colors.surfaceVariant)
+                .border(0.5.dp, colors.hairline, pillShape)
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.ArrowLeft,
+                    tint = colors.onSurfaceMuted,
+                    size = 12.dp,
+                )
+                Text(
+                    text = stringResource(R.string.message_reply),
+                    style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                    color = colors.onSurfaceMuted,
+                )
+            }
+        }
+    }
+}
+
+/**
  * Subtle tonal pill with tap ripple, icon, and ephemeral "Copied" feedback.
  */
 @Composable
@@ -519,6 +801,7 @@ private fun CopyButton(
 ) {
     val context = LocalContext.current
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     var copied by remember { mutableStateOf(false) }
@@ -531,41 +814,192 @@ private fun CopyButton(
     }
 
     val pillShape = RoundedCornerShape(radius.full)
-    val contentColor = if (copied) colors.success else colors.onSurfaceMuted
+    val pillBg by animateColorAsState(
+        targetValue = if (copied) colors.success.copy(alpha = 0.12f) else colors.surfaceVariant,
+        animationSpec = motion.tweenQuick(),
+        label = "copy_pill_bg",
+    )
+    val pillBorder by animateColorAsState(
+        targetValue = if (copied) colors.success.copy(alpha = 0.4f) else colors.hairline,
+        animationSpec = motion.tweenQuick(),
+        label = "copy_pill_border",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (copied) colors.success else colors.onSurfaceMuted,
+        animationSpec = motion.tweenQuick(),
+        label = "copy_pill_content",
+    )
+    val copiedLabel = stringResource(R.string.code_copied)
 
+    // 48dp hit area (Phase 2, finding 14): the pill stays its visual size,
+    // centred in a 48dp touch target like the other chat controls. Copying
+    // announces "Copied" once, on the tap — never on recomposition.
     Box(
         modifier = modifier
-            .clip(pillShape)
-            .background(if (copied) colors.success.copy(alpha = 0.12f) else colors.surfaceVariant)
-            .border(
-                0.5.dp,
-                if (copied) colors.success.copy(alpha = 0.4f) else colors.hairline,
-                pillShape,
-            )
+            .size(48.dp)
             .clickable {
                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
                 cm?.setPrimaryClip(ClipData.newPlainText("OpenCode", text))
                 copied = true
-            }
-            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+                announceForAccessibility(context, copiedLabel)
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        Box(
+            modifier = Modifier
+                .clip(pillShape)
+                .background(pillBg)
+                .border(
+                    0.5.dp,
+                    pillBorder,
+                    pillShape,
+                )
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            contentAlignment = Alignment.Center,
         ) {
-            GlyphIcon(
-                glyph = Glyph.Copy,
-                tint = contentColor,
-                size = 12.dp,
-            )
-            Text(
-                text = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
-                style = OpenCodeTypography.label.copy(fontSize = 11.sp),
-                color = contentColor,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Copy,
+                    tint = contentColor,
+                    size = 12.dp,
+                )
+                Crossfade(
+                    targetState = copied,
+                    animationSpec = motion.tweenQuick(),
+                    label = "copy_label",
+                ) { isCopied ->
+                    Text(
+                        text = stringResource(if (isCopied) R.string.code_copied else R.string.code_copy),
+                        style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                        color = contentColor,
+                    )
+                }
+            }
         }
     }
 }
 
 enum class Role { USER, ASSISTANT, ERROR }
+
+/**
+ * Quiet pill under a user bubble for Edit / Resend (Phase 2, finding 3, UI
+ * half): the same surfaceVariant + hairline + 11sp pill as Copy/Reply, so
+ * the affordance reads as part of the row rather than a new control. It
+ * only calls [onClick] — editing and re-running live in the ViewModel.
+ */
+@Composable
+private fun UserActionPill(
+    glyph: Glyph,
+    labelRes: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val pillShape = RoundedCornerShape(radius.full)
+    // 48dp hit area (Phase 2, finding 14), same pattern as Copy/Reply.
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(pillShape)
+                .background(colors.surfaceVariant)
+                .border(0.5.dp, colors.hairline, pillShape)
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = glyph,
+                    tint = colors.onSurfaceMuted,
+                    size = 12.dp,
+                )
+                Text(
+                    text = stringResource(labelRes),
+                    style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                    color = colors.onSurfaceMuted,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Mono usage footer under a finished assistant turn (Phase 2, finding 6):
+ * "12.4k tokens · 8.2s · $0.02 · stop: length". One segment per known
+ * field, joined with " · "; a field that is null contributes nothing, and
+ * when every field is null the footer is not rendered at all.
+ */
+@Composable
+private fun TurnFooter(
+    usageTokens: Long?,
+    usageCostUsd: Double?,
+    turnDurationMs: Long?,
+    stopReason: String?,
+    modifier: Modifier = Modifier,
+) {
+    val segments = buildList {
+        if (usageTokens != null) {
+            add(stringResource(R.string.turn_footer_tokens, formatCompactTokens(usageTokens)))
+        }
+        if (turnDurationMs != null) add(formatStepDuration(turnDurationMs))
+        if (usageCostUsd != null) add(formatTurnCost(usageCostUsd))
+        if (!stopReason.isNullOrBlank()) {
+            add(stringResource(R.string.turn_footer_stop_reason, stopReason))
+        }
+    }
+    if (segments.isEmpty()) return
+
+    Text(
+        text = segments.joinToString(" · "),
+        style = OpenCodeTypography.caption.copy(
+            fontFamily = OpenCodeTypography.mono,
+            fontSize = 11.sp,
+        ),
+        color = OpenCodeTheme.colors.onSurfaceFaint,
+        modifier = modifier,
+    )
+}
+
+/** 842 → "842", 12_400 → "12.4k", 1_250_000 → "1.2M". */
+private fun formatCompactTokens(tokens: Long): String = when {
+    tokens < 1_000 -> tokens.toString()
+    tokens < 1_000_000 -> "${tokens / 1000}.${(tokens % 1000) / 100}k"
+    else -> "${tokens / 1_000_000}.${(tokens % 1_000_000) / 100_000}M"
+}
+
+/** "$0.02" — two decimals, US formatting so the "$" amount never renders with a comma decimal. */
+private fun formatTurnCost(costUsd: Double): String =
+    "$" + String.format(java.util.Locale.US, "%.2f", costUsd)
+
+/**
+ * Whether an assistant error bubble reports the free-tier rate limit.
+ *
+ * The engine reports it as error type `provider.free-limit` (HTTP 429);
+ * the bubble is rendered from `error.message ?: error.type`, so the type
+ * usually IS the text, and a 429 message carries the code or the words
+ * "rate limit". Matched case-insensitively on the rendered text because
+ * the bubble only ever receives that text — the error type itself is
+ * dropped before it reaches this composable (ChatViewModel's toUiMessages
+ * keeps only the text on ChatMessage). That is also why a typed retry
+ * cannot live here yet: it would need the error type preserved on
+ * ChatMessage, a bubble-originated retry kind in the view model, and a
+ * model-picker opener plumbed from the composer through ChatScreen.
+ */
+internal fun isRateLimitError(text: String): Boolean {
+    val lower = text.lowercase()
+    return lower.contains("free-limit") || lower.contains("free limit") ||
+        lower.contains("rate limit") || lower.contains("rate_limit") ||
+        lower.contains("429")
+}

@@ -1,9 +1,18 @@
 package dev.bidzz.opencode.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import dev.bidzz.opencode.LanguageStore
@@ -17,9 +26,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.core.design.OpenCodeTheme
+import dev.bidzz.opencode.core.design.ThemeMode
+import dev.bidzz.opencode.core.design.ThemeStore
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.about.AboutScreen
 import dev.bidzz.opencode.ui.chat.ChatScreen
+import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
 import dev.bidzz.opencode.ui.diff.DiffListScreen
@@ -29,12 +41,17 @@ import dev.bidzz.opencode.ui.files.ExplorerScreen
 import dev.bidzz.opencode.ui.files.ExplorerViewModel
 import dev.bidzz.opencode.ui.files.FileViewScreen
 import dev.bidzz.opencode.ui.files.FileViewViewModel
+import dev.bidzz.opencode.ui.onboarding.OnboardingScreen
+import dev.bidzz.opencode.ui.onboarding.OnboardingStore
+import dev.bidzz.opencode.ui.onboarding.SampleProject
 import dev.bidzz.opencode.ui.projects.ProjectOption
 import dev.bidzz.opencode.ui.projects.ProjectPickerScreen
 import dev.bidzz.opencode.ui.providers.ProvidersScreen
 import dev.bidzz.opencode.ui.providers.ProvidersViewModel
 import dev.bidzz.opencode.ui.sessions.PinnedSessionStore
+import dev.bidzz.opencode.ui.sessions.SessionListPane
 import dev.bidzz.opencode.ui.sessions.SessionListScreen
+import dev.bidzz.opencode.ui.sessions.SessionListUiState
 import dev.bidzz.opencode.ui.sessions.SessionListViewModel
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import dev.bidzz.opencode.ui.settings.SettingsScreen
@@ -81,6 +98,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     var screen by remember { mutableStateOf<Screen>(Screen.Chat) }
     var sessionScopeToProject by remember { mutableStateOf(true) }
 
+    // File open in the files list-detail pane (expanded widths only).
+    var selectedFilePath by remember { mutableStateOf<String?>(null) }
+
     val engineStatus by app.engineStatus.collectAsState()
 
     val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory {
@@ -120,6 +140,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val diffState by diffViewModel.state.collectAsState()
     val providersState by providersViewModel.state.collectAsState()
 
+    // Adaptive layout (Phase 3): at >=840dp the chat drawer becomes a
+    // persistent sidebar and the sessions/files screens gain a detail
+    // pane. Below it every screen keeps its phone behaviour exactly.
+    val windowSizeClass = rememberWindowSizeClass()
+    val isExpanded = windowSizeClass.isExpandedWidth
+
     // Feed engine state into the view model; it decides when to attach the API.
     LaunchedEffect(engineStatus.state, engineStatus.credentials?.baseUrl) {
         chatViewModel.onEngineStatus(engineStatus)
@@ -139,8 +165,27 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     }
 
     // Load history whenever the screen is shown, and reload when the scope flips.
-    LaunchedEffect(screen, sessionScopeToProject) {
-        if (screen is Screen.Sessions) sessionViewModel.load(sessionScopeToProject)
+    // At expanded widths the chat sidebar shows the same list persistently,
+    // so Chat loads it too — otherwise the sidebar would stay empty.
+    LaunchedEffect(screen, sessionScopeToProject, isExpanded) {
+        if (screen is Screen.Sessions || (isExpanded && screen is Screen.Chat)) {
+            sessionViewModel.load(sessionScopeToProject)
+        }
+    }
+
+    // A session created or opened in chat is not in the loaded rows yet;
+    // reload once so the persistent sidebar (expanded) lists it and can
+    // highlight it. Guarded on !loading so the entry load above does not
+    // double-fire while it is still in flight; keyed only on the session
+    // and the width class, so a finished load never re-triggers it.
+    LaunchedEffect(chatState.sessionID, isExpanded) {
+        val id = chatState.sessionID
+        if (isExpanded && (screen is Screen.Chat || screen is Screen.Sessions) &&
+            id != null && !sessionsState.loading &&
+            sessionsState.rows.none { it.id == id }
+        ) {
+            sessionViewModel.load(sessionScopeToProject)
+        }
     }
 
     // Load the explorer when it first appears or the project changes.
@@ -165,44 +210,59 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     var language by remember { mutableStateOf(LanguageStore.get(hostContext)) }
     val localized = remember(language) { LanguageStore.wrap(hostContext, language) }
 
+    // The chosen theme is applied the same way: picked in Settings, read
+    // once here, redraws the whole tree in place.
+    var themeMode by remember { mutableStateOf(ThemeStore.get(hostContext)) }
+
+    // First-run onboarding (Phase 3): shown once, while the workspace is
+    // still empty. Read once on first composition; dismissing or finishing
+    // marks it completed in prefs, so it never reappears.
+    var showOnboarding by remember {
+        mutableStateOf(OnboardingStore.shouldShow(hostContext, app.workspaceStore))
+    }
+
     CompositionLocalProvider(
         LocalContext provides localized,
         LocalConfiguration provides localized.resources.configuration,
         LocalAppContext provides localized,
     ) {
-    OpenCodeTheme {
-        when (screen) {
-            Screen.Chat -> ChatScreen(
-                state = chatState,
-                sessions = sessionsState.rows,
-                onOpenSession = chatViewModel::openSession,
-                onDrawerOpen = { sessionViewModel.load(sessionScopeToProject) },
-                onDraftChange = chatViewModel::onDraftChange,
-                onSend = chatViewModel::send,
-                onStop = chatViewModel::stop,
-                onPermissionReply = chatViewModel::replyPermission,
-                onAgent = chatViewModel::selectAgent,
-                onModel = chatViewModel::selectModel,
-                onStatusClick = { screen = Screen.Diagnostics },
-                onNewSession = chatViewModel::newSession,
-                onSessionsClick = { screen = Screen.Sessions },
-                onProjectClick = { screen = Screen.Projects },
-                onFilesClick = { screen = Screen.Files },
-                onSettingsClick = { screen = Screen.Settings },
-                onDiagnosticsClick = { screen = Screen.Diagnostics },
-                onAboutClick = { screen = Screen.About },
-                onRenameSession = { id, title ->
-                    sessionViewModel.rename(id, title, sessionScopeToProject)
+    OpenCodeTheme(themeMode = themeMode) {
+        if (showOnboarding) {
+            // First run, empty workspace: the 3-step flow replaces the
+            // navigation until it is dismissed or finished. Either way it
+            // is marked completed, so it never shows again.
+            OnboardingScreen(
+                workspacePath = app.workspaceStore.resolve().absolutePath,
+                hasAllFilesAccess = app.workspaceStore.hasAllFilesAccess(),
+                onChooseFolder = app::requestWorkspaceFolder,
+                onGrantAllFilesAccess = app::requestAllFilesAccess,
+                onOpenProviders = {
+                    OnboardingStore.markCompleted(hostContext)
+                    showOnboarding = false
+                    screen = Screen.Providers
                 },
-                onDeleteSession = { id ->
-                    if (chatState.sessionID == id) {
-                        chatViewModel.newSession()
-                    }
-                    sessionViewModel.delete(id, sessionScopeToProject)
+                onCreateSample = {
+                    SampleProject.seed(app.workspaceStore.resolve())?.absolutePath
                 },
-                onTogglePinSession = { id ->
-                    sessionViewModel.togglePin(id)
+                onDismiss = {
+                    OnboardingStore.markCompleted(hostContext)
+                    showOnboarding = false
                 },
+            )
+        } else when (screen) {
+            Screen.Chat -> ChatDestination(
+                chatState = chatState,
+                sessionsState = sessionsState,
+                chatViewModel = chatViewModel,
+                sessionViewModel = sessionViewModel,
+                app = app,
+                sessionScopeToProject = sessionScopeToProject,
+                onNavigate = { screen = it },
+                isExpanded = isExpanded,
+                showSidebar = true,
+                fileIndex = explorerState.quickOpenIndex,
+                fileIndexLoading = explorerState.quickOpenLoading,
+                onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
             )
 
             Screen.Files -> ExplorerScreen(
@@ -214,6 +274,33 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onUp = { explorerViewModel.up() },
                 onRefresh = { explorerViewModel.load() },
                 onDiff = { screen = Screen.DiffList },
+                // Files list-detail (Phase 3, W-C): at expanded widths a
+                // file opens into the detail pane beside the list instead
+                // of navigating to the full-screen viewer. The detail
+                // opener must stay gated on width: the list routes files
+                // to it whenever it is non-null, so passing it on a phone
+                // would swallow the tap — the file would load invisibly
+                // and never navigate anywhere.
+                selectedFilePath = if (isExpanded) selectedFilePath else null,
+                fileState = if (isExpanded) fileState else null,
+                onOpenFileDetail = if (isExpanded) {
+                    { row ->
+                        fileViewModel.load(row.path)
+                        selectedFilePath = row.path
+                    }
+                } else {
+                    null
+                },
+                onCloseFileDetail = { selectedFilePath = null },
+                onFileStartEdit = fileViewModel::startEditing,
+                onFileDraftChange = fileViewModel::editDraft,
+                onFileSave = { fileViewModel.save() },
+                onFileCancelEdit = fileViewModel::stopEditing,
+                onFileOverwrite = { fileViewModel.save(overwrite = true) },
+                onFileReloadFromDisk = fileViewModel::reloadFromDisk,
+                onFileDismissConflict = fileViewModel::dismissConflict,
+                onFileLoadFull = fileViewModel::loadFull,
+                onEnsureQuickOpenIndex = explorerViewModel::ensureQuickOpenIndex,
             )
 
             is Screen.FileView -> FileViewScreen(
@@ -239,31 +326,100 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onBack = { screen = Screen.DiffList },
             )
 
-            Screen.Sessions -> SessionListScreen(
-                state = sessionsState,
-                onBack = { screen = Screen.Chat },
-                onOpen = { row: SessionRow ->
-                    chatViewModel.openSession(row.id)
-                    screen = Screen.Chat
-                },
-                onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
-                onNewSession = {
-                    chatViewModel.newSession()
-                    screen = Screen.Chat
-                },
-                onRename = { row, newTitle ->
-                    sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
-                },
-                onDelete = { row ->
-                    if (chatState.sessionID == row.id) {
-                        chatViewModel.newSession()
+            Screen.Sessions -> if (isExpanded) {
+                // List-detail: the session list stays visible beside the
+                // conversation. Selecting a row opens it in the detail pane
+                // without leaving this screen, and a new session opens
+                // there too; the detail chat has no sidebar of its own
+                // because the list is already here. Back still returns to
+                // Chat (see the BackHandler above).
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(OpenCodeTheme.colors.background),
+                ) {
+                    SessionListPane(
+                        state = sessionsState,
+                        onOpen = { row -> chatViewModel.openSession(row.id) },
+                        onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
+                        onRename = { row, newTitle ->
+                            sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
+                        },
+                        onDelete = { row ->
+                            if (chatState.sessionID == row.id) {
+                                chatViewModel.newSession()
+                            }
+                            sessionViewModel.delete(row.id, sessionScopeToProject)
+                        },
+                        onTogglePin = { row ->
+                            sessionViewModel.togglePin(row.id)
+                        },
+                        details = sessionsState.details,
+                        selectedSessionId = chatState.sessionID,
+                        modifier = Modifier
+                            .width(ListPaneWidth)
+                            .fillMaxHeight()
+                            // The pane sits in a bare Row, not a scaffold,
+                            // so it pads for the system bars itself; the
+                            // detail chat does the same in its own column.
+                            .statusBarsPadding()
+                            .navigationBarsPadding(),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(OpenCodeTheme.tokens.dimensions.hairline)
+                            .background(OpenCodeTheme.colors.hairline),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    ) {
+                        ChatDestination(
+                            chatState = chatState,
+                            sessionsState = sessionsState,
+                            chatViewModel = chatViewModel,
+                            sessionViewModel = sessionViewModel,
+                            app = app,
+                            sessionScopeToProject = sessionScopeToProject,
+                            onNavigate = { screen = it },
+                            isExpanded = true,
+                            showSidebar = false,
+                            fileIndex = explorerState.quickOpenIndex,
+                            fileIndexLoading = explorerState.quickOpenLoading,
+                            onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
+                        )
                     }
-                    sessionViewModel.delete(row.id, sessionScopeToProject)
-                },
-                onTogglePin = { row ->
-                    sessionViewModel.togglePin(row.id)
-                },
-            )
+                }
+            } else {
+                SessionListScreen(
+                    state = sessionsState,
+                    onBack = { screen = Screen.Chat },
+                    onOpen = { row: SessionRow ->
+                        chatViewModel.openSession(row.id)
+                        screen = Screen.Chat
+                    },
+                    details = sessionsState.details,
+                    onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
+                    onNewSession = {
+                        chatViewModel.newSession()
+                        screen = Screen.Chat
+                    },
+                    onRename = { row, newTitle ->
+                        sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
+                    },
+                    onDelete = { row ->
+                        if (chatState.sessionID == row.id) {
+                            chatViewModel.newSession()
+                        }
+                        sessionViewModel.delete(row.id, sessionScopeToProject)
+                    },
+                    onTogglePin = { row ->
+                        sessionViewModel.togglePin(row.id)
+                    },
+                )
+            }
 
             Screen.Projects -> {
                 val current = app.workspaceStore.resolve().absolutePath
@@ -291,6 +447,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onLanguageChange = { chosen ->
                     LanguageStore.set(hostContext, chosen)
                     language = chosen
+                },
+                themeMode = themeMode,
+                onThemeModeChange = { chosen ->
+                    ThemeStore.set(hostContext, chosen)
+                    themeMode = chosen
                 },
                 onBack = { screen = Screen.Chat },
                 onDiagnostics = { screen = Screen.Diagnostics },
@@ -324,6 +485,83 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         }
     }
     }
+}
+
+/**
+ * The chat destination, shared by the Chat screen and the detail pane of
+ * the expanded sessions list-detail layout: one place for the whole
+ * ChatScreen wiring, so the two call sites cannot drift apart. Navigation
+ * goes through [onNavigate]; [isExpanded]/[showSidebar] pick the shell
+ * (modal drawer, persistent sidebar, or bare detail — see ChatScreen).
+ */
+@Composable
+private fun ChatDestination(
+    chatState: ChatUiState,
+    sessionsState: SessionListUiState,
+    chatViewModel: ChatViewModel,
+    sessionViewModel: SessionListViewModel,
+    app: OpenCodeApplication,
+    sessionScopeToProject: Boolean,
+    onNavigate: (Screen) -> Unit,
+    isExpanded: Boolean,
+    showSidebar: Boolean,
+    /** Workspace file index for the @-mention / attach picker. */
+    fileIndex: List<dev.bidzz.opencode.ui.files.FileRow> = emptyList(),
+    fileIndexLoading: Boolean = false,
+    onEnsureFileIndex: () -> Unit = {},
+) {
+    ChatScreen(
+        state = chatState,
+        sessions = sessionsState.rows,
+        onOpenSession = chatViewModel::openSession,
+        onDrawerOpen = { sessionViewModel.load(sessionScopeToProject) },
+        onDraftChange = chatViewModel::onDraftChange,
+        onSend = chatViewModel::send,
+        onStop = chatViewModel::stop,
+        onPermissionReply = chatViewModel::replyPermission,
+        onAgent = chatViewModel::selectAgent,
+        onModel = chatViewModel::selectModel,
+        onStatusClick = { onNavigate(Screen.Diagnostics) },
+        onNewSession = chatViewModel::newSession,
+        onDismissError = chatViewModel::dismissError,
+        onRetryError = chatViewModel::retryError,
+        onReauth = app::restartEngine,
+        onEditMessage = { id, text -> chatViewModel.startEdit(id, text) },
+        onResendMessage = chatViewModel::resendMessage,
+        onSubmitEdit = chatViewModel::submitEdit,
+        onCancelEdit = chatViewModel::cancelEdit,
+        onDeferPermission = chatViewModel::deferPermission,
+        onRestoreDeferredPermission = chatViewModel::restoreDeferredPermission,
+        onRemoveAttachment = chatViewModel::removeAttachment,
+        onAttachmentAdded = chatViewModel::addAttachment,
+        onAttachmentRefused = { key, filename -> chatViewModel.reportAttachRefusal(key, filename) },
+        onDismissAttachNotice = chatViewModel::dismissAttachNotice,
+        onRequestSafFile = app::requestSafFile,
+        safFilePicked = app.safFilePicked,
+        onSessionsClick = { onNavigate(Screen.Sessions) },
+        onProjectClick = { onNavigate(Screen.Projects) },
+        onFilesClick = { onNavigate(Screen.Files) },
+        onSettingsClick = { onNavigate(Screen.Settings) },
+        onDiagnosticsClick = { onNavigate(Screen.Diagnostics) },
+        onAboutClick = { onNavigate(Screen.About) },
+        onRenameSession = { id, title ->
+            sessionViewModel.rename(id, title, sessionScopeToProject)
+        },
+        onDeleteSession = { id ->
+            if (chatState.sessionID == id) {
+                chatViewModel.newSession()
+            }
+            sessionViewModel.delete(id, sessionScopeToProject)
+        },
+        onTogglePinSession = { id ->
+            sessionViewModel.togglePin(id)
+        },
+        fileIndex = fileIndex,
+        fileIndexLoading = fileIndexLoading,
+        onEnsureFileIndex = onEnsureFileIndex,
+        isExpanded = isExpanded,
+        showSidebar = showSidebar,
+    )
 }
 
 /** Recents plus the internal workspace, with availability checked up front. */

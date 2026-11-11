@@ -28,12 +28,17 @@ enum class Glyph {
     Eye, EyeOff, Key, Sparkle, Refresh,
     GitBranch, Sparkles, CheckCircle, Warning, Play, Stop,
     FileCode, Lightning, Pin, Trash, Dots, Pulse, User,
-    Question, Square, CheckSquare,
+    Question, Square, CheckSquare, History,
 }
 
 @Composable
 fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp = 20.dp) {
-    Canvas(modifier.size(size)) {
+    // Glyph floor (Phase 2, finding 25): a meaningful glyph is never drawn
+    // smaller than 12dp — the 9–11dp call sites (tool badges, tags) were
+    // below the legibility floor. Decorative sub-12dp marks (status dots,
+    // sparkles) are separate canvases, not GlyphIcon, and are unaffected.
+    val effectiveSize = size.coerceAtLeast(12.dp)
+    Canvas(modifier.size(effectiveSize)) {
         val u = this.size.minDimension / 24f
         val width = 1.8f * u
         val stroke = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round)
@@ -311,6 +316,15 @@ fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f * u), style = stroke,
                 )
                 shape(8.5f to 12f, 11f to 15f, 15.5f to 9f)
+            }
+            // A list with dots: the sessions history, not a search.
+            Glyph.History -> {
+                drawCircle(tint, radius = 1.1f * u, center = Offset(5f * u, 7f * u))
+                drawCircle(tint, radius = 1.1f * u, center = Offset(5f * u, 12f * u))
+                drawCircle(tint, radius = 1.1f * u, center = Offset(5f * u, 17f * u))
+                line(10f, 7f, 20f, 7f)
+                line(10f, 12f, 20f, 12f)
+                line(10f, 17f, 20f, 17f)
             }
         }
     }

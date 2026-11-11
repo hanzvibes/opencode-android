@@ -29,6 +29,9 @@ fun buildAnnotatedCode(language: String?, code: String, colors: OpenCodeColors):
                         TokenKind.String -> colors.syntaxString
                         TokenKind.Number -> colors.syntaxNumber
                         TokenKind.Comment -> colors.syntaxComment
+                        TokenKind.Function -> colors.syntaxFunction
+                        TokenKind.Type -> colors.syntaxType
+                        TokenKind.Operator -> colors.onSurfaceMuted
                         TokenKind.Plain -> colors.onSurface
                     },
                     fontWeight = when (token.kind) {
@@ -55,5 +58,35 @@ class SyntaxHighlightVisualTransformation(
     override fun filter(text: AnnotatedString): TransformedText {
         val highlighted = buildAnnotatedCode(language, text.text, colors)
         return TransformedText(highlighted, OffsetMapping.Identity)
+    }
+}
+
+/**
+ * Overlays find matches on already-highlighted code, keeping the Phase 1 single
+ * syntax palette: matches share the one accent, the current match just stronger.
+ * Syntax spans are preserved — the find background is added on top of them.
+ */
+fun withFindHighlights(
+    highlighted: AnnotatedString,
+    matches: List<IntRange>,
+    selectedIndex: Int,
+    colors: OpenCodeColors,
+): AnnotatedString {
+    if (matches.isEmpty()) return highlighted
+    return buildAnnotatedString {
+        append(highlighted)
+        matches.forEachIndexed { index, range ->
+            addStyle(
+                SpanStyle(
+                    background = if (index == selectedIndex) {
+                        colors.accent.copy(alpha = 0.35f)
+                    } else {
+                        colors.accent.copy(alpha = 0.16f)
+                    },
+                ),
+                range.first,
+                range.last + 1,
+            )
+        }
     }
 }
