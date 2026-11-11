@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -251,6 +252,15 @@ fun ChatScreen(
     onRequestSafFile: () -> Unit = {},
     /** URIs picked in the system file picker; read in as text below. */
     safFilePicked: Flow<Uri> = emptyFlow(),
+    /**
+     * Camera photo (Native C): the system camera hands back a gallery
+     * URI; the screen copies it into the workspace and mentions the
+     * path in the draft. Photos travel as paths, not attachments —
+     * attachments stay text-only (see AttachedFile).
+     */
+    onRequestCameraPhoto: () -> Unit = {},
+    /** URIs of photos just taken; copied into the workspace below. */
+    cameraPhotoPicked: Flow<Uri> = emptyFlow(),
     onDismissAttachNotice: () -> Unit = {},
     /**
      * Voice input (Composer C): asks MainActivity — via the application
@@ -741,6 +751,38 @@ fun ChatScreen(
                 is SafReadResult.TooLarge -> onAttachmentRefused(R.string.attach_file_too_large, result.name)
                 is SafReadResult.NotText -> onAttachmentRefused(R.string.attach_not_text_file, result.name)
                 is SafReadResult.Unreadable -> onAttachmentRefused(R.string.attach_unreadable_file, result.name)
+            }
+        }
+    }
+
+    // Camera photo (Native C): same bridge shape as the SAF picker —
+    // the launcher lives in MainActivity, the URI arrives here. The
+    // copy runs on IO; the workspace path and the draft are read
+    // through rememberUpdatedState so a workspace switch or typing
+    // mid-flight still lands the photo in the current project and
+    // appends the mention to the current draft, not a stale one.
+    val photoResolver = LocalContext.current.contentResolver
+    val photoToastContext = LocalContext.current
+    val currentWorkspacePath by rememberUpdatedState(state.workspacePath)
+    val currentDraft by rememberUpdatedState(state.draft)
+    LaunchedEffect(cameraPhotoPicked) {
+        cameraPhotoPicked.collect { uri ->
+            val saved = withContext(Dispatchers.IO) {
+                saveCameraPhoto(photoResolver, uri, currentWorkspacePath)
+            }
+            if (saved != null) {
+                onDraftChange(insertMention(currentDraft, saved))
+                Toast.makeText(
+                    photoToastContext,
+                    photoToastContext.getString(R.string.photo_saved, saved),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } else {
+                Toast.makeText(
+                    photoToastContext,
+                    photoToastContext.getString(R.string.photo_failed),
+                    Toast.LENGTH_SHORT,
+                ).show()
             }
         }
     }
@@ -1433,6 +1475,7 @@ fun ChatScreen(
                             attachPickerOpen = true
                         },
                         onAttachDeviceFile = onRequestSafFile,
+                        onTakePhoto = onRequestCameraPhoto,
                         attachments = state.pendingAttachments,
                         onRemoveAttachment = onRemoveAttachment,
                         busy = state.busy,

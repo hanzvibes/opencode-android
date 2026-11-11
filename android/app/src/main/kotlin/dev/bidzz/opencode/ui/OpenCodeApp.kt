@@ -909,6 +909,8 @@ private fun ChatDestination(
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
         onRequestSafFile = app::requestSafFile,
         safFilePicked = app.safFilePicked,
+        onRequestCameraPhoto = app::requestCameraPhoto,
+        cameraPhotoPicked = app.cameraPhotoPicked,
         onRequestVoicePermission = app::requestVoicePermission,
         voicePermissionResult = app.voicePermissionResult,
         onSessionsClick = { onNavigate(Screen.Sessions) },

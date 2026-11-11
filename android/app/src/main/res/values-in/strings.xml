@@ -631,4 +631,7 @@
     <string name="notification_agent_done_channel">Balasan agent</string>
     <string name="notification_agent_done_title">Agent selesai menjawab</string>
     <string name="notification_agent_done_body">Ketuk untuk membuka sesi</string>
+    <string name="composer_take_photo">Ambil foto</string>
+    <string name="photo_saved">Foto disimpan ke %1$s</string>
+    <string name="photo_failed">Foto gagal disimpan</string>
 </resources>

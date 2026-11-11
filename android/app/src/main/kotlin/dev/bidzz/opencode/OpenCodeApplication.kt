@@ -307,6 +307,24 @@ class OpenCodeApplication : Application() {
     val newSessionRequested = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
 
     /**
+     * Camera photo (Native C): asks MainActivity to open the system
+     * camera, and the URI of the photo it took. Same bridge shape as
+     * the SAF attach flow above.
+     */
+    fun requestCameraPhoto() {
+        cameraPhotoRequest.tryEmit(System.currentTimeMillis())
+    }
+
+    /** Delivers the URI of a photo just taken. */
+    fun deliverCameraPhoto(uri: Uri) {
+        cameraPhotoPicked.tryEmit(uri)
+    }
+
+    val cameraPhotoRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+    /** URIs of photos just taken; the chat screen copies them in. */
+    val cameraPhotoPicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+
+    /**
      * Delivers a command to [EngineService].
      *
      * `startForegroundService` is used for both actions, not just start: the
