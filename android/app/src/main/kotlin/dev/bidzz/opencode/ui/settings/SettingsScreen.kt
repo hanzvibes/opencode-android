@@ -60,9 +60,10 @@ import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconBadge
-import dev.bidzz.opencode.ui.LocalizedAlertDialog
+import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.StatusDot
 import dev.bidzz.opencode.ui.message
 import kotlinx.coroutines.launch
@@ -901,8 +902,9 @@ private fun LanguageDialog(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    LocalizedAlertDialog(
-        onDismissRequest = onDismiss,
+    LocalizedDraggableBottomSheet(
+        onDismiss = onDismiss,
+        initialStop = SheetStop.PEEK,
         title = {
             Text(
                 text = stringResource(R.string.settings_language_dialog_title),
@@ -910,7 +912,7 @@ private fun LanguageDialog(
                 color = colors.onSurface,
             )
         },
-        text = {
+        content = {
             Column {
                 AppLanguage.entries.forEach { option ->
                     Row(
@@ -938,8 +940,7 @@ private fun LanguageDialog(
                 }
             }
         },
-        confirmButton = {},
-        dismissButton = {
+        actions = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
             }

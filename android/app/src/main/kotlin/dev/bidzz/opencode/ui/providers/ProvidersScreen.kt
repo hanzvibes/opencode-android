@@ -55,8 +55,9 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
-import dev.bidzz.opencode.ui.LocalizedAlertDialog
+import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -454,8 +455,9 @@ fun ProvidersScreen(
 
     confirmDelete?.let { (integration, row) ->
         val last = rowsFor(state.credentials, integration.id).size == 1
-        LocalizedAlertDialog(
-            onDismissRequest = { confirmDelete = null },
+        LocalizedDraggableBottomSheet(
+            onDismiss = { confirmDelete = null },
+            initialStop = SheetStop.PEEK,
             title = {
                 Text(
                     stringResource(R.string.providers_delete_title),
@@ -463,7 +465,7 @@ fun ProvidersScreen(
                     color = colors.onSurface,
                 )
             },
-            text = {
+            content = {
                 Text(
                     text = buildString {
                         append(stringResource(R.string.providers_delete_body, row.title, row.detail))
@@ -476,7 +478,10 @@ fun ProvidersScreen(
                     color = colors.onSurfaceMuted,
                 )
             },
-            confirmButton = {
+            actions = {
+                TextButton(onClick = { confirmDelete = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
+                }
                 TextButton(
                     onClick = {
                         onDeleteCredential(integration.id, row.id)
@@ -485,11 +490,6 @@ fun ProvidersScreen(
                     },
                 ) { Text(stringResource(R.string.common_delete), color = colors.danger) }
             },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = null }) {
-                    Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
-                }
-            },
         )
     }
 
@@ -497,8 +497,9 @@ fun ProvidersScreen(
         val storedKeys = rowsFor(state.credentials, integration.id)
         val hasAntigravity = state.antigravityAccounts.isNotEmpty()
 
-        LocalizedAlertDialog(
-            onDismissRequest = { googleDetailsFor = null },
+        LocalizedDraggableBottomSheet(
+            onDismiss = { googleDetailsFor = null },
+            initialStop = SheetStop.PEEK,
             title = {
                 Text(
                     text = "Google (Gemini & Antigravity)",
@@ -506,7 +507,7 @@ fun ProvidersScreen(
                     color = colors.onSurface,
                 )
             },
-            text = {
+            content = {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     if (hasAntigravity) {
                         Row(
@@ -554,7 +555,10 @@ fun ProvidersScreen(
                     }
                 }
             },
-            confirmButton = {
+            actions = {
+                TextButton(onClick = { googleDetailsFor = null }) {
+                    Text(stringResource(R.string.common_done), color = colors.onSurfaceMuted)
+                }
                 TextButton(
                     onClick = {
                         val target = googleDetailsFor
@@ -570,11 +574,6 @@ fun ProvidersScreen(
                         text = if (storedKeys.isNotEmpty()) "Manage API Keys" else "Add API Key",
                         color = colors.accent,
                     )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { googleDetailsFor = null }) {
-                    Text(stringResource(R.string.common_done), color = colors.onSurfaceMuted)
                 }
             },
         )
@@ -1024,8 +1023,9 @@ private fun KeyPrompt(
     val validation = remember(value, integration.id) { validateKey(integration.id, value) }
     val canSubmit = value.isNotBlank() && validation !is KeyValidation.Invalid
 
-    LocalizedAlertDialog(
-        onDismissRequest = onDismiss,
+    LocalizedDraggableBottomSheet(
+        onDismiss = onDismiss,
+        initialStop = SheetStop.HALF,
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1041,7 +1041,7 @@ private fun KeyPrompt(
                 )
             }
         },
-        text = {
+        content = {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
                 Text(
                     text = body,
@@ -1260,14 +1260,12 @@ private fun KeyPrompt(
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onSubmit(value.trim()) }, enabled = canSubmit) {
-                Text(submitLabel, color = if (canSubmit) colors.accent else colors.onSurfaceFaint)
-            }
-        },
-        dismissButton = {
+        actions = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
+            }
+            TextButton(onClick = { onSubmit(value.trim()) }, enabled = canSubmit) {
+                Text(submitLabel, color = if (canSubmit) colors.accent else colors.onSurfaceFaint)
             }
         },
     )
@@ -1287,8 +1285,9 @@ private fun ManageCredentialsDialog(
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
 
-    LocalizedAlertDialog(
-        onDismissRequest = onDismiss,
+    LocalizedDraggableBottomSheet(
+        onDismiss = onDismiss,
+        initialStop = SheetStop.HALF,
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1304,7 +1303,7 @@ private fun ManageCredentialsDialog(
                 )
             }
         },
-        text = {
+        content = {
             Column(
                 modifier = Modifier
                     .heightIn(max = 340.dp)
@@ -1397,7 +1396,7 @@ private fun ManageCredentialsDialog(
                 }
             }
         },
-        confirmButton = {
+        actions = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done), color = colors.accent) }
         },
     )
@@ -1422,8 +1421,9 @@ private fun CustomProviderDialog(
 
     val ready = name.isNotBlank() && baseURL.isNotBlank() && apiKey.isNotBlank() && models.isNotBlank()
 
-    LocalizedAlertDialog(
-        onDismissRequest = onDismiss,
+    LocalizedDraggableBottomSheet(
+        onDismiss = onDismiss,
+        initialStop = SheetStop.HALF,
         title = {
             Text(
                 stringResource(R.string.providers_custom_title),
@@ -1431,7 +1431,7 @@ private fun CustomProviderDialog(
                 color = colors.onSurface,
             )
         },
-        text = {
+        content = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
@@ -1471,13 +1471,11 @@ private fun CustomProviderDialog(
                 ) { models = it }
             }
         },
-        confirmButton = {
+        actions = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted) }
             TextButton(onClick = { onSubmit(name, baseURL, apiKey, models) }, enabled = ready) {
                 Text(stringResource(R.string.providers_save_restart), color = colors.accent)
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted) }
         },
     )
 }

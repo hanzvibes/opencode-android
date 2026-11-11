@@ -53,8 +53,9 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
-import dev.bidzz.opencode.ui.LocalizedAlertDialog
+import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.TextAction
 import dev.bidzz.opencode.ui.message
 
@@ -328,8 +329,9 @@ fun FileViewScreen(
 
     // Unsaved Changes Discard Confirmation Dialog
     if (showDiscardDialog) {
-        LocalizedAlertDialog(
-            onDismissRequest = { showDiscardDialog = false },
+        LocalizedDraggableBottomSheet(
+            onDismiss = { showDiscardDialog = false },
+            initialStop = SheetStop.PEEK,
             title = {
                 Text(
                     text = stringResource(R.string.fileview_discard_title),
@@ -337,14 +339,17 @@ fun FileViewScreen(
                     color = colors.onSurface,
                 )
             },
-            text = {
+            content = {
                 Text(
                     text = stringResource(R.string.fileview_discard_body),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
             },
-            confirmButton = {
+            actions = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text(stringResource(R.string.fileview_discard_dismiss), color = colors.accent)
+                }
                 TextButton(
                     onClick = {
                         showDiscardDialog = false
@@ -353,11 +358,6 @@ fun FileViewScreen(
                     },
                 ) {
                     Text(stringResource(R.string.fileview_discard_confirm), color = colors.danger)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDiscardDialog = false }) {
-                    Text(stringResource(R.string.fileview_discard_dismiss), color = colors.accent)
                 }
             },
         )
@@ -369,8 +369,9 @@ fun FileViewScreen(
     // Discard drops the draft and opens it now; Cancel keeps this file.
     val pendingSwitch = state.confirmSwitchTo
     if (pendingSwitch != null) {
-        LocalizedAlertDialog(
-            onDismissRequest = onCancelSwitch,
+        LocalizedDraggableBottomSheet(
+            onDismiss = onCancelSwitch,
+            initialStop = SheetStop.PEEK,
             title = {
                 Text(
                     text = stringResource(R.string.fileview_switch_title),
@@ -378,19 +379,14 @@ fun FileViewScreen(
                     color = colors.onSurface,
                 )
             },
-            text = {
+            content = {
                 Text(
                     text = stringResource(R.string.fileview_switch_body, pendingSwitch),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
             },
-            confirmButton = {
-                TextButton(onClick = onSave) {
-                    Text(stringResource(R.string.common_save), color = colors.accent)
-                }
-            },
-            dismissButton = {
+            actions = {
                 Row {
                     TextButton(onClick = onConfirmSwitchDiscard) {
                         Text(stringResource(R.string.fileview_discard_confirm), color = colors.danger)
@@ -399,14 +395,18 @@ fun FileViewScreen(
                         Text(stringResource(R.string.common_cancel), color = colors.accent)
                     }
                 }
+                TextButton(onClick = onSave) {
+                    Text(stringResource(R.string.common_save), color = colors.accent)
+                }
             },
         )
     }
 
     // Conflict Dialog
     if (state.conflict && state.editing) {
-        LocalizedAlertDialog(
-            onDismissRequest = onDismissConflict,
+        LocalizedDraggableBottomSheet(
+            onDismiss = onDismissConflict,
+            initialStop = SheetStop.PEEK,
             title = {
                 Text(
                     stringResource(R.string.conflict_title),
@@ -414,17 +414,14 @@ fun FileViewScreen(
                     color = colors.onSurface,
                 )
             },
-            text = {
+            content = {
                 Text(
                     text = stringResource(R.string.conflict_body),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
             },
-            confirmButton = {
-                TextButton(onClick = onOverwrite) { Text(stringResource(R.string.conflict_overwrite), color = colors.danger) }
-            },
-            dismissButton = {
+            actions = {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     TextButton(onClick = onReloadFromDisk) {
                         Text(stringResource(R.string.conflict_reload), color = colors.onSurfaceMuted)
@@ -433,6 +430,7 @@ fun FileViewScreen(
                         Text(stringResource(R.string.conflict_keep), color = colors.accent)
                     }
                 }
+                TextButton(onClick = onOverwrite) { Text(stringResource(R.string.conflict_overwrite), color = colors.danger) }
             },
         )
     }
