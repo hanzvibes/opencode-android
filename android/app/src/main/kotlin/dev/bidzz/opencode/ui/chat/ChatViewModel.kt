@@ -9,6 +9,7 @@ import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.ChatState
 import dev.bidzz.opencode.core.api.LiveTool
+import dev.bidzz.opencode.core.api.VcsApi
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
@@ -103,6 +104,10 @@ data class ChatUiState(
     val skills: List<dev.bidzz.opencode.core.api.dto.SkillInfo> = emptyList(),
     /** Active git branch when inside a version-controlled workspace. */
     val branch: String? = null,
+    /** Branch names for the workspace (`GET /api/vcs/branch`); null until loaded. */
+    val branches: List<String>? = null,
+    val branchesLoading: Boolean = false,
+    val branchesFailed: Boolean = false,
     /**
      * Tokens currently in the session's context window (`GET /api/session/{id}/context`),
      * summed over its assistant messages with the turn footer's rule. Null while
@@ -521,6 +526,41 @@ class ChatViewModel(
                     _state.value = _state.value.copy(contextUsedTokens = contextUsageTokens(result.value))
                 }
                 is ApiResult.Failure -> Unit
+            }
+        }
+    }
+
+    /**
+     * Loads the workspace's branch list (Tier 2), lazily from the status
+     * dialog.
+     *
+     * A loaded list is reused until the workspace changes. A failure sets the
+     * failed flag so the dialog can say so instead of spinning forever; the
+     * next expand retries. Read-only: switching branches is a different
+     * endpoint and not part of this list.
+     */
+    private var branchesJob: Job? = null
+    private var branchesWorkspace: String? = null
+
+    fun loadBranches() {
+        val path = workspace()
+        val h = handle ?: return
+        if (_state.value.branches != null && branchesWorkspace == path) return
+        branchesJob?.cancel()
+        _state.value = _state.value.copy(branchesLoading = true, branchesFailed = false)
+        branchesJob = viewModelScope.launch {
+            when (val result = VcsApi(h.client).branches(path)) {
+                is ApiResult.Success -> {
+                    branchesWorkspace = path
+                    _state.value = _state.value.copy(
+                        branches = result.value,
+                        branchesLoading = false,
+                        branchesFailed = false,
+                    )
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(branchesLoading = false, branchesFailed = true)
+                }
             }
         }
     }

@@ -125,6 +125,9 @@
     <string name="chat_status_dialog_title">Status Mesin</string>
     <string name="chat_status_dialog_workspace">Ruang Kerja</string>
     <string name="chat_status_dialog_branch">Branch</string>
+    <string name="chat_status_dialog_branches_loading">Memuat daftar branch…</string>
+    <string name="chat_status_dialog_branches_empty">Tidak ada branch.</string>
+    <string name="chat_status_dialog_branches_failed">Gagal memuat daftar branch.</string>
     <string name="chat_status_dialog_context">Konteks</string>
     <string name="chat_status_dialog_state">Status</string>
     <string name="chat_status_dialog_diagnostics">Diagnostik</string>

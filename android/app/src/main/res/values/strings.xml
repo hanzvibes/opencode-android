@@ -126,6 +126,9 @@
     <string name="chat_status_dialog_title">Engine Status</string>
     <string name="chat_status_dialog_workspace">Workspace</string>
     <string name="chat_status_dialog_branch">Branch</string>
+    <string name="chat_status_dialog_branches_loading">Loading branches…</string>
+    <string name="chat_status_dialog_branches_empty">No branches found.</string>
+    <string name="chat_status_dialog_branches_failed">Couldn’t load branches.</string>
     <string name="chat_status_dialog_context">Context</string>
     <string name="chat_status_dialog_state">State</string>
     <string name="chat_status_dialog_diagnostics">Diagnostics</string>

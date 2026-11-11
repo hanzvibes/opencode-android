@@ -9,6 +9,7 @@ import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
 import dev.bidzz.opencode.core.api.dto.SkillsResponse
+import dev.bidzz.opencode.core.api.dto.VcsBranchesResponse
 import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
@@ -136,6 +137,29 @@ class DtoDecodingTest {
         val second = parsed.data[1]
         assertEquals("added", second.status)
         assertNull(second.more)
+    }
+
+    @Test
+    fun `decodes a VCS branch list`() {
+        // GET /api/vcs/branch answers {location, data: string[]} — the
+        // engine's Vcs.BranchList is a plain string array, not the
+        // current/default struct Vcs.Info.branch carries.
+        val raw = """
+            {"location":{"directory":"/storage/emulated/0/Projects/demo"},
+             "data":["fix/tier2-engine-ui","fix/chat-scroll-jump","main"]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<VcsBranchesResponse>(raw)
+        assertEquals("/storage/emulated/0/Projects/demo", parsed.location?.directory)
+        assertEquals(listOf("fix/tier2-engine-ui", "fix/chat-scroll-jump", "main"), parsed.data)
+    }
+
+    @Test
+    fun `decodes an empty VCS branch list`() {
+        // No repository, or no branch matched: 200 with an empty array, the
+        // same as status/diff.
+        val parsed = ApiJson.decodeFromString<VcsBranchesResponse>("""{"data":[]}""")
+        assertEquals(emptyList<String>(), parsed.data)
     }
 
     @Test
