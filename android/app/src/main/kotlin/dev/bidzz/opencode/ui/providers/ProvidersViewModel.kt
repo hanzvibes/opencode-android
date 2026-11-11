@@ -32,6 +32,9 @@ data class ProvidersUiState(
     val connected: String? = null,
     /** Transient result of deleting a key, which may have disconnected the provider. */
     val notice: String? = null,
+    /** Google Antigravity OAuth accounts detected from config storage. */
+    val antigravityAccounts: List<EngineConfigStore.AntigravityAccount> = emptyList(),
+    val activeAntigravityEmail: String? = null,
 )
 
 /**
@@ -57,8 +60,12 @@ class ProvidersViewModel(
     fun refresh() {
         // Read the config first and independently: it is on disk, so it is worth showing
         // even while the engine is down.
+        val agAccounts = runCatching { configStore.antigravityAccounts() }.getOrDefault(emptyList())
+        val activeAg = configStore.activeAntigravityAccount()
         _state.value = _state.value.copy(
             customProviders = runCatching { configStore.customProviders() }.getOrDefault(emptyList()),
+            antigravityAccounts = agAccounts,
+            activeAntigravityEmail = activeAg?.email,
         )
         val h = api.handle() ?: return
         _state.value = _state.value.copy(loading = true, failure = null, failureKey = null)

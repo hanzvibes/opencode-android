@@ -25,6 +25,17 @@ class EngineConfigStore(configHome: File) {
 
     private val dir = File(configHome, "opencode")
     private val file = File(dir, "opencode.json")
+    private val jsoncFile = File(dir, "opencode.jsonc")
+    private val antigravityAccountsFile = File(dir, "antigravity-accounts.json")
+
+    /** Stored Google Antigravity OAuth account from `antigravity-accounts.json`. */
+    data class AntigravityAccount(
+        val id: String,
+        val email: String,
+        val enabled: Boolean = true,
+        val projectId: String? = null,
+        val hasRefreshToken: Boolean = false,
+    )
 
     /** One custom provider as stored in the config file. Never carries the key. */
     data class CustomProvider(val id: String, val name: String, val baseURL: String, val models: List<String>)
@@ -63,6 +74,48 @@ class EngineConfigStore(configHome: File) {
                 models = entry.optJSONObject("models")?.keys()?.asSequence()?.toList() ?: emptyList(),
             )
         }.toList()
+    }
+
+    /** List of active/saved Google Antigravity OAuth accounts. */
+    fun antigravityAccounts(): List<AntigravityAccount> {
+        if (!antigravityAccountsFile.isFile) return emptyList()
+        val text = runCatching { antigravityAccountsFile.readText() }.getOrNull() ?: return emptyList()
+        if (text.isBlank()) return emptyList()
+        return try {
+            val root = JSONObject(text)
+            val accounts = root.optJSONArray("accounts") ?: return emptyList()
+            (0 until accounts.length()).mapNotNull { i ->
+                val obj = accounts.optJSONObject(i) ?: return@mapNotNull null
+                val email = obj.optString("email").ifEmpty { return@mapNotNull null }
+                AntigravityAccount(
+                    id = obj.optString("id").ifEmpty { email },
+                    email = email,
+                    enabled = obj.optBoolean("enabled", true),
+                    projectId = obj.optString("projectId").takeIf { it.isNotBlank() },
+                    hasRefreshToken = obj.optString("refreshToken").isNotBlank(),
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "failed reading antigravity accounts", e)
+            emptyList()
+        }
+    }
+
+    /** Active Google Antigravity OAuth account if one is configured and enabled. */
+    fun activeAntigravityAccount(): AntigravityAccount? =
+        antigravityAccounts().firstOrNull { it.enabled && it.hasRefreshToken }
+
+    /** Whether Google Antigravity OAuth is configured with at least one active account. */
+    fun hasActiveAntigravity(): Boolean = activeAntigravityAccount() != null
+
+    /** List of plugins declared in opencode.json or opencode.jsonc. */
+    fun plugins(): List<String> {
+        val root = readRoot() ?: return emptyList()
+        val arr = root.optJSONArray("plugins") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull {
+            val p = arr.optString(it)
+            if (p.isNullOrBlank()) null else p
+        }
     }
 
     /**
@@ -108,11 +161,20 @@ class EngineConfigStore(configHome: File) {
     }
 
     private fun readRoot(): JSONObject? {
-        if (!file.isFile) return null
-        val text = file.readText()
+        val target = when {
+            file.isFile -> file
+            jsoncFile.isFile -> jsoncFile
+            else -> return null
+        }
+        val text = target.readText()
         if (text.isBlank()) return JSONObject()
         return try {
-            JSONObject(text)
+            // Strip single-line comments in case it is jsonc
+            val cleaned = text.lines().joinToString("\n") { line ->
+                val trimmed = line.trimStart()
+                if (trimmed.startsWith("//")) "" else line
+            }
+            JSONObject(cleaned)
         } catch (e: org.json.JSONException) {
             // A malformed file the app did not write is a real problem, but overwriting
             // it silently would destroy something the user made by hand.
