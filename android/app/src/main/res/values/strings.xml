@@ -79,6 +79,15 @@
     <string name="worktree_title">Worktrees</string>
     <string name="worktree_body">Worktrees saved on the engine, grouped by project. Creating, removing and refreshing worktrees are not available yet.</string>
     <string name="worktree_empty">No worktrees saved on the engine.</string>
+    <string name="config_title">Engine config</string>
+    <string name="config_body">Configuration documents resolved by the engine, lowest to highest priority. Editing config from the app is not available yet.</string>
+    <string name="config_empty">No configuration documents found on the engine.</string>
+    <string name="config_directory">Searched directory — holds no document.</string>
+    <string name="config_field_model">Model</string>
+    <string name="config_field_agent">Default agent</string>
+    <string name="config_field_shell">Shell</string>
+    <string name="config_field_timezone">Timezone</string>
+    <string name="config_field_username">Username</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Skip</string>

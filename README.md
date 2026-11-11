@@ -52,6 +52,9 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 | **Agent runtime guide** | Every project gets an `AGENTS.md` seeded into the workspace on first launch, so the agent knows the bundled tools (Node, npm, xz, tar, curl) and their limits. Your edits are never overwritten. |
 | **Session history** | Reopen any past conversation, for this project or all of them, with previews and transcript search. Each row shows its cost and token usage. |
 | **MCP servers** | See the engine's configured MCP servers and their connection status in Settings. Connecting, disconnecting, adding and removing are not available yet. |
+| **Plugins** | See the engine's enabled server plugins and their status in Settings. Checking for updates and updating are not available yet. |
+| **Worktrees** | See the engine's saved worktrees grouped by project in Settings. Creating, removing and refreshing are not available yet. |
+| **Engine config** | See the engine's configuration documents and their key settings in Settings. Editing config from the app is not available yet. |
 | **First-run onboarding** | A three-step first run — project, provider, permissions — and a sample project you can seed to try the agent on. |
 | **Tablet layout** | On wide screens (≥840dp) the session list stays visible beside the chat, with list-detail navigation; content caps at 720dp everywhere else. |
 | **Survives the swipe** | A foreground service keeps the engine alive when you leave the app or swipe it from recents. |
@@ -249,6 +252,7 @@ control desktop, bukan WebView.
 - Pilih folder proyek di penyimpanan bersama, jelajahi dan edit file, lihat diff git.
 - `git` dan `ripgrep` sudah dibundel. Engine tetap hidup walau aplikasi di-swipe.
 - Daftar sesi menampilkan biaya dan token tiap sesi; skill muncul di palet `/`; server MCP dan izin “Selalu” bisa dilihat di Pengaturan, dan izin bisa dicabut dari sana.
+- Plugin, worktree, dan konfigurasi engine bisa dilihat di Pengaturan (read-only); langkah `todowrite` tampil sebagai checklist di timeline, dan dialog status sesi menampilkan branch saat ini, branch default, dan review base.
 - Onboarding tiga langkah, sidebar tablet persisten (≥840dp), pemilih tema Sistem/Gelap/Terang.
 - Bahasa Indonesia dan Inggris, tema gelap dan terang.
 

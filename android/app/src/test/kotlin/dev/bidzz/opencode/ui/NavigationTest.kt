@@ -13,6 +13,7 @@ class NavigationTest {
         assertEquals(Screen.Settings, Screen.Providers.parent())
         assertEquals(Screen.Settings, Screen.Plugins.parent())
         assertEquals(Screen.Settings, Screen.Worktrees.parent())
+        assertEquals(Screen.Settings, Screen.EngineConfig.parent())
     }
 
     @Test
@@ -41,6 +42,7 @@ class NavigationTest {
         assertEquals(3, Screen.McpServers.depth())
         assertEquals(3, Screen.Plugins.depth())
         assertEquals(3, Screen.Worktrees.depth())
+        assertEquals(3, Screen.EngineConfig.depth())
         assertEquals(3, Screen.About.depth())
     }
 
@@ -56,6 +58,7 @@ class NavigationTest {
             Screen.McpServers to Screen.Settings,
             Screen.Plugins to Screen.Settings,
             Screen.Worktrees to Screen.Settings,
+            Screen.EngineConfig to Screen.Settings,
         ).forEach { (from, to) ->
             assertEquals(true, from.depth() > to.depth())
         }

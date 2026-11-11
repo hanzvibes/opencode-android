@@ -102,6 +102,7 @@ fun SettingsScreen(
     onMcpServers: () -> Unit,
     onPlugins: () -> Unit,
     onWorktrees: () -> Unit,
+    onEngineConfig: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -195,6 +196,8 @@ fun SettingsScreen(
     val pluginSubtitle = stringResource(R.string.plugin_body)
     val worktreeTitle = stringResource(R.string.worktree_title)
     val worktreeSubtitle = stringResource(R.string.worktree_body)
+    val configTitle = stringResource(R.string.config_title)
+    val configSubtitle = stringResource(R.string.config_body)
     val languageTitle = stringResource(R.string.settings_language)
     val languageValue = languageLabel(language)
     val providerTitle = stringResource(R.string.settings_provider_title)
@@ -232,7 +235,8 @@ fun SettingsScreen(
     val mcpVisible = matchesSettingsQuery(query, mcpTitle, mcpSubtitle)
     val pluginVisible = matchesSettingsQuery(query, pluginTitle, pluginSubtitle)
     val worktreeVisible = matchesSettingsQuery(query, worktreeTitle, worktreeSubtitle)
-    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible
+    val configVisible = matchesSettingsQuery(query, configTitle, configSubtitle)
+    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible || configVisible
     val languageVisible = matchesSettingsQuery(query, languageTitle, languageValue)
     val visibleThemeModes = ThemeMode.entries.filter { mode ->
         matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
@@ -428,6 +432,14 @@ fun SettingsScreen(
                             title = worktreeTitle,
                             subtitle = worktreeSubtitle,
                             onClick = onWorktrees,
+                        )
+                    }
+                    if (configVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Info,
+                            title = configTitle,
+                            subtitle = configSubtitle,
+                            onClick = onEngineConfig,
                         )
                     }
                 }

@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.core.api.dto
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -178,6 +179,34 @@ data class ProjectInfo(
 data class WorktreeDirectory(
     val directory: String,
     val strategy: String? = null,
+)
+
+/**
+ * One configuration source (`GET /api/config`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/config.ts`): `Config.Entry` is a union of
+ * `Document { type: "document", path?, info: Config.Info }` and
+ * `Directory { type: "directory", path }`. `Config.Info` has ~30 fields;
+ * only the ones the screen shows are modelled, the rest are dropped by
+ * `ignoreUnknownKeys`. `model` is a `ConfigModel.Selection`, which may be
+ * a plain string or an object, so it is decoded as a [JsonElement] and
+ * read through `configModelLabel`.
+ */
+@Serializable
+data class ConfigEntry(
+    val type: String = "",
+    val path: String? = null,
+    val info: ConfigInfoSummary? = null,
+)
+
+@Serializable
+data class ConfigInfoSummary(
+    val model: JsonElement? = null,
+    val default_agent: String? = null,
+    val shell: String? = null,
+    val timezone: String? = null,
+    val username: String? = null,
 )
 
 /**
