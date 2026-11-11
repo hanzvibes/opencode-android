@@ -1303,6 +1303,9 @@ private fun AttachNoticeRow(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
+    // Hoisted out of the .semantics {} block below: stringResource() is a
+    // @Composable and cannot be called inside a semantics lambda.
+    val closeDescription = stringResource(R.string.chat_status_dialog_close)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -1332,7 +1335,7 @@ private fun AttachNoticeRow(
                     role = SemanticsRole.Button,
                     onClick = onDismiss,
                 )
-                .semantics { contentDescription = stringResource(R.string.chat_status_dialog_close) },
+                .semantics { contentDescription = closeDescription },
             contentAlignment = Alignment.Center,
         ) {
             GlyphIcon(
