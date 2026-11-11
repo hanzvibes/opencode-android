@@ -267,6 +267,35 @@ class ChatViewModel(
      * edit is abandoned and the draft stays as typed. */
     private var draftBeforeEdit: String? = null
 
+    /**
+     * Composer contents parked per session (audit-70 20-F4): switching
+     * sessions used to throw the draft and its attachments away, so coming
+     * back to the session found an empty composer. The outgoing session's
+     * composer is parked under its id and restored when that session is
+     * opened again. In-memory only, like [draftBeforeEdit]: parked
+     * composers do not survive process death — the live draft alone is
+     * persisted via [DRAFT_KEY].
+     */
+    private data class ParkedComposer(val draft: String, val attachments: List<AttachedFile>)
+
+    private val parkedComposers = mutableMapOf<String, ParkedComposer>()
+
+    /** Parks the current session's composer, if it holds anything. */
+    private fun parkComposer() {
+        val id = _state.value.sessionID ?: return
+        val draft = _state.value.draft
+        val attachments = _state.value.pendingAttachments
+        if (draft.isNotBlank() || attachments.isNotEmpty()) {
+            parkedComposers[id] = ParkedComposer(draft, attachments)
+        } else {
+            parkedComposers.remove(id)
+        }
+    }
+
+    /** Takes the parked composer for [sessionID], if the user left one there. */
+    private fun takeParkedComposer(sessionID: String): ParkedComposer? =
+        parkedComposers.remove(sessionID)
+
     /** Called by the screen whenever engine status changes. */
     fun onEngineStatus(status: EngineStatus) {
         val previous = _state.value.engineState
@@ -1298,12 +1327,15 @@ class ChatViewModel(
             collectRepo(repo)
         }
         // A draft belongs to the session it was typed in; it must not follow
-        // the user into the fresh session. The last sent text goes with it:
-        // retrying it in a new session would send the old session's prompt.
-        // The queued follow-up, the edit in progress, any deferred permission
-        // and the stop state belong to the old session too. Pending
-        // attachments go with the draft: they were picked for the old
+        // the user into the fresh session. It is parked under the old
+        // session's id instead of discarded, so opening that session again
+        // restores the composer (audit-70 20-F4). The last sent text goes
+        // with it: retrying it in a new session would send the old session's
+        // prompt. The queued follow-up, the edit in progress, any deferred
+        // permission and the stop state belong to the old session too.
+        // Pending attachments go with the draft: they were picked for the old
         // session's message, and the refusal notice with them.
+        parkComposer()
         _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         // The abandoned session must not come back on the next resume:
@@ -1344,11 +1376,19 @@ class ChatViewModel(
         val repo = repository ?: return
         sessionReloadAttempts = 0
         // A draft belongs to the session it was typed in; opening another
-        // session starts with an empty composer — and no retry target from
-        // the previous session. Pending attachments belong to the old
-        // session's message too, and the refusal notice with them.
-        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE)
-        savedStateHandle?.remove<String>(DRAFT_KEY)
+        // session starts with that session's own composer — the outgoing
+        // session's draft and attachments are parked under its id, and the
+        // incoming session's parked composer (if any) is restored, so
+        // coming back finds the text still there (audit-70 20-F4). No retry
+        // target from the previous session: the refusal notice goes with it.
+        parkComposer()
+        val restored = takeParkedComposer(sessionID)
+        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE)
+        if (restored?.draft.isNullOrBlank()) {
+            savedStateHandle?.remove<String>(DRAFT_KEY)
+        } else {
+            savedStateHandle?.set(DRAFT_KEY, restored.draft)
+        }
         repo.open(sessionID)
         // The id-only path has no SessionInfo to sync from, so the session's
         // own model/agent are read back (GET /api/session/{id}) and copied
