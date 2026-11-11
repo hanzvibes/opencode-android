@@ -1307,6 +1307,12 @@ class ChatViewModel(
     }
 
     private fun openSessionById(sessionID: String, fetchMeta: Boolean = false) {
+        // Tapping the session that is already open is a no-op: repo.open()
+        // itself no-ops for the same session, so re-opening it would only
+        // clear the draft, queue, attachments and edit in progress for
+        // nothing (audit-70 13-F6). onResume restores via repo.open()
+        // directly and is unaffected by this guard.
+        if (sessionID == _state.value.sessionID) return
         val repo = repository ?: return
         sessionReloadAttempts = 0
         // A draft belongs to the session it was typed in; opening another
