@@ -39,7 +39,8 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
-import dev.bidzz.opencode.ui.LocalizedAlertDialog
+import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
+import dev.bidzz.opencode.ui.SheetStop
 
 @Composable
 fun SessionActionMenu(
@@ -165,8 +166,9 @@ fun RenameSessionDialog(
         focusRequester.requestFocus()
     }
 
-    LocalizedAlertDialog(
-        onDismissRequest = onDismiss,
+    LocalizedDraggableBottomSheet(
+        onDismiss = onDismiss,
+        initialStop = SheetStop.HALF,
         title = {
             Text(
                 text = stringResource(R.string.session_rename_title),
@@ -174,7 +176,7 @@ fun RenameSessionDialog(
                 color = colors.onSurface,
             )
         },
-        text = {
+        content = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 BasicTextField(
                     value = tfv,
@@ -211,7 +213,14 @@ fun RenameSessionDialog(
                 )
             }
         },
-        confirmButton = {
+        actions = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = stringResource(R.string.session_action_cancel),
+                    style = OpenCodeTypography.body,
+                    color = colors.onSurfaceMuted,
+                )
+            }
             TextButton(
                 onClick = { onConfirm(tfv.text.trim()) },
                 enabled = tfv.text.isNotBlank(),
@@ -220,15 +229,6 @@ fun RenameSessionDialog(
                     text = stringResource(R.string.session_action_save),
                     style = OpenCodeTypography.bodyStrong,
                     color = if (tfv.text.isNotBlank()) colors.accent else colors.onSurfaceFaint,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = stringResource(R.string.session_action_cancel),
-                    style = OpenCodeTypography.body,
-                    color = colors.onSurfaceMuted,
                 )
             }
         },
@@ -243,8 +243,9 @@ fun DeleteSessionDialog(
 ) {
     val colors = OpenCodeTheme.colors
 
-    LocalizedAlertDialog(
-        onDismissRequest = onDismiss,
+    LocalizedDraggableBottomSheet(
+        onDismiss = onDismiss,
+        initialStop = SheetStop.PEEK,
         title = {
             Text(
                 text = stringResource(R.string.session_delete_title),
@@ -252,7 +253,7 @@ fun DeleteSessionDialog(
                 color = colors.onSurface,
             )
         },
-        text = {
+        content = {
             // The title is shown, not just passed in: deleting the wrong
             // session is one tap away when every dialog reads the same.
             Text(
@@ -263,21 +264,19 @@ fun DeleteSessionDialog(
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(
-                    text = stringResource(R.string.session_action_delete),
-                    style = OpenCodeTypography.bodyStrong,
-                    color = colors.danger,
-                )
-            }
-        },
-        dismissButton = {
+        actions = {
             TextButton(onClick = onDismiss) {
                 Text(
                     text = stringResource(R.string.session_action_cancel),
                     style = OpenCodeTypography.body,
                     color = colors.onSurfaceMuted,
+                )
+            }
+            TextButton(onClick = onConfirm) {
+                Text(
+                    text = stringResource(R.string.session_action_delete),
+                    style = OpenCodeTypography.bodyStrong,
+                    color = colors.danger,
                 )
             }
         },

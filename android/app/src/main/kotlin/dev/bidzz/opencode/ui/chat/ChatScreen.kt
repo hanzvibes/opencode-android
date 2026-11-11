@@ -135,7 +135,8 @@ import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.files.FileRow
 import dev.bidzz.opencode.ui.files.rankQuickOpen
 import dev.bidzz.opencode.ui.PersistentSidebarWidth
-import dev.bidzz.opencode.ui.LocalizedAlertDialog
+import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
+import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.sessions.DeleteSessionDialog
 import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
@@ -2189,8 +2190,9 @@ private fun EngineStatusDialog(
         dev.bidzz.opencode.core.engine.EngineState.STOPPED -> R.string.chat_status_desc_stopped
     }
 
-    LocalizedAlertDialog(
-        onDismissRequest = onDismiss,
+    LocalizedDraggableBottomSheet(
+        onDismiss = onDismiss,
+        initialStop = SheetStop.HALF,
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -2208,7 +2210,7 @@ private fun EngineStatusDialog(
                 )
             }
         },
-        text = {
+        content = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(spacing.md),
@@ -2400,19 +2402,17 @@ private fun EngineStatusDialog(
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = onOpenDiagnostics) {
-                Text(
-                    text = stringResource(R.string.chat_status_dialog_diagnostics),
-                    color = colors.accentText,
-                )
-            }
-        },
-        dismissButton = {
+        actions = {
             TextButton(onClick = onDismiss) {
                 Text(
                     text = stringResource(R.string.chat_status_dialog_close),
                     color = colors.onSurfaceMuted,
+                )
+            }
+            TextButton(onClick = onOpenDiagnostics) {
+                Text(
+                    text = stringResource(R.string.chat_status_dialog_diagnostics),
+                    color = colors.accentText,
                 )
             }
         },

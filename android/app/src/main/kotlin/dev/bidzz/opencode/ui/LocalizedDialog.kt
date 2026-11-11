@@ -18,7 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 val LocalAppContext = staticCompositionLocalOf<Context?> { null }
 
 @Composable
-private fun Localized(content: @Composable () -> Unit) {
+internal fun Localized(content: @Composable () -> Unit) {
     val app = LocalAppContext.current
     if (app == null) {
         content()
