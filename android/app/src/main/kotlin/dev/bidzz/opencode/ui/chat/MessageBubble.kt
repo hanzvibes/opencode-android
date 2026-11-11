@@ -440,7 +440,7 @@ fun MessageBubble(
                         .clip(assistantBubbleShape)
                         .background(colors.assistantBubble)
                         .border(0.5.dp, colors.hairline, assistantBubbleShape)
-                        .padding(horizontal = spacing.md, top = spacing.sm),
+                        .padding(start = spacing.md, end = spacing.md, top = spacing.sm),
                 ) {
                     Column {
                         // 1. Author Identity Header: Branded provenance badge

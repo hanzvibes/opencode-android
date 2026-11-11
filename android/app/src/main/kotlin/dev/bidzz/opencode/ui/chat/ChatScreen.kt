@@ -3586,7 +3586,7 @@ private fun AssistantWorkingPlaceholder(
                     .clip(assistantBubbleShape)
                     .background(colors.assistantBubble)
                     .border(0.5.dp, colors.hairline, assistantBubbleShape)
-                    .padding(horizontal = spacing.md, top = spacing.sm),
+                    .padding(start = spacing.md, end = spacing.md, top = spacing.sm),
             ) {
                 Column {
                     // No identity yet → no badge at all, instead of "OpenCode"
