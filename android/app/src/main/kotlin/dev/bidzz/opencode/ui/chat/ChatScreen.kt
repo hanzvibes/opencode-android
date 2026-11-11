@@ -1963,8 +1963,8 @@ private fun ChatDrawer(
  *
  * Shared by the modal drawer ([ChatDrawer], phones) and the persistent
  * sidebar ([ChatSidebar], expanded widths), so the two never drift apart.
- * The caller supplies the sizing: the drawer sheet sizes it, the sidebar
- * passes [Modifier.fillMaxSize].
+ * One Column fills the available height in both hosts: the session list
+ * takes the remaining space and the footer stays at the bottom.
  */
 @Composable
 private fun ChatDrawerContent(
@@ -2013,9 +2013,15 @@ private fun ChatDrawerContent(
             },
         )
     }
+    // One Column owns the whole height in both hosts (item 19): the
+    // session list takes the remaining space (weight(1f)) and the footer
+    // sits at the bottom. The header used to be its own Column with the
+    // divider and footer as siblings, which only stacked correctly
+    // inside ModalDrawerSheet; in the sidebar's Box the footer drew on
+    // top of the workspace switcher and New Chat.
     Column(
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(top = spacing.md),
     ) {
         // Workspace switch / project picker integration
@@ -2169,7 +2175,6 @@ private fun ChatDrawerContent(
             )
         }
     }
-    }
 
     Box(
         Modifier
@@ -2248,6 +2253,7 @@ private fun ChatDrawerContent(
                 size = 14.dp,
             )
         }
+    }
     }
 }
 
