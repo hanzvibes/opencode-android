@@ -517,6 +517,7 @@
     <string name="error_not_utf8">Berkas ini bukan UTF-8 yang valid, jadi tidak bisa diedit di sini.</string>
     <string name="error_reread_failed">Berkas tidak bisa dibaca ulang untuk memeriksa perubahannya, jadi tidak ada yang ditimpa.</string>
     <string name="providers_config_write_failed">Berkas konfigurasi tidak bisa ditulis</string>
+    <string name="providers_name_taken">Penyedia dengan nama ini sudah ada</string>
     <string name="providers_config_shadowed">Tersimpan, tetapi `opencode.jsonc` di sebelahnya lebih diutamakan. Engine akan membaca berkas itu, bukan yang ini.</string>
     <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
 </resources>

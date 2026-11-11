@@ -156,6 +156,16 @@ class ProvidersViewModel(
         val trimmedName = name.trim()
         val id = EngineConfigStore.slug(trimmedName)
         val models = EngineConfigStore.parseModels(modelsText)
+        // A name whose slug already exists would silently overwrite that
+        // provider's URL, key, and models (item 13): the store keys by
+        // slug, so "My Provider" and "my-provider" are the same entry.
+        // There is no edit flow, so rejecting is safe — renaming the new
+        // provider is the only way to keep both.
+        val existing = runCatching { configStore.customProviders() }.getOrDefault(emptyList())
+        if (existing.any { it.id == id }) {
+            _state.value = _state.value.copy(failureKey = R.string.providers_name_taken)
+            return
+        }
         _state.value = _state.value.copy(busyFor = id, failure = null, failureKey = null, connected = null, notice = null)
 
         val outcome = runCatching {
