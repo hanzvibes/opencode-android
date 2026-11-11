@@ -761,7 +761,10 @@ private fun GitBadge(status: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = status.first().uppercase(),
+            // An empty status from the engine used to throw here
+            // (NoSuchElementException, inside composition) and crash the
+            // Files screen on open (item 3).
+            text = status.firstOrNull()?.uppercase() ?: "?",
             style = OpenCodeTypography.caption.copy(
                 fontWeight = FontWeight.Bold,
                 fontSize = 11.sp,
