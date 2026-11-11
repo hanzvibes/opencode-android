@@ -243,11 +243,15 @@ check_elf() { # $1=file
         [ "$((align))" -ge 16384 ] || { echo "$file has a PT_LOAD segment with p_align=$align; needs 0x4000 for 16 KB page sizes" >&2; exit 1; }
     done < <(readelf -lW "$file" | awk '$1 == "LOAD" { print $NF }')
     # No versioned NEEDED may survive: every needed lib must be a staged file
-    # or a system library (libc/libm/libdl, provided by bionic).
+    # or a system library (libc/libm/libdl, provided by bionic). liblog is
+    # an NDK system library in /system/lib64 (linked by libandroid-selinux,
+    # staged by stage-xz.sh); the gate runs over the whole jniLibs dir, so
+    # it must allow it even though this script stages no lib that needs it
+    # -- otherwise the curl step fails on the xz step's libs (PR #13 CI).
     local n
     while IFS= read -r n; do
         case "$n" in
-            libc.so|libm.so|libdl.so) ;;
+            libc.so|libm.so|libdl.so|liblog.so) ;;
             lib*.so) [ -f "$JNI_OUT/$n" ] || { echo "$file still needs $n, which is not staged" >&2; exit 1; } ;;
             *) ;;
         esac
