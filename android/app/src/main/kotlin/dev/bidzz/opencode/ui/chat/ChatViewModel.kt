@@ -226,17 +226,35 @@ class ChatViewModel(
                     repository = null
                     handle = null
                     attached = null
+                    // Follow-ups queued while the agent worked are the user's
+                    // words: the engine dying must not throw them away
+                    // (item 8). They go back into the composer — after
+                    // whatever the user typed since — with a notice, instead
+                    // of vanishing with the queue.
+                    val returned = _state.value.queuedPrompts
+                        .map { it.typedText.ifBlank { it.fullText } }
+                        .filter { it.isNotBlank() }
+                    val draft = _state.value.draft
+                    val restoredDraft = when {
+                        returned.isEmpty() -> draft
+                        draft.isBlank() -> returned.joinToString("\n")
+                        else -> draft.trimEnd() + "\n" + returned.joinToString("\n")
+                    }
+                    if (returned.isNotEmpty()) {
+                        savedStateHandle?.set(DRAFT_KEY, restoredDraft)
+                    }
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
                         stopping = false,
                         queuedPrompts = emptyList(),
+                        draft = restoredDraft,
                         editingMessageId = null,
                         retryKind = RetryKind.NONE,
-                        failureKey = if (status.state == EngineState.FAILED) {
-                            R.string.error_engine_not_running
-                        } else {
-                            null
+                        failureKey = when {
+                            returned.isNotEmpty() -> R.string.chat_queued_returned
+                            status.state == EngineState.FAILED -> R.string.error_engine_not_running
+                            else -> null
                         },
                     )
                 }
