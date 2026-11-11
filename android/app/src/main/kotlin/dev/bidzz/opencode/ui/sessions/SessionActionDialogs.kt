@@ -53,6 +53,7 @@ fun SessionActionMenu(
     /** Null hides the entry: only callers that can open the screen pass one. */
     onInboxClick: (() -> Unit)? = null,
     onMoveClick: (() -> Unit)? = null,
+    onExportClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -156,6 +157,29 @@ fun SessionActionMenu(
                 onClick = {
                     onDismissRequest()
                     onMoveClick()
+                },
+            )
+        }
+
+        if (onExportClick != null) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(R.string.session_action_export),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    GlyphIcon(
+                        glyph = Glyph.Copy,
+                        tint = colors.onSurfaceMuted,
+                        size = dims.iconSmall,
+                    )
+                },
+                onClick = {
+                    onDismissRequest()
+                    onExportClick()
                 },
             )
         }

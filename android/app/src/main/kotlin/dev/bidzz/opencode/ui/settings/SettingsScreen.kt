@@ -103,6 +103,7 @@ fun SettingsScreen(
     onPlugins: () -> Unit,
     onWorktrees: () -> Unit,
     onEngineConfig: () -> Unit,
+    onSessionStats: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -198,6 +199,8 @@ fun SettingsScreen(
     val worktreeSubtitle = stringResource(R.string.worktree_body)
     val configTitle = stringResource(R.string.config_title)
     val configSubtitle = stringResource(R.string.config_body)
+    val statsTitle = stringResource(R.string.stats_title)
+    val statsSubtitle = stringResource(R.string.stats_body)
     val languageTitle = stringResource(R.string.settings_language)
     val languageValue = languageLabel(language)
     val providerTitle = stringResource(R.string.settings_provider_title)
@@ -236,7 +239,8 @@ fun SettingsScreen(
     val pluginVisible = matchesSettingsQuery(query, pluginTitle, pluginSubtitle)
     val worktreeVisible = matchesSettingsQuery(query, worktreeTitle, worktreeSubtitle)
     val configVisible = matchesSettingsQuery(query, configTitle, configSubtitle)
-    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible || configVisible
+    val statsVisible = matchesSettingsQuery(query, statsTitle, statsSubtitle)
+    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible || configVisible || statsVisible
     val languageVisible = matchesSettingsQuery(query, languageTitle, languageValue)
     val visibleThemeModes = ThemeMode.entries.filter { mode ->
         matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
@@ -440,6 +444,14 @@ fun SettingsScreen(
                             title = configTitle,
                             subtitle = configSubtitle,
                             onClick = onEngineConfig,
+                        )
+                    }
+                    if (statsVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Pulse,
+                            title = statsTitle,
+                            subtitle = statsSubtitle,
+                            onClick = onSessionStats,
                         )
                     }
                 }

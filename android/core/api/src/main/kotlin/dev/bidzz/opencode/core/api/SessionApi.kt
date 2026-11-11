@@ -9,6 +9,8 @@ import dev.bidzz.opencode.core.api.dto.LocationRef
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
 import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.api.dto.MoveSessionRequest
+import dev.bidzz.opencode.core.api.dto.SessionTransferData
+import dev.bidzz.opencode.core.api.dto.SessionTransferResponse
 import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
 import dev.bidzz.opencode.core.api.dto.PermissionsResponse
@@ -271,6 +273,27 @@ class SessionApi(private val client: EngineClient) {
         return client.executeUnit(request)
     }
 
+    /**
+     * A session's complete projected transcript
+     * (`GET /api/experimental/session/{id}/export`).
+     *
+     * The raw JSON comes back with the decoded data: the screen shows the
+     * summary from [SessionTransferData] and copies the verbatim bytes, so
+     * the export the user shares is exactly what the engine sent — no
+     * re-encoding round-trip that could drop a field the app does not
+     * model. Shape verified against the pinned engine source (see
+     * [SessionTransferData]); `?sanitize=true` is not sent.
+     */
+    suspend fun export(sessionID: String): ApiResult<SessionExport> {
+        val request = client.request("/api/experimental/session/$sessionID/export").get().build()
+        return client.execute(request) { raw ->
+            SessionExport(
+                data = ApiJson.decodeFromString<SessionTransferResponse>(raw).data,
+                rawJson = raw,
+            )
+        }
+    }
+
     /** Deletes a session from the engine. */
     suspend fun delete(sessionID: String): ApiResult<Unit> {
         val request = client.request("/api/session/$sessionID").delete().build()
@@ -286,3 +309,13 @@ class SessionApi(private val client: EngineClient) {
         return client.executeUnit(request)
     }
 }
+
+/**
+ * A session export: the decoded transcript plus the verbatim JSON it
+ * came from, so the copy the user shares is exactly what the engine
+ * sent.
+ */
+data class SessionExport(
+    val data: SessionTransferData,
+    val rawJson: String,
+)

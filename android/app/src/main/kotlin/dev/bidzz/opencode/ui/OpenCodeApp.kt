@@ -61,8 +61,12 @@ import dev.bidzz.opencode.ui.diff.SessionDiffScreen
 import dev.bidzz.opencode.ui.diff.SessionDiffViewModel
 import dev.bidzz.opencode.ui.inbox.InboxScreen
 import dev.bidzz.opencode.ui.inbox.InboxViewModel
+import dev.bidzz.opencode.ui.export.ExportScreen
+import dev.bidzz.opencode.ui.export.ExportViewModel
 import dev.bidzz.opencode.ui.move.MoveSessionScreen
 import dev.bidzz.opencode.ui.move.MoveSessionViewModel
+import dev.bidzz.opencode.ui.stats.StatsScreen
+import dev.bidzz.opencode.ui.stats.StatsViewModel
 import dev.bidzz.opencode.ui.files.DiffViewModel
 import dev.bidzz.opencode.ui.files.ExplorerScreen
 import dev.bidzz.opencode.ui.files.ExplorerViewModel
@@ -110,6 +114,8 @@ internal sealed interface Screen {
     data object SessionDiff : Screen
     data class Inbox(val sessionID: String) : Screen
     data class MoveSession(val sessionID: String) : Screen
+    data class SessionExport(val sessionID: String) : Screen
+    data object SessionStats : Screen
     data object Settings : Screen
     data object Providers : Screen
     data object Diagnostics : Screen
@@ -137,6 +143,8 @@ internal fun Screen.parent(): Screen = when (this) {
     Screen.EngineConfig -> Screen.Settings
     is Screen.Inbox -> Screen.Sessions
     is Screen.MoveSession -> Screen.Sessions
+    is Screen.SessionExport -> Screen.Sessions
+    Screen.SessionStats -> Screen.Settings
     Screen.About -> Screen.Chat
     else -> Screen.Chat
 }
@@ -154,7 +162,8 @@ internal fun Screen.depth(): Int = when (this) {
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Worktrees,
     Screen.EngineConfig, Screen.About -> 3
-    is Screen.Inbox, is Screen.MoveSession -> 3
+    is Screen.Inbox, is Screen.MoveSession, is Screen.SessionExport,
+    Screen.SessionStats -> 3
     is Screen.Diff -> 4
 }
 
@@ -249,6 +258,14 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val moveSessionViewModel: MoveSessionViewModel = viewModel(factory = viewModelFactory { _ ->
         MoveSessionViewModel(app.engineApi)
     })
+
+    val exportViewModel: ExportViewModel = viewModel(factory = viewModelFactory { _ ->
+        ExportViewModel(app.engineApi)
+    })
+
+    val statsViewModel: StatsViewModel = viewModel(factory = viewModelFactory { _ ->
+        StatsViewModel(app.engineApi)
+    })
     val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory { _ ->
         ProvidersViewModel(
             api = app.engineApi,
@@ -279,6 +296,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val sessionDiffState by sessionDiffViewModel.state.collectAsState()
     val inboxState by inboxViewModel.state.collectAsState()
     val moveSessionState by moveSessionViewModel.state.collectAsState()
+    val exportState by exportViewModel.state.collectAsState()
+    val statsState by statsViewModel.state.collectAsState()
     val providersState by providersViewModel.state.collectAsState()
     val mcpServersState by mcpServersViewModel.state.collectAsState()
     val pluginsState by pluginsViewModel.state.collectAsState()
@@ -580,6 +599,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 moveSessionViewModel.load(row.id)
                                 screen = Screen.MoveSession(row.id)
                             },
+                            onExport = { row ->
+                                exportViewModel.load(row.id)
+                                screen = Screen.SessionExport(row.id)
+                            },
                             details = sessionsState.details,
                             selectedSessionId = chatState.sessionID,
                             // Shared-element pilot: NO flight here. This pane
@@ -668,6 +691,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                             moveSessionViewModel.load(row.id)
                             screen = Screen.MoveSession(row.id)
                         },
+                        onExport = { row ->
+                            exportViewModel.load(row.id)
+                            screen = Screen.SessionExport(row.id)
+                        },
                         // Shared-element pilot: the full-screen list is the
                         // origin side of the session-title flight.
                         sharedTransitionScope = sharedTransitionScope,
@@ -728,6 +755,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     onPlugins = { screen = Screen.Plugins },
                     onWorktrees = { screen = Screen.Worktrees },
                     onEngineConfig = { screen = Screen.EngineConfig },
+                    onSessionStats = { screen = Screen.SessionStats },
                     onAbout = { screen = Screen.About },
                 )
 
@@ -796,6 +824,19 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         sessionViewModel.load(sessionScopeToProject)
                         screen = Screen.Sessions
                     },
+                )
+
+                is Screen.SessionExport -> ExportScreen(
+                    sessionID = target.sessionID,
+                    state = exportState,
+                    onBack = { screen = Screen.Sessions },
+                    onRefresh = exportViewModel::refresh,
+                )
+
+                Screen.SessionStats -> StatsScreen(
+                    state = statsState,
+                    onBack = { screen = Screen.Settings },
+                    onRefresh = statsViewModel::refresh,
                 )
                 }
             }

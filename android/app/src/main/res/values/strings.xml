@@ -221,6 +221,7 @@
     <string name="session_action_delete">Delete</string>
     <string name="session_action_inbox">Inbox</string>
     <string name="session_action_move">Move</string>
+    <string name="session_action_export">Export</string>
     <string name="session_rename_title">Rename chat</string>
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
@@ -250,6 +251,34 @@
     <string name="move_moving">Moving…</string>
     <string name="move_done">Session moved.</string>
     <string name="move_current">Current project</string>
+
+    <!-- Session stats -->
+    <string name="stats_title">Session stats</string>
+    <string name="stats_body">Aggregate session activity, usage, and tool reliability.</string>
+    <string name="stats_empty">No session activity recorded yet.</string>
+    <string name="stats_field_sessions">Sessions</string>
+    <string name="stats_field_prompts">Prompts</string>
+    <string name="stats_field_steps">Steps</string>
+    <string name="stats_field_subagents">Subagents</string>
+    <string name="stats_field_tokens">Tokens</string>
+    <string name="stats_field_cost">Cost</string>
+    <string name="stats_field_active_days">Active days</string>
+    <string name="stats_field_streak">Streak (days)</string>
+    <string name="stats_field_tool_calls">Tool calls</string>
+    <string name="stats_field_tool_failed">Tool calls failed</string>
+    <string name="stats_section_models">Models</string>
+    <string name="stats_section_tools">Tools</string>
+    <string name="stats_model_detail">%1$d steps · %2$d tokens · %3$s</string>
+    <string name="stats_tool_detail">%1$d calls · %2$d failed</string>
+
+    <!-- Session export -->
+    <string name="export_title">Export session</string>
+    <string name="export_body">A complete transcript of this session, as JSON. Copy it to share or save it elsewhere.</string>
+    <string name="export_empty">This session has nothing to export.</string>
+    <string name="export_messages">%1$d messages</string>
+    <string name="export_size">%1$d characters</string>
+    <string name="export_copy">Copy JSON</string>
+    <string name="export_copied">Copied</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <!-- Redesign C working progress: %1$s is the live step sentence ("Reading ChatScreen.kt")

@@ -220,6 +220,7 @@
     <string name="session_action_delete">Hapus</string>
     <string name="session_action_inbox">Kotak masuk</string>
     <string name="session_action_move">Pindahkan</string>
+    <string name="session_action_export">Ekspor</string>
     <string name="session_rename_title">Ganti nama obrolan</string>
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
@@ -249,6 +250,34 @@
     <string name="move_moving">Memindahkan…</string>
     <string name="move_done">Sesi sudah dipindahkan.</string>
     <string name="move_current">Project saat ini</string>
+
+    <!-- Statistik sesi -->
+    <string name="stats_title">Statistik sesi</string>
+    <string name="stats_body">Ringkasan aktivitas, pemakaian, dan keandalan tool sesi.</string>
+    <string name="stats_empty">Belum ada aktivitas sesi yang tercatat.</string>
+    <string name="stats_field_sessions">Sesi</string>
+    <string name="stats_field_prompts">Prompt</string>
+    <string name="stats_field_steps">Langkah</string>
+    <string name="stats_field_subagents">Subagen</string>
+    <string name="stats_field_tokens">Token</string>
+    <string name="stats_field_cost">Biaya</string>
+    <string name="stats_field_active_days">Hari aktif</string>
+    <string name="stats_field_streak">Beruntun (hari)</string>
+    <string name="stats_field_tool_calls">Panggilan tool</string>
+    <string name="stats_field_tool_failed">Panggilan tool gagal</string>
+    <string name="stats_section_models">Model</string>
+    <string name="stats_section_tools">Tool</string>
+    <string name="stats_model_detail">%1$d langkah · %2$d token · %3$s</string>
+    <string name="stats_tool_detail">%1$d panggilan · %2$d gagal</string>
+
+    <!-- Ekspor sesi -->
+    <string name="export_title">Ekspor sesi</string>
+    <string name="export_body">Transkrip lengkap sesi ini, sebagai JSON. Salin untuk dibagikan atau disimpan di tempat lain.</string>
+    <string name="export_empty">Sesi ini tidak punya apa pun untuk diekspor.</string>
+    <string name="export_messages">%1$d pesan</string>
+    <string name="export_size">%1$d karakter</string>
+    <string name="export_copy">Salin JSON</string>
+    <string name="export_copied">Disalin</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <!-- Redesign C working progress: %1$s kalimat langkah live ("Membaca ChatScreen.kt")

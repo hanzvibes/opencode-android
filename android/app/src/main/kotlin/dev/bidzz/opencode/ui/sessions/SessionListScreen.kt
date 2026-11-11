@@ -79,6 +79,7 @@ fun SessionListScreen(
     onTogglePin: (SessionRow) -> Unit = {},
     onInbox: (SessionRow) -> Unit = {},
     onMove: (SessionRow) -> Unit = {},
+    onExport: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     /**
      * Animation C shared-element pilot: the scopes for the session-title
@@ -106,6 +107,7 @@ fun SessionListScreen(
             onTogglePin = onTogglePin,
             onInbox = onInbox,
             onMove = onMove,
+            onExport = onExport,
             details = details,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
@@ -134,6 +136,7 @@ fun SessionListPane(
     onTogglePin: (SessionRow) -> Unit = {},
     onInbox: (SessionRow) -> Unit = {},
     onMove: (SessionRow) -> Unit = {},
+    onExport: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     selectedSessionId: String? = null,
     /**
@@ -337,6 +340,7 @@ fun SessionListPane(
                                 onDeleteClick = { sessionToDelete = row },
                                 onInboxClick = { onInbox(row) },
                                 onMoveClick = { onMove(row) },
+                                onExportClick = { onExport(row) },
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
                             )
@@ -373,6 +377,7 @@ private fun SessionRowItem(
     /** Null hides the menu entry: only callers that can open it pass one. */
     onInboxClick: (() -> Unit)? = null,
     onMoveClick: (() -> Unit)? = null,
+    onExportClick: (() -> Unit)? = null,
     detail: SessionDetail? = null,
     /** Accent background for the session open in the detail pane beside the list. */
     selected: Boolean = false,
@@ -547,6 +552,7 @@ private fun SessionRowItem(
                     onDeleteClick = onDeleteClick,
                     onInboxClick = onInboxClick,
                     onMoveClick = onMoveClick,
+                    onExportClick = onExportClick,
                 )
             }
         }
