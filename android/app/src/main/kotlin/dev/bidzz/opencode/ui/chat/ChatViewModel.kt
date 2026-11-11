@@ -1014,8 +1014,8 @@ class ChatViewModel(
      * It travels exactly like a question answer — never through the
      * draft, never with the pending attachments, queued while busy.
      */
-    fun requestDiffRevert(relativePath: String) {
-        sendStandalonePrompt(revertPromptFor(relativePath))
+    fun requestDiffRevert(relativePath: String, change: String? = null) {
+        sendStandalonePrompt(revertPromptFor(relativePath, change))
     }
 
     /**

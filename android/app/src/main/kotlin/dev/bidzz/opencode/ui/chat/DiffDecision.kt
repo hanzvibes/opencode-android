@@ -1,6 +1,8 @@
 package dev.bidzz.opencode.ui.chat
 
 import dev.bidzz.opencode.core.api.dto.ToolCall
+import dev.bidzz.opencode.ui.diff.DiffHunk
+import dev.bidzz.opencode.ui.diff.DiffLine
 
 /**
  * Accept / reject for one completed edit, shown inline under its diff
@@ -49,6 +51,36 @@ fun isReviewableEdit(call: ToolCall): Boolean =
  * put [relativePath] back the way it was before its last edit. The
  * workspace-relative path is what the agent resolves, so the absolute
  * tool path is never sent.
+ *
+ * [change] names the edit itself — the hunk header plus the lines it
+ * removed and added — so two edits to the same file produce different
+ * prompts and the agent can tell them apart (audit-70 07-F2). Without
+ * it, two rejects of the same file are word-identical: the agent cannot
+ * know which edit is meant, and the queue dedup drops the second one
+ * while the UI claims "Revert requested" for both.
  */
-fun revertPromptFor(relativePath: String): String =
-    "Please revert $relativePath to how it was before your last edit."
+fun revertPromptFor(relativePath: String, change: String? = null): String {
+    val base = "Please revert $relativePath to how it was before your last edit."
+    if (change.isNullOrBlank()) return base
+    return "$base The change to revert is:\n$change"
+}
+
+/**
+ * A compact fingerprint of one edit for the revert prompt: the first hunk
+ * header (its line numbers already separate most edits to one file) plus
+ * up to three removed and three added lines. Null when the hunks carry no
+ * changed lines — then the path alone is all there is to send.
+ */
+fun revertChangeDescription(hunks: List<DiffHunk>): String? {
+    val header = hunks.firstOrNull()?.header?.takeIf { it.isNotBlank() } ?: return null
+    val lines = hunks.flatMap { it.lines }
+    val removed = lines.filter { it.kind == DiffLine.Kind.REMOVED }.map { it.text }.take(3)
+    val added = lines.filter { it.kind == DiffLine.Kind.ADDED }.map { it.text }.take(3)
+    if (removed.isEmpty() && added.isEmpty()) return null
+    val excerpt = buildList {
+        add(header)
+        removed.forEach { add("- ${it.take(80)}") }
+        added.forEach { add("+ ${it.take(80)}") }
+    }.joinToString("\n")
+    return excerpt.take(500)
+}
