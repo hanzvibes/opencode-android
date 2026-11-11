@@ -269,6 +269,8 @@
     <string name="code_saved">Tersimpan</string>
     <string name="code_copy">Salin</string>
     <string name="code_copied">Tersalin</string>
+    <string name="code_save">Simpan</string>
+    <string name="code_save_failed">Tidak bisa menyimpan file.</string>
     <string name="code_highlight_off">Highlight mati (berkas besar)</string>
 
     <!-- Project -->
@@ -367,6 +369,11 @@
     <string name="tool_diff_changes">Perubahan</string>
     <string name="tool_diff_show_full">Tampilkan semua diff</string>
     <string name="tool_diff_show_less">Tampilkan lebih sedikit</string>
+    <string name="tool_diff_accept">Terima</string>
+    <string name="tool_diff_reject">Tolak</string>
+    <string name="tool_diff_accepted">Diterima</string>
+    <string name="tool_diff_rejected">Permintaan revert dikirim</string>
+    <string name="tool_diff_decision_note">Terima mempertahankan perubahan. Tolak meminta agent mengembalikan file ini.</string>
     <string name="turn_footer_tokens">%1$s token</string>
     <string name="turn_footer_stop_reason">berhenti: %1$s</string>
     <string name="prompt_history_previous">Prompt sebelumnya</string>

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,6 +54,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -97,6 +100,16 @@ fun ToolTrace(
      * per-tool startedAt/completedAt timestamps (the engine sends none
      * today, so no duration is invented here). */
     toolDurations: Map<String, Long> = emptyMap(),
+    /** Workspace path the tool file paths are resolved against (Fase 1,
+     * item 3): a tap opens the file only when its path resolves inside
+     * it; without one, absolute paths stay copy-only. */
+    workspacePath: String? = null,
+    /** Opens a workspace-relative file in the file viewer (Fase 1,
+     * item 3). */
+    onOpenToolFile: (String) -> Unit = {},
+    /** Asks the agent to revert a rejected edit (Fase 1, item 2): the
+     * view model sends the revert request as an ordinary user message. */
+    onRequestDiffRevert: (String) -> Unit = {},
     /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
      * item 5): the same client-side stamps the durations come from, so a
      * still-running step can show a live elapsed time instead of no
@@ -373,6 +386,9 @@ fun ToolTrace(
                         isLast = index == filteredVisible.lastIndex,
                         durationMillis = toolDurations[call.id],
                         startedAtMillis = toolStartedAtMillis[call.id],
+                        workspacePath = workspacePath,
+                        onOpenToolFile = onOpenToolFile,
+                        onRequestDiffRevert = onRequestDiffRevert,
                     )
                 }
             }
@@ -457,6 +473,12 @@ fun ToolStep(
      * the chip — a duration is only shown from real per-tool timestamps,
      * never estimated from the trace start time. */
     durationMillis: Long? = null,
+    /** Workspace path the file path is resolved against (Fase 1, item 3). */
+    workspacePath: String? = null,
+    /** Opens a workspace-relative file in the file viewer (Fase 1, item 3). */
+    onOpenToolFile: (String) -> Unit = {},
+    /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
+    onRequestDiffRevert: (String) -> Unit = {},
     /** Client-side start stamp for this step, epoch millis (Fase 2,
      * item 5). Only read while the step is still running, to show a live
      * elapsed time; a finished step uses [durationMillis] instead. */
@@ -531,6 +553,24 @@ fun ToolStep(
             pathCopied = false
         }
     }
+
+    // Tap-to-open (Fase 1, item 3): the file this step acted on, resolved
+    // to a workspace-relative path. Null when the tool is not a file tool
+    // or the path cannot be verified inside the workspace — then the
+    // target keeps its old copy-on-tap behaviour instead of opening
+    // something it should not.
+    val filePath = remember(call) { toolFilePath(call) }
+    val openablePath = remember(filePath, workspacePath) {
+        filePath?.let { relativizeToWorkspace(it, workspacePath) }
+    }
+
+    // Diff decision (Fase 1, item 2), per tool call: stored as the enum
+    // name, not the enum — rememberSaveable has no built-in enum saver.
+    var diffDecisionName by rememberSaveable(call.id) {
+        mutableStateOf(DiffDecision.NONE.name)
+    }
+    val diffDecision = runCatching { DiffDecision.valueOf(diffDecisionName) }
+        .getOrDefault(DiffDecision.NONE)
 
     Row(
         modifier = modifier
@@ -708,24 +748,30 @@ fun ToolStep(
                                 // The label shows only the last two path
                                 // segments, so the clipboard gets the full
                                 // input path instead (C-D). Tapping the
-                                // target copies it; the step itself still
-                                // expands on tap elsewhere.
+                                // target opens the file when it resolves
+                                // inside the workspace (Fase 1, item 3) —
+                                // underlined in accent, like a link — and
+                                // copies the path otherwise, as before.
+                                // The step itself still expands on tap
+                                // elsewhere.
                                 val isFileTool = toolKind == ToolKind.EDIT ||
                                     toolKind == ToolKind.WRITE || toolKind == ToolKind.READ
                                 val fullPath = call.summary
-                                val canCopyPath = isFileTool && fullPath.isNotBlank()
+                                val canCopyPath = isFileTool && fullPath.isNotBlank() && openablePath == null
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .padding(start = spacing.xs)
                                         .then(
-                                            if (canCopyPath) {
-                                                Modifier.clickable {
+                                            when {
+                                                openablePath != null -> Modifier.clickable {
+                                                    onOpenToolFile(openablePath)
+                                                }
+                                                canCopyPath -> Modifier.clickable {
                                                     clipboardManager.setText(AnnotatedString(fullPath))
                                                     pathCopied = true
                                                 }
-                                            } else {
-                                                Modifier
+                                                else -> Modifier
                                             }
                                         ),
                                 ) {
@@ -733,7 +779,9 @@ fun ToolStep(
                                         text = label.target,
                                         style = OpenCodeTypography.codeInline.copy(fontSize = 11.5.sp),
                                         color = if (pathCopied) colors.success
+                                        else if (openablePath != null) colors.accent
                                         else if (active) colors.activity else colors.onSurface,
+                                        textDecoration = if (openablePath != null) TextDecoration.Underline else null,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -923,6 +971,25 @@ fun ToolStep(
                                 additions = diffCounts.first,
                                 deletions = diffCounts.second,
                             )
+                            // Accept / reject for a finished edit (Fase 1,
+                            // item 2). Only a completed edit/write shows
+                            // it: a running step has no final diff, and a
+                            // failed one applied nothing. See DiffDecision
+                            // for what each button honestly does — Accept
+                            // records the decision locally, Reject asks the
+                            // agent to revert the file in a new turn.
+                            if (isReviewableEdit(call)) {
+                                DiffDecisionRow(
+                                    decision = diffDecision,
+                                    onAccept = { diffDecisionName = DiffDecision.ACCEPTED.name },
+                                    onReject = {
+                                        diffDecisionName = DiffDecision.REJECTED.name
+                                        onRequestDiffRevert(
+                                            openablePath ?: filePath ?: call.summary,
+                                        )
+                                    },
+                                )
+                            }
                         } else if (!inputBody.isNullOrBlank()) {
                             val inputLang = if (isShell) "bash" else if (inputBody.trim().startsWith("{")) "json" else null
                             val prompt = if (isShell) "$ " else null
@@ -1670,6 +1737,119 @@ private fun InlineDiffBlock(
                     style = OpenCodeTypography.caption.copy(fontSize = 10.sp),
                     color = colors.onSurfaceMuted,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Accept / reject row under one finished edit's diff (Fase 1, item 2).
+ *
+ * Two 48dp buttons in the permission prompt's language — Accept in the
+ * one accent, Reject in the soft danger tint — plus one caption line
+ * saying what each does, because neither verb is self-explanatory once
+ * the edit is already on disk. Once a decision is tapped the row is
+ * spent (like the permission prompt): a double-tap must not send the
+ * revert request twice, and the decided state stays visible as the
+ * step's verdict instead of flipping back to two live buttons.
+ */
+@Composable
+private fun DiffDecisionRow(
+    decision: DiffDecision,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val decided = decision != DiffDecision.NONE
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        Text(
+            text = stringResource(R.string.tool_diff_decision_note),
+            style = OpenCodeTypography.caption.copy(fontSize = 11.sp),
+            color = colors.onSurfaceMuted,
+        )
+        if (decided) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(radius.sm))
+                    .background(
+                        if (decision == DiffDecision.ACCEPTED) colors.toolSuccess.copy(alpha = 0.08f)
+                        else colors.danger.copy(alpha = 0.08f),
+                    )
+                    .border(
+                        0.5.dp,
+                        if (decision == DiffDecision.ACCEPTED) colors.toolSuccess.copy(alpha = 0.25f)
+                        else colors.danger.copy(alpha = 0.25f),
+                        RoundedCornerShape(radius.sm),
+                    )
+                    .padding(horizontal = spacing.sm, vertical = spacing.xs + 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = if (decision == DiffDecision.ACCEPTED) Glyph.Check else Glyph.Close,
+                    tint = if (decision == DiffDecision.ACCEPTED) colors.toolSuccess else colors.danger,
+                    size = 12.dp,
+                )
+                Text(
+                    text = stringResource(
+                        if (decision == DiffDecision.ACCEPTED) R.string.tool_diff_accepted
+                        else R.string.tool_diff_rejected,
+                    ),
+                    style = OpenCodeTypography.caption.copy(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                    ),
+                    color = if (decision == DiffDecision.ACCEPTED) colors.toolSuccess else colors.danger,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clip(RoundedCornerShape(radius.sm))
+                        .background(colors.accent)
+                        .clickable(role = Role.Button, onClick = onAccept)
+                        .padding(horizontal = spacing.xs, vertical = spacing.sm),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.tool_diff_accept),
+                        style = OpenCodeTypography.label,
+                        color = colors.onAccent,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clip(RoundedCornerShape(radius.sm))
+                        .background(colors.danger.copy(alpha = 0.14f))
+                        .border(0.5.dp, colors.danger.copy(alpha = 0.22f), RoundedCornerShape(radius.sm))
+                        .clickable(role = Role.Button, onClick = onReject)
+                        .padding(horizontal = spacing.xs, vertical = spacing.sm),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.tool_diff_reject),
+                        style = OpenCodeTypography.label,
+                        color = colors.danger,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
     }

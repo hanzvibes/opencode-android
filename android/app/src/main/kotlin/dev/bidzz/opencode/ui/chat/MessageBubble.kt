@@ -190,6 +190,14 @@ fun MessageBubble(
      * finding 20): client-side stamps from the ViewModel. Empty until a
      * tool is seen live; a finished step without one shows no duration. */
     toolDurations: Map<String, Long> = emptyMap(),
+    /** Workspace path tool file paths resolve against (Fase 1, item 3). */
+    workspacePath: String? = null,
+    /** Opens a workspace-relative file from a tool step (Fase 1, item 3). */
+    onOpenToolFile: (String) -> Unit = {},
+    /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
+    onRequestDiffRevert: (String) -> Unit = {},
+    /** Saves a code block through the system picker (Fase 1, item 4). */
+    onSaveCode: (String, String) -> Unit = { _, _ -> },
     /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
      * item 5): the same client-side stamps the durations come from, so a
      * still-running step can show a live elapsed time. */
@@ -251,6 +259,7 @@ fun MessageBubble(
                         MarkdownText(
                             markdown = markdown,
                             textColor = colors.onUserBubble,
+                            onSaveCode = onSaveCode,
                         )
                     }
                 }
@@ -388,6 +397,9 @@ fun MessageBubble(
                                 startedAtMillis = toolsStartedAtMillis,
                                 toolDurations = toolDurations,
                                 toolStartedAtMillis = toolStartedAtMillis,
+                                workspacePath = workspacePath,
+                                onOpenToolFile = onOpenToolFile,
+                                onRequestDiffRevert = onRequestDiffRevert,
                                 modifier = Modifier.padding(bottom = spacing.sm),
                             )
                         }
@@ -412,6 +424,7 @@ fun MessageBubble(
                                 MarkdownText(
                                     markdown = part.markdown,
                                     streaming = streaming && partIndex == lastTextIndex,
+                                    onSaveCode = onSaveCode,
                                 )
                             }
                         }
