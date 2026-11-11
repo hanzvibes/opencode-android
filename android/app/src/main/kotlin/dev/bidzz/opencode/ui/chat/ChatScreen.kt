@@ -593,6 +593,13 @@ fun ChatScreen(
                 models = state.models,
                 activeModel = state.activeModel,
                 onModel = onModel,
+                // Context meter (Tier 2): tokens in the session's context
+                // over the active model's window. The limit is the model's
+                // own `limit.context` — never the name-based fallback the
+                // selector badge uses, so a guessed denominator can never
+                // paint a wrong percentage.
+                contextUsedTokens = state.contextUsedTokens,
+                contextLimit = state.models.firstOrNull { it.ref() == state.activeModel }?.limit?.context,
                 // No menu button at expanded widths: the sidebar is already
                 // visible, so there is no drawer to open.
                 showMenuButton = !isExpanded,
@@ -1607,6 +1614,11 @@ fun ChatHeader(
     models: List<dev.bidzz.opencode.core.api.dto.ModelInfo> = emptyList(),
     activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
     onModel: (dev.bidzz.opencode.core.api.dto.ModelRef) -> Unit = {},
+    /** Context meter (Tier 2): tokens in the session's context, and the
+     * active model's context-window limit. Both null while unknown — the
+     * bar and the dialog row hide instead of guessing. */
+    contextUsedTokens: Long? = null,
+    contextLimit: Long? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -1760,6 +1772,27 @@ fun ChatHeader(
             }
         }
 
+        // Context meter (Tier 2): a 2dp bar along the header's bottom edge —
+        // the fraction of the active model's context window the session
+        // currently uses. Accent until 80%, warning to 95%, danger after;
+        // over the limit it pins at full width rather than overflowing.
+        // Unknown usage or limit: no bar, just the hairline below.
+        if (contextUsedTokens != null && contextLimit != null && contextLimit > 0) {
+            val fraction = (contextUsedTokens.toFloat() / contextLimit).coerceIn(0f, 1f)
+            val barColor = when {
+                fraction >= 0.95f -> colors.danger
+                fraction >= 0.8f -> colors.warning
+                else -> colors.accent
+            }
+            Box(
+                modifier = Modifier.fillMaxWidth().height(2.dp).background(colors.hairline),
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(fraction).fillMaxHeight().background(barColor),
+                )
+            }
+        }
+
         HairlineSeparator(alpha = separatorAlpha)
     }
 
@@ -1770,6 +1803,8 @@ fun ChatHeader(
             projectTitle = title,
             workspacePath = workspacePath,
             branch = branch,
+            contextUsedTokens = contextUsedTokens,
+            contextLimit = contextLimit,
             onOpenDiagnostics = {
                 showStatusDialog = false
                 onStatusClick()
@@ -1792,6 +1827,9 @@ private fun EngineStatusDialog(
     onOpenDiagnostics: () -> Unit,
     onDismiss: () -> Unit,
     workspacePath: String? = null,
+    /** Context meter (Tier 2); both null while unknown, and the row hides. */
+    contextUsedTokens: Long? = null,
+    contextLimit: Long? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -1894,6 +1932,21 @@ private fun EngineStatusDialog(
                         DialogDetailRow(
                             label = stringResource(R.string.chat_status_dialog_branch),
                             value = branch,
+                        )
+                    }
+                    // Context meter (Tier 2): used tokens over the model's
+                    // window, in the footer's compact form. Without a known
+                    // limit only the used figure shows — a percentage off a
+                    // guessed denominator would be a lie.
+                    if (contextUsedTokens != null) {
+                        DialogDetailRow(
+                            label = stringResource(R.string.chat_status_dialog_context),
+                            value = if (contextLimit != null && contextLimit > 0) {
+                                val percent = (contextUsedTokens * 100L / contextLimit).coerceIn(0L, 100L)
+                                "${formatCompactTokens(contextUsedTokens)} / ${formatCompactTokens(contextLimit)} · $percent%"
+                            } else {
+                                formatCompactTokens(contextUsedTokens)
+                            },
                         )
                     }
                     DialogDetailRow(

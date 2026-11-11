@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import dev.bidzz.opencode.core.api.dto.CacheUsage
+import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -46,5 +47,46 @@ class TurnTokensTest {
     @Test
     fun `reported zero stays zero`() {
         assertEquals(0L, turnUsageTokens(TokenUsage(input = 0, output = 0, reasoning = 0)))
+    }
+
+    @Test
+    fun `context usage sums assistant messages only`() {
+        val messages = listOf(
+            SessionMessage(id = "msg_a", type = "user", text = "hi"),
+            SessionMessage(
+                id = "msg_b",
+                type = "assistant",
+                tokens = TokenUsage(input = 4032, output = 9, reasoning = 83),
+            ),
+            SessionMessage(
+                id = "msg_c",
+                type = "assistant",
+                tokens = TokenUsage(input = 100, output = 50),
+            ),
+            SessionMessage(id = "msg_d", type = "idle", outcome = "succeeded"),
+        )
+        assertEquals(4274L, contextUsageTokens(messages))
+    }
+
+    @Test
+    fun `context usage is null when no assistant reported usage`() {
+        val messages = listOf(
+            SessionMessage(id = "msg_a", type = "user", text = "hi"),
+            SessionMessage(id = "msg_b", type = "assistant"),
+        )
+        assertNull(contextUsageTokens(messages))
+        assertNull(contextUsageTokens(emptyList()))
+    }
+
+    @Test
+    fun `context usage keeps a reported zero`() {
+        val messages = listOf(
+            SessionMessage(
+                id = "msg_b",
+                type = "assistant",
+                tokens = TokenUsage(input = 0, output = 0, reasoning = 0),
+            ),
+        )
+        assertEquals(0L, contextUsageTokens(messages))
     }
 }

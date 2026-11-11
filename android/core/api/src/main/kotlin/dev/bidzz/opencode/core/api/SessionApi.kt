@@ -90,6 +90,25 @@ class SessionApi(private val client: EngineClient) {
     }
 
     /**
+     * The session's current context: the message history the engine would
+     * send the model next (`GET /api/session/{id}/context`).
+     *
+     * Same `{data: SessionMessage[]}` envelope as [messages]; the shape is
+     * verified against the pinned engine source (`SessionStore.context` in
+     * packages/core/src/session/store.ts loads the latest history). Unlike
+     * [messages] this is the *active* context — after a compaction the
+     * pre-compaction turns are replaced by the summary — so summing assistant
+     * [TokenUsage] over it is what the next turn actually costs, not the
+     * session's lifetime total.
+     */
+    suspend fun context(sessionID: String): ApiResult<List<SessionMessage>> {
+        val request = client.request("/api/session/$sessionID/context").get().build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<MessagesResponse>(raw).data
+        }
+    }
+
+    /**
      * Selects the model for a session.
      *
      * Responds **204 No Content**, not 200. Treating anything other than 2xx as an

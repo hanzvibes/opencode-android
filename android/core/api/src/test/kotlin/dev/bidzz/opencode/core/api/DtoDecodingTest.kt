@@ -83,6 +83,34 @@ class DtoDecodingTest {
     }
 
     @Test
+    fun `decodes a session context listing`() {
+        // GET /api/session/{id}/context answers the same {data: SessionMessage[]}
+        // envelope as /message, without a cursor — and after a compaction the
+        // listing starts with the compaction summary instead of the old turns.
+        val raw = """
+            {"data":[
+              {"id":"msg_compact","time":{"created":1793447932000},"type":"compaction",
+               "status":"completed","summary":"Summarized 12 turns",
+               "cost":0,"tokens":{"input":900,"output":120,"reasoning":0}},
+              {"id":"msg_b","time":{"created":1793447932100},
+               "type":"assistant","agent":"build","model":{"id":"big-pickle","providerID":"opencode"},
+               "content":[{"type":"text","text":"PONG"}],"finish":"stop",
+               "tokens":{"input":1020,"output":5,"reasoning":0,"cache":{"read":800,"write":0}}}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<MessagesResponse>(raw)
+        assertEquals(2, parsed.data.size)
+        val summary = parsed.data[0]
+        assertEquals("compaction", summary.type)
+        assertEquals(900L, summary.tokens?.input)
+        val assistant = parsed.data[1]
+        assertTrue(assistant.isAssistant)
+        assertEquals(1020L, assistant.tokens?.input)
+        assertEquals(800L, assistant.tokens?.cache?.read)
+    }
+
+    @Test
     fun `joins multiple text blocks in order`() {
         val msg = SessionMessage(
             id = "m",
