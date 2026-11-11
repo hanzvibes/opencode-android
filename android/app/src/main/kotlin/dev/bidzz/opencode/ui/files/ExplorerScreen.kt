@@ -115,6 +115,10 @@ fun ExplorerScreen(
     onFileReloadFromDisk: () -> Unit = {},
     onFileDismissConflict: () -> Unit = {},
     onFileLoadFull: () -> Unit = {},
+    /** Discards the unsaved draft and opens the file held by the switch dialog. */
+    onFileConfirmSwitchDiscard: () -> Unit = {},
+    /** Keeps the current file and drops the held switch request. */
+    onFileCancelSwitch: () -> Unit = {},
     /** Starts building the workspace-wide quick-open index (lazy, on first open). */
     onEnsureQuickOpenIndex: () -> Unit = {},
 ) {
@@ -208,6 +212,8 @@ fun ExplorerScreen(
                                 onReloadFromDisk = onFileReloadFromDisk,
                                 onDismissConflict = onFileDismissConflict,
                                 onLoadFull = onFileLoadFull,
+                                onConfirmSwitchDiscard = onFileConfirmSwitchDiscard,
+                                onCancelSwitch = onFileCancelSwitch,
                                 embedded = true,
                             )
                         } else {

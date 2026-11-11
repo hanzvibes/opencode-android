@@ -305,6 +305,8 @@
     <string name="fileview_discard_body">You have unsaved changes. Leaving will discard them.</string>
     <string name="fileview_discard_confirm">Discard</string>
     <string name="fileview_discard_dismiss">Keep editing</string>
+    <string name="fileview_switch_title">Unsaved changes</string>
+    <string name="fileview_switch_body">You have unsaved changes. Save them before opening %1$s?</string>
     <string name="fileview_dirty_badge">Unsaved</string>
     <string name="files_quick_open">Quick open</string>
     <string name="files_quick_open_hint">Search files by name…</string>

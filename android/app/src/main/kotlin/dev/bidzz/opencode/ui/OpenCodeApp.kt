@@ -202,10 +202,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
     LaunchedEffect(screen) {
         when (val target = screen) {
-            is Screen.FileView -> fileViewModel.load(target.path)
+            is Screen.FileView -> fileViewModel.requestLoad(target.path)
             is Screen.Diff -> diffViewModel.load(target.file)
             else -> Unit
         }
+    }
+
+    // The detail pane follows what the viewer actually loaded: when a switch
+    // is held for the user's decision (item 10) the highlight must stay on
+    // the file still on screen, and move only once the new file loads.
+    LaunchedEffect(fileState.path, isExpanded) {
+        if (isExpanded && fileState.path.isNotEmpty()) selectedFilePath = fileState.path
     }
 
     // Back returns to the screen this one was opened from; from Chat it leaves the app.
@@ -292,8 +299,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 fileState = if (isExpanded) fileState else null,
                 onOpenFileDetail = if (isExpanded) {
                     { row ->
-                        fileViewModel.load(row.path)
-                        selectedFilePath = row.path
+                        if (fileViewModel.requestLoad(row.path)) selectedFilePath = row.path
                     }
                 } else {
                     null
@@ -307,6 +313,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onFileReloadFromDisk = fileViewModel::reloadFromDisk,
                 onFileDismissConflict = fileViewModel::dismissConflict,
                 onFileLoadFull = fileViewModel::loadFull,
+                onFileConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
+                onFileCancelSwitch = fileViewModel::cancelSwitch,
                 onEnsureQuickOpenIndex = explorerViewModel::ensureQuickOpenIndex,
             )
 
@@ -320,6 +328,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onOverwrite = { fileViewModel.save(overwrite = true) },
                 onReloadFromDisk = fileViewModel::reloadFromDisk,
                 onDismissConflict = fileViewModel::dismissConflict,
+                onConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
+                onCancelSwitch = fileViewModel::cancelSwitch,
             )
 
             Screen.DiffList -> DiffListScreen(

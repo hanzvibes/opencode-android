@@ -258,6 +258,35 @@ class FileViewViewModel(
     }
 
     /**
+     * Loads [path] unless unsaved edits would be lost by doing so (item 10).
+     * Returns false when the switch is held for the user's decision: the
+     * viewer keeps showing the current file and [FileViewState.confirmSwitchTo]
+     * names the file that was asked for.
+     */
+    fun requestLoad(path: String): Boolean {
+        val s = _state.value
+        if (path == s.path) return true
+        if (s.dirty) {
+            _state.value = s.copy(confirmSwitchTo = path)
+            return false
+        }
+        load(path)
+        return true
+    }
+
+    /** Discards the unsaved draft and opens the file held by [requestLoad]. */
+    fun confirmSwitchDiscard() {
+        val pending = _state.value.confirmSwitchTo ?: return
+        stopEditing()
+        load(pending)
+    }
+
+    /** Keeps the current file and drops the held switch request. */
+    fun cancelSwitch() {
+        _state.value = _state.value.copy(confirmSwitchTo = null)
+    }
+
+    /**
      * Loads the full file after the large-file guard truncated it. This re-reads
      * from the engine: the preview deliberately dropped the rest, so there is
      * nothing to restore from. Only ever called from the banner's explicit action.
@@ -269,6 +298,10 @@ class FileViewViewModel(
     }
 
     private fun load(path: String, allowFull: Boolean) {
+        // Never overwrite an unsaved draft with another file's content
+        // (item 10): every load path goes through requestLoad, and this
+        // guard is the backstop for any caller that forgot.
+        if (_state.value.dirty) return
         val handle = api.handle() ?: run {
             _state.value = FileViewState(loading = false, path = path, failureKey = R.string.error_engine_not_running)
             return
@@ -367,14 +400,19 @@ class FileViewViewModel(
                         saving = false,
                         failure = result,
                     )
-                    is ApiResult.Success -> _state.value = _state.value.copy(
-                        saving = false,
-                        editing = false,
-                        conflict = false,
-                        content = s.draft,
-                        draft = "",
-                        saved = true,
-                    )
+                    is ApiResult.Success -> {
+                        _state.value = _state.value.copy(
+                            saving = false,
+                            editing = false,
+                            conflict = false,
+                            content = s.draft,
+                            draft = "",
+                            saved = true,
+                        )
+                        // A file switch was held for this save (item 10): the
+                        // draft is written now, so open the file asked for.
+                        _state.value.confirmSwitchTo?.let { load(it) }
+                    }
                 }
             }
         }

@@ -304,6 +304,8 @@
     <string name="fileview_discard_body">Anda memiliki perubahan yang belum disimpan. Keluar akan membuangnya.</string>
     <string name="fileview_discard_confirm">Buang</string>
     <string name="fileview_discard_dismiss">Lanjut mengedit</string>
+    <string name="fileview_switch_title">Perubahan belum disimpan</string>
+    <string name="fileview_switch_body">Ada perubahan yang belum disimpan. Simpan dulu sebelum membuka %1$s?</string>
     <string name="fileview_dirty_badge">Belum disimpan</string>
     <string name="files_quick_open">Buka cepat</string>
     <string name="files_quick_open_hint">Cari file berdasarkan nama…</string>
