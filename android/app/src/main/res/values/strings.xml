@@ -60,7 +60,6 @@
     <string name="settings_saved_permissions_revoke">Revoke</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
-    <string name="onboarding_title">Welcome to OpenCode</string>
     <string name="onboarding_skip">Skip</string>
     <string name="onboarding_step_of">Step %1$d of %2$d</string>
     <string name="onboarding_project_title">Pick a project</string>
@@ -84,11 +83,7 @@
     <string name="about_role">Student · Explorer · Builder</string>
     <string name="about_bio">A student exploring web development, OSINT, digital security, and reverse engineering, driven by curiosity for how systems really work.</string>
     <string name="about_section_links">Find me</string>
-    <string name="about_portfolio">Portfolio</string>
-    <string name="about_telegram">Telegram</string>
-    <string name="about_instagram">Instagram</string>
     <string name="about_github">GitHub</string>
-    <string name="about_email">Email</string>
     <string name="about_open_failed">Nothing on this device can open that link.</string>
     <string name="about_version">OpenCode Android %1$s</string>
 
@@ -111,7 +106,6 @@
     <string name="chat_reconnecting">Reconnecting…</string>
     <string name="chat_question_waiting_one">1 question waiting</string>
     <string name="chat_question_waiting_other">%1$d questions waiting</string>
-    <string name="chat_working">Working…</string>
     <string name="chat_status_working">Working</string>
     <string name="chat_status_ready">Ready</string>
     <string name="chat_status_preparing">Preparing</string>
@@ -152,10 +146,6 @@
     <string name="starter_review_title">Review changes</string>
     <string name="starter_review_desc">Audit recent diffs for quality and security</string>
     <string name="starter_review_prompt">Review recent git changes and diffs for code quality, bugs, and performance.</string>
-    <string name="workspace_readiness_section">Workspace &amp; Environment</string>
-    <string name="workspace_engine_label">Engine</string>
-    <string name="workspace_path_label">Workspace</string>
-    <string name="workspace_git_label">Git branch</string>
     <string name="workspace_git_untracked">Untracked</string>
     <string name="drawer_files">Files</string>
     <string name="drawer_project">Project</string>
@@ -165,7 +155,6 @@
     <string name="drawer_all_sessions">All sessions</string>
     <string name="drawer_view_all">View all sessions</string>
     <string name="drawer_diagnostics">Diagnostics</string>
-    <string name="drawer_developer">Developer</string>
     <string name="drawer_switch_workspace">Switch workspace</string>
 
     <!-- Session Groups -->
@@ -251,12 +240,9 @@
     <string name="tool_lines_one">%1$d line</string>
     <string name="tool_lines">%1$d lines</string>
     <string name="tool_stdout">STDOUT</string>
-    <string name="tool_stdin">STDIN</string>
     <string name="tool_stderr">STDERR</string>
     <string name="tool_command">Command</string>
     <string name="tool_input">Input</string>
-    <string name="tool_output">Output</string>
-    <string name="tool_error">Error</string>
     <string name="tool_show_full">Show full output</string>
     <string name="tool_show_less">Show less</string>
     <string name="tool_filter_all">All</string>
@@ -265,7 +251,6 @@
     <string name="tool_filter_read">Read</string>
     <string name="code_show_more">Show all %1$d lines</string>
     <string name="code_label">code</string>
-    <string name="code_download">Download</string>
     <string name="code_saved">Saved</string>
     <string name="code_copy">Copy</string>
     <string name="code_copied">Copied</string>
@@ -379,7 +364,6 @@
     <string name="providers_custom_section">Custom endpoint</string>
     <string name="providers_models_suffix"> · %1$d models</string>
     <string name="providers_add_custom">Add a custom endpoint…</string>
-    <string name="providers_catalog">Catalog</string>
     <string name="providers_loading">Loading providers…</string>
     <string name="providers_no_match">No provider matches \"%1$s\".</string>
     <string name="providers_keys_one">%1$d key · tap to manage</string>
@@ -388,7 +372,6 @@
     <string name="providers_state_add_key">tap to add an API key</string>
     <string name="providers_state_no_method">no API-key method</string>
     <string name="providers_search">Search providers</string>
-    <string name="providers_badge_on">ON</string>
     <string name="providers_key_title">API key for %1$s</string>
     <string name="providers_key_body">Stored by the engine in its own database, inside the app\'s private storage. It is not written to any config file.</string>
     <string name="providers_new_key_title">New key for %1$s</string>
@@ -419,12 +402,9 @@
     <string name="providers_status_missing_key">Missing Key</string>
     <string name="providers_quick_test">Quick Test</string>
     <string name="providers_testing">Testing…</string>
-    <string name="providers_test_passed">Key verified &amp; ready to save</string>
-    <string name="providers_test_failed">Key verification failed</string>
     <string name="providers_key_empty">API key cannot be empty</string>
     <string name="providers_key_spaces">Key cannot contain spaces</string>
     <string name="providers_key_too_short">Key is too short (min 8 chars)</string>
-    <string name="providers_key_valid">Valid key format</string>
     <string name="providers_paste_action">Paste</string>
     <string name="providers_clear_action">Clear</string>
     <string name="providers_show_key">Show key</string>
@@ -447,7 +427,6 @@
     <string name="diag_storage">Storage</string>
     <string name="diag_process_pid">Process PID</string>
     <string name="diag_engine_pid">Engine PID</string>
-    <string name="diag_app_pid">App PID</string>
     <string name="diag_tab_all">All Logs</string>
     <string name="diag_tab_engine_log">Disk Log</string>
     <string name="diag_tab_output">Console</string>
@@ -461,20 +440,14 @@
     <string name="diag_password_hidden">•••••• (tap to reveal)</string>
     <string name="diag_linked">linked</string>
     <string name="diag_missing">MISSING</string>
-    <string name="diag_no_so">(no .so in APK)</string>
     <string name="diag_missing_suffix">(missing)</string>
-    <string name="diag_timeout">TIMEOUT after %1$d s</string>
-    <string name="diag_exit">exit %1$d: %2$s</string>
     <string name="diag_no_output">no output</string>
     <string name="diag_no_tools">(no tools declared)</string>
-    <string name="diag_tap_refresh">tap Refresh to run git --version and rg --version</string>
     <string name="diag_probe_note">A probe failing with exit 126 / Permission denied means the SELinux label on the linked binary rejects exec. The tool must be reached through the symlink in toolBin, never copied into filesDir.</string>
-    <string name="diag_no_output_yet">(no output yet)</string>
     <string name="diag_nothing_read">(nothing read, the file may not exist yet)</string>
     <string name="diag_lines_newest_last">%1$d lines, newest last</string>
     <string name="diag_section_tools">Tools</string>
     <string name="diag_section_paths">Paths</string>
-    <string name="diag_section_output">Engine output (this process)</string>
     <string name="diag_section_log">Engine log (on disk)</string>
     <string name="diag_log_search_hint">Search logs</string>
     <string name="diag_log_search_clear">Clear search</string>
