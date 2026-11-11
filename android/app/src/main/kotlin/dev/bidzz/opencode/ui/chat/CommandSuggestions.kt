@@ -170,7 +170,12 @@ fun resolveSlashCommands(engineCommands: List<CommandInfo>): List<SlashCommand> 
 
     for (cmd in engineCommands) {
         val nameLower = cmd.name.lowercase().trim().removePrefix("/")
-        seen.add(nameLower)
+        // The same command can come from the global commands/ dir and the
+        // project one (item 4): without this check the palette held two
+        // entries with the same name, and its LazyColumn keys by name — a
+        // duplicate key crashes composition on open. The first definition
+        // wins; an empty name is not a command at all.
+        if (nameLower.isEmpty() || !seen.add(nameLower)) continue
         val builtin = builtInMap[nameLower]
         val (parsedHint, parsedDesc) = parseParameterHint(cmd.description)
         val desc = when {

@@ -105,8 +105,16 @@ class EngineBinary private constructor(
                     // lands in filesDir and therefore will NOT be executable by the
                     // engine; this is a last resort that at least keeps the file
                     // visible for diagnostics.
-                    source.copyTo(target, overwrite = true)
-                    target.setExecutable(true)
+                    // A failed copy (disk full, unreadable source) is a startup
+                    // failure, not a crash (item 1): copyTo throws IOException,
+                    // and an uncaught throw here used to kill the process on
+                    // every launch before any UI could appear.
+                    try {
+                        source.copyTo(target, overwrite = true)
+                        target.setExecutable(true)
+                    } catch (e: Exception) {
+                        throw EngineStartupException("Cannot stage tool ${target.name}: ${e.message}", e)
+                    }
                 }
             }
         }
@@ -120,12 +128,14 @@ class EngineBinary private constructor(
          */
         private fun isCurrent(source: File, target: File): Boolean {
             if (!target.exists() || !target.canExecute()) return false
-            val resolved = try {
-                target.toPath().toRealPath()
+            // Both resolutions are guarded (item 1): the source's toRealPath
+            // used to sit outside the try, so a source that vanished between
+            // the exists() check and the comparison threw out of resolve().
+            return try {
+                target.toPath().toRealPath() == source.toPath().toRealPath()
             } catch (_: Throwable) {
-                return false
+                false
             }
-            return resolved == source.toPath().toRealPath()
         }
     }
 }

@@ -122,6 +122,9 @@ class EngineDiagnostics(
                     .let { if (length > window) it.drop(1) else it } // first line is likely truncated
                     .filter { it.isNotBlank() }
                     .takeLast(lines)
+                    // The engine's own log is read for display and copying:
+                    // mask a password line the same way as stdout (item 18).
+                    .map(::redactEnginePassword)
             }
         }.getOrElse {
             Log.w(TAG, "could not read engine log", it)

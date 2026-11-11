@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
@@ -105,6 +108,20 @@ fun MarkdownText(
     val proseColor = textColor ?: colors.onSurface
     val onBubble = textColor != null
 
+    // A tap on a link goes through the ambient UriHandler; the default one
+    // throws ActivityNotFoundException when no app can open the URI, and
+    // the model can write any URL (item 2). Guard it once here, so no link
+    // in assistant output can kill the app.
+    val ambientUriHandler = LocalUriHandler.current
+    val safeUriHandler = remember(ambientUriHandler) {
+        object : UriHandler {
+            override fun openUri(uri: String) {
+                runCatching { ambientUriHandler.openUri(uri) }
+            }
+        }
+    }
+
+    CompositionLocalProvider(LocalUriHandler provides safeUriHandler) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
         SelectionContainer {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -292,6 +309,7 @@ fun MarkdownText(
                 )
             }
         }
+    }
     }
 }
 
