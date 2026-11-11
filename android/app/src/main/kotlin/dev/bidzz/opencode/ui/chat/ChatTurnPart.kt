@@ -211,6 +211,53 @@ fun mergeTurnParts(first: List<ChatTurnPart>, second: List<ChatTurnPart>): List<
 }
 
 /**
+ * Merges newly arrived live tool calls into an existing turn's parts (item 20).
+ *
+ * The live-tools pass in `toUiMessages` used to keep `parts` untouched
+ * whenever they were non-empty, so a tool that arrived after the first
+ * streamed sentence never appeared in the trace until the end-of-run resync
+ * rebuilt the turn from history — the status stayed "Running" with no
+ * output. Tools merge by id, last-wins, keeping the order of first sight,
+ * so a status change updates in place and re-merging the same calls (every
+ * `toUiMessages` rebuild does) is a no-op. New regular tools join the most
+ * recent ToolGroup; questions append (or update) their own part.
+ */
+fun mergeLiveToolsIntoParts(
+    parts: List<ChatTurnPart>,
+    liveCalls: List<ToolCall>,
+    isStreaming: Boolean,
+): List<ChatTurnPart> {
+    if (liveCalls.isEmpty()) return parts
+    val result = parts.toMutableList()
+    val regularLive = liveCalls.filter { !isQuestionTool(it.name) }
+    val questionLive = liveCalls.filter { isQuestionTool(it.name) }
+
+    if (regularLive.isNotEmpty()) {
+        val groupIdx = result.indexOfLast { it is ChatTurnPart.ToolGroup }
+        if (groupIdx >= 0) {
+            val group = result[groupIdx] as ChatTurnPart.ToolGroup
+            val toolMap = group.tools.associateBy { it.id }.toMutableMap()
+            regularLive.forEach { toolMap[it.id] = it }
+            val orderedIds = (group.tools.map { it.id } + regularLive.map { it.id }).distinct()
+            val merged = orderedIds.mapNotNull { toolMap[it] }
+            result[groupIdx] = group.copy(
+                tools = merged,
+                streaming = isStreaming && merged.any { it.status == "running" || it.status == "streaming" },
+            )
+        } else {
+            result += ChatTurnPart.ToolGroup(tools = regularLive, streaming = isStreaming)
+        }
+    }
+
+    questionLive.forEach { q ->
+        val qIdx = result.indexOfFirst { it is ChatTurnPart.Question && it.call.id == q.id }
+        val question = ChatTurnPart.Question(call = q, questions = parseQuestionInput(q.input))
+        if (qIdx >= 0) result[qIdx] = question else result += question
+    }
+    return result
+}
+
+/**
  * Collapses every [ChatTurnPart.ToolGroup] in a turn into a single group at
  * the position of the first one, so a turn renders one trace card.
  *

@@ -1277,11 +1277,14 @@ private fun ChatState.toUiMessages(toolDurations: Map<String, Long> = emptyMap()
         } else {
             val curr = result[idx]
             val mergedTools = curr.tools.filter { it.id !in liveIds } + liveCalls
-            val parts = if (curr.parts.isEmpty()) {
-                buildTurnParts(content = emptyList(), liveTools = mergedTools, isStreaming = curr.streaming)
-            } else {
-                curr.parts
-            }
+            // Rebuild the trace from the merged tools (item 20): keeping
+            // curr.parts as-is froze the live trace — a tool that arrived
+            // after the first streamed sentence never appeared until the
+            // end-of-run resync. The merge is by id, last-wins, so
+            // re-running it on every rebuild is a no-op. mergedTools (not
+            // just the live calls) is passed so a turn whose parts are
+            // empty but whose tools came from history keeps them too.
+            val parts = mergeLiveToolsIntoParts(curr.parts, mergedTools, curr.streaming)
             result[idx] = curr.copy(tools = mergedTools, parts = parts)
         }
     }
