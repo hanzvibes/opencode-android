@@ -536,6 +536,8 @@ private fun ChatDestination(
         onAttachmentAdded = chatViewModel::addAttachment,
         onAttachmentRefused = { key, filename -> chatViewModel.reportAttachRefusal(key, filename) },
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
+        onRequestSafFile = app::requestSafFile,
+        safFilePicked = app.safFilePicked,
         onSessionsClick = { onNavigate(Screen.Sessions) },
         onProjectClick = { onNavigate(Screen.Projects) },
         onFilesClick = { onNavigate(Screen.Files) },

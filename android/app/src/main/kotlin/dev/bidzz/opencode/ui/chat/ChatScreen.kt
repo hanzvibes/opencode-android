@@ -1,8 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -136,6 +135,8 @@ import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -204,6 +205,15 @@ fun ChatScreen(
     onRemoveAttachment: (String) -> Unit = {},
     onAttachmentAdded: (AttachedFile) -> Unit = {},
     onAttachmentRefused: (Int, String?) -> Unit = { _, _ -> },
+    /**
+     * Opens the system file picker for a file outside the workspace (SAF).
+     * The launcher lives in MainActivity: a Compose launcher here crashed
+     * on launch because the composition has no ActivityResultRegistryOwner.
+     * The picked file arrives on [safFilePicked].
+     */
+    onRequestSafFile: () -> Unit = {},
+    /** URIs picked in the system file picker; read in as text below. */
+    safFilePicked: Flow<Uri> = emptyFlow(),
     onDismissAttachNotice: () -> Unit = {},
     modifier: Modifier = Modifier,
     /**
@@ -476,22 +486,21 @@ fun ChatScreen(
 
     // System file picker for files outside the workspace (SAF): reached
     // from the "Browse device files" row at the foot of the attach picker.
-    // OpenDocument (not GetContent): same contract family the app already
-    // uses for the workspace folder (MainActivity), and it returns a
-    // content:// URI the resolver can read without any storage permission.
-    // "*/*" on purpose — the text check happens after the pick (see
-    // readSafFile), so a .py/.md/.json the provider does not call text/*
-    // is still pickable and a binary is refused with a message, not by
-    // being unpickable. The read runs on IO: a 64 KB file is small, but
-    // the resolver can block on a slow provider.
-    val attachContext = LocalContext.current
-    val safPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
+    // The launcher lives in MainActivity and the picked URI arrives on
+    // [safFilePicked] — a Compose launcher here crashed on launch because
+    // the composition has no ActivityResultRegistryOwner. OpenDocument
+    // (not GetContent): same contract family the app already uses for the
+    // workspace folder (MainActivity), and it returns a content:// URI the
+    // resolver can read without any storage permission. "*/*" on purpose —
+    // the text check happens after the pick (see readSafFile), so a
+    // .py/.md/.json the provider does not call text/* is still pickable
+    // and a binary is refused with a message, not by being unpickable.
+    // The read runs on IO: a 64 KB file is small, but the resolver can
+    // block on a slow provider.
+    LaunchedEffect(safFilePicked) {
+        safFilePicked.collect { uri ->
             val result = withContext(Dispatchers.IO) {
-                readSafFile(attachContext.contentResolver, uri)
+                readSafFile(LocalContext.current.contentResolver, uri)
             }
             when (result) {
                 is SafReadResult.Success -> onAttachmentAdded(result.file)
@@ -951,7 +960,7 @@ fun ChatScreen(
                             // picked file is read in as text and inlined.
                             onBrowseDeviceFiles = {
                                 attachPickerOpen = false
-                                safPickerLauncher.launch(arrayOf("*/*"))
+                                onRequestSafFile()
                             },
                         )
                     }

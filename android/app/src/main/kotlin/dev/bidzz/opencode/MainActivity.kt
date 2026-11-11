@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -39,6 +40,19 @@ class MainActivity : ComponentActivity() {
             if (path != null) {
                 (application as OpenCodeApplication).switchWorkspace(path)
             }
+        }
+
+    /**
+     * System file picker for files outside the workspace (SAF).
+     *
+     * The launcher lives here, not in a composable: a Compose launcher in
+     * ChatScreen crashed on launch because the composition has no
+     * ActivityResultRegistryOwner. The picked URI is handed to the
+     * application, which the chat screen reads in as text.
+     */
+    private val pickSafFile =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { (application as OpenCodeApplication).deliverSafFile(it) }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,6 +94,16 @@ class MainActivity : ComponentActivity() {
             app.allFilesAccessRequest.collect { token ->
                 if (token == 0L) return@collect
                 requestStorageIfNeeded()
+            }
+        }
+        lifecycleScope.launch {
+            app.safFileRequest.collect { token ->
+                if (token == 0L) return@collect
+                // Best-effort: a missing DocumentsUI or a finishing
+                // activity must not crash the app; the chat screen simply
+                // never receives a file.
+                runCatching { pickSafFile.launch(arrayOf("*/*")) }
+                    .onFailure { Log.w("MainActivity", "SAF picker launch failed", it) }
             }
         }
     }
