@@ -56,6 +56,84 @@ The GPL-2.0 licence text is in `licenses/GPL-2.0.txt`.
 ripgrep is dual-licensed MIT/Unlicense, so redistribution only requires keeping
 the copyright notice and permission notice. Both are reproduced below.
 
+### Node.js 24.22.2 — `libnode.so` (+ npm 12.2.2, ICU, OpenSSL)
+
+The in-app agent needs a JavaScript runtime. Node.js comes from Termux apt
+(bionic-native, PIE, 16 KB aligned) — not from nodejs.org, whose linux-arm64
+build needs glibc and cannot run on Android. Staged by
+`script/android/stage-node.sh` (pinned versions + SHA256, `patchelf` renames
+the versioned `.so` names to `lib<name>.so`).
+
+| Component | Version | Licence | Upstream |
+|---|---|---|---|
+| Node.js (`node`) | 24.22.2 (nodejs-lts) | MIT | https://nodejs.org/ |
+| npm | 12.2.2 | Artistic License 2.0 | https://www.npmjs.com/ |
+| corepack | (bundled with Node) | MIT | https://nodejs.org/ |
+| ICU | 79.1 | Unicode License v3 | https://icu.unicode.org/ |
+| OpenSSL | 3.6.5 | Apache-2.0 | https://www.openssl.org/ |
+| libc++ (`libc++_shared.so`) | 30 | Apache-2.0 + LLVM Exception | https://libcxx.llvm.org/ |
+| c-ares | 1.34.9 | MIT | https://c-ares.org/ |
+| SQLite | 3.54.1 | Public domain | https://www.sqlite.org/ |
+| zlib | 1.4 | zlib License | https://zlib.net/ |
+| CA certificates bundle | 2026.11.05 | (public data, see below) | https://www.mozilla.org/ |
+
+The npm tree (`lib/node_modules/npm/`) and the CA bundle (`etc/tls/cert.pem`)
+ship as `assets/node/` and are extracted to `files/engine/node/` at first
+launch (NodeAssets). npm is invoked as
+`node <files>/engine/node/lib/node_modules/npm/bin/npm-cli.js` — the `.js`
+entry points carry a dead Termux shebang and cannot be executed directly.
+The CA bundle is Mozilla's list as shipped by Termux's `ca-certificates`
+package; no licence text applies to the certificate data itself.
+
+Node.js MIT licence text (copyright Node.js contributors):
+
+```
+Copyright Node.js contributors. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+npm's Artistic License 2.0 text is in the bundled tree
+(`assets/node/lib/node_modules/npm/LICENSE`). The Unicode License v3 text is
+at https://www.unicode.org/license.html, the Apache-2.0 text at
+https://www.apache.org/licenses/LICENSE-2.0, and the zlib licence text is:
+
+```
+Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+```
+
 ### OpenCode engine — `libopencode.so`
 
 The engine is a compiled Bun binary built from the upstream `@opencode/*`
@@ -138,9 +216,11 @@ The full text is available at https://unlicense.org/.
 
 Deliberately excluded, to keep the APK small and the licence surface narrow:
 
-- **libcurl, OpenSSL, CA certificates** — git is built with `NO_CURL` and
-  `NO_OPENSSL`, so network operations (clone/push/fetch over https) are not
-  available. Adding them is a separate, larger decision.
+- **libcurl** — git is built with `NO_CURL` and `NO_OPENSSL`, so network
+  operations (clone/push/fetch over https) are not available. OpenSSL and
+  the CA bundle ARE now bundled (for Node.js, see above), but git was built
+  without them, so it cannot use them yet; wiring git to them is a separate
+  item (Tier 2, item 23 in the runtime fix list).
 - **pcre2** — ripgrep is built without the pcre2 feature. The engine's search
   paths use the default Rust regex engine.
 - **A JavaScript/markdown renderer library** — the chat markdown renderer is
