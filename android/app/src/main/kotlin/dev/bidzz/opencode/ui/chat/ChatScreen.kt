@@ -760,11 +760,12 @@ fun ChatScreen(
     // copy runs on IO; the workspace path and the draft are read
     // through rememberUpdatedState so a workspace switch or typing
     // mid-flight still lands the photo in the current project and
-    // appends the mention to the current draft, not a stale one.
+    // appends the mention to the current draft, not a stale one. The
+    // draft reader is the existing currentDraft above, not a second
+    // declaration — two of them do not compile.
     val photoResolver = LocalContext.current.contentResolver
     val photoToastContext = LocalContext.current
     val currentWorkspacePath by rememberUpdatedState(state.workspacePath)
-    val currentDraft by rememberUpdatedState(state.draft)
     LaunchedEffect(cameraPhotoPicked) {
         cameraPhotoPicked.collect { uri ->
             val saved = withContext(Dispatchers.IO) {
