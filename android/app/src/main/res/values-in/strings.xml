@@ -140,6 +140,10 @@
     <string name="chat_status_dialog_branches_loading">Memuat daftar branch…</string>
     <string name="chat_status_dialog_branches_empty">Tidak ada branch.</string>
     <string name="chat_status_dialog_branches_failed">Gagal memuat daftar branch.</string>
+    <string name="chat_status_dialog_vcs_current">Branch saat ini</string>
+    <string name="chat_status_dialog_vcs_default">Branch default</string>
+    <string name="chat_status_dialog_vcs_base">Review base</string>
+    <string name="chat_status_dialog_vcs_failed">Gagal memuat detail VCS.</string>
     <string name="chat_status_dialog_context">Konteks</string>
     <string name="chat_status_dialog_state">Status</string>
     <string name="chat_status_dialog_diagnostics">Diagnostik</string>

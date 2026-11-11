@@ -815,6 +815,9 @@ fun ChatScreen(
                 branches = state.branches,
                 branchesLoading = state.branchesLoading,
                 branchesFailed = state.branchesFailed,
+                vcsInfo = state.vcsInfo,
+                vcsBase = state.vcsBase,
+                vcsDetailsFailed = state.vcsDetailsFailed,
                 onLoadBranches = onLoadBranches,
             )
 
@@ -1998,6 +2001,10 @@ fun ChatHeader(
     branches: List<String>? = null,
     branchesLoading: Boolean = false,
     branchesFailed: Boolean = false,
+    /** Current/default branch and review base (Tier 3, item 4); null until loaded. */
+    vcsInfo: dev.bidzz.opencode.core.api.dto.VcsInfo? = null,
+    vcsBase: dev.bidzz.opencode.core.api.dto.VcsBase? = null,
+    vcsDetailsFailed: Boolean = false,
     onLoadBranches: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
@@ -2210,6 +2217,9 @@ fun ChatHeader(
             branches = branches,
             branchesLoading = branchesLoading,
             branchesFailed = branchesFailed,
+            vcsInfo = vcsInfo,
+            vcsBase = vcsBase,
+            vcsDetailsFailed = vcsDetailsFailed,
             onLoadBranches = onLoadBranches,
             onOpenDiagnostics = {
                 showStatusDialog = false
@@ -2242,6 +2252,10 @@ private fun EngineStatusDialog(
     branches: List<String>? = null,
     branchesLoading: Boolean = false,
     branchesFailed: Boolean = false,
+    /** Current/default branch and review base (Tier 3, item 4); null until loaded. */
+    vcsInfo: dev.bidzz.opencode.core.api.dto.VcsInfo? = null,
+    vcsBase: dev.bidzz.opencode.core.api.dto.VcsBase? = null,
+    vcsDetailsFailed: Boolean = false,
     onLoadBranches: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
@@ -2443,6 +2457,42 @@ private fun EngineStatusDialog(
                                 }
                             }
                         }
+                    }
+                    // Current/default branch and the review base (Tier 3,
+                    // item 4): each row shows only when its value is known.
+                    // A null base after a successful load is a fact about
+                    // the repository, not a failure — the row hides. A failed
+                    // details load says so instead of leaving the rows
+                    // silently absent.
+                    vcsInfo?.branch?.current?.takeIf { it.isNotBlank() }?.let { current ->
+                        DialogDetailRow(
+                            label = stringResource(R.string.chat_status_dialog_vcs_current),
+                            value = current,
+                        )
+                    }
+                    vcsInfo?.branch?.default?.takeIf { it.isNotBlank() }?.let { default ->
+                        DialogDetailRow(
+                            label = stringResource(R.string.chat_status_dialog_vcs_default),
+                            value = default,
+                        )
+                    }
+                    vcsBase?.let { base ->
+                        DialogDetailRow(
+                            label = stringResource(R.string.chat_status_dialog_vcs_base),
+                            value = if (base.source.isNotBlank()) {
+                                "${base.name} (${base.source})"
+                            } else {
+                                base.name
+                            },
+                        )
+                    }
+                    if (vcsDetailsFailed) {
+                        Text(
+                            text = stringResource(R.string.chat_status_dialog_vcs_failed),
+                            style = OpenCodeTypography.caption,
+                            color = colors.danger,
+                            modifier = Modifier.padding(start = spacing.xs, top = spacing.xs),
+                        )
                     }
                     // Context meter (Tier 2): used tokens over the model's
                     // window, in the footer's compact form. Without a known

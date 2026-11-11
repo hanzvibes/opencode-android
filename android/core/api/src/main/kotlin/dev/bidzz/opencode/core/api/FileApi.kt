@@ -3,9 +3,13 @@ package dev.bidzz.opencode.core.api
 import dev.bidzz.opencode.core.api.dto.FileDiffInfo
 import dev.bidzz.opencode.core.api.dto.FsEntry
 import dev.bidzz.opencode.core.api.dto.FsListResponse
+import dev.bidzz.opencode.core.api.dto.VcsBase
+import dev.bidzz.opencode.core.api.dto.VcsBaseResponse
 import dev.bidzz.opencode.core.api.dto.VcsBranchesResponse
 import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import dev.bidzz.opencode.core.api.dto.VcsFileStatus
+import dev.bidzz.opencode.core.api.dto.VcsInfo
+import dev.bidzz.opencode.core.api.dto.VcsInfoResponse
 import dev.bidzz.opencode.core.api.dto.VcsStatusResponse
 import java.net.URLEncoder
 import java.nio.ByteBuffer
@@ -219,4 +223,36 @@ class VcsApi(private val client: EngineClient) {
      * "clean tree" and "not a repository".
      */
     suspend fun hasRepository(directory: String): Boolean = FileApi(client).hasRepository(directory)
+
+    /**
+     * Current and default branch for a project.
+     *
+     * The branch list alone cannot say which branch is current or default
+     * — it is a plain array of names — so the status dialog reads them
+     * from here instead of guessing.
+     */
+    suspend fun info(directory: String): ApiResult<VcsInfo> {
+        val request = client.request("/api/vcs?${FileApi(client).locationParam(directory)}")
+            .get()
+            .build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<VcsInfoResponse>(raw).data
+        }
+    }
+
+    /**
+     * The review base for a project, or null when the engine has none.
+     *
+     * Null before the first commit, or when the provider has no base
+     * metadata — so a null answer is a fact about the repository, not a
+     * failure, and the caller must not report it as one.
+     */
+    suspend fun base(directory: String): ApiResult<VcsBase?> {
+        val request = client.request("/api/vcs/base?${FileApi(client).locationParam(directory)}")
+            .get()
+            .build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<VcsBaseResponse>(raw).data
+        }
+    }
 }

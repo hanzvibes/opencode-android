@@ -141,6 +141,10 @@
     <string name="chat_status_dialog_branches_loading">Loading branches…</string>
     <string name="chat_status_dialog_branches_empty">No branches found.</string>
     <string name="chat_status_dialog_branches_failed">Couldn’t load branches.</string>
+    <string name="chat_status_dialog_vcs_current">Current branch</string>
+    <string name="chat_status_dialog_vcs_default">Default branch</string>
+    <string name="chat_status_dialog_vcs_base">Review base</string>
+    <string name="chat_status_dialog_vcs_failed">Couldn’t load VCS details.</string>
     <string name="chat_status_dialog_context">Context</string>
     <string name="chat_status_dialog_state">State</string>
     <string name="chat_status_dialog_diagnostics">Diagnostics</string>
