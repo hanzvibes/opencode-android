@@ -1,17 +1,25 @@
 package dev.bidzz.opencode.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
@@ -27,8 +35,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,6 +54,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.engine.EngineState
+import dev.bidzz.opencode.ui.AppTag
 import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
@@ -56,12 +70,20 @@ import kotlinx.coroutines.launch
  * Settings screen.
  *
  * Organized into Apple-style grouped settings cards:
+ * - Engine status card (state, port, workspace, all-files access) at the top
  * - Project & Workspace (Folder, All Files Permission)
- * - Engine & Diagnostics (Engine Port, Diagnostics)
- * - Preferences & Models (Language, Providers)
+ * - Saved permissions ("Always" answers, each revocable)
+ * - Engine & Diagnostics (Engine Port, Diagnostics, MCP servers)
+ * - Preferences & Models (Language, Appearance, Providers)
  * - Information (About)
  *
- * Each row presents a clean squircle icon badge, descriptive title & subtitle,
+ * The search field filters rows by title, subtitle or value; sections with no
+ * matching row are hidden, and an empty state replaces the list when nothing
+ * matches. Icon badges are neutral (one blue, one meaning): colour is reserved
+ * for semantic status (engine state, granted / not granted) and for the
+ * selected theme radio / search cursor.
+ *
+ * Each row presents a neutral icon badge, descriptive title & subtitle,
  * inline status value, and navigation chevron when actionable.
  */
 @Composable
@@ -82,6 +104,8 @@ fun SettingsScreen(
     val spacing = OpenCodeTheme.tokens.spacing
     val status by app.engineStatus.collectAsState()
     var pickingLanguage by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val query = searchQuery
     val hasAllFiles = app.workspaceStore.hasAllFilesAccess()
 
     // Saved permissions live on the engine (`GET /api/permission/saved`) and
@@ -119,14 +143,104 @@ fun SettingsScreen(
         }
     }
 
-    // Apple-style categorized badge colors
-    val blueBadge = Color(0xFF007AFF)
-    val greenBadge = Color(0xFF34C759)
-    val amberBadge = Color(0xFFFF9500)
-    val purpleBadge = Color(0xFF5856D6)
-    val violetBadge = Color(0xFFAF52DE)
-    val tealBadge = Color(0xFF30B0C7)
-    val grayBadge = Color(0xFF8E8E93)
+    // Semantic engine colours, computed once and shared by the status card
+    // and the Diagnostics row: colour here means state, never decoration.
+    val engineStateColor = when (status.state) {
+        EngineState.RUNNING -> colors.success
+        EngineState.STARTING, EngineState.INITIALIZING -> colors.warning
+        EngineState.DEGRADED, EngineState.FAILED -> colors.danger
+        EngineState.STOPPED, EngineState.STOPPING -> colors.onSurfaceMuted
+    }
+    val engineStateDotColor: Color? = when (status.state) {
+        EngineState.STOPPED, EngineState.STOPPING -> null
+        else -> engineStateColor
+    }
+
+    // Search index: the same localized strings the rows below render, so the
+    // search field filters on what the user actually sees (title, subtitle,
+    // value). Sections and rows share one match decision per row.
+    val projectFolderTitle = stringResource(R.string.settings_project_folder)
+    val projectFolderSubtitle = app.workspaceStore.resolve().absolutePath
+    val allFilesTitle = stringResource(R.string.settings_all_files)
+    val allFilesSubtitle = stringResource(
+        if (hasAllFiles) R.string.settings_all_files_granted_hint
+        else R.string.settings_all_files_missing_hint,
+    )
+    val allFilesValue = stringResource(
+        if (hasAllFiles) R.string.settings_granted else R.string.settings_not_granted,
+    )
+    val savedPermissionsTitle = stringResource(R.string.settings_saved_permissions)
+    val savedPermissionsBody = stringResource(R.string.settings_saved_permissions_body)
+    val savedPermissionsEmptyText = stringResource(R.string.settings_saved_permissions_empty)
+    val savedPermissionsLoadingText = stringResource(R.string.common_loading)
+    val savedPermissionsFailureText = savedPermissionsFailure?.message()
+    val enginePortTitle = stringResource(R.string.settings_engine_port)
+    val enginePortSubtitle = status.credentials?.baseUrl
+        ?: stringResource(R.string.settings_engine_port_desc)
+    val enginePortValue = status.port?.toString()
+        ?: stringResource(R.string.settings_engine_inactive)
+    val diagnosticsTitle = stringResource(R.string.settings_diag_title)
+    val diagnosticsSubtitle = stringResource(
+        R.string.settings_diag_body,
+        engineStateWord(status.state),
+    )
+    val diagnosticsValue = engineStateWord(status.state).replaceFirstChar { it.uppercase() }
+    val mcpTitle = stringResource(R.string.mcp_title)
+    val mcpSubtitle = stringResource(R.string.mcp_body)
+    val languageTitle = stringResource(R.string.settings_language)
+    val languageValue = languageLabel(language)
+    val providerTitle = stringResource(R.string.settings_provider_title)
+    val providerSubtitle = stringResource(R.string.settings_provider_body)
+    val aboutTitle = stringResource(R.string.settings_about_title)
+    val aboutSubtitle = stringResource(R.string.settings_about_body)
+
+    // Per-row visibility; a section renders only when at least one of its
+    // rows matches. A blank query matches everything, so the screen is
+    // unchanged from before searching.
+    val projectFolderVisible = matchesSettingsQuery(
+        query, projectFolderTitle, projectFolderSubtitle,
+    )
+    val allFilesVisible = matchesSettingsQuery(
+        query, allFilesTitle, allFilesSubtitle, allFilesValue,
+    )
+    val projectVisible = projectFolderVisible || allFilesVisible
+    val visibleSavedPermissions = savedPermissions.filter {
+        matchesSettingsQuery(query, it.action, it.resource)
+    }
+    val savedPermissionsVisible = matchesSettingsQuery(
+        query,
+        savedPermissionsTitle,
+        savedPermissionsBody,
+        savedPermissionsEmptyText,
+        savedPermissionsLoadingText,
+        savedPermissionsFailureText,
+    ) || visibleSavedPermissions.isNotEmpty()
+    val enginePortVisible = matchesSettingsQuery(
+        query, enginePortTitle, enginePortSubtitle, enginePortValue,
+    )
+    val diagnosticsVisible = matchesSettingsQuery(
+        query, diagnosticsTitle, diagnosticsSubtitle, diagnosticsValue,
+    )
+    val mcpVisible = matchesSettingsQuery(query, mcpTitle, mcpSubtitle)
+    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible
+    val languageVisible = matchesSettingsQuery(query, languageTitle, languageValue)
+    val visibleThemeModes = ThemeMode.entries.filter { mode ->
+        matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
+    }
+    val appearanceVisible = visibleThemeModes.isNotEmpty()
+    val providerVisible = matchesSettingsQuery(query, providerTitle, providerSubtitle)
+    val aboutVisible = matchesSettingsQuery(query, aboutTitle, aboutSubtitle)
+    val statusCardVisible = matchesSettingsQuery(
+        query,
+        diagnosticsValue,
+        enginePortValue,
+        enginePortSubtitle,
+        projectFolderSubtitle,
+        allFilesValue,
+    )
+    val anyVisible = projectVisible || savedPermissionsVisible || engineVisible ||
+        languageVisible || appearanceVisible || providerVisible || aboutVisible ||
+        statusCardVisible
 
     ScreenScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
         Column(
@@ -137,179 +251,236 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.lg, vertical = spacing.sm),
         ) {
-            // Workspace & Permissions
-            Section(R.string.settings_section_project) {
-                SettingsRow(
-                    glyph = Glyph.Folder,
-                    badgeColor = blueBadge,
-                    title = stringResource(R.string.settings_project_folder),
-                    subtitle = app.workspaceStore.resolve().absolutePath,
-                    onClick = onProjects,
-                )
-                SettingsRow(
-                    glyph = Glyph.File,
-                    badgeColor = if (hasAllFiles) greenBadge else amberBadge,
-                    title = stringResource(R.string.settings_all_files),
-                    subtitle = stringResource(
-                        if (hasAllFiles) R.string.settings_all_files_granted_hint
-                        else R.string.settings_all_files_missing_hint,
-                    ),
-                    value = stringResource(
-                        if (hasAllFiles) R.string.settings_granted else R.string.settings_not_granted,
-                    ),
-                    valueColor = if (hasAllFiles) colors.success else colors.warning,
-                    onClick = if (hasAllFiles) null else app::requestAllFilesAccess,
-                    divider = true,
+            SettingsSearchBar(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+            )
+            Spacer(Modifier.height(spacing.sm))
+
+            // Engine status at a glance; tap opens Diagnostics.
+            if (statusCardVisible) {
+                EngineStatusCard(
+                    stateWord = diagnosticsValue,
+                    stateDotColor = engineStateDotColor,
+                    portValue = enginePortValue,
+                    baseUrl = enginePortSubtitle,
+                    workspacePath = projectFolderSubtitle,
+                    allFilesGranted = hasAllFiles,
+                    allFilesValue = allFilesValue,
+                    onClick = onDiagnostics,
                 )
             }
 
+            // Workspace & Permissions
+            if (projectVisible) {
+                Section(R.string.settings_section_project) {
+                    if (projectFolderVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Folder,
+                            title = projectFolderTitle,
+                            subtitle = projectFolderSubtitle,
+                            onClick = onProjects,
+                        )
+                    }
+                    if (allFilesVisible) {
+                        SettingsRow(
+                            glyph = Glyph.File,
+                            title = allFilesTitle,
+                            subtitle = allFilesSubtitle,
+                            value = allFilesValue,
+                            valueColor = if (hasAllFiles) colors.success else colors.warning,
+                            onClick = if (hasAllFiles) null else app::requestAllFilesAccess,
+                            divider = projectFolderVisible,
+                        )
+                    }
+                }
+            }
+
             // Saved permissions ("Always" answers), each revocable.
-            Section(R.string.settings_saved_permissions) {
-                Text(
-                    text = stringResource(R.string.settings_saved_permissions_body),
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.onSurfaceMuted,
-                    modifier = Modifier.padding(
-                        horizontal = spacing.md,
-                        vertical = spacing.sm,
-                    ),
-                )
-                when {
-                    savedPermissionsLoading -> {
-                        Text(
-                            text = stringResource(R.string.common_loading),
-                            style = OpenCodeTypography.bodySmall,
-                            color = colors.onSurfaceFaint,
-                            modifier = Modifier.padding(
-                                start = spacing.md,
-                                end = spacing.md,
-                                bottom = spacing.md,
-                            ),
-                        )
-                    }
-                    savedPermissionsFailure != null -> {
-                        Text(
-                            text = savedPermissionsFailure!!.message(),
-                            style = OpenCodeTypography.bodySmall,
-                            color = colors.danger,
-                            modifier = Modifier.padding(
-                                start = spacing.md,
-                                end = spacing.md,
-                                bottom = spacing.md,
-                            ),
-                        )
-                    }
-                    savedPermissions.isEmpty() -> {
-                        Text(
-                            text = stringResource(R.string.settings_saved_permissions_empty),
-                            style = OpenCodeTypography.bodySmall,
-                            color = colors.onSurfaceFaint,
-                            modifier = Modifier.padding(
-                                start = spacing.md,
-                                end = spacing.md,
-                                bottom = spacing.md,
-                            ),
-                        )
-                    }
-                    else -> {
-                        savedPermissions.forEachIndexed { index, saved ->
-                            if (index > 0) RowDivider(inset = spacing.md)
-                            SavedPermissionRow(
-                                saved = saved,
-                                onRevoke = { revokeSavedPermission(saved) },
+            if (savedPermissionsVisible) {
+                Section(R.string.settings_saved_permissions) {
+                    Text(
+                        text = savedPermissionsBody,
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier.padding(
+                            horizontal = spacing.md,
+                            vertical = spacing.sm,
+                        ),
+                    )
+                    when {
+                        savedPermissionsLoading -> {
+                            Text(
+                                text = savedPermissionsLoadingText,
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceFaint,
+                                modifier = Modifier.padding(
+                                    start = spacing.md,
+                                    end = spacing.md,
+                                    bottom = spacing.md,
+                                ),
                             )
+                        }
+                        savedPermissionsFailure != null -> {
+                            Text(
+                                text = savedPermissionsFailure!!.message(),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.danger,
+                                modifier = Modifier.padding(
+                                    start = spacing.md,
+                                    end = spacing.md,
+                                    bottom = spacing.md,
+                                ),
+                            )
+                        }
+                        savedPermissions.isEmpty() -> {
+                            Text(
+                                text = savedPermissionsEmptyText,
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceFaint,
+                                modifier = Modifier.padding(
+                                    start = spacing.md,
+                                    end = spacing.md,
+                                    bottom = spacing.md,
+                                ),
+                            )
+                        }
+                        visibleSavedPermissions.isEmpty() -> {
+                            Text(
+                                text = stringResource(R.string.settings_search_no_results),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceFaint,
+                                modifier = Modifier.padding(
+                                    start = spacing.md,
+                                    end = spacing.md,
+                                    bottom = spacing.md,
+                                ),
+                            )
+                        }
+                        else -> {
+                            visibleSavedPermissions.forEachIndexed { index, saved ->
+                                if (index > 0) RowDivider(inset = spacing.md)
+                                SavedPermissionRow(
+                                    saved = saved,
+                                    onRevoke = { revokeSavedPermission(saved) },
+                                )
+                            }
                         }
                     }
                 }
             }
 
             // Engine & Connectivity
-            Section(R.string.settings_section_engine) {
-                SettingsRow(
-                    glyph = Glyph.Code,
-                    badgeColor = tealBadge,
-                    title = stringResource(R.string.settings_engine_port),
-                    subtitle = status.credentials?.baseUrl ?: stringResource(R.string.settings_engine_port_desc),
-                    value = status.port?.toString() ?: stringResource(R.string.settings_engine_inactive),
-                    valueColor = if (status.port != null) colors.neutral else colors.onSurfaceMuted,
-                    valueIsMono = status.port != null,
-                    onClick = onDiagnostics,
-                )
-                SettingsRow(
-                    glyph = Glyph.Sliders,
-                    badgeColor = amberBadge,
-                    title = stringResource(R.string.settings_diag_title),
-                    subtitle = stringResource(R.string.settings_diag_body, engineStateWord(status.state)),
-                    value = engineStateWord(status.state).replaceFirstChar { it.uppercase() },
-                    valueColor = when (status.state) {
-                        EngineState.RUNNING -> colors.success
-                        EngineState.STARTING, EngineState.INITIALIZING -> colors.warning
-                        EngineState.DEGRADED, EngineState.FAILED -> colors.danger
-                        EngineState.STOPPED, EngineState.STOPPING -> colors.onSurfaceMuted
-                    },
-                    statusDotColor = when (status.state) {
-                        EngineState.RUNNING -> colors.success
-                        EngineState.STARTING, EngineState.INITIALIZING -> colors.warning
-                        EngineState.DEGRADED, EngineState.FAILED -> colors.danger
-                        EngineState.STOPPED, EngineState.STOPPING -> null
-                    },
-                    onClick = onDiagnostics,
-                    divider = true,
-                )
-                SettingsRow(
-                    glyph = Glyph.External,
-                    badgeColor = purpleBadge,
-                    title = stringResource(R.string.mcp_title),
-                    subtitle = stringResource(R.string.mcp_body),
-                    onClick = onMcpServers,
-                )
+            if (engineVisible) {
+                Section(R.string.settings_section_engine) {
+                    if (enginePortVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Code,
+                            title = enginePortTitle,
+                            subtitle = enginePortSubtitle,
+                            value = enginePortValue,
+                            valueColor = if (status.port != null) colors.neutral else colors.onSurfaceMuted,
+                            valueIsMono = status.port != null,
+                            onClick = onDiagnostics,
+                        )
+                    }
+                    if (diagnosticsVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Sliders,
+                            title = diagnosticsTitle,
+                            subtitle = diagnosticsSubtitle,
+                            value = diagnosticsValue,
+                            valueColor = engineStateColor,
+                            statusDotColor = engineStateDotColor,
+                            onClick = onDiagnostics,
+                            divider = enginePortVisible,
+                        )
+                    }
+                    if (mcpVisible) {
+                        SettingsRow(
+                            glyph = Glyph.External,
+                            title = mcpTitle,
+                            subtitle = mcpSubtitle,
+                            onClick = onMcpServers,
+                        )
+                    }
+                }
             }
 
             // Preferences & Providers
-            Section(R.string.settings_section_language) {
-                SettingsRow(
-                    glyph = Glyph.Globe,
-                    badgeColor = purpleBadge,
-                    title = stringResource(R.string.settings_language),
-                    value = languageLabel(language),
-                    onClick = { pickingLanguage = true },
-                )
+            if (languageVisible) {
+                Section(R.string.settings_section_language) {
+                    SettingsRow(
+                        glyph = Glyph.Globe,
+                        title = languageTitle,
+                        value = languageValue,
+                        onClick = { pickingLanguage = true },
+                    )
+                }
             }
 
             // Appearance (Phase 3): the theme is picked inline, not in a
             // dialog — three radio rows, one tap to switch, applied at once
             // over the whole tree (see OpenCodeApp). System follows the
             // phone; Dark / Light pin the palette.
-            Section(R.string.settings_section_appearance) {
-                ThemeMode.entries.forEachIndexed { index, mode ->
-                    if (index > 0) RowDivider(inset = spacing.md)
-                    ThemeModeRow(
-                        mode = mode,
-                        selected = mode == themeMode,
-                        onSelect = { if (mode != themeMode) onThemeModeChange(mode) },
+            if (appearanceVisible) {
+                Section(R.string.settings_section_appearance) {
+                    visibleThemeModes.forEachIndexed { index, mode ->
+                        if (index > 0) RowDivider(inset = spacing.md)
+                        ThemeModeRow(
+                            mode = mode,
+                            selected = mode == themeMode,
+                            onSelect = { if (mode != themeMode) onThemeModeChange(mode) },
+                        )
+                    }
+                }
+            }
+
+            if (providerVisible) {
+                Section(R.string.settings_section_provider) {
+                    SettingsRow(
+                        glyph = Glyph.Key,
+                        title = providerTitle,
+                        subtitle = providerSubtitle,
+                        onClick = onProviders,
                     )
                 }
             }
 
-            Section(R.string.settings_section_provider) {
-                SettingsRow(
-                    glyph = Glyph.Key,
-                    badgeColor = violetBadge,
-                    title = stringResource(R.string.settings_provider_title),
-                    subtitle = stringResource(R.string.settings_provider_body),
-                    onClick = onProviders,
-                )
+            // About
+            if (aboutVisible) {
+                Section(R.string.settings_section_about) {
+                    SettingsRow(
+                        glyph = Glyph.Info,
+                        title = aboutTitle,
+                        subtitle = aboutSubtitle,
+                        onClick = onAbout,
+                    )
+                }
             }
 
-            // About
-            Section(R.string.settings_section_about) {
-                SettingsRow(
-                    glyph = Glyph.Info,
-                    badgeColor = grayBadge,
-                    title = stringResource(R.string.settings_about_title),
-                    subtitle = stringResource(R.string.settings_about_body),
-                    onClick = onAbout,
-                )
+            if (query.isNotBlank() && !anyVisible) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = spacing.xl),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        GlyphIcon(
+                            glyph = Glyph.Search,
+                            tint = colors.onSurfaceFaint,
+                            size = 20.dp,
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_search_no_results),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = spacing.sm),
+                        )
+                    }
+                }
             }
         }
     }
@@ -323,6 +494,152 @@ fun SettingsScreen(
             },
             onDismiss = { pickingLanguage = false },
         )
+    }
+}
+
+/**
+ * Search field above the settings list, same pill treatment as the file
+ * explorer search: neutral fill, hairline edge, accent cursor.
+ * 48dp minimum height so it stays a full touch target.
+ */
+@Composable
+private fun SettingsSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val clearLabel = stringResource(R.string.settings_search_clear)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(radius.full))
+            .background(colors.fill)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
+            .padding(horizontal = spacing.md, vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 15.dp)
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            textStyle = OpenCodeTypography.bodySmall.copy(color = colors.onSurface),
+            cursorBrush = SolidColor(colors.accent),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            singleLine = true,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.sm),
+            decorationBox = { inner ->
+                if (query.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.settings_search_hint),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceFaint,
+                    )
+                }
+                inner()
+            },
+        )
+        if (query.isNotEmpty()) {
+            IconButton(
+                onClick = { onQueryChange("") },
+                modifier = Modifier.semantics { contentDescription = clearLabel },
+            ) {
+                GlyphIcon(Glyph.Close, tint = colors.onSurfaceMuted, size = 14.dp)
+            }
+        }
+    }
+}
+
+/**
+ * Engine status at a glance: state + port, server URL, workspace path and
+ * all-files access. Tap opens Diagnostics, the same destination as the
+ * Engine Port and Diagnostics rows below.
+ */
+@Composable
+private fun EngineStatusCard(
+    stateWord: String,
+    stateDotColor: Color?,
+    portValue: String,
+    baseUrl: String,
+    workspacePath: String,
+    allFilesGranted: Boolean,
+    allFilesValue: String,
+    onClick: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+
+    CardGroup {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(role = Role.Button, onClick = onClick)
+                .padding(horizontal = spacing.md, vertical = spacing.sm + 2.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (stateDotColor != null) {
+                    StatusDot(
+                        color = stateDotColor,
+                        size = 8.dp,
+                        modifier = Modifier.padding(end = spacing.sm),
+                    )
+                }
+                Text(
+                    text = stateWord,
+                    style = OpenCodeTypography.bodyStrong,
+                    color = colors.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = portValue,
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+                GlyphIcon(
+                    glyph = Glyph.ChevronRight,
+                    tint = colors.onSurfaceFaint,
+                    size = 14.dp,
+                    modifier = Modifier.padding(start = spacing.xs),
+                )
+            }
+            Text(
+                text = baseUrl,
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = spacing.xxs),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Folder,
+                    tint = colors.onSurfaceMuted,
+                    size = 14.dp,
+                )
+                Text(
+                    text = workspacePath,
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = spacing.xs),
+                )
+                AppTag(
+                    label = allFilesValue,
+                    color = if (allFilesGranted) colors.success else colors.warning,
+                )
+            }
+        }
     }
 }
 
@@ -342,10 +659,13 @@ private fun Section(titleRes: Int, content: @Composable ColumnScope.() -> Unit) 
 }
 
 /**
- * Apple-style grouped settings row.
+ * Grouped settings row with a neutral icon badge.
  *
- * @param glyph The icon glyph to render inside the squircle badge.
- * @param badgeColor Background color of the icon badge.
+ * The badge is always the same neutral fill with a muted glyph: colour is
+ * reserved for semantic status (the value text and status dot), never for
+ * decorating one row differently from the next.
+ *
+ * @param glyph The icon glyph to render inside the badge.
  * @param title Primary title of the setting.
  * @param onClick Action callback; null renders an informational row without navigation chevron.
  * @param subtitle Secondary explanatory text.
@@ -358,7 +678,6 @@ private fun Section(titleRes: Int, content: @Composable ColumnScope.() -> Unit) 
 @Composable
 private fun SettingsRow(
     glyph: Glyph,
-    badgeColor: Color,
     title: String,
     onClick: (() -> Unit)?,
     subtitle: String? = null,
@@ -385,11 +704,11 @@ private fun SettingsRow(
             .padding(horizontal = spacing.md, vertical = spacing.sm + 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Apple-style squircle icon badge
+        // Neutral badge: same fill for every row, muted glyph.
         IconBadge(
             glyph = glyph,
-            tint = Color.White,
-            background = badgeColor,
+            tint = colors.onSurface,
+            background = colors.fill,
             shape = RoundedCornerShape(radius.sm),
             size = 30.dp,
         )
@@ -457,6 +776,26 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
     },
 )
 
+/** Label for one theme mode, shared by the row and the search index. */
+@Composable
+private fun themeModeLabel(mode: ThemeMode): String = stringResource(
+    when (mode) {
+        ThemeMode.System -> R.string.settings_theme_system
+        ThemeMode.Dark -> R.string.settings_theme_dark
+        ThemeMode.Light -> R.string.settings_theme_light
+    },
+)
+
+/** Hint for one theme mode, shared by the row and the search index. */
+@Composable
+private fun themeModeHint(mode: ThemeMode): String = stringResource(
+    when (mode) {
+        ThemeMode.System -> R.string.settings_theme_system_hint
+        ThemeMode.Dark -> R.string.settings_theme_dark_hint
+        ThemeMode.Light -> R.string.settings_theme_light_hint
+    },
+)
+
 /** One inline theme row: radio + label + hint, 48dp, whole row tappable. */
 @Composable
 private fun ThemeModeRow(
@@ -487,24 +826,12 @@ private fun ThemeModeRow(
             modifier = Modifier.padding(start = spacing.md),
         ) {
             Text(
-                text = stringResource(
-                    when (mode) {
-                        ThemeMode.System -> R.string.settings_theme_system
-                        ThemeMode.Dark -> R.string.settings_theme_dark
-                        ThemeMode.Light -> R.string.settings_theme_light
-                    },
-                ),
+                text = themeModeLabel(mode),
                 style = OpenCodeTypography.body,
                 color = colors.onSurface,
             )
             Text(
-                text = stringResource(
-                    when (mode) {
-                        ThemeMode.System -> R.string.settings_theme_system_hint
-                        ThemeMode.Dark -> R.string.settings_theme_dark_hint
-                        ThemeMode.Light -> R.string.settings_theme_light_hint
-                    },
-                ),
+                text = themeModeHint(mode),
                 style = OpenCodeTypography.bodySmall,
                 color = colors.onSurfaceMuted,
             )
