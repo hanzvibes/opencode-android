@@ -1,6 +1,5 @@
 package dev.bidzz.opencode.ui.chat
 
-import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -108,7 +107,7 @@ private fun genericSuggestions(): List<Int> = listOf(
  */
 @Composable
 fun FollowUpChips(
-    suggestions: List<@StringRes Int>,
+    suggestions: List<Int>,
     onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
