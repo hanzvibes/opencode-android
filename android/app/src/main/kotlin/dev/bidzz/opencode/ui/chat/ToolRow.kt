@@ -212,7 +212,7 @@ fun ToolTrace(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
-                    .weight(1f, fill = false)
+                    .weight(1f)
                     .padding(start = spacing.xs),
             )
 
@@ -521,8 +521,15 @@ fun ToolStep(
                 .drawBehind {
                     val centerX = size.width / 2f
                     val dotCenterY = 16.dp.toPx()
-                    val strokeWidth = if (isError) 2.dp.toPx() else 1.dp.toPx()
-                    val railColor = if (isError) colors.danger.copy(alpha = 0.6f) else colors.hairline
+                    // One continuous rail: the same 1dp hairline on every
+                    // step. The rail used to change width (2dp) and colour
+                    // (danger) on error steps, so at every error boundary
+                    // the line jumped in width and colour and read as
+                    // chopped, not smooth. Status is already carried by
+                    // the dot (green / red × / pulse), the card border and
+                    // the Failed pill, so the rail carries none of it.
+                    val strokeWidth = 1.dp.toPx()
+                    val railColor = colors.hairline
 
                     if (!isFirst) {
                         drawLine(
@@ -638,7 +645,7 @@ fun ToolStep(
                         val firstLine = command.lineSequence().firstOrNull().orEmpty()
                         Row(
                             modifier = Modifier
-                                .weight(1f, fill = false)
+                                .weight(1f)
                                 .padding(start = spacing.xs),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -669,7 +676,7 @@ fun ToolStep(
                     } else {
                         Row(
                             modifier = Modifier
-                                .weight(1f, fill = false)
+                                .weight(1f)
                                 .padding(start = spacing.xs),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
