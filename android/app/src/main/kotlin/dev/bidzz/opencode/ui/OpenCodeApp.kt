@@ -23,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -103,11 +105,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
     val engineStatus by app.engineStatus.collectAsState()
 
-    val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory {
-        ChatViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+    val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory { extras ->
+        ChatViewModel(
+            app.engineApi,
+            { app.workspaceStore.resolve().absolutePath },
+            savedStateHandle = extras.createSavedStateHandle(),
+            onSessionCleared = { app.lastSessionID = null },
+        )
     })
 
-    val sessionViewModel: SessionListViewModel = viewModel(factory = viewModelFactory {
+    val sessionViewModel: SessionListViewModel = viewModel(factory = viewModelFactory { _ ->
         SessionListViewModel(
             app.engineApi,
             { app.workspaceStore.resolve().absolutePath },
@@ -118,16 +125,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val chatState by chatViewModel.state.collectAsState()
     val sessionsState by sessionViewModel.state.collectAsState()
 
-    val explorerViewModel: ExplorerViewModel = viewModel(factory = viewModelFactory {
+    val explorerViewModel: ExplorerViewModel = viewModel(factory = viewModelFactory { _ ->
         ExplorerViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
-    val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory {
+    val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory { _ ->
         FileViewViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
-    val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory {
+    val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory { _ ->
         DiffViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
-    val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory {
+    val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory { _ ->
         ProvidersViewModel(
             api = app.engineApi,
             configStore = dev.bidzz.opencode.engine.EngineConfigStore(app.engineEnvironment.configHome),
@@ -154,9 +161,20 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // Restore the last conversation once the engine is reachable. The engine keeps
     // running across a task swipe, so returning to the app should show the session
     // that is still there rather than an empty screen.
+    // The stored workspace may have been unusable, so the app fell back to the
+    // internal one (item 12): say so once per path, instead of on every engine
+    // restart, and let the user re-pick it in Projects.
+    var workspaceUnavailableNoted by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(engineStatus.state) {
         if (engineStatus.state == EngineState.RUNNING) {
             chatViewModel.onResume(app.lastSessionID)
+        }
+        val unavailable = app.workspaceStore.lastUnavailablePath
+        if (unavailable != null && unavailable != workspaceUnavailableNoted) {
+            workspaceUnavailableNoted = unavailable
+            chatViewModel.reportWorkspaceUnavailable()
+        } else if (unavailable == null) {
+            workspaceUnavailableNoted = null
         }
     }
 
@@ -195,10 +213,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
     LaunchedEffect(screen) {
         when (val target = screen) {
-            is Screen.FileView -> fileViewModel.load(target.path)
+            is Screen.FileView -> fileViewModel.requestLoad(target.path)
             is Screen.Diff -> diffViewModel.load(target.file)
             else -> Unit
         }
+    }
+
+    // The detail pane follows what the viewer actually loaded: when a switch
+    // is held for the user's decision (item 10) the highlight must stay on
+    // the file still on screen, and move only once the new file loads.
+    LaunchedEffect(fileState.path, isExpanded) {
+        if (isExpanded && fileState.path.isNotEmpty()) selectedFilePath = fileState.path
     }
 
     // Back returns to the screen this one was opened from; from Chat it leaves the app.
@@ -285,8 +310,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 fileState = if (isExpanded) fileState else null,
                 onOpenFileDetail = if (isExpanded) {
                     { row ->
-                        fileViewModel.load(row.path)
-                        selectedFilePath = row.path
+                        if (fileViewModel.requestLoad(row.path)) selectedFilePath = row.path
                     }
                 } else {
                     null
@@ -300,6 +324,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onFileReloadFromDisk = fileViewModel::reloadFromDisk,
                 onFileDismissConflict = fileViewModel::dismissConflict,
                 onFileLoadFull = fileViewModel::loadFull,
+                onFileConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
+                onFileCancelSwitch = fileViewModel::cancelSwitch,
                 onEnsureQuickOpenIndex = explorerViewModel::ensureQuickOpenIndex,
             )
 
@@ -313,6 +339,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 onOverwrite = { fileViewModel.save(overwrite = true) },
                 onReloadFromDisk = fileViewModel::reloadFromDisk,
                 onDismissConflict = fileViewModel::dismissConflict,
+                onConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
+                onCancelSwitch = fileViewModel::cancelSwitch,
             )
 
             Screen.DiffList -> DiffListScreen(
@@ -528,6 +556,7 @@ private fun ChatDestination(
         onReauth = app::restartEngine,
         onEditMessage = { id, text -> chatViewModel.startEdit(id, text) },
         onResendMessage = chatViewModel::resendMessage,
+        onAnswerQuestion = chatViewModel::answerQuestion,
         onSubmitEdit = chatViewModel::submitEdit,
         onCancelEdit = chatViewModel::cancelEdit,
         onDeferPermission = chatViewModel::deferPermission,
@@ -582,10 +611,18 @@ private fun buildProjectOptions(app: OpenCodeApplication, current: String): List
     }
 }
 
-/** Small helper so each view model construction stays a single expression. */
+/**
+ * Small helper so each view model construction stays a single expression.
+ *
+ * The creation extras are passed through (item 7): the single-argument
+ * `create()` drops them, which left ChatViewModel's SavedStateHandle null
+ * and made the whole draft-persistence plumbing dead code. View models
+ * that need nothing from the extras ignore the parameter.
+ */
 private inline fun <reified VM : ViewModel> viewModelFactory(
-    crossinline create: () -> VM,
+    crossinline create: (CreationExtras) -> VM,
 ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = create() as T
+    override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
+        create(extras) as T
 }

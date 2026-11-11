@@ -42,6 +42,7 @@ sealed interface ApiResult<out T> {
                 // rejected mid-session is a lost connection, not a stale password.
                 isLostConnection -> FailureReason.LOST_CONNECTION
                 isBinaryFile -> FailureReason.BINARY_FILE
+                isNotUtf8 -> FailureReason.NOT_UTF8
                 isNoSession -> FailureReason.NO_SESSION
                 isNoPendingPermission -> FailureReason.NO_PENDING_PERMISSION
                 isUnauthorized -> FailureReason.UNAUTHORIZED
@@ -63,6 +64,9 @@ sealed interface ApiResult<out T> {
 
         /** The file is not text; [message] carries its size in bytes. */
         val isBinaryFile: Boolean get() = tag == "BinaryFile"
+
+        /** The file is text but not valid UTF-8; [message] carries its size in bytes. */
+        val isNotUtf8: Boolean get() = tag == "NotUtf8"
     }
 }
 
@@ -81,6 +85,8 @@ enum class FailureReason {
     NO_SESSION,
     NO_PENDING_PERMISSION,
     BINARY_FILE,
+    /** Text that is not valid UTF-8; editing it would corrupt the file on save. */
+    NOT_UTF8,
 }
 
 /** Server error body: `{"_tag":"...","message":"..."}`. */

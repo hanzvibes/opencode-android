@@ -181,6 +181,8 @@ fun ChatScreen(
      * composer in editing mode, and re-send one user message's text. */
     onEditMessage: (String, String) -> Unit = { _, _ -> },
     onResendMessage: (String) -> Unit = {},
+    /** Answers a question card without touching the draft (item 9). */
+    onAnswerQuestion: (String) -> Unit = {},
     /** Submit / cancel the edit in progress in the composer. */
     onSubmitEdit: () -> Unit = {},
     onCancelEdit: () -> Unit = {},
@@ -785,10 +787,7 @@ fun ChatScreen(
                                             val prefix = if (state.draft.isBlank()) "" else state.draft.trimEnd() + "\n"
                                             onDraftChange(prefix + quote)
                                         },
-                                        onAnswerQuestion = { answer ->
-                                            onDraftChange(answer)
-                                            onSend()
-                                        },
+                                        onAnswerQuestion = onAnswerQuestion,
                                     )
                                 }
                             }
@@ -1041,7 +1040,13 @@ fun ChatScreen(
                         stopping = state.stopping,
                         enabled = state.workspaceReady,
                         promptHistory = state.sentPrompts,
-                        queuedText = state.queuedPrompt,
+                        // The queue is a list (item 6): show the first
+                        // follow-up, with a count when more are waiting.
+                        queuedText = when {
+                            state.queuedPrompts.isEmpty() -> null
+                            state.queuedPrompts.size == 1 -> state.queuedPrompts[0].typedText.ifBlank { state.queuedPrompts[0].fullText }
+                            else -> state.queuedPrompts[0].typedText.ifBlank { state.queuedPrompts[0].fullText } + " (+${state.queuedPrompts.size - 1})"
+                        },
                         isEditing = state.editingMessageId != null,
                         onCancelEdit = onCancelEdit,
                         modelLabel = modelLabel,

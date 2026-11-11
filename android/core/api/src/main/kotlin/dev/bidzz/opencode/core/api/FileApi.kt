@@ -7,6 +7,8 @@ import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import dev.bidzz.opencode.core.api.dto.VcsFileStatus
 import dev.bidzz.opencode.core.api.dto.VcsStatusResponse
 import java.net.URLEncoder
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -44,6 +46,10 @@ class FileApi(private val client: EngineClient) {
      * explicitly rather than through the JSON path. Binary files are rejected
      * before decoding: a NUL byte in the first block means the content is not text,
      * and showing mojibake in a code viewer is worse than saying "binary file".
+     * The decode itself is strict (item 11): `String(bytes, UTF_8)` silently
+     * replaces malformed sequences with U+FFFD, so editing and saving such a
+     * file would write the replacement characters back over the original
+     * bytes. A file that is not valid UTF-8 is refused instead.
      */
     suspend fun readText(directory: String, path: String): ApiResult<String> = withContext(Dispatchers.IO) {
         val url = "/api/fs/read/${path.split('/').joinToString("/") { enc(it) }}?${locationParam(directory)}"
@@ -69,7 +75,18 @@ class FileApi(private val client: EngineClient) {
                         message = bytes.size.toString(),
                     )
                 }
-                ApiResult.Success(bytes.toString(Charsets.UTF_8))
+                val text = runCatching {
+                    Charsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(bytes))
+                        .toString()
+                }.getOrNull() ?: return@withContext ApiResult.Failure(
+                    code = -3,
+                    tag = "NotUtf8",
+                    message = bytes.size.toString(),
+                )
+                ApiResult.Success(text)
             }
         } catch (e: Exception) {
             ApiResult.Failure(code = 0, message = e.message, cause = e)

@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 class OpenCodeApplication : Application() {
     companion object {
         private const val TAG = "OpenCodeApp"
+        private const val PREFS = "app"
+        private const val KEY_LAST_SESSION = "last_session_id"
     }
 
     /** Null until [onCreate] finishes, or when the engine binary is unavailable. */
@@ -60,12 +62,19 @@ class OpenCodeApplication : Application() {
     /**
      * Session the user was last looking at.
      *
-     * Held in memory rather than on disk: the engine owns session persistence, and
-     * this is only a hint for restoring the screen after the activity is recreated.
-     * Writing it to `SharedPreferences` would survive a reboot but point at a
-     * session the engine may no longer have.
+     * Persisted in `SharedPreferences` (item 7) so a force-stop or process
+     * death restores the conversation, not just the draft. A stale id is
+     * harmless: [ChatViewModel.onResume] verifies the session belongs to
+     * the active workspace before opening it, and skips one the engine no
+     * longer has — so a reboot never resurrects a dead session.
      */
-    var lastSessionID: String? = null
+    var lastSessionID: String?
+        get() = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LAST_SESSION, null)
+        set(value) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().apply {
+                if (value == null) remove(KEY_LAST_SESSION) else putString(KEY_LAST_SESSION, value)
+            }.apply()
+        }
 
     /** Fallback status published when the binary never resolved. */
     private val unavailableStatus = MutableStateFlow(EngineStatus())

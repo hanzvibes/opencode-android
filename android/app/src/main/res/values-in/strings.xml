@@ -99,6 +99,8 @@
     <string name="chat_new_messages">Pesan baru</string>
     <string name="chat_retry">Coba lagi</string>
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
+    <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
     <string name="a11y_run_finished">Proses selesai</string>
     <string name="a11y_run_failed">Proses gagal</string>
     <string name="a11y_permission_arrived">Izin diminta</string>
@@ -303,6 +305,8 @@
     <string name="fileview_discard_body">Anda memiliki perubahan yang belum disimpan. Keluar akan membuangnya.</string>
     <string name="fileview_discard_confirm">Buang</string>
     <string name="fileview_discard_dismiss">Lanjut mengedit</string>
+    <string name="fileview_switch_title">Perubahan belum disimpan</string>
+    <string name="fileview_switch_body">Ada perubahan yang belum disimpan. Simpan dulu sebelum membuka %1$s?</string>
     <string name="fileview_dirty_badge">Belum disimpan</string>
     <string name="files_quick_open">Buka cepat</string>
     <string name="files_quick_open_hint">Cari file berdasarkan nama…</string>
@@ -510,8 +514,10 @@
     <string name="error_unreachable">Tidak bisa menjangkau engine</string>
     <string name="error_request_failed">Permintaan gagal (%1$d)</string>
     <string name="error_binary_file">Berkas biner (%1$d byte)</string>
+    <string name="error_not_utf8">Berkas ini bukan UTF-8 yang valid, jadi tidak bisa diedit di sini.</string>
     <string name="error_reread_failed">Berkas tidak bisa dibaca ulang untuk memeriksa perubahannya, jadi tidak ada yang ditimpa.</string>
     <string name="providers_config_write_failed">Berkas konfigurasi tidak bisa ditulis</string>
+    <string name="providers_name_taken">Penyedia dengan nama ini sudah ada</string>
     <string name="providers_config_shadowed">Tersimpan, tetapi `opencode.jsonc` di sebelahnya lebih diutamakan. Engine akan membaca berkas itu, bukan yang ini.</string>
     <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
 </resources>

@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.files
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -77,6 +78,12 @@ data class FileViewState(
     val truncated: Boolean = false,
     /** The file's full line count while [truncated]; 0 otherwise. */
     val totalLines: Int = 0,
+    /**
+     * A file the user asked to open while the current draft is unsaved
+     * (item 10). The switch is held — the viewer keeps showing the current
+     * file — until the user saves, discards, or cancels from the dialog.
+     */
+    val confirmSwitchTo: String? = null,
 ) {
     val dirty: Boolean get() = editing && draft != content
 }
@@ -109,6 +116,10 @@ fun FileViewScreen(
     onReloadFromDisk: () -> Unit,
     onDismissConflict: () -> Unit,
     onLoadFull: () -> Unit = {},
+    /** Discards the unsaved draft and opens the file held in [FileViewState.confirmSwitchTo]. */
+    onConfirmSwitchDiscard: () -> Unit = {},
+    /** Keeps the current file and drops the held switch request. */
+    onCancelSwitch: () -> Unit = {},
     embedded: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
@@ -151,6 +162,11 @@ fun FileViewScreen(
             onBack()
         }
     }
+
+    // System Back goes through the same guard: without this the global
+    // handler navigated away and the unsaved draft was lost silently
+    // (item 10). This handler is composed after it, so it wins.
+    BackHandler { handleBack() }
 
     // Shared top actions: Find toggle in view mode, Edit/Save/Cancel otherwise.
     // Editing a truncated preview is blocked (a save would write the preview over
@@ -342,6 +358,46 @@ fun FileViewScreen(
             dismissButton = {
                 TextButton(onClick = { showDiscardDialog = false }) {
                     Text(stringResource(R.string.fileview_discard_dismiss), color = colors.accent)
+                }
+            },
+        )
+    }
+
+    // A file switch held for the user's decision (item 10): the draft is
+    // unsaved, so the new file is not loaded until they choose. Save writes
+    // the draft first and the view model opens the held file on success;
+    // Discard drops the draft and opens it now; Cancel keeps this file.
+    val pendingSwitch = state.confirmSwitchTo
+    if (pendingSwitch != null) {
+        LocalizedAlertDialog(
+            onDismissRequest = onCancelSwitch,
+            title = {
+                Text(
+                    text = stringResource(R.string.fileview_switch_title),
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.fileview_switch_body, pendingSwitch),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onSave) {
+                    Text(stringResource(R.string.common_save), color = colors.accent)
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = onConfirmSwitchDiscard) {
+                        Text(stringResource(R.string.fileview_discard_confirm), color = colors.danger)
+                    }
+                    TextButton(onClick = onCancelSwitch) {
+                        Text(stringResource(R.string.common_cancel), color = colors.accent)
+                    }
                 }
             },
         )

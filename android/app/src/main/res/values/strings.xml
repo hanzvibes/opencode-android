@@ -100,6 +100,8 @@
     <string name="chat_new_messages">New messages</string>
     <string name="chat_retry">Retry</string>
     <string name="chat_rate_limited_guidance">Rate limited — switch model or wait a moment, then send again.</string>
+    <string name="chat_queued_returned">Engine stopped — queued follow-up returned to the composer.</string>
+    <string name="workspace_unavailable">Workspace unavailable — using the internal workspace for now. Re-pick it in Projects.</string>
     <string name="a11y_run_finished">Run finished</string>
     <string name="a11y_run_failed">Run failed</string>
     <string name="a11y_permission_arrived">Permission requested</string>
@@ -304,6 +306,8 @@
     <string name="fileview_discard_body">You have unsaved changes. Leaving will discard them.</string>
     <string name="fileview_discard_confirm">Discard</string>
     <string name="fileview_discard_dismiss">Keep editing</string>
+    <string name="fileview_switch_title">Unsaved changes</string>
+    <string name="fileview_switch_body">You have unsaved changes. Save them before opening %1$s?</string>
     <string name="fileview_dirty_badge">Unsaved</string>
     <string name="files_quick_open">Quick open</string>
     <string name="files_quick_open_hint">Search files by name…</string>
@@ -511,8 +515,10 @@
     <string name="error_unreachable">Cannot reach the engine</string>
     <string name="error_request_failed">Request failed (%1$d)</string>
     <string name="error_binary_file">Binary file (%1$d bytes)</string>
+    <string name="error_not_utf8">This file is not valid UTF-8, so it can\'t be edited here.</string>
     <string name="error_reread_failed">Could not re-read the file to check whether it changed, so nothing was overwritten.</string>
     <string name="providers_config_write_failed">Could not write the config file</string>
+    <string name="providers_name_taken">A provider with this name already exists</string>
     <string name="providers_config_shadowed">Saved, but an `opencode.jsonc` beside it takes precedence. The engine will read that file instead of this one.</string>
     <string name="providers_stale_key">New key saved for %1$s, but the old one is still stored.</string>
 </resources>

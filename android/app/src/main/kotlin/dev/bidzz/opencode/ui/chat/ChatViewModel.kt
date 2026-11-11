@@ -73,8 +73,14 @@ data class ChatUiState(
     /** What the banner's single Retry button means for the current failure
      * ([RetryKind.NONE] hides it — see [ChatViewModel.retryError]). */
     val retryKind: RetryKind = RetryKind.NONE,
-    /** A follow-up typed while the agent is working, sent when the run ends. */
-    val queuedPrompt: String? = null,
+    /** A follow-up typed while the agent is working, sent when the run ends.
+     * A list, not one slot: queuing a second follow-up must not overwrite
+     * the first (item 6). [fullText] is what the engine receives — typed
+     * text plus any fenced attachment blocks already baked in — so a flush
+     * never re-reads the draft or re-appends attachments. [typedText] is
+     * what the user typed: only that goes into prompt history, so pressing
+     * Up never restores a 64 KB file dump into the composer. */
+    val queuedPrompts: List<QueuedPrompt> = emptyList(),
     /** True after Stop was tapped until the run actually ends. */
     val stopping: Boolean = false,
     /** Id of the user message being edited in the composer, or null. */
@@ -88,6 +94,14 @@ data class ChatUiState(
     val commands: List<dev.bidzz.opencode.core.api.dto.CommandInfo> = emptyList(),
     /** Active git branch when inside a version-controlled workspace. */
     val branch: String? = null,
+)
+
+/** One follow-up waiting for the run to end (see [ChatUiState.queuedPrompts]). */
+data class QueuedPrompt(
+    /** What the engine receives: typed text plus baked-in attachment blocks. */
+    val fullText: String,
+    /** What the user typed, for prompt history (never the attachment blocks). */
+    val typedText: String,
 )
 
 /** What the error banner's Retry button does for the current failure. */
@@ -165,6 +179,12 @@ class ChatViewModel(
      * either way.
      */
     private val savedStateHandle: SavedStateHandle? = null,
+    /**
+     * Called when the session is reset ([newSession]): the caller forgets
+     * the remembered session id, so a later resume cannot resurrect the
+     * session that was just abandoned (item 14).
+     */
+    private val onSessionCleared: () -> Unit = {},
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -212,17 +232,35 @@ class ChatViewModel(
                     repository = null
                     handle = null
                     attached = null
+                    // Follow-ups queued while the agent worked are the user's
+                    // words: the engine dying must not throw them away
+                    // (item 8). They go back into the composer — after
+                    // whatever the user typed since — with a notice, instead
+                    // of vanishing with the queue.
+                    val returned = _state.value.queuedPrompts
+                        .map { it.typedText.ifBlank { it.fullText } }
+                        .filter { it.isNotBlank() }
+                    val draft = _state.value.draft
+                    val restoredDraft = when {
+                        returned.isEmpty() -> draft
+                        draft.isBlank() -> returned.joinToString("\n")
+                        else -> draft.trimEnd() + "\n" + returned.joinToString("\n")
+                    }
+                    if (returned.isNotEmpty()) {
+                        savedStateHandle?.set(DRAFT_KEY, restoredDraft)
+                    }
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
                         stopping = false,
-                        queuedPrompt = null,
+                        queuedPrompts = emptyList(),
+                        draft = restoredDraft,
                         editingMessageId = null,
                         retryKind = RetryKind.NONE,
-                        failureKey = if (status.state == EngineState.FAILED) {
-                            R.string.error_engine_not_running
-                        } else {
-                            null
+                        failureKey = when {
+                            returned.isNotEmpty() -> R.string.chat_queued_returned
+                            status.state == EngineState.FAILED -> R.string.error_engine_not_running
+                            else -> null
                         },
                     )
                 }
@@ -349,15 +387,22 @@ class ChatViewModel(
             },
         )
 
-        // The run just ended and a follow-up was queued while it worked:
-        // send it now. `send()` reads the draft, so the queued text is put
-        // back into the draft first; it is cleared from the queue before
-        // sending so a failed send cannot re-queue it in a loop.
-        if (wasBusy && !chat.busy) {
-            val queued = _state.value.queuedPrompt
-            if (queued != null) {
-                _state.value = _state.value.copy(queuedPrompt = null, draft = queued)
-                send()
+        // The run just ended and follow-ups were queued while it worked:
+        // send the first one now. It goes straight to sendText — never back
+        // through the draft, so text the user typed after queueing is not
+        // overwritten, and never through send(), so pending attachments
+        // picked for the next message are not baked into it (item 16). The
+        // entry leaves the queue before sending so a failed send cannot
+        // re-queue it in a loop; the rest wait for the next run to end.
+        // Nothing is flushed while a send is still in flight, or while the
+        // engine is gone — the queue belongs to the draft then (item 8).
+        if (wasBusy && !chat.busy && !sendInFlight && repository != null) {
+            val next = _state.value.queuedPrompts.firstOrNull()
+            if (next != null) {
+                _state.value = _state.value.copy(
+                    queuedPrompts = _state.value.queuedPrompts.drop(1),
+                )
+                sendText(next.fullText, next.typedText, emptyList())
             }
         }
     }
@@ -465,18 +510,45 @@ class ChatViewModel(
         val full = buildMessageWithAttachments(typed, attachments)
         if (full.isBlank()) return
         // While the agent works the composer stays typable, and sending queues
-        // the follow-up instead of dropping it: the queue flushes when the
-        // run ends (see onRepoState). The draft is cleared so the queued text
-        // is not also still sitting in the composer. The attachments are
-        // baked into the queued text and cleared with it, so the flush —
-        // which puts the queued text back into the draft and calls send()
-        // again — cannot append them a second time.
+        // the follow-up instead of dropping it: the queue flushes one entry
+        // at a time when each run ends (see onRepoState). The draft is
+        // cleared so the queued text is not also still sitting in the
+        // composer. The attachments are baked into the queued text and
+        // cleared with it, so the flush — which sends the entry directly —
+        // cannot append them a second time. When the entry is dropped as a
+        // duplicate the files stay pending: they were never baked anywhere.
         if (_state.value.busy || sendInFlight) {
-            _state.value = _state.value.copy(queuedPrompt = full, pendingAttachments = emptyList())
+            if (queuePrompt(full, typed)) {
+                _state.value = _state.value.copy(pendingAttachments = emptyList())
+            }
             clearDraft()
             return
         }
         sendText(full, typed, attachments)
+    }
+
+    /**
+     * Appends a follow-up to the queue (see [ChatUiState.queuedPrompts]).
+     * Returns false when the entry was dropped as a duplicate.
+     *
+     * The queue is a list, so a second follow-up never overwrites the first.
+     * A text identical to the last prompt actually sent — or to the entry
+     * already at the back of the queue — is dropped: that is a double-tap
+     * on Send, not a second message, and sending it twice would run the
+     * same prompt twice. Queueing never touches
+     * [ChatUiState.pendingAttachments] itself: callers that baked files
+     * into the queued text clear them, and callers that did not (a resend,
+     * a question answer) leave them pending for the message being typed.
+     */
+    private fun queuePrompt(fullText: String, typedText: String): Boolean {
+        val current = _state.value.queuedPrompts
+        val duplicate = fullText == _state.value.lastSentText ||
+            current.lastOrNull()?.fullText == fullText
+        if (duplicate) return false
+        _state.value = _state.value.copy(
+            queuedPrompts = current + QueuedPrompt(fullText, typedText),
+        )
+        return true
     }
 
     private var sendInFlight = false
@@ -510,9 +582,13 @@ class ChatViewModel(
             },
         )
         sendInFlight = true
+        // The session and the repository are captured here, before the
+        // coroutine runs: reading them inside sendNow — after a suspension —
+        // could pick up a session the user has already left (item 15).
+        val sessionID = _state.value.sessionID
         viewModelScope.launch {
             try {
-                sendNow(repo, fullText, typedText, attachments)
+                sendNow(repo, sessionID, fullText, typedText, attachments)
             } finally {
                 sendInFlight = false
             }
@@ -602,7 +678,9 @@ class ChatViewModel(
         val attachments = _state.value.pendingAttachments
         val full = buildMessageWithAttachments(text, attachments)
         if (_state.value.busy || sendInFlight) {
-            _state.value = _state.value.copy(queuedPrompt = full, pendingAttachments = emptyList())
+            if (queuePrompt(full, text)) {
+                _state.value = _state.value.copy(pendingAttachments = emptyList())
+            }
             clearDraft()
             return
         }
@@ -616,7 +694,30 @@ class ChatViewModel(
             ?.text?.trim()
             .takeIf { !it.isNullOrBlank() } ?: return
         if (_state.value.busy || sendInFlight) {
-            _state.value = _state.value.copy(queuedPrompt = text)
+            // Queued as text only: the resend carries no attachments, and
+            // queueing must not burn the files pending for the message the
+            // user is typing (item 16).
+            queuePrompt(text, text)
+            return
+        }
+        sendText(text, text, emptyList())
+    }
+
+    /**
+     * Answers a question card (item 9).
+     *
+     * Sent as a prompt like any other answer, but through its own path —
+     * never through the draft: the previous code overwrote the composer's
+     * draft with the answer and sent it, destroying whatever the user was
+     * typing, and baked the pending attachments into the answer too. A busy
+     * engine queues the answer like any follow-up, again without touching
+     * the draft or the pending files.
+     */
+    fun answerQuestion(answer: String) {
+        val text = answer.trim()
+        if (text.isBlank()) return
+        if (_state.value.busy || sendInFlight) {
+            queuePrompt(text, text)
             return
         }
         sendText(text, text, emptyList())
@@ -645,7 +746,8 @@ class ChatViewModel(
                 // A retry re-sends the recorded prompt verbatim — typed text
                 // plus any attachment blocks it already contains — so it
                 // never re-appends the (already cleared) pending files.
-                sendNow(repo, text, text, emptyList())
+                // The session is captured now, like sendText does (item 15).
+                sendNow(repo, _state.value.sessionID, text, text, emptyList())
             } finally {
                 sendInFlight = false
             }
@@ -696,16 +798,30 @@ class ChatViewModel(
         repo.open(id)
     }
 
+    /**
+     * Sends one prompt through [repo] into [capturedSessionID].
+     *
+     * Both are captured by the caller before the coroutine runs (item 15):
+     * the session the user meant is the one current when Send was tapped,
+     * not whichever session is current after a suspension. If the user has
+     * since started a new session (a different repository) or opened
+     * another session on this one, the send is abandoned — a prompt to the
+     * wrong session is worse than an unsent one, and the draft still holds
+     * the text. `open()` is never called here: opening a session belongs
+     * to the open/switch flow only, and calling it from a send attached a
+     * fresh stream to a repository the screen had already left behind.
+     */
     private suspend fun sendNow(
         repo: ChatRepository,
+        capturedSessionID: String?,
         text: String,
         typedText: String,
         attachments: List<AttachedFile>,
     ) {
-        val sessionID = _state.value.sessionID ?: createSession(repo) ?: return
-        if (repository?.state?.value?.sessionID != sessionID) {
-            repo.open(sessionID)
-        }
+        val sessionID = capturedSessionID ?: createSession(repo) ?: return
+        // The session changed under us while the send was in flight.
+        if (repository !== repo) return
+        if (repo.state.value.sessionID != sessionID) return
         // A leading slash is a command, not a prompt. The engine runs it and answers
         // 204; the output arrives over the event stream exactly like a normal turn.
         val result = if (text.startsWith("/")) {
@@ -759,12 +875,23 @@ class ChatViewModel(
     }
 
     private suspend fun createSession(repo: ChatRepository): String? {
+        // The session was already attached while this send was queued:
+        // the state just had not flowed into the UI yet. Reuse it instead
+        // of creating a duplicate empty session (item 15).
+        repo.state.value.sessionID?.let { return it }
+        // The repository was replaced (a new session) while this send was
+        // queued: do not create anything on the abandoned one.
+        if (repository !== repo) return null
         val h = handle ?: return null
         _state.value = _state.value.copy(connecting = true, failure = null, failureKey = null)
         val result = h.sessions.create(workspace())
         _state.value = _state.value.copy(connecting = false)
         return when (result) {
             is ApiResult.Success -> {
+                // The user opened another session while the create call was
+                // in flight: leave that choice alone instead of clobbering
+                // it by opening the session we just made.
+                if (repository !== repo || repo.state.value.sessionID != null) return null
                 repo.open(result.value.id)
                 // A mode or model picked before the first message has no session to bind
                 // to at the time it is chosen, so it is applied here instead. Failures are
@@ -868,8 +995,12 @@ class ChatViewModel(
         // and the stop state belong to the old session too. Pending
         // attachments go with the draft: they were picked for the old
         // session's message, and the refusal notice with them.
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
+        // The abandoned session must not come back on the next resume:
+        // without this, switching workspaces reopened the old workspace's
+        // session under the new project's header (item 14).
+        onSessionCleared()
     }
 
     /** Loads an existing session. */
@@ -898,7 +1029,7 @@ class ChatViewModel(
         // session starts with an empty composer — and no retry target from
         // the previous session. Pending attachments belong to the old
         // session's message too, and the refusal notice with them.
-        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, deferredPermission = null, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         repo.open(sessionID)
         // The id-only path has no SessionInfo to sync from, so the session's
@@ -924,12 +1055,49 @@ class ChatViewModel(
      * If the engine is already running and the user has an open session, reload its
      * history: the process survives a task swipe, so returning to the app should
      * show the conversation that is still there rather than an empty screen.
+     *
+     * The remembered id is verified first (item 14): the session must belong
+     * to the active workspace, or a workspace switch would resurrect the old
+     * project's session under the new project's header and prompts would land
+     * in the wrong project. A session the engine no longer has is skipped
+     * silently — an empty chat beats an error banner for a session that is
+     * simply gone. A null location cannot be verified (older engines), so it
+     * is allowed through rather than breaking resume.
      */
     fun onResume(lastSessionID: String?) {
         val repo = repository ?: return
         val target = lastSessionID ?: return
         if (_state.value.messages.isNotEmpty()) return
-        repo.open(target)
+        val h = handle ?: return
+        viewModelScope.launch {
+            when (val result = h.sessions.get(target)) {
+                is ApiResult.Success -> {
+                    val dir = result.value.location?.directory
+                    if (dir == null || sameDirectory(dir, workspace())) {
+                        repo.open(target)
+                    }
+                }
+                is ApiResult.Failure -> Unit
+            }
+        }
+    }
+
+    /** Same directory, allowing for symlinked storage roots. */
+    private fun sameDirectory(a: String, b: String): Boolean {
+        if (a == b) return true
+        return runCatching {
+            java.io.File(a).canonicalPath == java.io.File(b).canonicalPath
+        }.getOrDefault(false)
+    }
+
+    /**
+     * The stored workspace was unusable, so the app fell back to the
+     * internal one (item 12). A banner says so: silently working in a
+     * different project would strand the user's files where they cannot
+     * find them.
+     */
+    fun reportWorkspaceUnavailable() {
+        _state.value = _state.value.copy(failureKey = R.string.workspace_unavailable)
     }
 
     /** Remembers the session id so a relaunch can restore it. */

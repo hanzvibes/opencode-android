@@ -24,6 +24,7 @@ fun ApiResult.Failure.message(): String = when (reason) {
     FailureReason.NO_SESSION -> stringResource(R.string.error_no_session)
     FailureReason.NO_PENDING_PERMISSION -> stringResource(R.string.error_no_pending_permission)
     FailureReason.BINARY_FILE -> stringResource(R.string.error_binary_file, message?.toIntOrNull() ?: 0)
+    FailureReason.NOT_UTF8 -> stringResource(R.string.error_not_utf8)
     // The engine's own words. It is the one message this app cannot translate, and
     // substituting a generic sentence would throw away the only detail available.
     FailureReason.SERVER_MESSAGE -> message.orEmpty()
