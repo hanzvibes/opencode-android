@@ -100,6 +100,13 @@ fun MarkdownText(
      * to dark-on-bubble.
      */
     textColor: Color? = null,
+    /**
+     * Saves a code block through the system picker (Fase 1, item 4):
+     * the suggested filename, then the code verbatim. The launcher lives
+     * in MainActivity (a Compose launcher here crashed); the default
+     * no-op keeps previews working without a host.
+     */
+    onSaveCode: (String, String) -> Unit = { _, _ -> },
 ) {
     val blocks = remember(markdown) { Markdown.parse(markdown) }
     val colors = OpenCodeTheme.colors
@@ -287,6 +294,7 @@ fun MarkdownText(
                             language = block.language,
                             code = block.code,
                             streaming = streaming && blockIndex == blocks.lastIndex,
+                            onSaveCode = onSaveCode,
                         )
 
                         is MdBlock.Table -> TableBlock(block, proseColor, onBubble)
@@ -324,7 +332,13 @@ private const val CODE_COLLAPSE_THRESHOLD = 30
  * and inset hairline borders.
  */
 @Composable
-private fun CodeBlock(language: String?, code: String, streaming: Boolean = false) {
+private fun CodeBlock(
+    language: String?,
+    code: String,
+    streaming: Boolean = false,
+    /** Saves the block through the system picker (Fase 1, item 4). */
+    onSaveCode: (String, String) -> Unit = { _, _ -> },
+) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
@@ -479,6 +493,17 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
                                 copyToClipboard(context, code)
                                 copied = true
                             },
+                        )
+                        // Save (Fase 1, item 4): the whole block, verbatim,
+                        // through the system picker — the suggested name
+                        // comes from the fence language. No Run button:
+                        // there is no verified, gated execution path for
+                        // arbitrary model-written code (see CodeBlockSave).
+                        BlockAction(
+                            label = stringResource(R.string.code_save),
+                            glyph = null,
+                            done = false,
+                            onClick = { onSaveCode(codeBlockFileName(language), code) },
                         )
                     }
                 }

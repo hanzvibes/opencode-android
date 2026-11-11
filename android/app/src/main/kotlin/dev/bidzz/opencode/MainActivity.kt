@@ -18,7 +18,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import java.io.File
 import dev.bidzz.opencode.ui.OpenCodeApp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Hosts the Compose UI and owns the two permission flows.
@@ -63,6 +65,34 @@ class MainActivity : ComponentActivity() {
     private val pickSafFile =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { (application as OpenCodeApplication).deliverSafFile(it) }
+        }
+
+    /**
+     * System save picker for a code block (SAF `CreateDocument`).
+     *
+     * Same reason as [pickSafFile] for living here. The pending request —
+     * filename plus the code verbatim — is taken here, so a cancelled pick
+     * writes nothing and a pick that arrives with no request is ignored.
+     * The write runs on IO; the result is a Toast, using the same
+     * `code_saved` string the file viewer already uses.
+     */
+    private val saveCodeDocument =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+            val pending = (application as OpenCodeApplication).takePendingCodeSave()
+                ?: return@registerForActivityResult
+            if (uri == null) return@registerForActivityResult
+            lifecycleScope.launch(Dispatchers.IO) {
+                val saved = runCatching {
+                    contentResolver.openOutputStream(uri)?.use { it.write(pending.text.toByteArray()) } != null
+                }.getOrDefault(false)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (saved) R.string.code_saved else R.string.code_save_failed,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,6 +145,16 @@ class MainActivity : ComponentActivity() {
                 // never receives a file.
                 runCatching { pickSafFile.launch(arrayOf("*/*")) }
                     .onFailure { Log.w("MainActivity", "SAF picker launch failed", it) }
+            }
+        }
+        lifecycleScope.launch {
+            app.codeSaveRequest.collect {
+                // Peek, do not take: the result callback takes the request
+                // when the picker returns, so a cancelled pick loses
+                // nothing and a second tap replaces the pending one.
+                val pending = app.peekPendingCodeSave() ?: return@collect
+                runCatching { saveCodeDocument.launch(pending.filename) }
+                    .onFailure { Log.w("MainActivity", "Code save picker launch failed", it) }
             }
         }
     }

@@ -220,6 +220,36 @@ class OpenCodeApplication : Application() {
     val safFilePicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
 
     /**
+     * A code block the user asked to save through the system picker (SAF).
+     * Same bridge shape as the SAF attach flow above: the composable only
+     * names the file and its text, MainActivity owns the `CreateDocument`
+     * launcher (a Compose launcher in chat crashed for want of an
+     * ActivityResultRegistryOwner) and the write.
+     */
+    data class CodeSaveRequest(val filename: String, val text: String)
+
+    /** The pending code-save request, consumed once by MainActivity. */
+    private var pendingCodeSave: CodeSaveRequest? = null
+
+    /** Asks MainActivity to open the system save picker for a code block. */
+    fun requestCodeSave(filename: String, text: String) {
+        pendingCodeSave = CodeSaveRequest(filename, text)
+        codeSaveRequest.tryEmit(System.currentTimeMillis())
+    }
+
+    /** Takes the pending code-save request, if any; null when already taken. */
+    fun takePendingCodeSave(): CodeSaveRequest? {
+        val pending = pendingCodeSave
+        pendingCodeSave = null
+        return pending
+    }
+
+    /** Peeks at the pending request without consuming it (for the launch). */
+    fun peekPendingCodeSave(): CodeSaveRequest? = pendingCodeSave
+
+    val codeSaveRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+
+    /**
      * Delivers a command to [EngineService].
      *
      * `startForegroundService` is used for both actions, not just start: the

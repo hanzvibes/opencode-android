@@ -9,6 +9,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -165,13 +167,7 @@ private fun SingleQuestionSection(
             .filter { it.id in selected }
             .map { it.label }
         val allAnswers = chosenLabels + (if (writeInOn && writeIn.isNotBlank()) listOf(writeIn.trim()) else emptyList())
-        val answerSummary = allAnswers.joinToString(", ")
-        val formatted = if (item.header != null) {
-            "${item.header}: $answerSummary"
-        } else {
-            answerSummary
-        }
-        onSubmit(formatted)
+        onSubmit(formatQuestionAnswer(item, allAnswers))
     }
 
     // Header Row
@@ -289,6 +285,49 @@ private fun SingleQuestionSection(
             }
         }
     } else {
+        // Quick-reply chips (Fase 1, item 1): the short single-choice
+        // answers as one-tap chips above the full list. A chip sends at
+        // once, through the same submitAnswer/onSubmit path as tapping
+        // the option row — the card then shows the answered state. No
+        // chips for multi-choice (it needs Submit), long labels, or a
+        // question with no options; the full list below still covers
+        // those, so nothing is lost by the chips not appearing.
+        val chips = remember(item) { quickReplyChips(item) }
+        if (chips.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                chips.forEach { chip ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.full))
+                            .background(colors.accent.copy(alpha = 0.12f))
+                            .border(0.5.dp, colors.accent.copy(alpha = 0.45f), RoundedCornerShape(radius.full))
+                            .clickable(role = Role.Button) {
+                                selectedOptionIds = listOf(chip.optionId)
+                                writeInActive = false
+                                submitAnswer(listOf(chip.optionId), "", false)
+                            }
+                            .padding(horizontal = spacing.sm, vertical = 6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = chip.label,
+                            style = OpenCodeTypography.label.copy(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            color = colors.accent,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+
         // Interactive choices list
         Column(
             modifier = Modifier.fillMaxWidth(),

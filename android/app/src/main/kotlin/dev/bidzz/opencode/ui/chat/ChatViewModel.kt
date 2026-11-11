@@ -841,13 +841,36 @@ class ChatViewModel(
      * the draft or the pending files.
      */
     fun answerQuestion(answer: String) {
-        val text = answer.trim()
-        if (text.isBlank()) return
+        sendStandalonePrompt(answer)
+    }
+
+    /**
+     * Asks the agent to revert a rejected edit (Fase 1, item 2).
+     *
+     * This is a prompt, not an engine revert: there is no verified
+     * endpoint that un-applies one finished edit (see [DiffDecision]),
+     * so the agent is asked to put [relativePath] back in a new turn.
+     * It travels exactly like a question answer — never through the
+     * draft, never with the pending attachments, queued while busy.
+     */
+    fun requestDiffRevert(relativePath: String) {
+        sendStandalonePrompt(revertPromptFor(relativePath))
+    }
+
+    /**
+     * Sends [text] as its own prompt, without touching the draft or the
+     * pending attachments. Shared by [answerQuestion] and
+     * [requestDiffRevert]: both are operator decisions that must reach
+     * the engine even while the user is typing something else.
+     */
+    private fun sendStandalonePrompt(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return
         if (_state.value.busy || sendInFlight) {
-            queuePrompt(text, text)
+            queuePrompt(trimmed, trimmed)
             return
         }
-        sendText(text, text, emptyList())
+        sendText(trimmed, trimmed, emptyList())
     }
 
     /**
