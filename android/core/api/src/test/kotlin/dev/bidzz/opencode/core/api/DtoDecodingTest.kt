@@ -1,11 +1,14 @@
 package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
+import dev.bidzz.opencode.core.api.dto.McpServersResponse
 import dev.bidzz.opencode.core.api.dto.ModelsResponse
 import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
+import dev.bidzz.opencode.core.api.dto.SavedPermissionsResponse
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
+import dev.bidzz.opencode.core.api.dto.SkillsResponse
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -138,6 +141,73 @@ class DtoDecodingTest {
         // field name is load-bearing and worth pinning.
         val body = ApiJson.encodeToString(PermissionReplyRequest(decision = "always"))
         assertEquals("""{"decision":"always"}""", body)
+    }
+
+    @Test
+    fun `decodes saved permissions, ignoring the unmodelled time field`() {
+        // `time` is listed in the reference without a shape, so the DTO omits
+        // it; a response carrying it as an object must still decode.
+        val raw = """
+            {"data":[
+              {"id":"perm_01","projectID":"81d8a9e29a4c267059be6b14ec914cff729bd300",
+               "action":"bash","resource":"bash:ls *","time":{"created":1793447927442}},
+              {"id":"perm_02","projectID":"81d8a9e29a4c267059be6b14ec914cff729bd300",
+               "action":"edit","resource":"/storage/emulated/0/Projects/demo/README.md"}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<SavedPermissionsResponse>(raw)
+        assertEquals(2, parsed.data.size)
+        assertEquals("perm_01", parsed.data[0].id)
+        assertEquals("bash", parsed.data[0].action)
+        assertEquals("bash:ls *", parsed.data[0].resource)
+        assertEquals("edit", parsed.data[1].action)
+        assertEquals("/storage/emulated/0/Projects/demo/README.md", parsed.data[1].resource)
+    }
+
+    @Test
+    fun `decodes the skill list`() {
+        val raw = """
+            {"data":[
+              {"id":"sk_1","name":"commit","description":"Write a commit message",
+               "autoinvoke":true,"path":"/skills/commit/SKILL.md","content":"# commit\n"},
+              {"id":"sk_2","name":"review-pr","description":"Review a pull request",
+               "autoinvoke":false,"path":"/skills/review-pr/SKILL.md"}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<SkillsResponse>(raw)
+        assertEquals(2, parsed.data.size)
+        assertEquals("commit", parsed.data[0].name)
+        assertEquals(true, parsed.data[0].autoinvoke)
+        assertEquals("Write a commit message", parsed.data[0].description)
+        assertEquals("review-pr", parsed.data[1].name)
+        assertEquals(false, parsed.data[1].autoinvoke)
+    }
+
+    @Test
+    fun `decodes the MCP server list with per-variant status objects`() {
+        // Status is an object, not a bare string: each Mcp.Status.* variant
+        // carries its own `status` field, and failed/needs-auth add `error`.
+        val raw = """
+            {"data":[
+              {"name":"github","status":{"status":"connected"},"title":"GitHub","integrationID":"github"},
+              {"name":"broken","status":{"status":"failed","error":"connection refused"},"title":"Broken server"},
+              {"name":"local","status":{"status":"pending"}}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<McpServersResponse>(raw)
+        assertEquals(3, parsed.data.size)
+        assertEquals("github", parsed.data[0].name)
+        assertEquals("connected", parsed.data[0].status.status)
+        assertEquals("GitHub", parsed.data[0].title)
+        assertEquals("github", parsed.data[0].integrationID)
+        assertEquals("failed", parsed.data[1].status.status)
+        assertEquals("connection refused", parsed.data[1].status.error)
+        assertEquals("pending", parsed.data[2].status.status)
+        assertEquals(null, parsed.data[2].status.error)
+        assertEquals(null, parsed.data[2].title)
     }
 
     @Test

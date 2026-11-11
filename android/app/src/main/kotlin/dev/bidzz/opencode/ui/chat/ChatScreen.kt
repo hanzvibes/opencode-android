@@ -130,6 +130,7 @@ import dev.bidzz.opencode.ui.sessions.DeleteSessionDialog
 import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
 import dev.bidzz.opencode.ui.sessions.SessionActionMenu
 import dev.bidzz.opencode.ui.sessions.SessionDateGroup
+import dev.bidzz.opencode.ui.sessions.formatCompactTokens
 import dev.bidzz.opencode.ui.sessions.groupSessions
 import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
@@ -968,12 +969,16 @@ fun ChatScreen(
                     val paletteState = rememberCommandPaletteState(
                         commands = state.commands,
                         draft = state.draft,
+                        skills = state.skills,
                     )
 
                     CommandSuggestions(
                         paletteState = paletteState,
                         onPick = { name -> onDraftChange("/$name ") },
                         onDismiss = { dismissPalette() },
+                        // A skill is mentioned in the draft as plain text, not
+                        // run as a command: the agent loads it from the mention.
+                        onSkillPick = { name -> onDraftChange("$name ") },
                     )
 
                     // One attach picker for both entry points: the @ chip
@@ -1126,6 +1131,7 @@ fun ChatScreen(
                                     event = keyEvent,
                                     onPick = { name -> onDraftChange("/$name ") },
                                     onDismiss = { dismissPalette() },
+                                    onSkillPick = { name -> onDraftChange("$name ") },
                                 )
                             }
                         },
@@ -2503,7 +2509,8 @@ private fun SessionDrawerItem(
     var menuExpanded by remember { mutableStateOf(false) }
 
     val age = row.age?.label()
-    val meta = listOfNotNull(age, row.cost).joinToString(" · ")
+    val tokenLabel = row.tokenTotal?.let { stringResource(R.string.turn_footer_tokens, formatCompactTokens(it)) }
+    val meta = listOfNotNull(age, row.cost, tokenLabel).joinToString(" · ")
 
     // The selected background animates instead of snapping when the
     // selection moves between rows.

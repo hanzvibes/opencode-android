@@ -352,7 +352,8 @@ private fun SessionRowItem(
         ?.takeIf { showDirectory }
         ?.substringAfterLast('/')
         ?.takeIf { it.isNotEmpty() }
-    val meta = listOfNotNull(detail?.model, detail?.status, age, directory, row.cost).joinToString(" · ")
+    val tokenLabel = row.tokenTotal?.let { stringResource(R.string.turn_footer_tokens, formatCompactTokens(it)) }
+    val meta = listOfNotNull(detail?.model, detail?.status, age, directory, row.cost, tokenLabel).joinToString(" · ")
     val preview = detail?.preview?.trim()?.takeIf { it.isNotEmpty() }
 
     Column(

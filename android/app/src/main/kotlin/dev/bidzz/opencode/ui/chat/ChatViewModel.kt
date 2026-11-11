@@ -11,6 +11,7 @@ import dev.bidzz.opencode.core.api.ChatState
 import dev.bidzz.opencode.core.api.LiveTool
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
+import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import kotlinx.coroutines.Job
@@ -98,6 +99,8 @@ data class ChatUiState(
     val activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
     /** Slash commands offered by the engine and the project's `commands/` folder. */
     val commands: List<dev.bidzz.opencode.core.api.dto.CommandInfo> = emptyList(),
+    /** Skills offered by the engine (`GET /api/skill`); shown in the `/` palette, read-only. */
+    val skills: List<dev.bidzz.opencode.core.api.dto.SkillInfo> = emptyList(),
     /** Active git branch when inside a version-controlled workspace. */
     val branch: String? = null,
 )
@@ -143,10 +146,12 @@ data class ChatMessage(
      * nothing else reads it, so a null simply hides those decorations. */
     val createdAtMillis: Long? = null,
     /** Turn footer (Phase 2, finding 6), from the engine DTO: total tokens
-     * (`tokens.input + tokens.output`; reasoning/cache are subsets of those,
-     * never added on top), cost, turn duration (`time.completed -
-     * time.created`) and the engine `finish` string. All null until the
-     * engine reports them; the footer hides while all four are null. */
+     * (`tokens.input + tokens.output + tokens.reasoning`; cache reads sit
+     * inside input and are never added on top), cost, turn duration
+     * (`time.completed - time.created`) and the engine `finish` string.
+     * Same total as the session list shows for the same usage, so a turn
+     * and its session never disagree. All null until the engine reports
+     * them; the footer hides while all four are null. */
     val usageTokens: Long? = null,
     val usageCostUsd: Double? = null,
     val turnDurationMs: Long? = null,
@@ -552,6 +557,12 @@ class ChatViewModel(
                 when (r) {
                     is ApiResult.Success -> _state.value = _state.value.copy(commands = r.value)
                     is ApiResult.Failure -> Unit // commands are optional; an empty set is normal
+                }
+            }
+            h.skills.list().let { r ->
+                when (r) {
+                    is ApiResult.Success -> _state.value = _state.value.copy(skills = r.value)
+                    is ApiResult.Failure -> Unit // skills are optional; an empty set is normal
                 }
             }
         }
@@ -1333,15 +1344,15 @@ private fun ChatState.buildUnmergedMessages(toolDurations: Map<String, Long> = e
                     model = message.model,
                     createdAtMillis = message.time?.created,
                     // Turn footer from the engine DTO (finding 6): tokens
-                    // are input + output only — reasoning/cache are subsets
-                    // of those, never added on top. Duration is completed −
-                    // created; thinking time is streamed − created while
-                    // reasoning is present. Any missing timestamp leaves its
-                    // field null rather than a guessed value.
-                    usageTokens = message.tokens?.let { tokens ->
-                        listOfNotNull(tokens.input, tokens.output).sum()
-                            .takeIf { tokens.input != null || tokens.output != null }
-                    },
+                    // are input + output + reasoning — reasoning is its own
+                    // bucket in this engine's accounting (a real payload
+                    // reports reasoning 83 against output 9), while cache
+                    // reads sit inside input and are never added on top.
+                    // Duration is completed − created; thinking time is
+                    // streamed − created while reasoning is present. Any
+                    // missing timestamp leaves its field null rather than a
+                    // guessed value.
+                    usageTokens = turnUsageTokens(message.tokens),
                     usageCostUsd = message.cost,
                     turnDurationMs = message.time?.let { time ->
                         // Local copies: time.* are public API properties from
@@ -1503,3 +1514,19 @@ private fun sumOrNull(a: Long?, b: Long?): Long? =
 /** Sums two nullable totals; null when both are absent. */
 private fun sumOrNull(a: Double?, b: Double?): Double? =
     if (a == null && b == null) null else (a ?: 0.0) + (b ?: 0.0)
+
+/**
+ * Turn-footer token total: input + output + reasoning.
+ *
+ * Reasoning is its own bucket in this engine's accounting — a real payload
+ * reports reasoning 83 against output 9 — so leaving it out undercounts
+ * the turn, the way the footer did before this fix. Cache reads sit inside
+ * input and are never added on top. Null when the engine reported no usage
+ * at all; a reported zero stays zero, matching the footer's old behaviour
+ * for an all-zero turn.
+ */
+internal fun turnUsageTokens(tokens: TokenUsage?): Long? {
+    if (tokens == null) return null
+    return listOfNotNull(tokens.input, tokens.output, tokens.reasoning).sum()
+        .takeIf { tokens.input != null || tokens.output != null || tokens.reasoning != null }
+}

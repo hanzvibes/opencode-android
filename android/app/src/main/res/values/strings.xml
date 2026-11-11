@@ -56,8 +56,17 @@
     <string name="settings_about_body">Portfolio and ways to get in touch.</string>
     <string name="settings_saved_permissions">Saved permissions</string>
     <string name="settings_saved_permissions_body">Permissions saved with “Always”. Revoke one to be asked again next time.</string>
-    <string name="settings_saved_permissions_empty">No saved permissions yet. Saved permissions live on the engine, which does not expose the list yet, so nothing can be listed or revoked from here.</string>
+    <string name="settings_saved_permissions_empty">No saved permissions yet. Answer “Always” to a permission prompt to save one.</string>
     <string name="settings_saved_permissions_revoke">Revoke</string>
+    <string name="mcp_title">MCP servers</string>
+    <string name="mcp_body">Servers configured on the engine, and their connection status. Connecting, disconnecting, adding and removing are not available yet.</string>
+    <string name="mcp_empty">No MCP servers configured on the engine.</string>
+    <string name="mcp_status_connected">Connected</string>
+    <string name="mcp_status_disabled">Disabled</string>
+    <string name="mcp_status_failed">Failed</string>
+    <string name="mcp_status_needs_auth">Needs auth</string>
+    <string name="mcp_status_pending">Pending</string>
+    <string name="mcp_status_unknown">Unknown</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Skip</string>

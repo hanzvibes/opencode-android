@@ -106,6 +106,27 @@ data class PendingPermission(
     val message: String? = null,
 )
 
+/**
+ * One permission saved with an "Always" answer (`PermissionSaved.Info`,
+ * docs/API-REFERENCE.md).
+ *
+ * `time` is intentionally not modelled: the reference lists the field but
+ * not its shape, and the UI shows what was allowed, not when.
+ * `ignoreUnknownKeys` drops it.
+ */
+@Serializable
+data class PermissionSavedInfo(
+    val id: String,
+    val projectID: String? = null,
+    val action: String = "",
+    val resource: String? = null,
+)
+
+@Serializable
+data class SavedPermissionsResponse(
+    val data: List<PermissionSavedInfo> = emptyList(),
+)
+
 /** Event type names this client acts on. Everything else is ignored. */
 object EventTypes {
     const val SERVER_CONNECTED = "server.connected"

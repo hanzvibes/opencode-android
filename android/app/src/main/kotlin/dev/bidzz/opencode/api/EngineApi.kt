@@ -9,7 +9,10 @@ import dev.bidzz.opencode.core.api.EngineClient
 import dev.bidzz.opencode.core.api.EventStream
 import dev.bidzz.opencode.core.api.IntegrationApi
 import dev.bidzz.opencode.core.api.ModelApi
+import dev.bidzz.opencode.core.api.McpApi
+import dev.bidzz.opencode.core.api.PermissionApi
 import dev.bidzz.opencode.core.api.ProviderApi
+import dev.bidzz.opencode.core.api.SkillApi
 import dev.bidzz.opencode.core.api.SessionApi
 import dev.bidzz.opencode.core.engine.EngineCredentials
 import java.util.concurrent.atomic.AtomicReference
@@ -31,7 +34,10 @@ class EngineApi(private val workspaceDirectory: () -> String) {
         val models: ModelApi,
         val agents: AgentApi,
         val commands: CommandApi,
+        val skills: SkillApi,
+        val mcp: McpApi,
         val providers: ProviderApi,
+        val permissions: PermissionApi,
         val integrations: IntegrationApi,
         /** Named to avoid colliding with [credentials], which is the engine's own auth. */
         val credentialStore: CredentialApi,
@@ -57,7 +63,10 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             models = ModelApi(client),
             agents = AgentApi(client),
             commands = CommandApi(client),
+            skills = SkillApi(client),
+            mcp = McpApi(client),
             providers = ProviderApi(client),
+            permissions = PermissionApi(client),
             integrations = IntegrationApi(client),
             credentialStore = CredentialApi(client),
             stream = EventStream(client),

@@ -6,6 +6,7 @@ import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.SessionInfo
+import dev.bidzz.opencode.core.api.dto.TokenUsage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +30,8 @@ data class SessionRow(
     val cost: String?,
     val timestamp: Long? = null,
     val isPinned: Boolean = false,
+    /** Total tokens the session used (input + output + reasoning), or null when unknown. */
+    val tokenTotal: Long? = null,
 )
 
 data class SessionListUiState(
@@ -208,7 +211,28 @@ private fun SessionInfo.toRow(isPinned: Boolean = false): SessionRow {
         cost = cost?.takeIf { it > 0 }?.let { formatCost(it) },
         timestamp = ts,
         isPinned = isPinned,
+        tokenTotal = totalTokens(tokens),
     )
+}
+
+/**
+ * Total tokens a session used: input + output + reasoning.
+ *
+ * Cache read/write are subsets of input, not additions — adding them would
+ * double-count. Null when the engine reported no usage at all, or a total
+ * of zero (a session that never ran a model has nothing to show).
+ */
+internal fun totalTokens(tokens: TokenUsage?): Long? {
+    if (tokens == null) return null
+    val total = (tokens.input ?: 0) + (tokens.output ?: 0) + (tokens.reasoning ?: 0)
+    return total.takeIf { it > 0 }
+}
+
+/** 842 → "842", 12_400 → "12.4k", 1_250_000 → "1.2M". Same compact form as the turn footer. */
+internal fun formatCompactTokens(tokens: Long): String = when {
+    tokens < 1_000 -> tokens.toString()
+    tokens < 1_000_000 -> "${tokens / 1000}.${(tokens % 1000) / 100}k"
+    else -> "${tokens / 1_000_000}.${(tokens % 1_000_000) / 100_000}M"
 }
 
 /** Relative age from an epoch-millis timestamp. Coarse on purpose: exact seconds do not help. */
