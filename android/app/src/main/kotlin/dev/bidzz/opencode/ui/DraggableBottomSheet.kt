@@ -38,6 +38,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import kotlin.math.maxOf
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -144,7 +147,7 @@ fun DraggableBottomSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.ime + WindowInsets.navigationBars),
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val maxHeightPx = with(density) { maxHeight.toPx() }
@@ -290,5 +293,31 @@ fun DraggableBottomSheet(
                 }
             }
         }
+    }
+}
+
+/**
+ * Union of two insets (the max of each side), written out by hand:
+ * the Compose version pinned by this project (BOM 2024.12.01) has
+ * neither `WindowInsets.union` nor the `+` operator — both fail CI
+ * with "Unresolved reference" — so the union is built from the four
+ * `WindowInsets` getters directly. A union, not a sum: when the
+ * keyboard is up its insets already cover the navigation bar, so
+ * adding both would float the sheet too high.
+ */
+private fun WindowInsets.union(other: WindowInsets): WindowInsets {
+    val first = this
+    return object : WindowInsets {
+        override fun getLeft(density: Density, layoutDirection: LayoutDirection): Int =
+            maxOf(first.getLeft(density, layoutDirection), other.getLeft(density, layoutDirection))
+
+        override fun getTop(density: Density): Int =
+            maxOf(first.getTop(density), other.getTop(density))
+
+        override fun getRight(density: Density, layoutDirection: LayoutDirection): Int =
+            maxOf(first.getRight(density, layoutDirection), other.getRight(density, layoutDirection))
+
+        override fun getBottom(density: Density): Int =
+            maxOf(first.getBottom(density), other.getBottom(density))
     }
 }
