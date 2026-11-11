@@ -314,6 +314,7 @@
     <string name="files_quick_open_empty">Tidak ada file yang cocok dengan \"%1$s\"</string>
     <string name="files_quick_open_loading">Mengindeks file workspace…</string>
     <string name="files_quick_open_results">%1$d dari %2$d file</string>
+    <string name="files_quick_open_failed">Beberapa folder gagal diindeks — hasilnya mungkin tidak lengkap.</string>
     <string name="files_quick_open_close">Tutup buka cepat</string>
     <string name="files_detail_empty">Pilih file untuk melihatnya di sini.</string>
     <string name="fileview_find">Cari</string>

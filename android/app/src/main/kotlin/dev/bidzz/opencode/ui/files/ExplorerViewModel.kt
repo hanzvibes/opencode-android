@@ -51,6 +51,12 @@ data class ExplorerUiState(
     val quickOpenIndex: List<FileRow> = emptyList(),
     /** True while the quick-open index is being built. */
     val quickOpenLoading: Boolean = false,
+    /**
+     * True when the last index walk hit a failure: the published index is
+     * partial, so the palette must say so and offer a retry instead of
+     * serving it as complete (item 27).
+     */
+    val quickOpenFailed: Boolean = false,
 ) {
     data class Crumb(val label: String, val path: String)
 }
@@ -96,6 +102,12 @@ class ExplorerViewModel(
     private var quickOpenLoaded: Boolean = false
     private var quickOpenLoading: Boolean = false
 
+    /** Workspace the cached index was built for; an index from another workspace is stale. */
+    private var quickOpenDirectory: String? = null
+
+    /** In-flight index walk, cancelled when the index is invalidated. */
+    private var quickOpenJob: Job? = null
+
     fun open(path: String = "") {
         currentPath = path
         load()
@@ -112,24 +124,37 @@ class ExplorerViewModel(
      * root listing reloads (which clears it) and the palette is opened again.
      */
     fun ensureQuickOpenIndex() {
-        if (quickOpenLoaded || quickOpenLoading) return
-        val handle = api.handle() ?: return
         val directory = workspace()
+        if (quickOpenLoading) return
+        // An index built for another workspace is stale, not loaded: the
+        // workspace can change without this view model being told (the
+        // folder picker switches it from the activity), so the cached
+        // index is only trusted for the directory it was built for.
+        if (quickOpenLoaded && quickOpenDirectory == directory) return
+        if (quickOpenLoaded) invalidateQuickOpenIndex()
+        val handle = api.handle() ?: return
         quickOpenLoading = true
-        _state.value = _state.value.copy(quickOpenLoading = true)
+        _state.value = _state.value.copy(quickOpenLoading = true, quickOpenFailed = false)
 
-        viewModelScope.launch {
+        quickOpenJob = viewModelScope.launch {
             val files = FileApi(handle.client)
             val found = mutableListOf<FileRow>()
             val queue = ArrayDeque<String>()
             queue.add("")
             var dirsVisited = 0
+            // One unreadable directory used to poison the whole index
+            // silently: its files were missing and the walk still counted
+            // as loaded, so no retry ever happened (item 27).
+            var hadFailure = false
             while (queue.isNotEmpty() && found.size < QuickOpenMaxFiles && dirsVisited < QuickOpenMaxDirs) {
                 val dir = queue.removeFirst()
                 dirsVisited++
                 val entries = when (val result = files.list(directory, dir)) {
                     is ApiResult.Success -> result.value
-                    is ApiResult.Failure -> continue
+                    is ApiResult.Failure -> {
+                        hadFailure = true
+                        continue
+                    }
                 }
                 for (entry in entries) {
                     val relative = entry.path.trimEnd('/')
@@ -151,12 +176,37 @@ class ExplorerViewModel(
                 _state.value = _state.value.copy(quickOpenLoading = false)
                 return@launch
             }
-            quickOpenLoaded = true
+            // The partial index is still published — what was found is
+            // searchable — but it does not count as loaded, so the next
+            // palette open retries the walk instead of serving a partial
+            // index as complete.
+            quickOpenLoaded = !hadFailure
+            quickOpenDirectory = directory
             _state.value = _state.value.copy(
                 quickOpenIndex = found.sortedBy { it.path.lowercase() },
                 quickOpenLoading = false,
+                quickOpenFailed = hadFailure,
             )
         }
+    }
+
+    /**
+     * Drops the cached quick-open index so the next palette open rebuilds
+     * it — after a save (the file may be new) or a workspace change
+     * (item 27). Cancels a walk in flight, so it cannot publish a
+     * snapshot for the workspace that just went away.
+     */
+    fun invalidateQuickOpenIndex() {
+        quickOpenJob?.cancel()
+        quickOpenJob = null
+        quickOpenLoaded = false
+        quickOpenLoading = false
+        quickOpenDirectory = null
+        _state.value = _state.value.copy(
+            quickOpenIndex = emptyList(),
+            quickOpenLoading = false,
+            quickOpenFailed = false,
+        )
     }
 
     fun load() {
@@ -176,7 +226,7 @@ class ExplorerViewModel(
 
         // A root reload means the tree may have changed (the agent writes files),
         // so the quick-open snapshot is dropped and rebuilt on next palette open.
-        if (path.isEmpty()) quickOpenLoaded = false
+        if (path.isEmpty()) invalidateQuickOpenIndex()
         _state.value = _state.value.copy(
             loading = true,
             failure = null, failureKey = null,
@@ -277,6 +327,8 @@ class ExplorerViewModel(
 class FileViewViewModel(
     private val api: EngineApi,
     private val workspace: () -> String,
+    /** Called after a successful write: the file may be new to the index. */
+    private val onSaved: () -> Unit = {},
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FileViewState())
@@ -449,6 +501,9 @@ class FileViewViewModel(
                             draft = "",
                             saved = true,
                         )
+                        // The file was written — it may be new to the
+                        // quick-open index, which only lists paths (item 27).
+                        onSaved()
                         // A file switch was held for this save (item 10): the
                         // draft is written now, so open the file asked for.
                         _state.value.confirmSwitchTo?.let { load(it) }

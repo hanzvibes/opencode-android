@@ -315,6 +315,7 @@
     <string name="files_quick_open_empty">No files match \"%1$s\"</string>
     <string name="files_quick_open_loading">Indexing workspace files…</string>
     <string name="files_quick_open_results">%1$d of %2$d files</string>
+    <string name="files_quick_open_failed">Some folders couldn’t be indexed — results may be incomplete.</string>
     <string name="files_quick_open_close">Close quick open</string>
     <string name="files_detail_empty">Select a file to view it here.</string>
     <string name="fileview_find">Find</string>

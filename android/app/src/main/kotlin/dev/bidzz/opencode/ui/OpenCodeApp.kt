@@ -129,7 +129,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         ExplorerViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
     val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory { _ ->
-        FileViewViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+        FileViewViewModel(
+            app.engineApi,
+            { app.workspaceStore.resolve().absolutePath },
+            onSaved = explorerViewModel::invalidateQuickOpenIndex,
+        )
     })
     val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory { _ ->
         DiffViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
@@ -287,6 +291,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 showSidebar = true,
                 fileIndex = explorerState.quickOpenIndex,
                 fileIndexLoading = explorerState.quickOpenLoading,
+                fileIndexFailed = explorerState.quickOpenFailed,
                 onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
             )
 
@@ -416,6 +421,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                             showSidebar = false,
                             fileIndex = explorerState.quickOpenIndex,
                             fileIndexLoading = explorerState.quickOpenLoading,
+                            fileIndexFailed = explorerState.quickOpenFailed,
                             onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
                         )
                     }
@@ -462,6 +468,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         // A different project means a different session: the engine
                         // binds a session to the directory it was created in.
                         chatViewModel.newSession()
+                        // ... and a different file index: the cached one lists
+                        // the old project's files (item 27).
+                        explorerViewModel.invalidateQuickOpenIndex()
                         screen = Screen.Chat
                     },
                     onChooseFolder = { app.requestWorkspaceFolder() },
@@ -536,6 +545,7 @@ private fun ChatDestination(
     /** Workspace file index for the @-mention / attach picker. */
     fileIndex: List<dev.bidzz.opencode.ui.files.FileRow> = emptyList(),
     fileIndexLoading: Boolean = false,
+    fileIndexFailed: Boolean = false,
     onEnsureFileIndex: () -> Unit = {},
 ) {
     ChatScreen(
@@ -587,6 +597,7 @@ private fun ChatDestination(
         },
         fileIndex = fileIndex,
         fileIndexLoading = fileIndexLoading,
+        fileIndexFailed = fileIndexFailed,
         onEnsureFileIndex = onEnsureFileIndex,
         isExpanded = isExpanded,
         showSidebar = showSidebar,

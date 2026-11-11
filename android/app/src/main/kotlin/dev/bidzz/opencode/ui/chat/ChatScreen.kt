@@ -195,6 +195,8 @@ fun ChatScreen(
     fileIndex: List<FileRow> = emptyList(),
     /** True while that index is being built. */
     fileIndexLoading: Boolean = false,
+    /** True when the index walk hit a failure: the index is partial. */
+    fileIndexFailed: Boolean = false,
     /** Builds the index lazily on first picker open; no-op once built. */
     onEnsureFileIndex: () -> Unit = {},
     /**
@@ -947,6 +949,8 @@ fun ChatScreen(
                             results = if (attachPickerOpen) attachResults else mentionResults,
                             totalFiles = fileIndex.size,
                             loading = fileIndexLoading,
+                            failed = fileIndexFailed,
+                            onRetry = onEnsureFileIndex,
                             query = if (attachPickerOpen) attachPickerQuery else mentionQuery.orEmpty(),
                             onQueryChange = { if (attachPickerOpen) attachPickerQuery = it },
                             selectedIndex = attachSelectedIndex,
