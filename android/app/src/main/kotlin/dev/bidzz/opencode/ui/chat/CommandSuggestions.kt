@@ -466,9 +466,9 @@ fun CommandSuggestions(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = spacing.md, vertical = spacing.xs)
-                // No shadow/elevation token exists in Tokens.kt, so the menu keeps
-                // its 8dp elevation with the default shadow colour — no hand-tuned alpha.
-                .shadow(elevation = 8.dp, shape = shape)
+                // Menu elevation comes from the token (Tokens.Elevation.menu),
+                // same 8dp as before — no hand-tuned alpha on the shadow.
+                .shadow(elevation = OpenCodeTheme.tokens.elevation.menu, shape = shape)
                 .clip(shape)
                 .background(colors.surfaceRaised)
                 .border(OpenCodeTheme.tokens.dimensions.hairline, colors.outline.copy(alpha = 0.30f), shape),

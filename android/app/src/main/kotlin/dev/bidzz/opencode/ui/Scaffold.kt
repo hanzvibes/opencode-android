@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -37,6 +38,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -49,6 +51,13 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
  * One place for the things that were repeated nine times and drifted apart: the back target is
  * 48dp and announced as a button with tactile feedback, the status bar and the navigation bar
  * are both respected (edge-to-edge is on), and the keyboard pushes the body up instead of covering it.
+ *
+ * @param contentMaxWidth caps the body in a centred column on wide screens
+ * (landscape / tablets), so list and form content does not stretch
+ * edge-to-edge — the same 720dp cap the chat uses. Null (the default)
+ * leaves the body full-width, which is what code views want: FileView and
+ * Diff scroll horizontally, and a cap would only narrow their viewport.
+ * Pass [Dp.Infinity] to state the same choice explicitly.
  */
 @Composable
 fun ScreenScaffold(
@@ -60,6 +69,7 @@ fun ScreenScaffold(
     backLabel: String? = null,
     showSeparator: Boolean = true,
     separatorAlpha: Float = 1f,
+    contentMaxWidth: Dp? = null,
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -121,6 +131,8 @@ fun ScreenScaffold(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .widthIn(max = contentMaxWidth ?: Dp.Unspecified)
+                .align(Alignment.CenterHorizontally)
                 .navigationBarsPadding()
                 .imePadding(),
             content = content,

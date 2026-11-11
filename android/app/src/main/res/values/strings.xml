@@ -35,6 +35,13 @@
     <string name="settings_section_language">Language</string>
     <string name="settings_language">App language</string>
     <string name="settings_language_dialog_title">Choose language</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_system_hint">Follows the phone</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_dark_hint">Always dark</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_light_hint">Always light</string>
     <string name="settings_section_provider">Provider</string>
     <string name="settings_provider_title">Connect a provider</string>
     <string name="settings_provider_body">Add an API key. Without one the agent is limited to opencode\'s free tier.</string>
@@ -51,6 +58,26 @@
     <string name="settings_saved_permissions_body">Permissions saved with “Always”. Revoke one to be asked again next time.</string>
     <string name="settings_saved_permissions_empty">No saved permissions yet. Saved permissions live on the engine, which does not expose the list yet, so nothing can be listed or revoked from here.</string>
     <string name="settings_saved_permissions_revoke">Revoke</string>
+
+    <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
+    <string name="onboarding_title">Welcome to OpenCode</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_step_of">Step %1$d of %2$d</string>
+    <string name="onboarding_project_title">Pick a project</string>
+    <string name="onboarding_project_body">The agent works inside one project folder. Start with the built-in workspace, pick a folder of your own, or create a small sample project to try things out.</string>
+    <string name="onboarding_create_sample">Create sample project</string>
+    <string name="onboarding_sample_created">Sample project created in %1$s</string>
+    <string name="onboarding_choose_folder">Choose a folder</string>
+    <string name="onboarding_use_default">Use the default project</string>
+    <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_provider_title">Connect a provider</string>
+    <string name="onboarding_provider_body">Without an API key the agent runs on opencode\'s free tier, which rate-limits quickly. Add a key to use your own model — or keep going and add one later from Settings.</string>
+    <string name="onboarding_open_providers">Add a provider key</string>
+    <string name="onboarding_permissions_title">Let the agent reach your files</string>
+    <string name="onboarding_permissions_body">All-files access lets you open any folder on the device as a project. Without it, only the built-in workspace is available.</string>
+    <string name="onboarding_grant_access">Grant all-files access</string>
+    <string name="onboarding_access_granted">All-files access is already granted.</string>
+    <string name="onboarding_finish">Start chatting</string>
 
     <!-- About the developer -->
     <string name="about_title">About the developer</string>
@@ -268,6 +295,24 @@
     <string name="fileview_discard_confirm">Discard</string>
     <string name="fileview_discard_dismiss">Keep editing</string>
     <string name="fileview_dirty_badge">Unsaved</string>
+    <string name="files_quick_open">Quick open</string>
+    <string name="files_quick_open_hint">Search files by name…</string>
+    <string name="files_quick_open_empty">No files match \"%1$s\"</string>
+    <string name="files_quick_open_loading">Indexing workspace files…</string>
+    <string name="files_quick_open_results">%1$d of %2$d files</string>
+    <string name="files_quick_open_close">Close quick open</string>
+    <string name="files_detail_empty">Select a file to view it here.</string>
+    <string name="fileview_find">Find</string>
+    <string name="fileview_find_hint">Find in file…</string>
+    <string name="fileview_find_count">%1$d of %2$d</string>
+    <string name="fileview_find_none">No matches</string>
+    <string name="fileview_find_partial">Searching the loaded preview only</string>
+    <string name="fileview_find_prev">Previous match</string>
+    <string name="fileview_find_next">Next match</string>
+    <string name="fileview_find_close">Close find</string>
+    <string name="fileview_large_warning">Large file (over 1 MB). Showing the first %1$d of %2$d lines — find searches this preview only. Load the full file to edit or search it all.</string>
+    <string name="fileview_load_full">Load full file</string>
+    <string name="fileview_lines_truncated">%1$d of %2$d lines</string>
 
     <!-- Diff -->
     <string name="diff_loading">Loading diff…</string>
@@ -413,6 +458,18 @@
     <string name="diag_section_paths">Paths</string>
     <string name="diag_section_output">Engine output (this process)</string>
     <string name="diag_section_log">Engine log (on disk)</string>
+    <string name="diag_log_search_hint">Search logs</string>
+    <string name="diag_log_search_clear">Clear search</string>
+    <string name="diag_log_match_count">%1$d of %2$d</string>
+    <string name="diag_log_no_match">No lines match this filter</string>
+    <string name="diag_log_follow">Follow</string>
+    <string name="diag_log_follow_on">Follow new log lines</string>
+    <string name="diag_log_follow_off">Stop following new log lines</string>
+    <string name="diag_log_jump_latest">Jump to latest</string>
+    <string name="diag_log_level_all">All</string>
+    <string name="diag_log_level_info">Info</string>
+    <string name="diag_log_level_warning">Warning</string>
+    <string name="diag_log_level_error">Error</string>
 
     <!-- Tool timeline verbs. Present while the tool runs, past once it has finished.
          "step_target" joins a verb to a file name or command; a language that needs the

@@ -35,6 +35,7 @@ import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
@@ -62,6 +63,8 @@ fun SettingsScreen(
     app: OpenCodeApplication,
     language: AppLanguage,
     onLanguageChange: (AppLanguage) -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit,
     onDiagnostics: () -> Unit,
     onProjects: () -> Unit,
@@ -207,6 +210,21 @@ fun SettingsScreen(
                     value = languageLabel(language),
                     onClick = { pickingLanguage = true },
                 )
+            }
+
+            // Appearance (Phase 3): the theme is picked inline, not in a
+            // dialog — three radio rows, one tap to switch, applied at once
+            // over the whole tree (see OpenCodeApp). System follows the
+            // phone; Dark / Light pin the palette.
+            Section(R.string.settings_section_appearance) {
+                ThemeMode.entries.forEachIndexed { index, mode ->
+                    if (index > 0) RowDivider(inset = spacing.md)
+                    ThemeModeRow(
+                        mode = mode,
+                        selected = mode == themeMode,
+                        onSelect = { if (mode != themeMode) onThemeModeChange(mode) },
+                    )
+                }
             }
 
             Section(R.string.settings_section_provider) {
@@ -374,6 +392,61 @@ private fun languageLabel(language: AppLanguage): String = stringResource(
         AppLanguage.Indonesian -> R.string.language_indonesian
     },
 )
+
+/** One inline theme row: radio + label + hint, 48dp, whole row tappable. */
+@Composable
+private fun ThemeModeRow(
+    mode: ThemeMode,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.RadioButton, onClick = onSelect)
+            .padding(horizontal = spacing.md, vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            colors = RadioButtonDefaults.colors(
+                selectedColor = colors.accent,
+                unselectedColor = colors.onSurfaceMuted,
+            ),
+        )
+        Column(
+            modifier = Modifier.padding(start = spacing.md),
+        ) {
+            Text(
+                text = stringResource(
+                    when (mode) {
+                        ThemeMode.System -> R.string.settings_theme_system
+                        ThemeMode.Dark -> R.string.settings_theme_dark
+                        ThemeMode.Light -> R.string.settings_theme_light
+                    },
+                ),
+                style = OpenCodeTypography.body,
+                color = colors.onSurface,
+            )
+            Text(
+                text = stringResource(
+                    when (mode) {
+                        ThemeMode.System -> R.string.settings_theme_system_hint
+                        ThemeMode.Dark -> R.string.settings_theme_dark_hint
+                        ThemeMode.Light -> R.string.settings_theme_light_hint
+                    },
+                ),
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+            )
+        }
+    }
+}
 
 /** One permission saved with "Always": what was allowed, and for which scope. */
 data class SavedPermission(

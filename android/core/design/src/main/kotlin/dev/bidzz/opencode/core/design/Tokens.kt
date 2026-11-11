@@ -166,7 +166,24 @@ data class Motion(
         tween(durationMillis = emphasized, delayMillis = delayMillis, easing = easingEmphasized)
 }
 
-/** Fixed component dimensions, so rows line up across screens. */
+/**
+ * Shadow / elevation values.
+ *
+ * Phase 3: the two surviving flat shadow values, tokenised so a menu and
+ * the send button cannot drift apart. These are plain elevations, NOT the
+ * Phase 1 glass/halo language — no blur, no glow, no coloured halo. The
+ * composer body itself stays flat (hairline only); only the floating menu
+ * and the send button lift off the surface, and only by these amounts.
+ */
+@Immutable
+data class Elevation(
+    /** Floating menus: command palette, selector menus, session menu. */
+    val menu: Dp = 8.dp,
+    /** Send button while it can send. */
+    val sendButton: Dp = 3.dp,
+    /** Send button while a run is in progress (stop state). */
+    val sendButtonBusy: Dp = 4.dp,
+)
 @Immutable
 data class Dimensions(
     /** Minimum touch target. Below this, Android accessibility guidance is violated. */
@@ -202,4 +219,5 @@ data class OpenCodeTokens(
     val radius: Radius = Radius(),
     val motion: Motion = Motion(),
     val dimensions: Dimensions = Dimensions(),
+    val elevation: Elevation = Elevation(),
 )

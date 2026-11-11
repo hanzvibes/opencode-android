@@ -34,6 +34,13 @@
     <string name="settings_section_language">Bahasa</string>
     <string name="settings_language">Bahasa aplikasi</string>
     <string name="settings_language_dialog_title">Pilih bahasa</string>
+    <string name="settings_section_appearance">Tampilan</string>
+    <string name="settings_theme_system">Sistem</string>
+    <string name="settings_theme_system_hint">Mengikuti ponsel</string>
+    <string name="settings_theme_dark">Gelap</string>
+    <string name="settings_theme_dark_hint">Selalu gelap</string>
+    <string name="settings_theme_light">Terang</string>
+    <string name="settings_theme_light_hint">Selalu terang</string>
     <string name="settings_section_provider">Penyedia</string>
     <string name="settings_provider_title">Hubungkan penyedia</string>
     <string name="settings_provider_body">Tambahkan kunci API. Tanpa kunci, agen hanya bisa memakai paket gratis opencode.</string>
@@ -50,6 +57,26 @@
     <string name="settings_saved_permissions_body">Izin yang disimpan dengan “Selalu”. Cabut salah satu agar ditanya lagi lain kali.</string>
     <string name="settings_saved_permissions_empty">Belum ada izin tersimpan. Izin tersimpan ada di engine, yang belum menyediakan daftarnya, jadi belum ada yang bisa dicantumkan atau dicabut dari sini.</string>
     <string name="settings_saved_permissions_revoke">Cabut</string>
+
+    <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
+    <string name="onboarding_title">Selamat datang di OpenCode</string>
+    <string name="onboarding_skip">Lewati</string>
+    <string name="onboarding_step_of">Langkah %1$d dari %2$d</string>
+    <string name="onboarding_project_title">Pilih proyek</string>
+    <string name="onboarding_project_body">Agen bekerja di dalam satu folder proyek. Mulai dengan workspace bawaan, pilih folder sendiri, atau buat proyek contoh kecil untuk mencoba.</string>
+    <string name="onboarding_create_sample">Buat proyek contoh</string>
+    <string name="onboarding_sample_created">Proyek contoh dibuat di %1$s</string>
+    <string name="onboarding_choose_folder">Pilih folder</string>
+    <string name="onboarding_use_default">Pakai proyek bawaan</string>
+    <string name="onboarding_continue">Lanjut</string>
+    <string name="onboarding_provider_title">Hubungkan penyedia</string>
+    <string name="onboarding_provider_body">Tanpa kunci API, agen berjalan di paket gratis opencode yang cepat mencapai batas laju. Tambahkan kunci untuk memakai model sendiri — atau lanjut dulu dan tambahkan nanti dari Pengaturan.</string>
+    <string name="onboarding_open_providers">Tambah kunci penyedia</string>
+    <string name="onboarding_permissions_title">Beri agen akses ke file Anda</string>
+    <string name="onboarding_permissions_body">Akses semua file memungkinkan Anda membuka folder mana pun di perangkat sebagai proyek. Tanpa akses ini, hanya workspace bawaan yang tersedia.</string>
+    <string name="onboarding_grant_access">Beri akses semua file</string>
+    <string name="onboarding_access_granted">Akses semua file sudah diberikan.</string>
+    <string name="onboarding_finish">Mulai mengobrol</string>
 
     <!-- About the developer -->
     <string name="about_title">Tentang pengembang</string>
@@ -267,6 +294,24 @@
     <string name="fileview_discard_confirm">Buang</string>
     <string name="fileview_discard_dismiss">Lanjut mengedit</string>
     <string name="fileview_dirty_badge">Belum disimpan</string>
+    <string name="files_quick_open">Buka cepat</string>
+    <string name="files_quick_open_hint">Cari file berdasarkan nama…</string>
+    <string name="files_quick_open_empty">Tidak ada file yang cocok dengan \"%1$s\"</string>
+    <string name="files_quick_open_loading">Mengindeks file workspace…</string>
+    <string name="files_quick_open_results">%1$d dari %2$d file</string>
+    <string name="files_quick_open_close">Tutup buka cepat</string>
+    <string name="files_detail_empty">Pilih file untuk melihatnya di sini.</string>
+    <string name="fileview_find">Cari</string>
+    <string name="fileview_find_hint">Cari di file…</string>
+    <string name="fileview_find_count">%1$d dari %2$d</string>
+    <string name="fileview_find_none">Tidak ada yang cocok</string>
+    <string name="fileview_find_partial">Hanya mencari di pratinjau yang dimuat</string>
+    <string name="fileview_find_prev">Cocokan sebelumnya</string>
+    <string name="fileview_find_next">Cocokan berikutnya</string>
+    <string name="fileview_find_close">Tutup pencarian</string>
+    <string name="fileview_large_warning">File besar (lebih dari 1 MB). Menampilkan %1$d baris pertama dari %2$d baris — pencarian hanya mencakup pratinjau ini. Muat seluruh file untuk mengedit atau mencari semuanya.</string>
+    <string name="fileview_load_full">Muat seluruh file</string>
+    <string name="fileview_lines_truncated">%1$d dari %2$d baris</string>
 
     <!-- Diff -->
     <string name="diff_loading">Memuat diff…</string>
@@ -412,6 +457,18 @@
     <string name="diag_section_paths">Path</string>
     <string name="diag_section_output">Keluaran engine (proses ini)</string>
     <string name="diag_section_log">Log engine (di disk)</string>
+    <string name="diag_log_search_hint">Cari log</string>
+    <string name="diag_log_search_clear">Hapus pencarian</string>
+    <string name="diag_log_match_count">%1$d dari %2$d</string>
+    <string name="diag_log_no_match">Tidak ada baris yang cocok dengan filter ini</string>
+    <string name="diag_log_follow">Ikuti</string>
+    <string name="diag_log_follow_on">Ikuti baris log baru</string>
+    <string name="diag_log_follow_off">Berhenti mengikuti baris log baru</string>
+    <string name="diag_log_jump_latest">Ke terbaru</string>
+    <string name="diag_log_level_all">Semua</string>
+    <string name="diag_log_level_info">Info</string>
+    <string name="diag_log_level_warning">Peringatan</string>
+    <string name="diag_log_level_error">Error</string>
 
     <!-- Kata kerja timeline tool. Bentuk sekarang saat tool berjalan, lampau setelah selesai.
          "step_target" menyambung kata kerja dengan nama berkas atau perintah; bahasa yang

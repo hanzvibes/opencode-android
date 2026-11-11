@@ -126,6 +126,9 @@ dependencies {
     // exports, so they stay aligned with the design system.
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.8.2")
+    // WindowSizeClass for the adaptive tablet layout (persistent sidebar +
+    // list-detail at >=840dp). Version comes from the Compose BOM above.
+    implementation("androidx.compose.material3:material3-window-size-class")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
 

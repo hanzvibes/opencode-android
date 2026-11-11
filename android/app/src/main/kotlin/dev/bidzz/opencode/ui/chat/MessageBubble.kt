@@ -470,6 +470,24 @@ fun MessageBubble(
                                 color = colors.danger,
                             )
                         }
+                        // Rate limit (Phase 3): the free-tier 429 surfaces
+                        // here as an assistant error bubble, never as a
+                        // banner failure, so the banner's typed retry never
+                        // sees it. The bubble shows the same switch-model /
+                        // wait guidance the banner shows for RATE_LIMITED
+                        // (chat_rate_limited_guidance). There is no retry
+                        // button yet — the bubble has no path to the model
+                        // picker or the view model (see isRateLimitError),
+                        // so the guidance is the fix and the affordance is
+                        // documented as remaining work.
+                        if (isRateLimitError(markdown)) {
+                            Text(
+                                text = stringResource(R.string.chat_rate_limited_guidance),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceMuted,
+                                modifier = Modifier.padding(top = spacing.xs),
+                            )
+                        }
                         if (!provenance.isNullOrBlank()) {
                             ProvenanceBadge(
                                 provenance = provenance,
@@ -964,3 +982,24 @@ private fun formatCompactTokens(tokens: Long): String = when {
 /** "$0.02" — two decimals, US formatting so the "$" amount never renders with a comma decimal. */
 private fun formatTurnCost(costUsd: Double): String =
     "$" + String.format(java.util.Locale.US, "%.2f", costUsd)
+
+/**
+ * Whether an assistant error bubble reports the free-tier rate limit.
+ *
+ * The engine reports it as error type `provider.free-limit` (HTTP 429);
+ * the bubble is rendered from `error.message ?: error.type`, so the type
+ * usually IS the text, and a 429 message carries the code or the words
+ * "rate limit". Matched case-insensitively on the rendered text because
+ * the bubble only ever receives that text — the error type itself is
+ * dropped before it reaches this composable (ChatViewModel's toUiMessages
+ * keeps only the text on ChatMessage). That is also why a typed retry
+ * cannot live here yet: it would need the error type preserved on
+ * ChatMessage, a bubble-originated retry kind in the view model, and a
+ * model-picker opener plumbed from the composer through ChatScreen.
+ */
+internal fun isRateLimitError(text: String): Boolean {
+    val lower = text.lowercase()
+    return lower.contains("free-limit") || lower.contains("free limit") ||
+        lower.contains("rate limit") || lower.contains("rate_limit") ||
+        lower.contains("429")
+}

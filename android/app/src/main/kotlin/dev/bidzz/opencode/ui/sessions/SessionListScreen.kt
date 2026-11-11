@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -69,6 +70,49 @@ fun SessionListScreen(
     onTogglePin: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
 ) {
+    ScreenScaffold(
+        title = stringResource(R.string.history_title),
+        onBack = onBack,
+        // The body cap lives here now (see ScreenScaffold): the inner rows
+        // keep their own 720dp caps as well, so the layout is the same
+        // centred column on tablets as before.
+        contentMaxWidth = 720.dp,
+        actions = { TextAction(stringResource(R.string.history_new), onNewSession) },
+    ) {
+        SessionListPane(
+            state = state,
+            onOpen = onOpen,
+            onToggleScope = onToggleScope,
+            onRename = onRename,
+            onDelete = onDelete,
+            onTogglePin = onTogglePin,
+            details = details,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+
+/**
+ * The session list without its scaffold: search, scope toggle and the
+ * grouped history. Used by [SessionListScreen] and, at expanded widths,
+ * as the list pane of the sessions list-detail layout (see OpenCodeApp),
+ * where selecting a row opens it in the chat pane beside it instead of
+ * navigating away. [selectedSessionId] highlights the open session;
+ * null (the full screen) highlights nothing.
+ */
+@Composable
+fun SessionListPane(
+    state: SessionListUiState,
+    onOpen: (SessionRow) -> Unit,
+    onToggleScope: () -> Unit,
+    onRename: (SessionRow, String) -> Unit = { _, _ -> },
+    onDelete: (SessionRow) -> Unit = {},
+    onTogglePin: (SessionRow) -> Unit = {},
+    details: Map<String, SessionDetail> = emptyMap(),
+    selectedSessionId: String? = null,
+    modifier: Modifier = Modifier,
+) {
     val spacing = OpenCodeTheme.tokens.spacing
     val colors = OpenCodeTheme.colors
 
@@ -104,11 +148,8 @@ fun SessionListScreen(
     val filteredRows = remember(state.rows, query, details) {
         filterSessionRows(state.rows, query, details)
     }
-
-    ScreenScaffold(
-        title = stringResource(R.string.history_title),
-        onBack = onBack,
-        actions = { TextAction(stringResource(R.string.history_new), onNewSession) },
+    Column(
+        modifier = modifier.fillMaxSize(),
     ) {
         // Search field
         Row(
@@ -251,6 +292,7 @@ fun SessionListScreen(
                         itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
                             SessionRowItem(
                                 row = row,
+                                selected = row.id == selectedSessionId,
                                 detail = details[row.id],
                                 showDirectory = state.filterDirectory == null,
                                 isFirst = index == 0,
@@ -290,6 +332,8 @@ private fun SessionRowItem(
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
     detail: SessionDetail? = null,
+    /** Accent background for the session open in the detail pane beside the list. */
+    selected: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -315,7 +359,12 @@ private fun SessionRowItem(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.surface),
+            .background(if (selected) colors.accent.copy(alpha = 0.12f) else colors.surface)
+            .then(
+                if (selected) {
+                    Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), shape)
+                } else Modifier
+            ),
     ) {
         if (!isFirst) RowDivider(inset = spacing.md)
         Row(
@@ -341,8 +390,8 @@ private fun SessionRowItem(
                     }
                     Text(
                         text = row.title.ifBlank { stringResource(R.string.drawer_untitled) },
-                        style = OpenCodeTypography.body,
-                        color = colors.onSurface,
+                        style = if (selected) OpenCodeTypography.bodyStrong else OpenCodeTypography.body,
+                        color = if (selected) colors.accentText else colors.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),

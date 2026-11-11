@@ -655,6 +655,7 @@ private fun ActionButton(
     val colors = OpenCodeTheme.colors
     val dims = OpenCodeTheme.tokens.dimensions
     val motion = OpenCodeTheme.tokens.motion
+    val elevation = OpenCodeTheme.tokens.elevation
     val haptic = LocalHapticFeedback.current
 
     val active = busy || canSend || hasVoice
@@ -735,8 +736,8 @@ private fun ActionButton(
 
     val shadowElevation by animateDpAsState(
         targetValue = when {
-            busy -> 4.dp
-            canSend -> 3.dp
+            busy -> elevation.sendButtonBusy
+            canSend -> elevation.sendButton
             else -> 0.dp
         },
         animationSpec = motion.tweenQuick(),

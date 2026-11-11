@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.core.design
 
+import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -215,6 +216,43 @@ data class OpenCodeColors(
 /** Engine status as the UI presents it. */
 enum class Status { READY, WORKING, ERROR, IDLE }
 
+/**
+ * Which colour theme the app shows.
+ *
+ * [System] follows the phone; [Dark] / [Light] pin the app to one palette
+ * whatever the phone is set to. The light palette already existed — it was
+ * just unreachable before, because the theme was always system-driven.
+ */
+enum class ThemeMode(val code: String) {
+    System("system"),
+    Dark("dark"),
+    Light("light");
+
+    companion object {
+        fun fromCode(code: String?): ThemeMode = entries.firstOrNull { it.code == code } ?: System
+    }
+}
+
+/**
+ * Remembers the chosen [ThemeMode].
+ *
+ * Same pattern as `LanguageStore`: one string in the shared `app_settings`
+ * preferences, read once at startup and applied over the whole tree by
+ * [OpenCodeApp], so picking a theme in Settings redraws every screen in
+ * place instead of restarting the activity. No new storage mechanism.
+ */
+object ThemeStore {
+    private const val PREFS = "app_settings"
+    private const val KEY = "theme_mode"
+
+    fun get(context: Context): ThemeMode =
+        ThemeMode.fromCode(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null))
+
+    fun set(context: Context, mode: ThemeMode) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, mode.code).apply()
+    }
+}
+
 private val DarkColors = OpenCodeColors(
     isDark = true,
     background = Palette.darkBackground,
@@ -363,12 +401,21 @@ object OpenCodeTheme {
 
 /**
  * Applies the design system.
+ *
+ * [themeMode] resolves to dark/light here: System follows the phone, Dark /
+ * Light pin the palette. The default keeps the old system-only behaviour
+ * for previews and any caller that does not pass a mode.
  */
 @Composable
 fun OpenCodeTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.System,
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = when (themeMode) {
+        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.Dark -> true
+        ThemeMode.Light -> false
+    }
     val colors = if (darkTheme) DarkColors else LightColors
     val tokens = OpenCodeTokens()
 

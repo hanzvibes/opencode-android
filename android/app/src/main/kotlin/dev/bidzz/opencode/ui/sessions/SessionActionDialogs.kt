@@ -55,6 +55,7 @@ fun SessionActionMenu(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
+    val elevation = OpenCodeTheme.tokens.elevation
 
     DropdownMenu(
         expanded = expanded,
@@ -63,7 +64,7 @@ fun SessionActionMenu(
         shape = RoundedCornerShape(radius.md),
         containerColor = colors.surfaceRaised,
         tonalElevation = 0.dp,
-        shadowElevation = 8.dp,
+        shadowElevation = elevation.menu,
         border = BorderStroke(0.5.dp, colors.hairline),
         modifier = modifier.widthIn(min = 170.dp),
     ) {

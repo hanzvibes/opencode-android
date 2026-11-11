@@ -120,6 +120,7 @@ import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
 import dev.bidzz.opencode.ui.IconAction
+import dev.bidzz.opencode.ui.PersistentSidebarWidth
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.sessions.DeleteSessionDialog
@@ -180,6 +181,18 @@ fun ChatScreen(
     onDeferPermission: () -> Unit = {},
     onRestoreDeferredPermission: () -> Unit = {},
     modifier: Modifier = Modifier,
+    /**
+     * True at >=840dp wide (see [dev.bidzz.opencode.ui.isExpandedWidth]):
+     * the drawer becomes a persistent sidebar instead of a modal sheet.
+     * False keeps the phone layout exactly.
+     */
+    isExpanded: Boolean = false,
+    /**
+     * False when this screen is embedded as the detail pane of a
+     * list-detail layout that already shows a session list: no sidebar
+     * and no modal drawer, just the conversation.
+     */
+    showSidebar: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -395,30 +408,12 @@ fun ChatScreen(
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        // Strong scrim so the drawer reads as modal over the OLED-black
-        // chat instead of a floating panel over undimmed bubbles.
-        scrimColor = Color.Black.copy(alpha = 0.6f),
-        drawerContent = {
-            ChatDrawer(
-                projectTitle = headerTitle(state.workspacePath),
-                currentSessionID = state.sessionID,
-                sessions = sessions,
-                onNewSession = { closeThen(onNewSession) },
-                onOpenSession = { id -> closeThen { onOpenSession(id) } },
-                onAllSessions = { closeThen(onSessionsClick) },
-                onFiles = { closeThen(onFilesClick) },
-                onProject = { closeThen(onProjectClick) },
-                onSettings = { closeThen(onSettingsClick) },
-                onDiagnostics = { closeThen(onDiagnosticsClick) },
-                onDeveloper = { closeThen(onAboutClick) },
-                onRenameSession = onRenameSession,
-                onDeleteSession = onDeleteSession,
-                onTogglePinSession = onTogglePinSession,
-            )
-        },
-    ) {
+    // The header + transcript + composer column, shared by the
+    // modal-drawer (phones), persistent-sidebar (tablets) and bare-detail
+    // (embedded in a list-detail layout) shells below. A local lambda, not
+    // a separate composable, so every piece of screen state above stays in
+    // scope and the phone path renders exactly what it rendered before.
+    val chatContent: @Composable () -> Unit = {
         Column(
             modifier = modifier
                 .fillMaxSize()
@@ -450,6 +445,9 @@ fun ChatScreen(
                 models = state.models,
                 activeModel = state.activeModel,
                 onModel = onModel,
+                // No menu button at expanded widths: the sidebar is already
+                // visible, so there is no drawer to open.
+                showMenuButton = !isExpanded,
                 onMenu = {
                     onDrawerOpen()
                     scope.launch { drawerState.open() }
@@ -904,6 +902,76 @@ fun ChatScreen(
             }
         }
     }
+
+    // Persistent sidebar (expanded) vs modal drawer (compact) vs bare
+    // detail (embedded in a list-detail layout): the conversation column
+    // above is shared by all three, so the phone layout is untouched.
+    val showPersistentSidebar = isExpanded && showSidebar
+    when {
+        showPersistentSidebar -> {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.background),
+            ) {
+                ChatSidebar(
+                    projectTitle = headerTitle(state.workspacePath),
+                    currentSessionID = state.sessionID,
+                    sessions = sessions,
+                    // No close-then-open here: there is no drawer to close,
+                    // and selecting a session opens it in the detail pane
+                    // beside the sidebar without a screen switch.
+                    onNewSession = onNewSession,
+                    onOpenSession = onOpenSession,
+                    onAllSessions = onSessionsClick,
+                    onFiles = onFilesClick,
+                    onProject = onProjectClick,
+                    onSettings = onSettingsClick,
+                    onDiagnostics = onDiagnosticsClick,
+                    onDeveloper = onAboutClick,
+                    onRenameSession = onRenameSession,
+                    onDeleteSession = onDeleteSession,
+                    onTogglePinSession = onTogglePinSession,
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                ) {
+                    chatContent()
+                }
+            }
+        }
+        isExpanded -> chatContent()
+        else -> {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                // Strong scrim so the drawer reads as modal over the OLED-black
+                // chat instead of a floating panel over undimmed bubbles.
+                scrimColor = Color.Black.copy(alpha = 0.6f),
+                drawerContent = {
+                    ChatDrawer(
+                        projectTitle = headerTitle(state.workspacePath),
+                        currentSessionID = state.sessionID,
+                        sessions = sessions,
+                        onNewSession = { closeThen(onNewSession) },
+                        onOpenSession = { id -> closeThen { onOpenSession(id) } },
+                        onAllSessions = { closeThen(onSessionsClick) },
+                        onFiles = { closeThen(onFilesClick) },
+                        onProject = { closeThen(onProjectClick) },
+                        onSettings = { closeThen(onSettingsClick) },
+                        onDiagnostics = { closeThen(onDiagnosticsClick) },
+                        onDeveloper = { closeThen(onAboutClick) },
+                        onRenameSession = onRenameSession,
+                        onDeleteSession = onDeleteSession,
+                        onTogglePinSession = onTogglePinSession,
+                    )
+                },
+            ) {
+                chatContent()
+            }
+        }
+    }
 }
 
 private fun isSameDay(aMillis: Long, bMillis: Long): Boolean {
@@ -1195,6 +1263,8 @@ fun ChatHeader(
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Hidden at expanded widths, where the sidebar is persistent. */
+    showMenuButton: Boolean = true,
     branch: String? = null,
     isScrolled: Boolean = false,
     sessionTitle: String? = null,
@@ -1267,11 +1337,13 @@ fun ChatHeader(
                     .padding(horizontal = spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconAction(
-                    glyph = Glyph.Menu,
-                    description = stringResource(R.string.chat_menu),
-                    onClick = onMenu,
-                )
+                if (showMenuButton) {
+                    IconAction(
+                        glyph = Glyph.Menu,
+                        description = stringResource(R.string.chat_menu),
+                        onClick = onMenu,
+                    )
+                }
 
                 // Breadcrumb: "project / session", one line. The project
                 // name takes what it needs and the session title gets the
@@ -1566,16 +1638,7 @@ private fun DialogDetailRow(
     }
 }
 
-/**
- * Navigation and recent sessions.
- *
- * Matching modern Cursor / ChatGPT sidebar experience:
- * - Clean workspace switch / project picker integration at top
- * - New chat and file explorer shortcuts
- * - Conversation history grouped by date (Pinned, Today, Yesterday, Previous 7 days, Older)
- * - Quick action menu (Rename, Delete, Pin) on every session
- * - Settings, Diagnostics, and Developer profile links at bottom
- */
+/** The modal navigation drawer (phones): the shared content in a 320dp sheet. */
 @Composable
 private fun ChatDrawer(
     projectTitle: String,
@@ -1592,6 +1655,72 @@ private fun ChatDrawer(
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val radius = OpenCodeTheme.tokens.radius
+
+    // Drawer covers at most 85% of the width on narrow phones, so a sliver
+    // of the chat stays visible; wide screens keep the 320dp sheet.
+    BoxWithConstraints {
+        ModalDrawerSheet(
+            drawerShape = RoundedCornerShape(topEnd = radius.lg, bottomEnd = radius.lg),
+            drawerContainerColor = colors.surface,
+            drawerContentColor = colors.onSurface,
+            drawerTonalElevation = 0.dp,
+            modifier = Modifier.width(minOf(320.dp, maxWidth * 0.85f)),
+        ) {
+            ChatDrawerContent(
+                projectTitle = projectTitle,
+                currentSessionID = currentSessionID,
+                sessions = sessions,
+                onNewSession = onNewSession,
+                onOpenSession = onOpenSession,
+                onAllSessions = onAllSessions,
+                onFiles = onFiles,
+                onProject = onProject,
+                onSettings = onSettings,
+                onDiagnostics = onDiagnostics,
+                onDeveloper = onDeveloper,
+                onRenameSession = onRenameSession,
+                onDeleteSession = onDeleteSession,
+                onTogglePinSession = onTogglePinSession,
+            )
+        }
+    }
+}
+
+/**
+ * Navigation and recent sessions.
+ *
+ * Matching modern Cursor / ChatGPT sidebar experience:
+ * - Clean workspace switch / project picker integration at top
+ * - New chat and file explorer shortcuts
+ * - Conversation history grouped by date (Pinned, Today, Yesterday, Previous 7 days, Older)
+ * - Quick action menu (Rename, Delete, Pin) on every session
+ * - Settings, Diagnostics, and Developer profile links at bottom
+ *
+ * Shared by the modal drawer ([ChatDrawer], phones) and the persistent
+ * sidebar ([ChatSidebar], expanded widths), so the two never drift apart.
+ * The caller supplies the sizing: the drawer sheet sizes it, the sidebar
+ * passes [Modifier.fillMaxSize].
+ */
+@Composable
+private fun ChatDrawerContent(
+    projectTitle: String,
+    currentSessionID: String?,
+    sessions: List<SessionRow>,
+    onNewSession: () -> Unit,
+    onOpenSession: (String) -> Unit,
+    onAllSessions: () -> Unit,
+    onFiles: () -> Unit,
+    onProject: () -> Unit,
+    onSettings: () -> Unit,
+    onDiagnostics: () -> Unit,
+    onDeveloper: () -> Unit,
+    onRenameSession: (String, String) -> Unit,
+    onDeleteSession: (String) -> Unit,
+    onTogglePinSession: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -1622,263 +1751,304 @@ private fun ChatDrawer(
             },
         )
     }
-
-    // Drawer covers at most 85% of the width on narrow phones, so a sliver
-    // of the chat stays visible; wide screens keep the 320dp sheet.
-    BoxWithConstraints {
-        ModalDrawerSheet(
-            drawerShape = RoundedCornerShape(topEnd = radius.lg, bottomEnd = radius.lg),
-            drawerContainerColor = colors.surface,
-            drawerContentColor = colors.onSurface,
-            drawerTonalElevation = 0.dp,
-            modifier = Modifier.width(minOf(320.dp, maxWidth * 0.85f)),
-        ) {
-        Column(
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = spacing.md),
+    ) {
+        // Workspace switch / project picker integration
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = spacing.md),
+                .padding(horizontal = spacing.sm, vertical = spacing.xxs)
+                .clip(RoundedCornerShape(radius.md))
+                .background(colors.surfaceVariant.copy(alpha = 0.5f))
+                .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+                .clickable(role = SemanticsRole.Button, onClick = onProject)
+                .padding(horizontal = spacing.md, vertical = spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Workspace switch / project picker integration
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = spacing.sm, vertical = spacing.xxs)
-                    .clip(RoundedCornerShape(radius.md))
-                    .background(colors.surfaceVariant.copy(alpha = 0.5f))
-                    .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
-                    .clickable(role = SemanticsRole.Button, onClick = onProject)
-                    .padding(horizontal = spacing.md, vertical = spacing.sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(radius.sm))
-                        .background(colors.accent.copy(alpha = 0.12f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    GlyphIcon(Glyph.Folder, tint = colors.accent, size = dims.iconMedium)
-                }
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = spacing.sm),
-                ) {
-                    Text(
-                        text = projectTitle.ifBlank { "OpenCode" },
-                        style = OpenCodeTypography.bodyStrong,
-                        color = colors.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = stringResource(R.string.drawer_switch_workspace),
-                        style = OpenCodeTypography.caption,
-                        color = colors.onSurfaceFaint,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                GlyphIcon(
-                    glyph = Glyph.ChevronDown,
-                    tint = colors.onSurfaceFaint,
-                    size = 14.dp,
-                )
-            }
-
-            Spacer(Modifier.height(spacing.xxs))
-
-            DrawerItem(
-                label = stringResource(R.string.chat_new_session),
-                glyph = Glyph.NewChat,
-                onClick = onNewSession,
-                accent = true,
-            )
-            DrawerItem(
-                label = stringResource(R.string.drawer_files),
-                glyph = Glyph.File,
-                onClick = onFiles,
-            )
-            DrawerItem(
-                label = stringResource(R.string.drawer_all_sessions),
-                glyph = Glyph.History,
-                onClick = onAllSessions,
-            )
-
-            Box(
-                Modifier
-                    .padding(horizontal = spacing.lg, vertical = spacing.xs)
-                    .fillMaxWidth()
-                    .height(0.5.dp)
-                    .background(colors.hairline),
-            )
-        }
-
-        // Grouped conversation history, capped at DRAWER_SESSIONS: the
-        // drawer used to render every session the engine knew, and the
-        // constant that was supposed to cap it was never read.
-        val drawerSessions = remember(sessions) { sessions.take(DRAWER_SESSIONS) }
-        val groupedSessions = remember(drawerSessions) { groupSessions(drawerSessions) }
-
-        if (sessions.isEmpty()) {
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = spacing.lg, vertical = spacing.xl),
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(radius.sm))
+                    .background(colors.accent.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = stringResource(R.string.drawer_no_sessions),
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.onSurfaceMuted,
-                    textAlign = TextAlign.Center,
-                )
+                GlyphIcon(Glyph.Folder, tint = colors.accent, size = dims.iconMedium)
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(vertical = spacing.xxs),
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = spacing.sm),
             ) {
-                groupedSessions.forEach { (group, rows) ->
-                    item(key = "header_${group.name}") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateItem()
-                                .padding(horizontal = spacing.lg, vertical = spacing.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (group == SessionDateGroup.PINNED) {
-                                GlyphIcon(
-                                    glyph = Glyph.Pin,
-                                    tint = colors.accent,
-                                    size = 12.dp,
-                                    modifier = Modifier.padding(end = spacing.xs),
-                                )
-                            }
-                            Text(
-                                text = stringResource(group.titleRes()).uppercase(),
-                                style = OpenCodeTypography.label,
-                                color = if (group == SessionDateGroup.PINNED) colors.accentText else colors.onSurfaceFaint,
-                            )
-                        }
-                    }
-
-                    items(rows, key = { it.id }) { row ->
-                        val selected = row.id == currentSessionID
-                        SessionDrawerItem(
-                            row = row,
-                            selected = selected,
-                            onClick = { onOpenSession(row.id) },
-                            onPinToggle = { onTogglePinSession(row.id) },
-                            onRenameClick = { sessionToRename = row },
-                            onDeleteClick = { sessionToDelete = row },
-                            modifier = Modifier.animateItem(),
-                        )
-                    }
-                }
-            }
-
-            // Past the cap, the full history lives one tap away on the
-            // sessions screen instead of scrolling forever in the drawer.
-            if (sessions.size > DRAWER_SESSIONS) {
-                DrawerItem(
-                    label = stringResource(R.string.drawer_view_all),
-                    glyph = Glyph.History,
-                    onClick = onAllSessions,
+                Text(
+                    text = projectTitle.ifBlank { "OpenCode" },
+                    style = OpenCodeTypography.bodyStrong,
+                    color = colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.drawer_switch_workspace),
+                    style = OpenCodeTypography.caption,
+                    color = colors.onSurfaceFaint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
+            GlyphIcon(
+                glyph = Glyph.ChevronDown,
+                tint = colors.onSurfaceFaint,
+                size = 14.dp,
+            )
         }
+
+        Spacer(Modifier.height(spacing.xxs))
+
+        DrawerItem(
+            label = stringResource(R.string.chat_new_session),
+            glyph = Glyph.NewChat,
+            onClick = onNewSession,
+            accent = true,
+        )
+        DrawerItem(
+            label = stringResource(R.string.drawer_files),
+            glyph = Glyph.File,
+            onClick = onFiles,
+        )
+        DrawerItem(
+            label = stringResource(R.string.drawer_all_sessions),
+            glyph = Glyph.History,
+            onClick = onAllSessions,
+        )
 
         Box(
             Modifier
+                .padding(horizontal = spacing.lg, vertical = spacing.xs)
                 .fillMaxWidth()
                 .height(0.5.dp)
                 .background(colors.hairline),
         )
+    }
 
-        // Bottom footer with Settings, Diagnostics, and Developer Profile
-        Column(
+    // Grouped conversation history, capped at DRAWER_SESSIONS: the
+    // drawer used to render every session the engine knew, and the
+    // constant that was supposed to cap it was never read.
+    val drawerSessions = remember(sessions) { sessions.take(DRAWER_SESSIONS) }
+    val groupedSessions = remember(drawerSessions) { groupSessions(drawerSessions) }
+
+    if (sessions.isEmpty()) {
+        Box(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+                .padding(horizontal = spacing.lg, vertical = spacing.xl),
+            contentAlignment = Alignment.Center,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-            ) {
-                DrawerFooterButton(
-                    label = stringResource(R.string.settings_title),
-                    glyph = Glyph.Sliders,
-                    onClick = onSettings,
-                    modifier = Modifier.weight(1f),
-                )
-                DrawerFooterButton(
-                    label = stringResource(R.string.drawer_diagnostics),
-                    glyph = Glyph.Pulse,
-                    onClick = onDiagnostics,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            Text(
+                text = stringResource(R.string.drawer_no_sessions),
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+                textAlign = TextAlign.Center,
+            )
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(vertical = spacing.xxs),
+        ) {
+            groupedSessions.forEach { (group, rows) ->
+                item(key = "header_${group.name}") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateItem()
+                            .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (group == SessionDateGroup.PINNED) {
+                            GlyphIcon(
+                                glyph = Glyph.Pin,
+                                tint = colors.accent,
+                                size = 12.dp,
+                                modifier = Modifier.padding(end = spacing.xs),
+                            )
+                        }
+                        Text(
+                            text = stringResource(group.titleRes()).uppercase(),
+                            style = OpenCodeTypography.label,
+                            color = if (group == SessionDateGroup.PINNED) colors.accentText else colors.onSurfaceFaint,
+                        )
+                    }
+                }
 
-            // 48dp minimum height: the 30dp avatar + xs padding used
-            // to make this row ~40dp tall, shorter than the footer
-            // buttons above it.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp)
-                    .padding(top = spacing.xs)
-                    .clip(RoundedCornerShape(radius.md))
-                    .clickable(role = SemanticsRole.Button, onClick = onDeveloper)
-                    .padding(horizontal = spacing.sm, vertical = spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(radius.sm)),
-                ) {
-                    // The logomark, 30dp, beside the kept name — it replaces
-                    // the "R" initial circle, not the identity.
-                    Image(
-                        painter = painterResource(R.drawable.ic_logomark),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
+                items(rows, key = { it.id }) { row ->
+                    val selected = row.id == currentSessionID
+                    SessionDrawerItem(
+                        row = row,
+                        selected = selected,
+                        onClick = { onOpenSession(row.id) },
+                        onPinToggle = { onTogglePinSession(row.id) },
+                        onRenameClick = { sessionToRename = row },
+                        onDeleteClick = { sessionToDelete = row },
+                        modifier = Modifier.animateItem(),
                     )
                 }
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = spacing.sm),
-                ) {
-                    Text(
-                        text = "Raihan Ramadhani",
-                        style = OpenCodeTypography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                        color = colors.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "@hanzvibes",
-                        style = OpenCodeTypography.caption,
-                        // onSurfaceMuted (#5F5F66) clears AA at 11sp in
-                        // the light theme; onSurfaceFaint did not.
-                        color = colors.onSurfaceMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                GlyphIcon(
-                    glyph = Glyph.ChevronRight,
-                    tint = colors.onSurfaceMuted,
-                    size = 14.dp,
-                )
             }
         }
+
+        // Past the cap, the full history lives one tap away on the
+        // sessions screen instead of scrolling forever in the drawer.
+        if (sessions.size > DRAWER_SESSIONS) {
+            DrawerItem(
+                label = stringResource(R.string.drawer_view_all),
+                glyph = Glyph.History,
+                onClick = onAllSessions,
+            )
+        }
     }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(0.5.dp)
+            .background(colors.hairline),
+    )
+
+    // Bottom footer with Settings, Diagnostics, and Developer Profile
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            DrawerFooterButton(
+                label = stringResource(R.string.settings_title),
+                glyph = Glyph.Sliders,
+                onClick = onSettings,
+                modifier = Modifier.weight(1f),
+            )
+            DrawerFooterButton(
+                label = stringResource(R.string.drawer_diagnostics),
+                glyph = Glyph.Pulse,
+                onClick = onDiagnostics,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        // 48dp minimum height: the 30dp avatar + xs padding used
+        // to make this row ~40dp tall, shorter than the footer
+        // buttons above it.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .padding(top = spacing.xs)
+                .clip(RoundedCornerShape(radius.md))
+                .clickable(role = SemanticsRole.Button, onClick = onDeveloper)
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(radius.sm)),
+            ) {
+                // The logomark, 30dp: the drawer's identity mark since the
+                // name was removed (user decision 2026-11-11). It replaces
+                // the "R" initial circle.
+                Image(
+                    painter = painterResource(R.drawable.ic_logomark),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            Text(
+                text = "@hanzvibes",
+                style = OpenCodeTypography.caption,
+                // onSurfaceMuted (#5F5F66) clears AA at 11sp in
+                // the light theme; onSurfaceFaint did not.
+                color = colors.onSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = spacing.sm),
+            )
+            GlyphIcon(
+                glyph = Glyph.ChevronRight,
+                tint = colors.onSurfaceMuted,
+                size = 14.dp,
+            )
+        }
+    }
+}
+
+/**
+ * Persistent navigation sidebar for expanded widths: the same drawer
+ * content in a fixed 320dp column with a hairline end divider, instead
+ * of the modal sheet. The conversation sits beside it (see ChatScreen),
+ * so selecting a session opens it in the detail pane without a screen
+ * switch. The footer already pads for the navigation bar; the status bar
+ * is padded here because there is no sheet to do it.
+ */
+@Composable
+private fun ChatSidebar(
+    projectTitle: String,
+    currentSessionID: String?,
+    sessions: List<SessionRow>,
+    onNewSession: () -> Unit,
+    onOpenSession: (String) -> Unit,
+    onAllSessions: () -> Unit,
+    onFiles: () -> Unit,
+    onProject: () -> Unit,
+    onSettings: () -> Unit,
+    onDiagnostics: () -> Unit,
+    onDeveloper: () -> Unit,
+    onRenameSession: (String, String) -> Unit,
+    onDeleteSession: (String) -> Unit,
+    onTogglePinSession: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val dims = OpenCodeTheme.tokens.dimensions
+
+    Box(
+        modifier = modifier
+            .width(PersistentSidebarWidth)
+            .fillMaxHeight()
+            .background(colors.surface)
+            .statusBarsPadding(),
+    ) {
+        ChatDrawerContent(
+            projectTitle = projectTitle,
+            currentSessionID = currentSessionID,
+            sessions = sessions,
+            onNewSession = onNewSession,
+            onOpenSession = onOpenSession,
+            onAllSessions = onAllSessions,
+            onFiles = onFiles,
+            onProject = onProject,
+            onSettings = onSettings,
+            onDiagnostics = onDiagnostics,
+            onDeveloper = onDeveloper,
+            onRenameSession = onRenameSession,
+            onDeleteSession = onDeleteSession,
+            onTogglePinSession = onTogglePinSession,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .fillMaxHeight()
+                .width(dims.hairline)
+                .background(colors.hairline),
+        )
     }
 }
 
