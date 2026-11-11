@@ -103,6 +103,7 @@
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
+    <string name="workspace_too_broad">Folder itu adalah seluruh storage — pilih folder proyek saja.</string>
     <string name="a11y_run_finished">Proses selesai</string>
     <string name="a11y_run_failed">Proses gagal</string>
     <string name="a11y_permission_arrived">Izin diminta</string>

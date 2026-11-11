@@ -94,7 +94,9 @@ class WorkspaceStore(private val context: Context) {
             return internalWorkspace(context)
         }
         val dir = File(stored)
-        val usable = dir.isDirectory && dir.canWrite() && hasAllFilesAccess()
+        // A stored storage root is refused the same way a fresh pick is
+        // (item 30): it may have been saved before the guard existed.
+        val usable = dir.isDirectory && dir.canWrite() && hasAllFilesAccess() && isAcceptableWorkspace(dir)
         if (!usable) {
             lastUnavailablePath = stored
             return internalWorkspace(context)
@@ -130,9 +132,36 @@ class WorkspaceStore(private val context: Context) {
     fun isAcceptableWorkspace(dir: File): Boolean {
         if (!dir.isAbsolute || !dir.isDirectory || !dir.canWrite()) return false
         val path = dir.canonicalPath.trimEnd(File.separatorChar)
-        if (path.isEmpty()) return false
-        // Depth 0 and 1 are the filesystem root and top-level volumes.
-        val depth = path.split(File.separatorChar).count { it.isNotEmpty() }
-        return depth >= 2
+        return isAcceptableWorkspacePath(path)
     }
+}
+
+/**
+ * The path-only half of [WorkspaceStore.isAcceptableWorkspace], kept as a
+ * free function so it can be tested directly: the member only adds the
+ * filesystem checks (exists, writable) and the canonicalisation.
+ *
+ * A storage root is not a project (item 30): the agent would see every
+ * photo, download and other app's file. The roots themselves are refused;
+ * the folders inside them stay allowed.
+ */
+internal fun isAcceptableWorkspacePath(canonicalPath: String): Boolean {
+    if (canonicalPath.isEmpty()) return false
+    if (isStorageRoot(canonicalPath)) return false
+    // Depth 0 and 1 are the filesystem root and top-level volumes.
+    val depth = canonicalPath.split(File.separatorChar).count { it.isNotEmpty() }
+    return depth >= 2
+}
+
+/**
+ * True for the shared-storage roots themselves — not for the folders
+ * inside them. `/sdcard` canonicalises to `/storage/emulated/0`, so it
+ * is covered without a special case; a volume root is exactly one
+ * segment under `/storage` (an SD card's UUID).
+ */
+internal fun isStorageRoot(canonicalPath: String): Boolean {
+    if (canonicalPath == "/storage/emulated" || canonicalPath == "/storage/emulated/0") return true
+    val rest = canonicalPath.removePrefix("/storage/")
+    return canonicalPath.startsWith("/storage/") && !rest.contains(File.separatorChar)
+}
 }

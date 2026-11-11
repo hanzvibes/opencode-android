@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -38,7 +39,16 @@ class MainActivity : ComponentActivity() {
             uri ?: return@registerForActivityResult
             val path = treeUriToPath(uri)
             if (path != null) {
-                (application as OpenCodeApplication).switchWorkspace(path)
+                // A refused pick is told, not swallowed (item 30): the
+                // picker happily offers the whole storage, and the guard
+                // below it must say why that is not a project.
+                if (!(application as OpenCodeApplication).switchWorkspace(path)) {
+                    Toast.makeText(
+                        this,
+                        R.string.workspace_too_broad,
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
             }
         }
 
