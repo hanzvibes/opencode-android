@@ -98,6 +98,7 @@
     <string name="chat_jump_latest_unread">Ke pesan terbaru, %1$d belum dibaca</string>
     <string name="chat_new_messages">Pesan baru</string>
     <string name="chat_retry">Coba lagi</string>
+    <string name="chat_load_earlier">Muat pesan sebelumnya</string>
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>

@@ -174,6 +174,8 @@ fun ChatScreen(
     onDismissError: () -> Unit = {},
     /** Re-sends the last prompt after a failure; no-op when there is none. */
     onRetryError: () -> Unit = {},
+    /** Grows the transcript window and fetches older messages (item 28). */
+    onLoadEarlier: () -> Unit = {},
     /** Re-auth after an auth failure: restarts the engine so fresh
      * credentials are issued (the banner routes REAUTH here). */
     onReauth: () -> Unit = {},
@@ -659,6 +661,39 @@ fun ChatScreen(
                                 bottom = 64.dp,
                             ),
                         ) {
+                            // The transcript is windowed (item 28): only the
+                            // newest messages load up front, and older ones
+                            // arrive one tap at a time.
+                            if (state.hasMoreOlder) {
+                                item(key = "load-earlier") {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = if (state.loadingEarlier) {
+                                                stringResource(R.string.common_loading)
+                                            } else {
+                                                stringResource(R.string.chat_load_earlier)
+                                            },
+                                            style = OpenCodeTypography.caption.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                            ),
+                                            color = colors.accent,
+                                            modifier = Modifier
+                                                .clickable(
+                                                    role = SemanticsRole.Button,
+                                                    enabled = !state.loadingEarlier,
+                                                    onClick = onLoadEarlier,
+                                                )
+                                                .padding(
+                                                    horizontal = spacing.md,
+                                                    vertical = spacing.sm,
+                                                ),
+                                        )
+                                    }
+                                }
+                            }
                             itemsIndexed(state.messages, key = { _, it -> it.id }) { index, message ->
                                 val prevMessage = if (index > 0) state.messages[index - 1] else null
                                 val isConsecutiveAssistant = prevMessage?.role == Role.ASSISTANT && message.role == Role.ASSISTANT

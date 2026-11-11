@@ -14,6 +14,7 @@ import dev.bidzz.opencode.core.api.dto.TextEnded
 import dev.bidzz.opencode.core.api.dto.TextStarted
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +46,10 @@ data class ChatState(
     val pendingPermission: PendingPermission? = null,
     /** Tool calls seen on the stream this run, keyed by call id. Cleared on resync. */
     val liveTools: Map<String, LiveTool> = emptyMap(),
+    /** True when the transcript window cut older messages: more are available above. */
+    val hasMoreOlder: Boolean = false,
+    /** True while an explicit "load earlier" fetch is in flight. */
+    val loadingEarlier: Boolean = false,
 )
 
 /** A tool call from the live stream, tied to the assistant message that owns it. */
@@ -64,6 +69,15 @@ class ChatRepository(
 ) {
     companion object {
         private const val TAG = "ChatRepository"
+
+        /** Minimum gap between streaming emissions; deltas inside the window coalesce (item 28). */
+        private const val PUBLISH_THROTTLE_MS = 100L
+
+        /** First transcript window: newest N messages; older ones load on demand (item 28). */
+        private const val INITIAL_MESSAGE_LIMIT = 100
+
+        /** Each "load earlier" grows the window by this many messages. */
+        private const val MESSAGE_PAGE = 100
     }
 
     private val _state = MutableStateFlow(ChatState())
@@ -71,6 +85,15 @@ class ChatRepository(
 
     private var sessionID: String? = null
     private var streamJob: Job? = null
+
+    /** Transcript window for resync: grows with "load earlier", resets on open (item 28). */
+    private var messageLimit = INITIAL_MESSAGE_LIMIT
+
+    /** Last streaming emission, for the publish throttle (item 28). */
+    private var lastPublishAtMs = 0L
+
+    /** Coalesced flush for publishes skipped by the throttle. */
+    private var publishFlushJob: Job? = null
 
     /** Request id with a reply in flight: a double-tap (or a tap after a
      * rotation re-arms the buttons) must not answer twice (item 22). */
@@ -98,6 +121,9 @@ class ChatRepository(
         if (this.sessionID == sessionID && streamJob?.isActive == true) return
         close()
         this.sessionID = sessionID
+        // A fresh open starts at the default window (item 28): earlier
+        // messages are one tap away, not fetched up front every time.
+        messageLimit = INITIAL_MESSAGE_LIMIT
         _state.value = ChatState(sessionID = sessionID)
 
         streamJob = scope.launch {
@@ -124,8 +150,27 @@ class ChatRepository(
     fun close() {
         streamJob?.cancel()
         streamJob = null
+        publishFlushJob?.cancel()
+        publishFlushJob = null
         sessionID = null
         buffers.clear()
+    }
+
+    /**
+     * Grows the transcript window by one page and re-fetches (item 28).
+     * The engine's message endpoint only takes a limit, so paging grows
+     * the window instead of cursoring: each load re-reads a bigger newest
+     * slice. Loads are user-initiated and rare; the window resets on open.
+     */
+    fun loadEarlier() {
+        val id = sessionID ?: return
+        if (_state.value.loadingEarlier || !_state.value.hasMoreOlder) return
+        messageLimit += MESSAGE_PAGE
+        _state.value = _state.value.copy(loadingEarlier = true)
+        scope.launch {
+            resync()
+            if (sessionID == id) _state.value = _state.value.copy(loadingEarlier = false)
+        }
     }
 
     private fun isAssistantContinuation(current: SessionMessage, prev: SessionMessage): Boolean {
@@ -148,7 +193,7 @@ class ChatRepository(
     /** Rebuilds from REST. Called on open and after every reconnect. */
     private suspend fun resync() {
         val id = sessionID ?: return
-        when (val result = sessionApi.messages(id)) {
+        when (val result = sessionApi.messages(id, limit = messageLimit)) {
             is ApiResult.Success -> {
                 // The session may have changed while the call was in flight:
                 // the terminal-event resync is launched on the repository
@@ -187,6 +232,11 @@ class ChatRepository(
                     // `idle` message, so an idle-only check spins "Working" forever.
                     busy = newest != null && !newest.isIdle && newest.time?.completed == null,
                     lastFailure = null,
+                    // A full page back means the window may have cut older
+                    // messages (item 28); a short page means we are at the
+                    // beginning. Exactly one full page with nothing older
+                    // costs one harmless extra tap.
+                    hasMoreOlder = result.value.size >= messageLimit,
                 )
                 // A permission the engine still waits on survives reconnects
                 // and reopens (item 22): the stream only announces new asks,
@@ -318,7 +368,9 @@ class ChatRepository(
                 // message — but only this block's buffer, never the whole
                 // message (item 25).
                 buffers[ended.assistantMessageID to ended.ordinal] = StringBuilder(ended.text)
-                publish(ended.assistantMessageID)
+                // Forced: the final text must land immediately, never up to
+                // a throttle window late (item 28).
+                publish(ended.assistantMessageID, force = true)
             }
 
             EventTypes.EXECUTION_STARTED -> _state.value = _state.value.copy(busy = true)
@@ -365,6 +417,8 @@ class ChatRepository(
                 // replaces them atomically on success and drops them on
                 // failure, so the indicator can never stick either way.
                 buffers.clear()
+                publishFlushJob?.cancel()
+                publishFlushJob = null
                 // Pull the finished message from REST so tool calls and token counts
                 // that never appeared as deltas are included.
                 scope.launch { resync() }
@@ -413,16 +467,46 @@ class ChatRepository(
     }
 
     /**
-     * Publishes one message's streamed text: its blocks in ordinal order,
-     * joined as paragraphs — the same separator the UI uses when it merges
-     * text segments from history.
+     * Publishes one message's streamed text, at most once per
+     * [PUBLISH_THROTTLE_MS]: a token delta used to emit a whole-transcript
+     * rebuild each time (item 28). A skipped publish is not dropped — a
+     * delayed flush lands the newest text at most one window later — and
+     * TEXT_ENDED always forces, so the final text is never late.
      */
-    private fun publish(messageID: String) {
-        val text = buffers.entries
+    private fun publish(messageID: String, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastPublishAtMs < PUBLISH_THROTTLE_MS) {
+            if (publishFlushJob?.isActive != true) {
+                publishFlushJob = scope.launch {
+                    delay(PUBLISH_THROTTLE_MS - (now - lastPublishAtMs))
+                    flushPublishes()
+                }
+            }
+            return
+        }
+        publishNow(messageID)
+    }
+
+    private fun publishNow(messageID: String) {
+        lastPublishAtMs = System.currentTimeMillis()
+        _state.value = _state.value.copy(streaming = _state.value.streaming + (messageID to streamedText(messageID)))
+    }
+
+    /** Current streamed text for one message: its blocks in ordinal order. */
+    private fun streamedText(messageID: String): String =
+        buffers.entries
             .filter { it.key.first == messageID }
             .sortedBy { it.key.second }
             .joinToString("\n\n") { it.value.toString() }
-        _state.value = _state.value.copy(streaming = _state.value.streaming + (messageID to text))
+
+    /** Publishes every buffered message's current text (the coalesced flush). */
+    private fun flushPublishes() {
+        lastPublishAtMs = System.currentTimeMillis()
+        val streaming = _state.value.streaming.toMutableMap()
+        buffers.keys.map { it.first }.toSet().forEach { messageID ->
+            streaming[messageID] = streamedText(messageID)
+        }
+        _state.value = _state.value.copy(streaming = streaming)
     }
 
     /** Session id from any event payload; every event carries one. */

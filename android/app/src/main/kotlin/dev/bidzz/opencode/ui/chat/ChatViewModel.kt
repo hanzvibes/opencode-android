@@ -8,7 +8,9 @@ import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.ChatState
+import dev.bidzz.opencode.core.api.LiveTool
 import dev.bidzz.opencode.core.api.dto.SessionInfo
+import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import kotlinx.coroutines.Job
@@ -23,6 +25,10 @@ data class ChatUiState(
     val engineState: EngineState = EngineState.STOPPED,
     val sessionID: String? = null,
     val messages: List<ChatMessage> = emptyList(),
+    /** True when the transcript window cut older messages: more are available above. */
+    val hasMoreOlder: Boolean = false,
+    /** True while an explicit "load earlier" fetch is in flight. */
+    val loadingEarlier: Boolean = false,
     val busy: Boolean = false,
     val connecting: Boolean = false,
     /** What went wrong, as a value; the screen words it in the app’s language. */
@@ -213,6 +219,18 @@ class ChatViewModel(
     private val toolCompletedAt = mutableMapOf<String, Long>()
     private var lastCollectorSessionID: String? = null
 
+    /**
+     * Last unmerged transcript, for the incremental path (item 28). The
+     * history loop parses every message's parts, so when only the streamed
+     * text moved, the overlay re-runs on this cached list instead of
+     * rebuilding everything. The refs pin the inputs: a different history
+     * list, live-tool map or durations forces a full rebuild.
+     */
+    private var lastUnmergedMessages: List<ChatMessage> = emptyList()
+    private var lastMessagesRef: List<SessionMessage>? = null
+    private var lastLiveToolsRef: Map<String, LiveTool>? = null
+    private var lastToolDurations: Map<String, Long> = emptyMap()
+
     /** Draft as it was before an edit loaded a message into the composer;
      * cancelling the edit restores it. Not persisted: on process death the
      * edit is abandoned and the draft stays as typed. */
@@ -321,6 +339,34 @@ class ChatViewModel(
      * retry kind (finding 18), the queued follow-up flush (finding 10) and
      * the deferred-permission lifecycle (finding 17).
      */
+    /**
+     * Builds the transcript for the UI. Mid-stream only the streamed text
+     * moves — history, live tools and durations are untouched — so the
+     * expensive per-message part rebuild is skipped and only the streaming
+     * overlay re-runs on the cached list (item 28). The contiguous merge
+     * still runs every time; it is list surgery, not parsing.
+     */
+    private fun buildUiMessages(chat: ChatState, toolDurations: Map<String, Long>): List<ChatMessage> {
+        if (chat.messages === lastMessagesRef && chat.liveTools === lastLiveToolsRef &&
+            toolDurations == lastToolDurations
+        ) {
+            val overlaid = lastUnmergedMessages.toMutableList()
+            applyStreamingOverlay(overlaid, chat.streaming)
+            lastUnmergedMessages = overlaid
+            return mergeContiguousAssistant(overlaid)
+        }
+        lastUnmergedMessages = chat.buildUnmergedMessages(toolDurations)
+        lastMessagesRef = chat.messages
+        lastLiveToolsRef = chat.liveTools
+        lastToolDurations = toolDurations
+        return mergeContiguousAssistant(lastUnmergedMessages)
+    }
+
+    /** Grows the transcript window and re-fetches older messages (item 28). */
+    fun loadEarlier() {
+        repository?.loadEarlier()
+    }
+
     private fun onRepoState(chat: ChatState) {
         val previous = _state.value
         val wasBusy = previous.busy
@@ -375,7 +421,9 @@ class ChatViewModel(
 
         _state.value = previous.copy(
             sessionID = chat.sessionID,
-            messages = chat.toUiMessages(toolDurations),
+            messages = buildUiMessages(chat, toolDurations),
+            hasMoreOlder = chat.hasMoreOlder,
+            loadingEarlier = chat.loadingEarlier,
             busy = chat.busy,
             failure = chat.lastFailure,
             // A stale guidance key outlives its failure (item 24): the
@@ -1229,7 +1277,13 @@ class ChatViewModel(
  * @param toolDurations client-side per-tool durations keyed by tool id (see
  * [ChatViewModel]); passed through to each assistant turn.
  */
-private fun ChatState.toUiMessages(toolDurations: Map<String, Long> = emptyMap()): List<ChatMessage> {
+/**
+ * History parts, streaming overlay and live tools — the expensive part
+ * (item 28): every message's parts are parsed here, so the incremental
+ * path in [ChatViewModel.buildUiMessages] reuses this list and only
+ * re-runs the streaming overlay when nothing else moved.
+ */
+private fun ChatState.buildUnmergedMessages(toolDurations: Map<String, Long> = emptyMap()): List<ChatMessage> {
     val result = mutableListOf<ChatMessage>()
     messages.forEach { message ->
         when {
@@ -1322,38 +1376,7 @@ private fun ChatState.toUiMessages(toolDurations: Map<String, Long> = emptyMap()
         }
     }
 
-    // Append streaming text for messages not yet in history.
-    streaming.forEach { (messageID, text) ->
-        val existing = result.indexOfFirst { it.id == messageID }
-        if (existing >= 0) {
-            val curr = result[existing]
-            val updatedParts = if (curr.parts.isNotEmpty()) {
-                val copy = curr.parts.toMutableList()
-                val last = copy.lastOrNull()
-                if (last is ChatTurnPart.Text) {
-                    copy[copy.lastIndex] = ChatTurnPart.Text(text)
-                } else {
-                    copy += ChatTurnPart.Text(text)
-                }
-                copy
-            } else {
-                listOf(ChatTurnPart.Text(text))
-            }
-            result[existing] = curr.copy(text = text, streaming = true, parts = updatedParts)
-        } else {
-            result += ChatMessage(
-                id = messageID,
-                role = Role.ASSISTANT,
-                text = text,
-                streaming = true,
-                parts = listOf(ChatTurnPart.Text(text)),
-                // No history entry yet, so no engine timestamp: "now" is
-                // the honest value, and it keeps a fresh turn from
-                // inheriting yesterday's divider.
-                createdAtMillis = System.currentTimeMillis(),
-            )
-        }
-    }
+    applyStreamingOverlay(result, streaming)
 
     // Live tool calls win over history for the same call id; calls for a message
     // that has no text yet still need a message to hang off.
@@ -1390,9 +1413,55 @@ private fun ChatState.toUiMessages(toolDurations: Map<String, Long> = emptyMap()
             result[idx] = curr.copy(tools = mergedTools, parts = parts)
         }
     }
+    return result
+}
+
+/**
+ * Folds streamed text into the built messages (in place): a message in
+ * history gets its text replaced, a message not yet in history is
+ * appended. Replacing (not appending) makes re-running the overlay on
+ * the same list a no-op for text that did not move — the incremental
+ * path relies on that.
+ */
+private fun applyStreamingOverlay(result: MutableList<ChatMessage>, streaming: Map<String, String>) {
+    streaming.forEach { (messageID, text) ->
+        val existing = result.indexOfFirst { it.id == messageID }
+        if (existing >= 0) {
+            val curr = result[existing]
+            val updatedParts = if (curr.parts.isNotEmpty()) {
+                val copy = curr.parts.toMutableList()
+                val last = copy.lastOrNull()
+                if (last is ChatTurnPart.Text) {
+                    copy[copy.lastIndex] = ChatTurnPart.Text(text)
+                } else {
+                    copy += ChatTurnPart.Text(text)
+                }
+                copy
+            } else {
+                listOf(ChatTurnPart.Text(text))
+            }
+            result[existing] = curr.copy(text = text, streaming = true, parts = updatedParts)
+        } else {
+            result += ChatMessage(
+                id = messageID,
+                role = Role.ASSISTANT,
+                text = text,
+                streaming = true,
+                parts = listOf(ChatTurnPart.Text(text)),
+                // No history entry yet, so no engine timestamp: "now" is
+                // the honest value, and it keeps a fresh turn from
+                // inheriting yesterday's divider.
+                createdAtMillis = System.currentTimeMillis(),
+            )
+        }
+    }
+}
+
+/** Merges contiguous assistant messages into one unified turn. */
+private fun mergeContiguousAssistant(messages: List<ChatMessage>): List<ChatMessage> {
     // Merge contiguous assistant messages into one unified turn
     val merged = mutableListOf<ChatMessage>()
-    result.forEach { msg ->
+    messages.forEach { msg ->
         val last = merged.lastOrNull()
         if (last != null && last.role == Role.ASSISTANT && msg.role == Role.ASSISTANT) {
             val combinedText = listOf(last.text, msg.text).filter { it.isNotBlank() }.joinToString("\n\n")

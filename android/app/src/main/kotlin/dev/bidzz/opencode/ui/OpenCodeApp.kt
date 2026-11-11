@@ -563,6 +563,7 @@ private fun ChatDestination(
         onNewSession = chatViewModel::newSession,
         onDismissError = chatViewModel::dismissError,
         onRetryError = chatViewModel::retryError,
+        onLoadEarlier = chatViewModel::loadEarlier,
         onReauth = app::restartEngine,
         onEditMessage = { id, text -> chatViewModel.startEdit(id, text) },
         onResendMessage = chatViewModel::resendMessage,
