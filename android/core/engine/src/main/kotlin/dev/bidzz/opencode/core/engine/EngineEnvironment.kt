@@ -42,6 +42,21 @@ class EngineEnvironment(
     val cacheHome: File = File(home, ".cache")
     val configHome: File = File(home, ".config")
 
+    /**
+     * Node.js runtime assets, extracted from `assets/node/` at first launch
+     * (NodeAssets) into this directory:
+     *
+     * ```
+     * filesDir/engine/node/
+     *   lib/node_modules/npm/bin/npm-cli.js   (invoked as `node <this path>`)
+     *   lib/node_modules/corepack/
+     *   etc/tls/cert.pem                     (bundled CA bundle, see SSL_CERT_FILE)
+     * ```
+     */
+    val nodeDir: File = File(root, "node")
+    val nodeCertFile: File = File(nodeDir, "etc/tls/cert.pem")
+    val npmCliJs: File = File(nodeDir, "lib/node_modules/npm/bin/npm-cli.js")
+
     /** Resolved on every read, so a workspace switch needs no new environment. */
     val workspace: File get() = workspaceProvider()
 
@@ -96,10 +111,24 @@ class EngineEnvironment(
      * Environment variables for the child process.
      *
      * PATH deliberately starts with the directory holding the bundled tool
-     * binaries (git, rg) so the engine's shell tool finds them, and includes the
-     * system bin directories for `/system/bin/sh`.
+     * binaries (git, rg, node) so the engine's shell tool finds them, and
+     * includes the system bin directories for `/system/bin/sh`.
+     *
+     * LD_LIBRARY_PATH must point at the native library directory: a child
+     * process exec'd through the linker does not inherit the app's library
+     * search path, and Node's RUNPATH points at the dead Termux prefix
+     * (`/data/data/com.termux/files/usr/lib`). git/rg never needed this —
+     * their DT_NEEDED entries are system libs only.
+     *
+     * SSL_CERT_FILE must point at the bundled CA bundle: libcrypto hardcodes
+     * the Termux path `/data/data/com.termux/files/usr/etc/tls/cert.pem`,
+     * which does not exist on the device, so npm's TLS verification would
+     * fail without it.
+     *
+     * SHELL is `/system/bin/sh`: the Node binary contains hardcoded Termux
+     * paths (`.../usr/bin/bash`), and there is no bash bundled.
      */
-    fun variables(toolBinDir: File?): Map<String, String> = buildMap {
+    fun variables(toolBinDir: File?, nativeLibraryDir: File? = null): Map<String, String> = buildMap {
         put("HOME", home.absolutePath)
         put("TMPDIR", tmp.absolutePath)
         put("XDG_DATA_HOME", dataHome.absolutePath)
@@ -110,6 +139,11 @@ class EngineEnvironment(
         put("LANG", "C.UTF-8")
         // Signals to the engine that it is running under the Android host.
         put("OPENCODE_ANDROID", "1")
+        put("SHELL", "/system/bin/sh")
+        put("SSL_CERT_FILE", nodeCertFile.absolutePath)
+        if (nativeLibraryDir != null) {
+            put("LD_LIBRARY_PATH", nativeLibraryDir.absolutePath)
+        }
     }
 
     private fun buildPath(toolBinDir: File?): String =

@@ -248,7 +248,7 @@ class ProcessManager(
                 .directory(environment.workspace)
                 .redirectErrorStream(true)
             builder.environment().clear()
-            builder.environment().putAll(environment.variables(binary.toolBinDir))
+            builder.environment().putAll(environment.variables(binary.toolBinDir, binary.nativeLibraryDir))
 
             val proc = builder.start()
             started = proc
