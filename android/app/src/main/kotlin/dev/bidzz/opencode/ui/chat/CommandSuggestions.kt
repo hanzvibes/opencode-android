@@ -231,7 +231,10 @@ fun resolveSlashCommands(
     }
 
     for (builtin in BUILTIN_SLASH_COMMANDS) {
-        if (!seen.contains(builtin.name.lowercase())) {
+        // Record the name too: the skill loop below drops names already
+        // seen, and a builtin that is not recorded lets a same-named skill
+        // through — two rows keyed "test" crash composition on open.
+        if (seen.add(builtin.name.lowercase())) {
             result.add(builtin)
         }
     }
