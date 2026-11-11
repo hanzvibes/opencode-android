@@ -75,6 +75,7 @@ fun SettingsScreen(
     onDiagnostics: () -> Unit,
     onProjects: () -> Unit,
     onProviders: () -> Unit,
+    onMcpServers: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -254,6 +255,13 @@ fun SettingsScreen(
                     },
                     onClick = onDiagnostics,
                     divider = true,
+                )
+                SettingsRow(
+                    glyph = Glyph.External,
+                    badgeColor = purpleBadge,
+                    title = stringResource(R.string.mcp_title),
+                    subtitle = stringResource(R.string.mcp_body),
+                    onClick = onMcpServers,
                 )
             }
 

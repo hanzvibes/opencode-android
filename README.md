@@ -42,14 +42,15 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 |---|---|
 | **Chat that streams** | Replies appear token by token, with Markdown, tables, and code blocks you can copy. Edit a sent message and re-send it, quote a reply, and see tokens, cost and duration under each turn. |
 | **See what the agent does** | Tool calls show as a readable timeline ("Reading index.html"), live while it runs and in history afterwards, with failures marked, durations on every step, and real diffs (+n −m) for file edits. |
-| **You stay in control** | Permission prompts arrive in the chat: *Allow once*, *Always*, or *Reject* — or *Answer later* to decide when you're ready. Risky operations are flagged by risk class. |
+| **You stay in control** | Permission prompts arrive in the chat: *Allow once*, *Always*, or *Reject* — or *Answer later* to decide when you're ready. Risky operations are flagged by risk class. Saved “Always” permissions can be listed and revoked in Settings. |
 | **Attach files** | `@`-mention any file in the workspace, or browse device files outside it: text files are inlined into your message (64 KB cap). Anything else is refused with a clear message, never silently dropped. |
 | **Bring your own provider** | Add an API key for a built-in provider, or define a custom OpenAI-compatible endpoint from inside the app. Replace or delete keys at any time. |
-| **Modes, models, commands** | Switch mode, model and agent from the composer — with search, provider grouping and recents — and use `/` commands with autocomplete, plus `@` file mentions. |
+| **Modes, models, commands** | Switch mode, model and agent from the composer — with search, provider grouping and recents — and use `/` commands with autocomplete, with skills in the same palette, plus `@` file mentions. |
 | **Real project folders** | Point the app at any folder on shared storage; the agent works on real POSIX paths. Switch projects and the engine restarts for you. |
 | **Files and diffs** | Browse the project, read and edit files with syntax highlighting, quick-open and find-in-file, and review real `git` diffs with A/M/D badges. |
 | **Search that works** | `git` and `ripgrep` are bundled, so the agent's `grep` and `glob` tools function. |
-| **Session history** | Reopen any past conversation, for this project or all of them, with previews and transcript search. |
+| **Session history** | Reopen any past conversation, for this project or all of them, with previews and transcript search. Each row shows its cost and token usage. |
+| **MCP servers** | See the engine's configured MCP servers and their connection status in Settings. Connecting, disconnecting, adding and removing are not available yet. |
 | **First-run onboarding** | A three-step first run — project, provider, permissions — and a sample project you can seed to try the agent on. |
 | **Tablet layout** | On wide screens (≥840dp) the session list stays visible beside the chat, with list-detail navigation; content caps at 720dp everywhere else. |
 | **Survives the swipe** | A foreground service keeps the engine alive when you leave the app or swipe it from recents. |
@@ -58,7 +59,7 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 
 ### Not yet
 
-MCP servers, an interactive terminal, LSP, session fork/revert, and `git` over https
+An interactive terminal, LSP, session fork/revert, and `git` over https
 (`clone`/`push`/`fetch`). See [`docs/BUILD.md`](docs/BUILD.md#known-gaps) for the
 current list of known build gaps.
 
@@ -67,8 +68,6 @@ current list of known build gaps.
 - **Editing a message re-sends it as a new message** — the original stays visible. Truly
   truncating the turn and re-running needs a verified engine API, which the app does not
   have yet.
-- **"Always" permissions live on the engine** and can't be listed or revoked from the app
-  yet. The list API exists; the UI doesn't call it.
 - **Session previews load full history**, so opening the session list can be slow on long
   sessions.
 
@@ -248,10 +247,11 @@ control desktop, bukan WebView.
 - Hubungkan penyedia sendiri: kunci API atau endpoint kustom, langsung dari aplikasi.
 - Pilih folder proyek di penyimpanan bersama, jelajahi dan edit file, lihat diff git.
 - `git` dan `ripgrep` sudah dibundel. Engine tetap hidup walau aplikasi di-swipe.
+- Daftar sesi menampilkan biaya dan token tiap sesi; skill muncul di palet `/`; server MCP dan izin “Selalu” bisa dilihat di Pengaturan, dan izin bisa dicabut dari sana.
 - Onboarding tiga langkah, sidebar tablet persisten (≥840dp), pemilih tema Sistem/Gelap/Terang.
 - Bahasa Indonesia dan Inggris, tema gelap dan terang.
 
-**Belum ada:** MCP server, terminal interaktif, LSP, session fork/revert, dan `git` over https.
+**Belum ada:** terminal interaktif, LSP, session fork/revert, dan `git` over https.
 
 **Pasang:** unduh APK dari halaman [Releases](https://github.com/hanzvibes/opencode-android/releases)
 (`arm64-v8a` untuk hampir semua HP), pasang, lalu berikan *Akses semua file*. Butuh Android 10

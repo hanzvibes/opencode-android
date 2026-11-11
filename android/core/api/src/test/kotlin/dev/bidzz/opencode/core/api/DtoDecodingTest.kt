@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
+import dev.bidzz.opencode.core.api.dto.McpServersResponse
 import dev.bidzz.opencode.core.api.dto.ModelsResponse
 import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
 import dev.bidzz.opencode.core.api.dto.SavedPermissionsResponse
@@ -182,6 +183,31 @@ class DtoDecodingTest {
         assertEquals("Write a commit message", parsed.data[0].description)
         assertEquals("review-pr", parsed.data[1].name)
         assertEquals(false, parsed.data[1].autoinvoke)
+    }
+
+    @Test
+    fun `decodes the MCP server list with per-variant status objects`() {
+        // Status is an object, not a bare string: each Mcp.Status.* variant
+        // carries its own `status` field, and failed/needs-auth add `error`.
+        val raw = """
+            {"data":[
+              {"name":"github","status":{"status":"connected"},"title":"GitHub","integrationID":"github"},
+              {"name":"broken","status":{"status":"failed","error":"connection refused"},"title":"Broken server"},
+              {"name":"local","status":{"status":"pending"}}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<McpServersResponse>(raw)
+        assertEquals(3, parsed.data.size)
+        assertEquals("github", parsed.data[0].name)
+        assertEquals("connected", parsed.data[0].status.status)
+        assertEquals("GitHub", parsed.data[0].title)
+        assertEquals("github", parsed.data[0].integrationID)
+        assertEquals("failed", parsed.data[1].status.status)
+        assertEquals("connection refused", parsed.data[1].status.error)
+        assertEquals("pending", parsed.data[2].status.status)
+        assertEquals(null, parsed.data[2].status.error)
+        assertEquals(null, parsed.data[2].title)
     }
 
     @Test

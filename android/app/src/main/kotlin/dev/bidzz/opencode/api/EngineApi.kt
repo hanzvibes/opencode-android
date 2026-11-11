@@ -9,6 +9,7 @@ import dev.bidzz.opencode.core.api.EngineClient
 import dev.bidzz.opencode.core.api.EventStream
 import dev.bidzz.opencode.core.api.IntegrationApi
 import dev.bidzz.opencode.core.api.ModelApi
+import dev.bidzz.opencode.core.api.McpApi
 import dev.bidzz.opencode.core.api.PermissionApi
 import dev.bidzz.opencode.core.api.ProviderApi
 import dev.bidzz.opencode.core.api.SkillApi
@@ -34,6 +35,7 @@ class EngineApi(private val workspaceDirectory: () -> String) {
         val agents: AgentApi,
         val commands: CommandApi,
         val skills: SkillApi,
+        val mcp: McpApi,
         val providers: ProviderApi,
         val permissions: PermissionApi,
         val integrations: IntegrationApi,
@@ -62,6 +64,7 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             agents = AgentApi(client),
             commands = CommandApi(client),
             skills = SkillApi(client),
+            mcp = McpApi(client),
             providers = ProviderApi(client),
             permissions = PermissionApi(client),
             integrations = IntegrationApi(client),

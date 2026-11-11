@@ -80,6 +80,34 @@ data class SkillsResponse(
 )
 
 /**
+ * One MCP server (`Mcp.Server`, docs/API-REFERENCE.md).
+ *
+ * `status` is one of the `Mcp.Status.*` variants: an object whose `status`
+ * field reads `connected`, `disabled`, `failed`, `needs-auth` or `pending`,
+ * with `error` present on `failed` and `needs-auth`. Connect/disconnect are
+ * experimental endpoints the app does not call — this surface is list-only.
+ */
+@Serializable
+data class McpStatus(
+    val status: String,
+    val error: String? = null,
+)
+
+@Serializable
+data class McpServer(
+    val name: String,
+    val status: McpStatus,
+    val title: String? = null,
+    val integrationID: String? = null,
+)
+
+@Serializable
+data class McpServersResponse(
+    val data: List<McpServer> = emptyList(),
+    val location: LocationRef? = null,
+)
+
+/**
  * Body of `POST /api/session/{id}/command`.
  *
  * `name` selects the command; `text` is whatever followed it on the command line. The
