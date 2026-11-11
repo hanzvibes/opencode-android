@@ -629,4 +629,7 @@
     <string name="message_share">Share</string>
     <string name="shortcut_new_session">New session</string>
     <string name="shortcut_last_session">Continue last session</string>
+    <string name="notification_agent_done_channel">Agent replies</string>
+    <string name="notification_agent_done_title">Agent finished replying</string>
+    <string name="notification_agent_done_body">Tap to open the session</string>
 </resources>

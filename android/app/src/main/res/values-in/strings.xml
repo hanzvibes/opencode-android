@@ -628,4 +628,7 @@
     <string name="message_share">Bagikan</string>
     <string name="shortcut_new_session">Sesi baru</string>
     <string name="shortcut_last_session">Lanjut sesi terakhir</string>
+    <string name="notification_agent_done_channel">Balasan agent</string>
+    <string name="notification_agent_done_title">Agent selesai menjawab</string>
+    <string name="notification_agent_done_body">Ketuk untuk membuka sesi</string>
 </resources>

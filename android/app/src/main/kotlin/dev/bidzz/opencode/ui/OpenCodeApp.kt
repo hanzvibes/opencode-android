@@ -43,8 +43,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -413,6 +415,28 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         val id = chatState.sessionID ?: return@LaunchedEffect
         val title = sessionsState.rows.find { it.id == id }?.title
         updateLastSessionShortcut(hostContext, id, title)
+    }
+
+    // Agent-done notification (Native C): when a run ends while the app
+    // is not in the foreground, say so in the drawer; tapping it opens
+    // the session. A run that ends while the user is watching needs no
+    // notification — the answer is already on screen.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var wasBusy by remember { mutableStateOf(false) }
+    LaunchedEffect(chatState.busy) {
+        val busy = chatState.busy
+        if (wasBusy && !busy) {
+            val id = chatState.sessionID
+            if (id != null) {
+                val resumed = lifecycleOwner.lifecycle.currentState
+                    .isAtLeast(Lifecycle.State.RESUMED)
+                if (!resumed) {
+                    val title = sessionsState.rows.find { it.id == id }?.title
+                    notifyAgentDone(hostContext, id, title)
+                }
+            }
+        }
+        wasBusy = busy
     }
 
     // Links in chat open in the in-app browser (Native C): http/https
