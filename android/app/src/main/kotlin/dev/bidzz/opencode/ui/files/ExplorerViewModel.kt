@@ -493,20 +493,36 @@ class FileViewViewModel(
                         failure = result,
                     )
                     is ApiResult.Success -> {
-                        _state.value = _state.value.copy(
-                            saving = false,
-                            editing = false,
-                            conflict = false,
-                            content = s.draft,
-                            draft = "",
-                            saved = true,
-                        )
-                        // The file was written — it may be new to the
-                        // quick-open index, which only lists paths (item 27).
-                        onSaved()
-                        // A file switch was held for this save (item 10): the
-                        // draft is written now, so open the file asked for.
-                        _state.value.confirmSwitchTo?.let { load(it) }
+                        // The check and the write are two separate requests:
+                        // the agent may have written between the re-read and
+                        // this write, and the write would then have replaced
+                        // the agent's edit with a draft based on older
+                        // content (audit-70 35-F2). Read the file back: a
+                        // mismatch means the file moved under this save, so
+                        // report a conflict instead of marking it saved —
+                        // the draft is kept, the agent's version stands on
+                        // disk, and the user decides. A failed re-read
+                        // cannot prove a move, so the successful write
+                        // stands (the draft is on disk either way).
+                        val after = (files.readText(directory, s.path) as? ApiResult.Success)?.value
+                        if (after != null && after != s.draft) {
+                            _state.value = _state.value.copy(saving = false, conflict = true)
+                        } else {
+                            _state.value = _state.value.copy(
+                                saving = false,
+                                editing = false,
+                                conflict = false,
+                                content = s.draft,
+                                draft = "",
+                                saved = true,
+                            )
+                            // The file was written — it may be new to the
+                            // quick-open index, which only lists paths (item 27).
+                            onSaved()
+                            // A file switch was held for this save (item 10): the
+                            // draft is written now, so open the file asked for.
+                            _state.value.confirmSwitchTo?.let { load(it) }
+                        }
                     }
                 }
             }
