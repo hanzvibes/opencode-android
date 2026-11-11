@@ -24,7 +24,7 @@ class SessionTokensTest {
 
     @Test
     fun `sums input output and reasoning`() {
-        assertEquals(4117L, totalTokens(TokenUsage(input = 4032, output = 9, reasoning = 83)))
+        assertEquals(4124L, totalTokens(TokenUsage(input = 4032, output = 9, reasoning = 83)))
         assertEquals(4032L, totalTokens(TokenUsage(input = 4032)))
     }
 
