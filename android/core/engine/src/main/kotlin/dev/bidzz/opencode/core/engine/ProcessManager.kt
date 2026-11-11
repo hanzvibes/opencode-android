@@ -495,7 +495,6 @@ class ProcessManager(
 
     private fun scanForEnginePid(executable: String): Int? =
         scanForEnginePids(executable).firstOrNull()
-}
 
     /** True when the engine's own output says it could not bind the port. */
     private fun looksLikePortConflict(output: String): Boolean = isPortConflict(output)
