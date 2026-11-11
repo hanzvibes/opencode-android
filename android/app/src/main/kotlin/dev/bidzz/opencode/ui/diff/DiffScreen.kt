@@ -158,8 +158,8 @@ private fun UnifiedDiffView(state: DiffUiState) {
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = spacing.xxl),
     ) {
-        state.hunks.forEach { hunk ->
-            item(key = "hunk-${hunk.header}") {
+        state.hunks.forEachIndexed { index, hunk ->
+            item(key = "hunk-$index-${hunk.header}") {
                 HunkHeaderRow(hunk.header)
             }
             items(hunk.lines) { line ->
@@ -370,8 +370,8 @@ private fun SplitDiffView(state: DiffUiState) {
                 .weight(1f),
             contentPadding = PaddingValues(bottom = spacing.xxl),
         ) {
-            state.hunks.forEach { hunk ->
-                item(key = "hunk-header-${hunk.header}") {
+            state.hunks.forEachIndexed { index, hunk ->
+                item(key = "hunk-header-$index-${hunk.header}") {
                     HunkHeaderRow(hunk.header)
                 }
                 val pairedRows = DiffParser.toSideBySide(hunk)

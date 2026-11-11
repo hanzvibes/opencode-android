@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.files
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.R
@@ -329,10 +330,56 @@ class FileViewViewModel(
     private val workspace: () -> String,
     /** Called after a successful write: the file may be new to the index. */
     private val onSaved: () -> Unit = {},
+    /**
+     * Optional handle that owns the unsaved draft across process death.
+     * Null when the caller constructs the view model without one (the draft
+     * then lives only in [FileViewState], as before).
+     */
+    private val savedStateHandle: SavedStateHandle? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FileViewState())
     val state: StateFlow<FileViewState> = _state.asStateFlow()
+
+    /**
+     * Draft left behind by the last process (audit-70 69-F3): the file, the
+     * unsaved text, and whether edit mode was on. Applied when the file is
+     * next loaded successfully — the content is re-read from the engine,
+     * only the draft is restored — and dropped when another file is opened.
+     */
+    private var restoredPath: String? = savedStateHandle?.get<String>(FILE_DRAFT_PATH_KEY)
+    private var restoredDraft: String? = savedStateHandle?.get<String>(FILE_DRAFT_TEXT_KEY)
+    private var restoredEditing: Boolean =
+        savedStateHandle?.get<Boolean>(FILE_DRAFT_EDITING_KEY) ?: false
+
+    /** Writes the live draft into the handle, or clears it when not editing. */
+    private fun persistDraft() {
+        val handle = savedStateHandle ?: return
+        val s = _state.value
+        if (s.editing) {
+            handle[FILE_DRAFT_PATH_KEY] = s.path
+            handle[FILE_DRAFT_TEXT_KEY] = s.draft
+            handle[FILE_DRAFT_EDITING_KEY] = true
+        } else {
+            clearPersistedDraft()
+        }
+    }
+
+    /** Drops the persisted draft and any unrestored one with it. */
+    private fun clearPersistedDraft() {
+        savedStateHandle?.remove<String>(FILE_DRAFT_PATH_KEY)
+        savedStateHandle?.remove<String>(FILE_DRAFT_TEXT_KEY)
+        savedStateHandle?.remove<Boolean>(FILE_DRAFT_EDITING_KEY)
+        restoredPath = null
+        restoredDraft = null
+        restoredEditing = false
+    }
+
+    companion object {
+        private const val FILE_DRAFT_PATH_KEY = "fileview_path"
+        private const val FILE_DRAFT_TEXT_KEY = "fileview_draft"
+        private const val FILE_DRAFT_EDITING_KEY = "fileview_editing"
+    }
 
     /** In-flight file read, cancelled when another file is opened. */
     private var loadJob: Job? = null
@@ -382,6 +429,9 @@ class FileViewViewModel(
     }
 
     private fun load(path: String, allowFull: Boolean) {
+        // A draft restored after process death belongs to its file: opening
+        // another file abandons it (audit-70 69-F3).
+        if (restoredPath != null && restoredPath != path) clearPersistedDraft()
         // Never overwrite an unsaved draft with another file's content
         // (item 10): every load path goes through requestLoad, and this
         // guard is the backstop for any caller that forgot.
@@ -412,13 +462,26 @@ class FileViewViewModel(
                     val truncated = !allowFull &&
                         LargeFileGuard.isLarge(result.value) &&
                         totalLines > LargeFileGuard.PreviewLines
+                    // A draft restored after process death comes back with the
+                    // file it belongs to; a truncated preview must never
+                    // become a draft, so a restored draft is only applied to
+                    // a whole file (loadFull applies it later).
+                    val draftToRestore =
+                        if (restoredPath == path && restoredEditing && !truncated) restoredDraft else null
                     _state.value = FileViewState(
                         loading = false,
                         path = path,
                         content = if (truncated) shown else result.value,
                         truncated = truncated,
                         totalLines = if (truncated) totalLines else 0,
+                        editing = draftToRestore != null,
+                        draft = draftToRestore ?: "",
                     )
+                    if (draftToRestore != null) {
+                        restoredPath = null
+                        restoredDraft = null
+                        restoredEditing = false
+                    }
                 }
                 is ApiResult.Failure -> _state.value = FileViewState(
                     loading = false,
@@ -436,15 +499,18 @@ class FileViewViewModel(
         // the preview back over the real file. Load the full file first.
         if (s.truncated) return
         _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false)
+        persistDraft()
     }
 
     fun editDraft(text: String) {
         _state.value = _state.value.copy(draft = text, saved = false)
+        persistDraft()
     }
 
     /** Leaves the editor without writing. The draft goes with it. */
     fun stopEditing() {
         _state.value = _state.value.copy(editing = false, draft = "", conflict = false, saving = false)
+        clearPersistedDraft()
     }
 
     /**
@@ -493,20 +559,39 @@ class FileViewViewModel(
                         failure = result,
                     )
                     is ApiResult.Success -> {
-                        _state.value = _state.value.copy(
-                            saving = false,
-                            editing = false,
-                            conflict = false,
-                            content = s.draft,
-                            draft = "",
-                            saved = true,
-                        )
-                        // The file was written — it may be new to the
-                        // quick-open index, which only lists paths (item 27).
-                        onSaved()
-                        // A file switch was held for this save (item 10): the
-                        // draft is written now, so open the file asked for.
-                        _state.value.confirmSwitchTo?.let { load(it) }
+                        // The check and the write are two separate requests:
+                        // the agent may have written between the re-read and
+                        // this write, and the write would then have replaced
+                        // the agent's edit with a draft based on older
+                        // content (audit-70 35-F2). Read the file back: a
+                        // mismatch means the file moved under this save, so
+                        // report a conflict instead of marking it saved —
+                        // the draft is kept, the agent's version stands on
+                        // disk, and the user decides. A failed re-read
+                        // cannot prove a move, so the successful write
+                        // stands (the draft is on disk either way).
+                        val after = (files.readText(directory, s.path) as? ApiResult.Success)?.value
+                        if (after != null && after != s.draft) {
+                            _state.value = _state.value.copy(saving = false, conflict = true)
+                        } else {
+                            _state.value = _state.value.copy(
+                                saving = false,
+                                editing = false,
+                                conflict = false,
+                                content = s.draft,
+                                draft = "",
+                                saved = true,
+                            )
+                            // The draft is on disk now: a later process death
+                            // must not resurrect it (audit-70 69-F3).
+                            clearPersistedDraft()
+                            // The file was written — it may be new to the
+                            // quick-open index, which only lists paths (item 27).
+                            onSaved()
+                            // A file switch was held for this save (item 10): the
+                            // draft is written now, so open the file asked for.
+                            _state.value.confirmSwitchTo?.let { load(it) }
+                        }
                     }
                 }
             }
@@ -517,6 +602,7 @@ class FileViewViewModel(
     fun reloadFromDisk() {
         val s = _state.value
         _state.value = s.copy(editing = false, draft = "", conflict = false, saving = false)
+        clearPersistedDraft()
         load(s.path)
     }
 

@@ -5,9 +5,9 @@ package dev.bidzz.opencode.ui.chat
  *
  * A question card already answers on a tap of a full option row; the chips
  * are the shortcut for the common case — a short, single-choice answer
- * ("Ya", "Tidak", "Fitur / UI") that is sent at once as an ordinary user
- * message, through the same [ChatViewModel.answerQuestion] path as the
- * card, without opening anything else. The card itself stays: chips only
+ * ("Ya", "Tidak", "Fitur / UI") that is sent at once as a form reply,
+ * through the same [ChatViewModel.answerQuestion] path as the card,
+ * without opening anything else. The card itself stays: chips only
  * ever cover the first few short options, and the full list (plus the
  * write-in) is still there for anything longer.
  */

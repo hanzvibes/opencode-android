@@ -189,14 +189,36 @@ class SessionListViewModel(
 
     /** Deletes a session. */
     fun delete(sessionID: String, scopedToWorkspace: Boolean = true) {
-        pinnedStore?.remove(sessionID)
-        _state.value = _state.value.copy(
-            rows = _state.value.rows.filter { it.id != sessionID }
-        )
+        // The engine must be reachable before anything is removed locally:
+        // with no handle the delete cannot run, and removing the pin or the
+        // row first would lose state for a session that is still there.
         val handle = api.handle() ?: return
+        val rows = _state.value.rows
+        val index = rows.indexOfFirst { it.id == sessionID }
+        val deleted = rows.getOrNull(index)
+        _state.value = _state.value.copy(
+            rows = rows.filter { it.id != sessionID }
+        )
         viewModelScope.launch {
-            handle.sessions.delete(sessionID)
-            load(scopedToWorkspace)
+            when (val result = handle.sessions.delete(sessionID)) {
+                is ApiResult.Success -> {
+                    // The pin is removed only now that the session is really
+                    // gone: removing it first meant a failed delete brought
+                    // the session back without its pin (audit-70 19-F3).
+                    pinnedStore?.remove(sessionID)
+                    load(scopedToWorkspace)
+                }
+                is ApiResult.Failure -> {
+                    // The session is still on the engine: put the row back
+                    // where it was, keep its pin, and show the failure
+                    // instead of pretending the delete worked.
+                    val current = _state.value.rows.toMutableList()
+                    if (deleted != null && current.none { it.id == sessionID }) {
+                        current.add(index.coerceIn(0, current.size), deleted)
+                    }
+                    _state.value = _state.value.copy(rows = current, failure = result)
+                }
+            }
         }
     }
 }

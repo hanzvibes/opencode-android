@@ -53,6 +53,18 @@ class ToolFilePathTest {
     }
 
     @Test
+    fun `input-only path never falls back to the summary`() {
+        // The summary is free text, not a verified path: the revert target
+        // must come from the input alone (audit-70 70-F03).
+        assertNull(toolInputFilePath(call("read", """{"uri": "src/x.kt"}""")))
+        assertNull(toolInputFilePath(call("edit", """{"oldString": "x", "newString": "y"}""")))
+        assertEquals(
+            "src/chat/ChatScreen.kt",
+            toolInputFilePath(call("edit", """{"filePath": "src/chat/ChatScreen.kt", "oldString": "x", "newString": "y"}""")),
+        )
+    }
+
+    @Test
     fun `absolute path inside the workspace relativizes`() {
         assertEquals(
             "src/chat/ChatScreen.kt",

@@ -109,7 +109,7 @@ fun ToolTrace(
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2): the
      * view model sends the revert request as an ordinary user message. */
-    onRequestDiffRevert: (String) -> Unit = {},
+    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
     /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
      * item 5): the same client-side stamps the durations come from, so a
      * still-running step can show a live elapsed time instead of no
@@ -496,7 +496,7 @@ fun ToolStep(
     /** Opens a workspace-relative file in the file viewer (Fase 1, item 3). */
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
-    onRequestDiffRevert: (String) -> Unit = {},
+    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
     /** Client-side start stamp for this step, epoch millis (Fase 2,
      * item 5). Only read while the step is still running, to show a live
      * elapsed time; a finished step uses [durationMillis] instead. */
@@ -581,6 +581,19 @@ fun ToolStep(
     val openablePath = remember(filePath, workspacePath) {
         filePath?.let { relativizeToWorkspace(it, workspacePath) }
     }
+
+    // Reject needs a verified file path: the input must name the file,
+    // and it must resolve inside the workspace. A summary is free text,
+    // never a revert target (audit-70 70-F03) — when there is no verified
+    // path the Reject button is not offered at all, instead of asking the
+    // agent to revert a guess.
+    val revertPath = remember(call, workspacePath) {
+        toolInputFilePath(call)?.let { relativizeToWorkspace(it, workspacePath) }
+    }
+    // The change itself, so the revert prompt names this edit and not just
+    // the file: two edits to one file must not produce identical prompts
+    // (audit-70 07-F2).
+    val revertChange = remember(diffHunks) { diffHunks?.let { revertChangeDescription(it) } }
 
     // Diff decision (Fase 1, item 2), per tool call: stored as the enum
     // name, not the enum — rememberSaveable has no built-in enum saver.
@@ -1007,11 +1020,11 @@ fun ToolStep(
                                 DiffDecisionRow(
                                     decision = diffDecision,
                                     onAccept = { diffDecisionName = DiffDecision.ACCEPTED.name },
+                                    showReject = revertPath != null,
                                     onReject = {
                                         diffDecisionName = DiffDecision.REJECTED.name
-                                        onRequestDiffRevert(
-                                            openablePath ?: filePath ?: call.summary,
-                                        )
+                                        val path = revertPath
+                                        if (path != null) onRequestDiffRevert(path, revertChange)
                                     },
                                 )
                             }
@@ -1783,6 +1796,8 @@ private fun DiffDecisionRow(
     decision: DiffDecision,
     onAccept: () -> Unit,
     onReject: () -> Unit,
+    /** No verified file path, so there is nothing honest to ask a revert of (audit-70 70-F03). */
+    showReject: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -1857,23 +1872,25 @@ private fun DiffDecisionRow(
                         textAlign = TextAlign.Center,
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .defaultMinSize(minHeight = 48.dp)
-                        .clip(RoundedCornerShape(radius.sm))
-                        .background(colors.danger.copy(alpha = 0.14f))
-                        .border(0.5.dp, colors.danger.copy(alpha = 0.22f), RoundedCornerShape(radius.sm))
-                        .clickable(role = Role.Button, onClick = onReject)
-                        .padding(horizontal = spacing.xs, vertical = spacing.sm),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.tool_diff_reject),
-                        style = OpenCodeTypography.label,
-                        color = colors.danger,
-                        textAlign = TextAlign.Center,
-                    )
+                if (showReject) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = 48.dp)
+                            .clip(RoundedCornerShape(radius.sm))
+                            .background(colors.danger.copy(alpha = 0.14f))
+                            .border(0.5.dp, colors.danger.copy(alpha = 0.22f), RoundedCornerShape(radius.sm))
+                            .clickable(role = Role.Button, onClick = onReject)
+                            .padding(horizontal = spacing.xs, vertical = spacing.sm),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.tool_diff_reject),
+                            style = OpenCodeTypography.label,
+                            color = colors.danger,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         }

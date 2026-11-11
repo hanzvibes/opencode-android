@@ -17,6 +17,8 @@ import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import dev.bidzz.opencode.core.api.dto.toToolCall
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -122,7 +124,18 @@ data class QueuedPrompt(
     val fullText: String,
     /** What the user typed, for prompt history (never the attachment blocks). */
     val typedText: String,
-)
+    /**
+     * The files baked into [fullText]. They are carried so the queue can
+     * give them back as chips when the engine dies (audit-70 13-F3) instead
+     * of losing the file content with the baked block. The drain sends
+     * [fullText] directly, so these are never baked a second time.
+     */
+    val attachments: List<AttachedFile> = emptyList(),
+) : java.io.Serializable {
+    companion object {
+        private const val serialVersionUID = 1L
+    }
+}
 
 /** What the error banner's Retry button does for the current failure. */
 enum class RetryKind {
@@ -214,13 +227,93 @@ class ChatViewModel(
     private val onSessionCleared: () -> Unit = {},
 ) : ViewModel() {
 
+    /**
+     * What the last process left in the saved-state handle (audit-70 69-F2):
+     * the queue, the pending attachment chips, the retry target and the
+     * prompt history. Only the draft was persisted before, so a process
+     * death silently dropped everything else the user had lined up.
+     */
+    private val restoredQueue: List<QueuedPrompt> =
+        savedStateHandle?.get<ArrayList<QueuedPrompt>>(QUEUE_KEY)?.toList().orEmpty()
+    private val restoredAttachments: List<AttachedFile> =
+        savedStateHandle?.get<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)?.toList().orEmpty()
+    private val restoredLastSent: String? = savedStateHandle?.get<String>(LAST_SENT_KEY)
+    private val restoredSentPrompts: List<String> =
+        savedStateHandle?.get<ArrayList<String>>(SENT_PROMPTS_KEY)?.toList().orEmpty()
+
+    /**
+     * True until the first repo state after a restore decides the restored
+     * queue's fate: if the run it was waiting on is still going, the normal
+     * flush sends it when the run ends; if the run is already over, the
+     * queue goes back to the composer instead of sitting there forever.
+     */
+    private var restoredQueuePending = restoredQueue.isNotEmpty()
+
     private val _state = MutableStateFlow(
         ChatUiState(
             workspacePath = workspace(),
             draft = savedStateHandle?.get<String>(DRAFT_KEY) ?: "",
+            queuedPrompts = restoredQueue,
+            pendingAttachments = restoredAttachments,
+            lastSentText = restoredLastSent,
+            sentPrompts = restoredSentPrompts,
         ),
     )
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
+
+    init {
+        // Keep the handle's copy of the queue, attachments, retry target
+        // and history in step with the live state, so a process death at
+        // any moment restores what the user had lined up (audit-70 69-F2).
+        // Only when a handle exists: unit tests construct this view model
+        // without one, and touching the scope there would need a Main
+        // dispatcher the tests do not have. Writes happen only on change,
+        // and only into the handle's in-memory map — the system serialises
+        // it when it actually saves state.
+        val handle = savedStateHandle
+        if (handle != null) {
+            viewModelScope.launch {
+                var lastQueue: List<QueuedPrompt>? = null
+                var lastAttachments: List<AttachedFile>? = null
+                var lastSent: String? = null
+                var lastHistory: List<String>? = null
+                _state.collect { state ->
+                    if (state.queuedPrompts != lastQueue) {
+                        lastQueue = state.queuedPrompts
+                        if (state.queuedPrompts.isEmpty()) {
+                            handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
+                        } else {
+                            handle[QUEUE_KEY] = ArrayList(state.queuedPrompts)
+                        }
+                    }
+                    if (state.pendingAttachments != lastAttachments) {
+                        lastAttachments = state.pendingAttachments
+                        if (state.pendingAttachments.isEmpty()) {
+                            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
+                        } else {
+                            handle[ATTACHMENTS_KEY] = ArrayList(state.pendingAttachments)
+                        }
+                    }
+                    if (state.lastSentText != lastSent) {
+                        lastSent = state.lastSentText
+                        if (state.lastSentText == null) {
+                            handle.remove<String>(LAST_SENT_KEY)
+                        } else {
+                            handle[LAST_SENT_KEY] = state.lastSentText
+                        }
+                    }
+                    if (state.sentPrompts != lastHistory) {
+                        lastHistory = state.sentPrompts
+                        if (state.sentPrompts.isEmpty()) {
+                            handle.remove<ArrayList<String>>(SENT_PROMPTS_KEY)
+                        } else {
+                            handle[SENT_PROMPTS_KEY] = ArrayList(state.sentPrompts)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private var repository: ChatRepository? = null
     private var collector: Job? = null
@@ -260,6 +353,75 @@ class ChatViewModel(
      * edit is abandoned and the draft stays as typed. */
     private var draftBeforeEdit: String? = null
 
+    /**
+     * Composer contents parked per session (audit-70 20-F4): switching
+     * sessions used to throw the draft and its attachments away, so coming
+     * back to the session found an empty composer. The outgoing session's
+     * composer is parked under its id and restored when that session is
+     * opened again. In-memory only, like [draftBeforeEdit]: parked
+     * composers do not survive process death — the live draft alone is
+     * persisted via [DRAFT_KEY].
+     */
+    private data class ParkedComposer(val draft: String, val attachments: List<AttachedFile>)
+
+    private val parkedComposers = mutableMapOf<String, ParkedComposer>()
+
+    /** Parks the current session's composer, if it holds anything. */
+    private fun parkComposer() {
+        val id = _state.value.sessionID ?: return
+        val draft = _state.value.draft
+        val attachments = _state.value.pendingAttachments
+        if (draft.isNotBlank() || attachments.isNotEmpty()) {
+            parkedComposers[id] = ParkedComposer(draft, attachments)
+        } else {
+            parkedComposers.remove(id)
+        }
+    }
+
+    /** Takes the parked composer for [sessionID], if the user left one there. */
+    private fun takeParkedComposer(sessionID: String): ParkedComposer? =
+        parkedComposers.remove(sessionID)
+
+    /**
+     * Moves the queued follow-ups (and their attachments) back into the
+     * composer. Shared by the engine-death path and the process-death
+     * restore: in both cases the run the queue was waiting on is gone, so
+     * the text belongs in the composer, not in a queue that will never
+     * flush. Returns true when anything was returned. An attachment-only
+     * entry has no typed text, so its draft part is empty — the chips carry
+     * the content, and re-baking the fullText block as well would duplicate
+     * it (audit-70 13-F3).
+     */
+    private fun returnQueueToDraft(): Boolean {
+        val queued = _state.value.queuedPrompts
+        val returned = queued.map {
+            when {
+                it.typedText.isNotBlank() -> it.typedText
+                it.attachments.isEmpty() -> it.fullText
+                else -> ""
+            }
+        }.filter { it.isNotBlank() }
+        val returnedAttachments = queued.flatMap { it.attachments }.distinctBy { it.id }
+        val anythingReturned = returned.isNotEmpty() || returnedAttachments.isNotEmpty()
+        if (!anythingReturned) return false
+        val draft = _state.value.draft
+        val restoredDraft = when {
+            returned.isEmpty() -> draft
+            draft.isBlank() -> returned.joinToString("\n")
+            else -> draft.trimEnd() + "\n" + returned.joinToString("\n")
+        }
+        if (returned.isNotEmpty()) {
+            savedStateHandle?.set(DRAFT_KEY, restoredDraft)
+        }
+        _state.value = _state.value.copy(
+            queuedPrompts = emptyList(),
+            draft = restoredDraft,
+            pendingAttachments = (returnedAttachments +
+                _state.value.pendingAttachments).distinctBy { it.id },
+        )
+        return true
+    }
+
     /** Called by the screen whenever engine status changes. */
     fun onEngineStatus(status: EngineStatus) {
         val previous = _state.value.engineState
@@ -279,24 +441,11 @@ class ChatViewModel(
                     // (item 8). They go back into the composer — after
                     // whatever the user typed since — with a notice, instead
                     // of vanishing with the queue.
-                    val returned = _state.value.queuedPrompts
-                        .map { it.typedText.ifBlank { it.fullText } }
-                        .filter { it.isNotBlank() }
-                    val draft = _state.value.draft
-                    val restoredDraft = when {
-                        returned.isEmpty() -> draft
-                        draft.isBlank() -> returned.joinToString("\n")
-                        else -> draft.trimEnd() + "\n" + returned.joinToString("\n")
-                    }
-                    if (returned.isNotEmpty()) {
-                        savedStateHandle?.set(DRAFT_KEY, restoredDraft)
-                    }
+                    val anythingReturned = returnQueueToDraft()
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
                         stopping = false,
-                        queuedPrompts = emptyList(),
-                        draft = restoredDraft,
                         editingMessageId = null,
                         // The engine is gone, so a prompt it was waiting on
                         // is dead too (item 22): leaving it would show
@@ -307,7 +456,7 @@ class ChatViewModel(
                         permissionReplyFailed = false,
                         retryKind = RetryKind.NONE,
                         failureKey = when {
-                            returned.isNotEmpty() -> R.string.chat_queued_returned
+                            anythingReturned -> R.string.chat_queued_returned
                             status.state == EngineState.FAILED -> R.string.error_engine_not_running
                             else -> null
                         },
@@ -503,6 +652,16 @@ class ChatViewModel(
                 )
                 sendText(next.fullText, next.typedText, emptyList())
             }
+        }
+
+        // A queue restored after process death (audit-70 69-F2): the first
+        // repo state decides its fate. A run still going clears the flag
+        // and the normal flush above sends the entries when it ends; a run
+        // already over means the queue would never flush, so the text goes
+        // back to the composer instead of sitting there forever.
+        if (restoredQueuePending) {
+            restoredQueuePending = false
+            if (!chat.busy) returnQueueToDraft()
         }
 
         // Context meter (Tier 2): a new session starts unknown, and a
@@ -735,12 +894,15 @@ class ChatViewModel(
         // composer. The attachments are baked into the queued text and
         // cleared with it, so the flush — which sends the entry directly —
         // cannot append them a second time. When the entry is dropped as a
-        // duplicate the files stay pending: they were never baked anywhere.
+        // duplicate the draft is kept, not cleared: the text was never
+        // accepted anywhere, so clearing it would silently destroy what the
+        // user typed (audit-70 13-F1). The files stay pending too: they were
+        // never baked anywhere.
         if (_state.value.busy || sendInFlight) {
-            if (queuePrompt(full, typed)) {
+            if (queuePrompt(full, typed, attachments)) {
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
+                clearDraft()
             }
-            clearDraft()
             return
         }
         sendText(full, typed, attachments)
@@ -759,13 +921,17 @@ class ChatViewModel(
      * into the queued text clear them, and callers that did not (a resend,
      * a question answer) leave them pending for the message being typed.
      */
-    private fun queuePrompt(fullText: String, typedText: String): Boolean {
+    private fun queuePrompt(
+        fullText: String,
+        typedText: String,
+        attachments: List<AttachedFile> = emptyList(),
+    ): Boolean {
         val current = _state.value.queuedPrompts
         val duplicate = fullText == _state.value.lastSentText ||
             current.lastOrNull()?.fullText == fullText
         if (duplicate) return false
         _state.value = _state.value.copy(
-            queuedPrompts = current + QueuedPrompt(fullText, typedText),
+            queuedPrompts = current + QueuedPrompt(fullText, typedText, attachments),
         )
         return true
     }
@@ -892,20 +1058,26 @@ class ChatViewModel(
             cancelEdit()
             return
         }
-        draftBeforeEdit = null
-        _state.value = _state.value.copy(editingMessageId = null)
         // An edit submits like a send, attachments included: a file picked
         // while editing is part of the message being submitted, not the
         // draft that was there before the edit.
         val attachments = _state.value.pendingAttachments
         val full = buildMessageWithAttachments(text, attachments)
         if (_state.value.busy || sendInFlight) {
-            if (queuePrompt(full, text)) {
+            if (queuePrompt(full, text, attachments)) {
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
+                draftBeforeEdit = null
+                _state.value = _state.value.copy(editingMessageId = null)
+                clearDraft()
             }
-            clearDraft()
+            // Dropped as a duplicate: stay in edit mode. draftBeforeEdit and
+            // editingMessageId are untouched, so Cancel still restores the
+            // pre-edit draft instead of losing both the edit and its backup
+            // (audit-70 13-F1).
             return
         }
+        draftBeforeEdit = null
+        _state.value = _state.value.copy(editingMessageId = null)
         sendText(full, text, attachments)
     }
 
@@ -926,17 +1098,68 @@ class ChatViewModel(
     }
 
     /**
-     * Answers a question card (item 9).
+     * Answers one question on a question card (audit-70 10-F1, 10-F3,
+     * 44-F1). Returns true only when the engine confirmed the reply.
      *
-     * Sent as a prompt like any other answer, but through its own path —
-     * never through the draft: the previous code overwrote the composer's
-     * draft with the answer and sent it, destroying whatever the user was
-     * typing, and baked the pending attachments into the answer too. A busy
-     * engine queues the answer like any follow-up, again without touching
-     * the draft or the pending files.
+     * The old path sent the answer as an ordinary prompt — which the
+     * engine never delivered: the question tool waits on a form
+     * (`forms.ask()`), the run stays paused inside the tool call, and a
+     * queued prompt only drains when the run ends. The card already
+     * showed "Answered" while the answer sat in a queue that could
+     * never drain. Now the answer goes straight to the pending form
+     * (`POST /api/session/{id}/form/{formID}/reply`, verified against
+     * the pinned engine source at fork pin 92b2ca0), matched to its
+     * tool call by the form metadata — so identical answers to
+     * different questions go to different forms and never collide in a
+     * queue dedup.
+     *
+     * Anything that keeps the reply from reaching the engine — engine
+     * down, no session, no pending form for this card, a rejected
+     * reply — returns false and puts the answer back into the composer
+     * (appended, never overwriting what the user is typing) with a
+     * failure notice, so the answer is never silently lost and the
+     * card stays open for another try.
      */
-    fun answerQuestion(answer: String) {
-        sendStandalonePrompt(answer)
+    suspend fun answerQuestion(answer: QuestionAnswer): Boolean {
+        if (answer.labels.isEmpty() || answer.displayText.isBlank()) return false
+        val sessionID = _state.value.sessionID
+        val sessions = handle?.sessions
+        if (sessionID == null || sessions == null) {
+            returnAnswerToDraft(answer.displayText)
+            return false
+        }
+        val form = when (val result = sessions.listForms(sessionID)) {
+            is ApiResult.Success -> result.value.firstOrNull { it.isQuestionFor(answer.callId) }
+            is ApiResult.Failure -> null
+        } ?: run {
+            returnAnswerToDraft(answer.displayText)
+            return false
+        }
+        val value = if (answer.multiple) {
+            JsonArray(answer.labels.map { JsonPrimitive(it) })
+        } else {
+            JsonPrimitive(answer.labels.first())
+        }
+        return when (sessions.replyForm(sessionID, form.id, mapOf("q${answer.questionIndex}" to value))) {
+            is ApiResult.Success -> true
+            is ApiResult.Failure -> {
+                returnAnswerToDraft(answer.displayText)
+                false
+            }
+        }
+    }
+
+    /**
+     * Puts an undeliverable question answer back into the composer
+     * (audit-70 44-F1): appended after what the user is typing, never
+     * overwriting it, with a failure notice so the return is visible.
+     * The pending attachments are left alone — they belong to the
+     * message being typed, not to the answer.
+     */
+    private fun returnAnswerToDraft(displayText: String) {
+        val current = _state.value.draft
+        onDraftChange(if (current.isBlank()) displayText else "$current\n$displayText")
+        _state.value = _state.value.copy(failureKey = R.string.question_answer_failed)
     }
 
     /**
@@ -948,15 +1171,16 @@ class ChatViewModel(
      * It travels exactly like a question answer — never through the
      * draft, never with the pending attachments, queued while busy.
      */
-    fun requestDiffRevert(relativePath: String) {
-        sendStandalonePrompt(revertPromptFor(relativePath))
+    fun requestDiffRevert(relativePath: String, change: String? = null) {
+        sendStandalonePrompt(revertPromptFor(relativePath, change))
     }
 
     /**
      * Sends [text] as its own prompt, without touching the draft or the
-     * pending attachments. Shared by [answerQuestion] and
-     * [requestDiffRevert]: both are operator decisions that must reach
-     * the engine even while the user is typing something else.
+     * pending attachments. Used by [requestDiffRevert]: an operator
+     * decision that must reach the engine even while the user is typing
+     * something else. (Question answers used to share this path; they
+     * now go to the engine as a form reply — see [answerQuestion].)
      */
     private fun sendStandalonePrompt(text: String) {
         val trimmed = text.trim()
@@ -1261,12 +1485,15 @@ class ChatViewModel(
             collectRepo(repo)
         }
         // A draft belongs to the session it was typed in; it must not follow
-        // the user into the fresh session. The last sent text goes with it:
-        // retrying it in a new session would send the old session's prompt.
-        // The queued follow-up, the edit in progress, any deferred permission
-        // and the stop state belong to the old session too. Pending
-        // attachments go with the draft: they were picked for the old
+        // the user into the fresh session. It is parked under the old
+        // session's id instead of discarded, so opening that session again
+        // restores the composer (audit-70 20-F4). The last sent text goes
+        // with it: retrying it in a new session would send the old session's
+        // prompt. The queued follow-up, the edit in progress, any deferred
+        // permission and the stop state belong to the old session too.
+        // Pending attachments go with the draft: they were picked for the old
         // session's message, and the refusal notice with them.
+        parkComposer()
         _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         // The abandoned session must not come back on the next resume:
@@ -1298,14 +1525,28 @@ class ChatViewModel(
     }
 
     private fun openSessionById(sessionID: String, fetchMeta: Boolean = false) {
+        // Tapping the session that is already open is a no-op: repo.open()
+        // itself no-ops for the same session, so re-opening it would only
+        // clear the draft, queue, attachments and edit in progress for
+        // nothing (audit-70 13-F6). onResume restores via repo.open()
+        // directly and is unaffected by this guard.
+        if (sessionID == _state.value.sessionID) return
         val repo = repository ?: return
         sessionReloadAttempts = 0
         // A draft belongs to the session it was typed in; opening another
-        // session starts with an empty composer — and no retry target from
-        // the previous session. Pending attachments belong to the old
-        // session's message too, and the refusal notice with them.
-        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE)
-        savedStateHandle?.remove<String>(DRAFT_KEY)
+        // session starts with that session's own composer — the outgoing
+        // session's draft and attachments are parked under its id, and the
+        // incoming session's parked composer (if any) is restored, so
+        // coming back finds the text still there (audit-70 20-F4). No retry
+        // target from the previous session: the refusal notice goes with it.
+        parkComposer()
+        val restored = takeParkedComposer(sessionID)
+        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE)
+        if (restored?.draft.isNullOrBlank()) {
+            savedStateHandle?.remove<String>(DRAFT_KEY)
+        } else {
+            savedStateHandle?.set(DRAFT_KEY, restored.draft)
+        }
         repo.open(sessionID)
         // The id-only path has no SessionInfo to sync from, so the session's
         // own model/agent are read back (GET /api/session/{id}) and copied
@@ -1399,6 +1640,14 @@ class ChatViewModel(
 
     companion object {
         private const val DRAFT_KEY = "chat_draft"
+        /** Queued follow-ups, so they survive process death (audit-70 69-F2). */
+        private const val QUEUE_KEY = "chat_queue"
+        /** Pending attachment chips, same reason as [QUEUE_KEY]. */
+        private const val ATTACHMENTS_KEY = "chat_attachments"
+        /** Retry target, so Retry still works after a restore (audit-70 69-F2). */
+        private const val LAST_SENT_KEY = "chat_last_sent"
+        /** Prompt history (Up navigation), same reason as [LAST_SENT_KEY]. */
+        private const val SENT_PROMPTS_KEY = "chat_sent_prompts"
         /** Failed reloads before the banner points at a new session (item 24). */
         private const val SESSION_RELOAD_LIMIT = 2
     }

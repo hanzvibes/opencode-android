@@ -136,6 +136,55 @@ class ModelNamesTest {
         assertEquals("One", modelsOf(home, "probe").getJSONObject("m/one").getString("name"))
     }
 
+    /**
+     * A hand-made config may hold a `providers` value that is not an object
+     * — a string, an array, null — and the old code replaced it with a fresh
+     * object, silently deleting it (audit-70 38-F4). The write must refuse
+     * instead, and the file must be byte-identical afterwards.
+     */
+    @Test
+    fun `a non-object providers value is refused, not replaced`() {
+        val home = configHome()
+        File(home, "opencode").mkdirs()
+        val before = """{"providers":["hand-made"],"agents":{"reviewer":{"description":"Reviews"}}}"""
+        configFile(home).writeText(before)
+
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            EngineConfigStore(home).putOpenAICompatible(
+                id = "probe",
+                name = "Probe",
+                baseURL = "https://probe.invalid/v1",
+                apiKey = "k",
+                models = EngineConfigStore.parseModels("m/one = One"),
+            )
+        }
+        assertEquals(before, configFile(home).readText())
+    }
+
+    /**
+     * The same for one entry: `"old": "disabled"` is invisible to
+     * customProviders(), so the duplicate-slug check cannot see it, and the
+     * old code overwrote it without warning (audit-70 38-F4).
+     */
+    @Test
+    fun `a non-object entry with the same id is refused, not replaced`() {
+        val home = configHome()
+        File(home, "opencode").mkdirs()
+        val before = """{"providers":{"old":"disabled","keep":{"name":"Keep"}}}"""
+        configFile(home).writeText(before)
+
+        org.junit.Assert.assertThrows(java.io.IOException::class.java) {
+            EngineConfigStore(home).putOpenAICompatible(
+                id = "old",
+                name = "Old",
+                baseURL = "https://probe.invalid/v1",
+                apiKey = "k",
+                models = EngineConfigStore.parseModels("m/one = One"),
+            )
+        }
+        assertEquals(before, configFile(home).readText())
+    }
+
     @Test
     fun `reading back lists the ids it was given`() {
         val home = configHome()

@@ -21,16 +21,30 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 fun toolFilePath(call: ToolCall): String? {
     if (!isFileToolName(call.name)) return null
+    toolInputFilePath(call)?.let { return it }
+    return call.summary.trim().takeIf { it.isNotBlank() && '\n' !in it }
+}
+
+/**
+ * The file a tool call acted on, read from its input only.
+ *
+ * Unlike [toolFilePath], this never falls back to the call summary: a
+ * summary is free text — the first primitive of the input, or a line the
+ * engine wrote — not a verified path, and sending it as a revert target
+ * would ask the agent to revert the wrong file (audit-70 70-F03). Null
+ * when the input names no file. The revert button is only offered when
+ * this returns a path.
+ */
+fun toolInputFilePath(call: ToolCall): String? {
+    if (!isFileToolName(call.name)) return null
     val obj = call.input as? JsonObject
         ?: (call.input as? JsonPrimitive)?.contentOrNull
             ?.let { runCatching { kotlinx.serialization.json.Json.parseToJsonElement(it).jsonObject }.getOrNull() }
-    val fromInput = obj?.let { input ->
+    return obj?.let { input ->
         FILE_PATH_KEYS.firstNotNullOfOrNull { key ->
             (input[key] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
         }
     }
-    if (fromInput != null) return fromInput
-    return call.summary.trim().takeIf { it.isNotBlank() && '\n' !in it }
 }
 
 private val FILE_PATH_KEYS = listOf("filePath", "path", "file", "file_path")

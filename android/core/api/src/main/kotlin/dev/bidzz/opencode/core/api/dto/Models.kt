@@ -2,6 +2,7 @@ package dev.bidzz.opencode.core.api.dto
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * Wire types for the endpoints the chat path actually uses.
@@ -99,6 +100,53 @@ data class MessagesResponse(
 @Serializable
 data class PermissionsResponse(
     val data: List<PendingPermission> = emptyList(),
+)
+
+/**
+ * One pending form for a session (`Form.Info`, `GET
+ * /api/session/{id}/form`). Only the fields the question-answer path
+ * needs are modelled; `ignoreUnknownKeys` drops the rest (title,
+ * fields, state).
+ *
+ * The question tool creates its form with metadata `{kind: "question",
+ * tool: {messageID, id}}` — see [isQuestionFor]. Verified against the
+ * pinned engine source (`packages/core/src/tool/plugin/question.ts` at
+ * fork pin 92b2ca0).
+ */
+@Serializable
+data class FormInfo(
+    val id: String,
+    val sessionID: String = "",
+    val metadata: Map<String, kotlinx.serialization.json.JsonElement> = emptyMap(),
+) {
+    /**
+     * True when this is the pending question form for the tool call
+     * [callId]: the form's metadata names the tool call that asked the
+     * question. Two question cards in one turn get different forms, so
+     * identical answers to different questions no longer collide
+     * (audit-70 10-F3).
+     */
+    fun isQuestionFor(callId: String): Boolean {
+        val kind = metadata["kind"]?.let {
+            (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+        } ?: return false
+        if (kind != "question") return false
+        val tool = metadata["tool"] as? kotlinx.serialization.json.JsonObject ?: return false
+        return tool["id"]?.let {
+            (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
+        } == callId
+    }
+}
+
+@Serializable
+data class FormsResponse(
+    val data: List<FormInfo> = emptyList(),
+)
+
+/** Body for `POST /api/session/{id}/form/{formID}/reply`. */
+@Serializable
+data class FormReplyRequest(
+    val answer: Map<String, kotlinx.serialization.json.JsonElement>,
 )
 
 /**

@@ -28,6 +28,27 @@ data class QuestionItem(
 )
 
 /**
+ * One answer to one question on a question card, as submitted to the
+ * engine (audit-70 10-F1, 10-F3, 44-F1).
+ *
+ * The answer travels to the engine as a form reply, not as a prompt:
+ * [callId] is the question tool call's id (the form's metadata names
+ * it), [questionIndex] picks the field (`q0`, `q1`, …), [labels] are
+ * the selected option labels — or the write-in text — and [multiple]
+ * decides the wire shape (one label as a string, several as an array).
+ * [displayText] is the human-readable "Header: a, b" shown on the
+ * card once the engine confirms, and put back into the composer when
+ * the reply cannot be delivered.
+ */
+data class QuestionAnswer(
+    val callId: String,
+    val questionIndex: Int,
+    val labels: List<String>,
+    val multiple: Boolean,
+    val displayText: String,
+)
+
+/**
  * Checks whether [name] identifies an agent question tool.
  */
 fun isQuestionTool(name: String): Boolean {

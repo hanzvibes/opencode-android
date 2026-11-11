@@ -137,11 +137,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val explorerViewModel: ExplorerViewModel = viewModel(factory = viewModelFactory { _ ->
         ExplorerViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
-    val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory { _ ->
+    val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory { extras ->
         FileViewViewModel(
             app.engineApi,
             { app.workspaceStore.resolve().absolutePath },
             onSaved = explorerViewModel::invalidateQuickOpenIndex,
+            savedStateHandle = extras.createSavedStateHandle(),
         )
     })
     val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory { _ ->
