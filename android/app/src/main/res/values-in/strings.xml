@@ -227,6 +227,10 @@
     <string name="session_action_save">Simpan</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
+    <!-- Redesign C working progress: %1$s kalimat langkah live ("Membaca ChatScreen.kt")
+         atau label busy di atas; %2$d detik sejak run dimulai. Akhiran "s" mengikuti
+         konvensi "Thought for 12s" / turn-footer di chat. -->
+    <string name="composer_working_progress">%1$s · %2$ds</string>
     <string name="composer_hint">Tanyakan apa saja tentang proyek ini</string>
     <string name="composer_hint_named">Tanya %1$s…</string>
     <string name="composer_stopping">Menghentikan…</string>

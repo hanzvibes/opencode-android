@@ -69,6 +69,21 @@ object OpenCodeTypography {
         letterSpacing = (-0.08).sp,
     )
 
+    /**
+     * Small semibold label: pill labels (Copy / Reply / Edit / Resend),
+     * the thinking pill, badges. The scale had no 11sp semibold — call
+     * sites copied `label` down to 11sp or 11.5sp by hand, which is how
+     * the size drifted. Anything at 11sp semibold reads this, never a
+     * one-off copy.
+     */
+    val labelSmall: TextStyle = TextStyle(
+        fontFamily = ui,
+        fontSize = 11.sp,
+        lineHeight = 14.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.05.sp,
+    )
+
     /** Micro text, badge labels, timestamps. Subtle open tracking for small-scale readability. */
     val caption: TextStyle = TextStyle(
         fontFamily = ui,

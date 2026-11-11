@@ -11,10 +11,10 @@ import org.junit.Test
 
 /**
  * White B light theme: the exact palette values, the shadow tokens, and
- * the WCAG contrast audit of every light text token on the four new
- * light backgrounds (#FFFFFF card / #F9F9FA page / #F7F7F8 sunken /
- * #F5F5F7 chips). Pure JVM: [Color.toArgb] plus local luminance math,
- * no Android framework, no Robolectric.
+ * the WCAG contrast audit of every light text token on the five light
+ * backgrounds (#FFFFFF card / #F9F9FA page / #F7F7F8 sunken /
+ * #F5F5F7 chips / #EFEFF1 assistant bubble). Pure JVM: [Color.toArgb]
+ * plus local luminance math, no Android framework, no Robolectric.
  *
  * The dark palette is asserted untouched alongside — this file is the
  * guard against a light-theme edit leaking into the OLED theme.
@@ -56,6 +56,30 @@ class WhiteThemeTest {
             Palette.lightUserBubble.toArgb(),
         )
         assertEquals(Palette.lightOnSurface.toArgb(), Palette.lightOnUserBubble.toArgb())
+    }
+
+    @Test
+    fun `assistant bubble is EFEFF1 in light and raised in dark`() {
+        // Redesign C: the assistant turn sits in a grey bubble, one step
+        // below the chips neutral so it reads as a bubble on the page and
+        // stays distinct from the white user bubble. Dark is the raised
+        // surface — the same neutral the user bubble uses there.
+        assertEquals(0xFFEFEFF1.toInt(), Palette.lightAssistantBubble.toArgb())
+        assertEquals(Palette.lightOnSurface.toArgb(), Palette.lightOnAssistantBubble.toArgb())
+        assertEquals(Palette.darkSurfaceRaised.toArgb(), Palette.darkAssistantBubble.toArgb())
+        assertEquals(Palette.darkOnSurface.toArgb(), Palette.darkOnAssistantBubble.toArgb())
+    }
+
+    @Test
+    fun `assistant bubble reads as a bubble on the page and against the user bubble`() {
+        // Distinct from the page (#F9F9FA) so the bubble has an edge, and
+        // from the white user bubble so the two sides never merge. Both
+        // differences are small (grey on near-white), which is why the
+        // bubble also carries a hairline border and the avatar marks it.
+        assertTrue(Palette.lightAssistantBubble.toArgb() != Palette.lightBackground.toArgb())
+        assertTrue(Palette.lightAssistantBubble.toArgb() != Palette.lightUserBubble.toArgb())
+        assertTrue(contrastRatio(Palette.lightAssistantBubble, Palette.lightBackground) > 1.0)
+        assertTrue(contrastRatio(Palette.lightUserBubble, Palette.lightAssistantBubble) > 1.0)
     }
 
     // ---- Dark palette untouched ----
@@ -103,6 +127,11 @@ class WhiteThemeTest {
         "page #F9F9FA" to Color(0xFFF9F9FA),
         "sunken #F7F7F8" to Color(0xFFF7F7F8),
         "variant #F5F5F7" to Color(0xFFF5F5F7),
+        // Redesign C: the assistant bubble grey. Every light text token
+        // must stay AA here too — worst are faint (5.11:1) and accentText
+        // (5.21:1) on #EFEFF1, so the audit below covers it as a fifth
+        // background instead of trusting the grey by eye.
+        "assistant bubble #EFEFF1" to Palette.lightAssistantBubble,
     )
 
     private val lightTextTokens = listOf(

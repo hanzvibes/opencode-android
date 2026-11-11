@@ -1016,15 +1016,11 @@ fun ChatScreen(
                                                 modifier = Modifier.padding(bottom = spacing.sm),
                                             )
                                         }
-                                        // Hairline turn divider above the first part
-                                        // of a new assistant turn (not the first
-                                        // message). No card, no background — the
-                                        // assistant still has no bubble, per plan.md §12.
-                                        if (showProvenance && index > 0) {
-                                            HairlineSeparator(
-                                                modifier = Modifier.padding(bottom = spacing.sm),
-                                            )
-                                        }
+                                        // Redesign C: no hairline divider above an
+                                        // assistant turn any more — the avatar +
+                                        // grey bubble separate turns now, and the
+                                        // divider was only there because the
+                                        // assistant had no bubble (plan.md §12).
                                         MessageBubble(
                                             role = message.role,
                                             markdown = message.text,
@@ -1416,6 +1412,20 @@ fun ChatScreen(
                         state.editingMessageId == null && state.draft.isBlank() &&
                         composerSuggestionRes.isNotEmpty()
 
+                    // Redesign C working progress: the sentence for the tool
+                    // running right now, from the streaming assistant turn's
+                    // live tools — the same stepLabel sentence the timeline
+                    // shows, so the composer and the trace never disagree.
+                    // Null while the agent thinks before the first tool (or
+                    // while the working placeholder stands in for a turn
+                    // that has not arrived yet): the composer then falls
+                    // back to its generic busy label.
+                    val busyStepText = state.messages
+                        .lastOrNull { it.role == Role.ASSISTANT && it.streaming }
+                        ?.tools
+                        ?.firstOrNull { it.status == "running" || it.status == "streaming" }
+                        ?.let { stepLabel(it.name, it.summary, it.status).text() }
+
                     Composer(
                         value = state.draft,
                         onValueChange = onDraftChange,
@@ -1437,6 +1447,8 @@ fun ChatScreen(
                         onRemoveAttachment = onRemoveAttachment,
                         busy = state.busy,
                         stopping = state.stopping,
+                        busyStepText = busyStepText,
+                        busyElapsedSeconds = busyElapsedSeconds,
                         enabled = state.workspaceReady,
                         // Composer C: suggestion chips fill the draft for
                         // review, never send; the mic is wired to the
@@ -3547,25 +3559,56 @@ private fun AssistantWorkingPlaceholder(
     elapsedSeconds: Int = 0,
 ) {
     val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
     val provenance = provenanceLabel(agent, model, agents, models)
 
-    Column(modifier = modifier.fillMaxWidth()) {
-        // No identity yet → no badge at all, instead of "OpenCode"
-        // jumping to "Build · model" when the turn arrives (A-47).
-        if (provenance != null) {
-            ProvenanceBadge(
-                provenance = provenance,
-                modelRef = model,
-                streaming = false,
-                modifier = Modifier.padding(bottom = spacing.sm),
-            )
-        }
-
-        ThinkingDisclosure(
-            isThinkingActive = true,
-            reasoningText = null,
-            elapsedSeconds = elapsedSeconds,
+    // Redesign C: the placeholder wears the same avatar + grey bubble as
+    // a real turn, so the placeholder→turn transition does not pop from
+    // flat text into a bubble. Same shell, same spacing; the shape is
+    // the one MessageBubble defines for the assistant bubble (tail at
+    // the top-start, next to the avatar) — keep the two in sync.
+    val assistantBubbleShape = RoundedCornerShape(
+        topStart = radius.xs,
+        topEnd = radius.bubble,
+        bottomStart = radius.bubble,
+        bottomEnd = radius.bubble,
+    )
+    val colors = OpenCodeTheme.colors
+    Row(modifier = modifier.fillMaxWidth()) {
+        AssistantAvatar(
+            modifier = Modifier.padding(top = 2.dp),
         )
+        Spacer(Modifier.width(spacing.sm))
+        Column(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(assistantBubbleShape)
+                    .background(colors.assistantBubble)
+                    .border(0.5.dp, colors.hairline, assistantBubbleShape)
+                    .padding(start = spacing.md, end = spacing.md, top = spacing.sm),
+            ) {
+                Column {
+                    // No identity yet → no badge at all, instead of "OpenCode"
+                    // jumping to "Build · model" when the turn arrives (A-47).
+                    if (provenance != null) {
+                        ProvenanceBadge(
+                            provenance = provenance,
+                            modelRef = model,
+                            streaming = false,
+                            modifier = Modifier.padding(bottom = spacing.sm),
+                        )
+                    }
+
+                    ThinkingDisclosure(
+                        isThinkingActive = true,
+                        reasoningText = null,
+                        elapsedSeconds = elapsedSeconds,
+                        modifier = Modifier.padding(bottom = spacing.sm),
+                    )
+                }
+            }
+        }
     }
 }
 
