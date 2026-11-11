@@ -23,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -103,15 +105,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
     val engineStatus by app.engineStatus.collectAsState()
 
-    val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory {
+    val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory { extras ->
         ChatViewModel(
             app.engineApi,
             { app.workspaceStore.resolve().absolutePath },
+            savedStateHandle = extras.createSavedStateHandle(),
             onSessionCleared = { app.lastSessionID = null },
         )
     })
 
-    val sessionViewModel: SessionListViewModel = viewModel(factory = viewModelFactory {
+    val sessionViewModel: SessionListViewModel = viewModel(factory = viewModelFactory { _ ->
         SessionListViewModel(
             app.engineApi,
             { app.workspaceStore.resolve().absolutePath },
@@ -122,16 +125,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val chatState by chatViewModel.state.collectAsState()
     val sessionsState by sessionViewModel.state.collectAsState()
 
-    val explorerViewModel: ExplorerViewModel = viewModel(factory = viewModelFactory {
+    val explorerViewModel: ExplorerViewModel = viewModel(factory = viewModelFactory { _ ->
         ExplorerViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
-    val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory {
+    val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory { _ ->
         FileViewViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
-    val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory {
+    val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory { _ ->
         DiffViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
-    val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory {
+    val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory { _ ->
         ProvidersViewModel(
             api = app.engineApi,
             configStore = dev.bidzz.opencode.engine.EngineConfigStore(app.engineEnvironment.configHome),
@@ -587,10 +590,18 @@ private fun buildProjectOptions(app: OpenCodeApplication, current: String): List
     }
 }
 
-/** Small helper so each view model construction stays a single expression. */
+/**
+ * Small helper so each view model construction stays a single expression.
+ *
+ * The creation extras are passed through (item 7): the single-argument
+ * `create()` drops them, which left ChatViewModel's SavedStateHandle null
+ * and made the whole draft-persistence plumbing dead code. View models
+ * that need nothing from the extras ignore the parameter.
+ */
 private inline fun <reified VM : ViewModel> viewModelFactory(
-    crossinline create: () -> VM,
+    crossinline create: (CreationExtras) -> VM,
 ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = create() as T
+    override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T =
+        create(extras) as T
 }
