@@ -204,6 +204,16 @@ stage_natives() {
         --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
         --no-assets \
         --patchelf "${PATCHELF:-patchelf}"
+
+    # xz / tar / ar (Termux): staged from pinned .deb files by the same
+    # script CI runs (patchelf via PATCHELF as above).
+    log "Staging xz/tar/ar from Termux"
+    bash "$REPO_ROOT/script/android/stage-xz.sh" --abi arm64-v8a \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/arm64-v8a" \
+        --patchelf "${PATCHELF:-patchelf}"
+    bash "$REPO_ROOT/script/android/stage-xz.sh" --abi x86_64 \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
+        --patchelf "${PATCHELF:-patchelf}"
 }
 
 # ------------------------------------------------------------------- build --

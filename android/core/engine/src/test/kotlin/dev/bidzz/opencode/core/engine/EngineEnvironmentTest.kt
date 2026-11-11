@@ -11,6 +11,8 @@ import org.junit.Test
  * Covers the Node.js runtime wiring (fix list items 7-10, 16): the tool map
  * must list `node`, and the child-process environment must carry the library
  * path, the bundled CA bundle, and a shell that exists on the device.
+ * Also covers the xz/tar/ar tools (Tier 2 item 22): the tool map must list
+ * `xz`, `tar`, and `ar`.
  */
 class EngineEnvironmentTest {
 
@@ -36,6 +38,13 @@ class EngineEnvironmentTest {
         assertEquals("node", EngineBinary.TOOL_LIBRARIES["libnode.so"])
         assertEquals("rg", EngineBinary.TOOL_LIBRARIES["librg.so"])
         assertEquals("git", EngineBinary.TOOL_LIBRARIES["libgit.so"])
+    }
+
+    @Test
+    fun toolLibrariesContainXzTarAr() {
+        assertEquals("xz", EngineBinary.TOOL_LIBRARIES["libxz.so"])
+        assertEquals("tar", EngineBinary.TOOL_LIBRARIES["libtar.so"])
+        assertEquals("ar", EngineBinary.TOOL_LIBRARIES["libar.so"])
     }
 
     @Test

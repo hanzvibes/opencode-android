@@ -210,6 +210,35 @@ commercial or non-commercial, and by any means.
 
 The full text is available at https://unlicense.org/.
 
+### xz / tar / ar — `libxz.so`, `libtar.so`, `libar.so` (+ support libs)
+
+The in-app agent needs to extract `.deb` archives on-device (unpacking a
+Termux Node `.deb` was the original blocker: its `data.tar.xz` could not be
+decoded). The tools come from Termux apt (bionic-native, PIE, 16 KB
+aligned). Staged by `script/android/stage-xz.sh` (pinned versions + SHA256,
+`patchelf` renames the versioned `.so` names to `lib<name>.so`).
+
+| Component | Version | Licence | Upstream |
+|---|---|---|---|
+| xz (`xz`) + liblzma | 5.8.4 | Public domain | https://tukaani.org/xz/ |
+| GNU tar (`tar`) | 1.35 | GPL-3.0 | https://www.gnu.org/software/tar/ |
+| GNU ar (`ar`, Termux binary name `gar`) + libbfd + libsframe | 2.47 (binutils) | GPL-3.0 | https://www.gnu.org/software/binutils/ |
+| libacl | 2.4.0 | LGPL-2.1 | https://savannah.nongnu.org/projects/acl/ |
+| libandroid-glob | 0.6 | BSD-3-Clause | https://github.com/termux/libandroid-glob |
+| libandroid-selinux | 14.0.0.11 | Public domain | https://github.com/termux/libandroid-selinux |
+| libiconv | 1.19.1 | LGPL-2.1 | https://www.gnu.org/software/libiconv/ |
+| PCRE2 (`libpcre2-8.so`) | 10.49 | BSD-3-Clause | https://www.pcre.org/ |
+| zstd (`libzstd.so`) | 1.5.7 | BSD-3-Clause / GPL-2.0 (dual) | https://github.com/facebook/zstd |
+| zlib (`libz.so`, shared with the Node closure) | 1.4 | zlib License | https://zlib.net/ |
+
+GPL-3.0 components (GNU tar, binutils/ar/libbfd) make this distribution
+subject to GPL obligations: the Corresponding Source for the exact versions
+above is the Termux package source
+(https://github.com/termux/termux-packages — `packages/tar`,
+`packages/binutils`), and the pinned `.deb` files are fetchable from
+https://packages.termux.dev/apt/termux-main/ (pool paths and SHA256 pins are
+in `script/android/stage-xz.sh`).
+
 ---
 
 ## Not bundled
@@ -221,7 +250,8 @@ Deliberately excluded, to keep the APK small and the licence surface narrow:
   the CA bundle ARE now bundled (for Node.js, see above), but git was built
   without them, so it cannot use them yet; wiring git to them is a separate
   item (Tier 2, item 23 in the runtime fix list).
-- **pcre2** — ripgrep is built without the pcre2 feature. The engine's search
-  paths use the default Rust regex engine.
+- **pcre2 for ripgrep** — ripgrep is built without the pcre2 feature. The engine's search
+  paths use the default Rust regex engine. (PCRE2 itself IS now bundled, as a
+  dependency of `tar` via libandroid-selinux; see above.)
 - **A JavaScript/markdown renderer library** — the chat markdown renderer is
   written in-repo (`ui/chat/Markdown.kt`).

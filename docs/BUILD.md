@@ -189,6 +189,38 @@ entry points carry a dead Termux shebang and cannot be executed directly.
 Bare `npm`/`npx` commands need the ELF shim of the fix list (item 11,
 not yet implemented).
 
+### 2c. xz / tar / ar (`xz`, `tar`, `ar`)
+
+Same source as Node: Termux apt, bionic-native. Staged with the Linux script
+(CI and local builds run the same one):
+
+```bash
+bash script/android/stage-xz.sh --abi arm64-v8a \
+  --jni-out android/app/src/main/jniLibs/arm64-v8a
+bash script/android/stage-xz.sh --abi x86_64 \
+  --jni-out android/app/src/main/jniLibs/x86_64
+```
+
+The script pins `xz-utils` 5.8.4, `tar` 1.35-3, `binutils` 2.47 and their
+closure (liblzma 5.8.4, libacl 2.4.0, libandroid-glob 0.6-3,
+libandroid-selinux 14.0.0.11-1, libiconv 1.19.1, pcre2 10.49, zstd 1.5.7-1,
+zlib 1.4 — the zlib pin is shared with `stage-node.sh`, keep in sync) by
+version and SHA256 from the Termux `stable` index, verifies every download,
+extracts with `dpkg-deb -x`, renames the versioned `.so` names with
+`patchelf --set-soname` + `--replace-needed`, and applies the same ELF gates
+as §2 (e_machine, `PT_LOAD p_align >= 0x4000`, no surviving versioned
+`DT_NEEDED`). Staged closure is ~5.1 MB per ABI. Only the GNU ar binary
+(Termux name `gar`) is staged from binutils, as `libar.so`; the rest of
+binutils is not shipped. `libandroid-selinux` needs `liblog.so`, an NDK
+system library — it is allowed by the gate, not staged. Files that need no
+edit (`tar`, `libacl`, `libiconv`, `libpcre2-8`) are left byte-identical.
+
+Runtime contract: same as Node — the tools are symlinked into
+`files/engine/tools/bin` by `EngineBinary.linkTools` and resolve their
+shared libs via the `LD_LIBRARY_PATH` `EngineEnvironment` already sets.
+No new environment variables. Licence note: GNU tar and binutils are
+GPLv3 — see `THIRD_PARTY_NOTICES.md`.
+
 ### 3. Stage into `jniLibs`
 
 ```powershell
@@ -305,10 +337,11 @@ in-app Diagnostics screen instead:
 
 ```powershell
 adb shell run-as dev.bidzz.opencode ls -l files/engine/tools/bin
-# expect: git -> .../libgit.so, rg -> .../librg.so and node -> .../libnode.so (symlinks)
+# expect: git -> .../libgit.so, rg -> .../librg.so, node -> .../libnode.so,
+# xz -> .../libxz.so, tar -> .../libtar.so and ar -> .../libar.so (symlinks)
 
-adb shell "run-as dev.bidzz.opencode sh -c 'cd /data/user/0/dev.bidzz.opencode/files/engine/tools/bin && ./git --version && ./rg --version | head -1 && ./node --version'"
-# expect: git version 2.56.0 / ripgrep 15.1.0 / v24.22.2
+adb shell "run-as dev.bidzz.opencode sh -c 'cd /data/user/0/dev.bidzz.opencode/files/engine/tools/bin && ./git --version && ./rg --version | head -1 && ./node --version && ./xz --version | head -1 && ./tar --version | head -1 && ./ar --version | head -1'"
+# expect: git version 2.56.0 / ripgrep 15.1.0 / v24.22.2 / xz (XZ Utils) 5.8.4 / tar (GNU tar) 1.35 / GNU ar (GNU Binutils) 2.47
 ```
 
 End-to-end, against a real repository:
