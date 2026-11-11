@@ -164,4 +164,3 @@ internal fun isStorageRoot(canonicalPath: String): Boolean {
     val rest = canonicalPath.removePrefix("/storage/")
     return canonicalPath.startsWith("/storage/") && !rest.contains(File.separatorChar)
 }
-}
