@@ -70,6 +70,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -78,6 +79,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -113,6 +115,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.bidzz.opencode.LanguageStore
 import dev.bidzz.opencode.R
 import java.time.Instant
 import java.time.LocalDate
@@ -243,6 +246,16 @@ fun ChatScreen(
     /** URIs picked in the system file picker; read in as text below. */
     safFilePicked: Flow<Uri> = emptyFlow(),
     onDismissAttachNotice: () -> Unit = {},
+    /**
+     * Voice input (Composer C): asks MainActivity — via the application
+     * bridge, the same shape as the SAF picker — to request RECORD_AUDIO,
+     * and the granted/denied answer for that request. The screen owns the
+     * recognizer; these two only carry the permission round-trip, because
+     * a Compose permission launcher in chat has crashed before for want of
+     * an ActivityResultRegistryOwner (see the SAF note above).
+     */
+    onRequestVoicePermission: () -> Unit = {},
+    voicePermissionResult: Flow<Boolean> = emptyFlow(),
     /**
      * Per-session preview/model/status for the sidebar rows (Phase 2,
      * finding 21): the list endpoint returns no transcript, so a row
@@ -412,6 +425,136 @@ fun ChatScreen(
             )
         }
         wasBusyForAnnouncement = state.busy
+    }
+
+    // Voice input (Composer C): one platform recognizer for the screen's
+    // lifetime, created on the application context so it never holds the
+    // Activity. The callbacks are guarded — a result or error only lands
+    // while still listening in the session that started it, so a stray
+    // callback after a session switch or a cancel can never append a
+    // transcript to the wrong draft. The draft and session id are read
+    // through rememberUpdatedState: the controller is remembered once, so
+    // a plain capture would go stale after the first recomposition.
+    val currentDraft by rememberUpdatedState(state.draft)
+    val currentSessionId by rememberUpdatedState(state.sessionID)
+    var voiceState by remember { mutableStateOf(VoiceInputState.IDLE) }
+    var voiceInterim by remember { mutableStateOf<String?>(null) }
+    var voiceNoticeRes by remember { mutableStateOf<Int?>(null) }
+    var voicePermissionDenied by remember { mutableStateOf(false) }
+    var voiceRequestPending by remember { mutableStateOf(false) }
+    var voiceListeningSessionId by remember { mutableStateOf<String?>(null) }
+    var voiceStartedAtMs by remember { mutableLongStateOf(0L) }
+    var voiceElapsedSeconds by remember { mutableIntStateOf(0) }
+    val voiceController = remember(a11yContext.applicationContext) {
+        VoiceInputController(
+            context = a11yContext.applicationContext,
+            onResult = { transcript ->
+                val accept = voiceState == VoiceInputState.LISTENING &&
+                    currentSessionId == voiceListeningSessionId
+                if (accept) onDraftChange(appendTranscript(currentDraft, transcript))
+                voiceInterim = null
+                voiceState = VoiceInputState.IDLE
+            },
+            onPartial = { partial ->
+                if (voiceState == VoiceInputState.LISTENING) voiceInterim = partial
+            },
+            onError = { code ->
+                // A cancel on session change can still deliver an error
+                // afterwards: only a listen in progress gets a message.
+                if (voiceState == VoiceInputState.LISTENING) {
+                    voiceNoticeRes = voiceErrorMessageRes(code)
+                }
+                voiceInterim = null
+                voiceState = VoiceInputState.IDLE
+            },
+        )
+    }
+    // No recognition service on this device: the mic renders unavailable
+    // from the start instead of pretending to work.
+    LaunchedEffect(voiceController.isAvailable) {
+        if (!voiceController.isAvailable) voiceState = VoiceInputState.UNAVAILABLE
+    }
+    // The recognizer is destroyed when the screen leaves — a listen must
+    // never outlive the chat — and cancelled (no result delivered) when
+    // the session changes, so its transcript cannot land in a new draft.
+    DisposableEffect(Unit) {
+        onDispose { voiceController.destroy() }
+    }
+    LaunchedEffect(state.sessionID) {
+        voiceController.cancel()
+        voiceInterim = null
+        voiceState = if (voiceController.isAvailable) VoiceInputState.IDLE else VoiceInputState.UNAVAILABLE
+    }
+    // A run starting ends a listen: the draft is about to be sent, and a
+    // transcript landing mid-send would append to a cleared draft.
+    LaunchedEffect(state.busy) {
+        if (state.busy && voiceState == VoiceInputState.LISTENING) {
+            voiceController.stop()
+        }
+    }
+    // Recording elapsed time, on the same 500ms tick as the run timer.
+    LaunchedEffect(voiceState) {
+        if (voiceState == VoiceInputState.LISTENING) {
+            if (voiceStartedAtMs == 0L) voiceStartedAtMs = System.currentTimeMillis()
+            while (isActive) {
+                voiceElapsedSeconds = maxOf(0, ((System.currentTimeMillis() - voiceStartedAtMs) / 1000).toInt())
+                delay(500)
+            }
+        } else {
+            voiceStartedAtMs = 0L
+            voiceElapsedSeconds = 0
+        }
+    }
+
+    /** Starts listening, after the permission gate. */
+    fun startVoiceListening() {
+        if (!voiceController.isAvailable) {
+            voiceState = VoiceInputState.UNAVAILABLE
+            voiceNoticeRes = R.string.voice_unavailable
+            return
+        }
+        if (voicePermissionDenied) {
+            voiceState = VoiceInputState.DENIED
+            voiceNoticeRes = R.string.voice_permission_denied
+            return
+        }
+        if (!hasRecordAudioPermission(a11yContext)) {
+            voiceRequestPending = true
+            onRequestVoicePermission()
+            return
+        }
+        voiceListeningSessionId = state.sessionID
+        voiceInterim = null
+        val started = voiceController.start(speechLocale(LanguageStore.get(a11yContext)))
+        voiceState = if (started) VoiceInputState.LISTENING else VoiceInputState.IDLE
+        if (!started) voiceNoticeRes = R.string.voice_error_generic
+    }
+
+    /** The mic tap: listen, stop, or explain — never re-ask a denial. */
+    fun onVoiceMicTap() {
+        when {
+            voiceRequestPending -> Unit
+            voiceState == VoiceInputState.LISTENING -> voiceController.stop()
+            voiceState == VoiceInputState.DENIED -> voiceNoticeRes = R.string.voice_permission_denied
+            voiceState == VoiceInputState.UNAVAILABLE -> voiceNoticeRes = R.string.voice_unavailable
+            else -> startVoiceListening()
+        }
+    }
+
+    // The permission answer arrives on the flow from MainActivity. A grant
+    // starts listening at once; a denial is sticky for this screen — the
+    // mic only shows the hint afterwards, it never loops the request.
+    LaunchedEffect(voicePermissionResult) {
+        voicePermissionResult.collect { granted ->
+            voiceRequestPending = false
+            if (granted) {
+                startVoiceListening()
+            } else {
+                voicePermissionDenied = true
+                voiceState = VoiceInputState.DENIED
+                voiceNoticeRes = R.string.voice_permission_denied
+            }
+        }
     }
 
     // A permission arriving moves focus to the prompt as well as announcing
@@ -1114,6 +1257,19 @@ fun ChatScreen(
                         )
                     }
 
+                    // Voice input notice (Composer C): unavailable device,
+                    // denied permission, or a recognition failure — a slim
+                    // dismissable row above the composer, like the attach
+                    // refusal, not the pinned error banner: the engine
+                    // never saw any of this.
+                    voiceNoticeRes?.let { noticeRes ->
+                        AttachNoticeRow(
+                            message = stringResource(noticeRes),
+                            onDismiss = { voiceNoticeRes = null },
+                            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
+                        )
+                    }
+
                     // Placeholder names the model/agent (Phase 2, finding 24):
                     // the human model label when the catalog knows it, else
                     // the raw model id; the agent name the same way.
@@ -1182,6 +1338,40 @@ fun ChatScreen(
                         )
                     }
 
+                    // Composer C suggestion chips: the moments the
+                    // follow-up chips do not cover — after an error (the
+                    // error banner is showing, so the chips offer "Fix
+                    // this error"), or when the last message is the user's
+                    // own (a stopped run, a reopened session ending on a
+                    // user message). A tap only fills the draft, never
+                    // sends, and the row hides as soon as the draft is
+                    // typed in. The empty session is excluded on purpose:
+                    // the empty-state starter cards already fill the draft
+                    // there.
+                    val lastAssistantMessage = state.messages.lastOrNull { it.role == Role.ASSISTANT }
+                    val composerSuggestionRes = remember(
+                        lastAssistantMessage?.id,
+                        lastAssistantMessage?.text,
+                        state.failure,
+                        state.failureKey,
+                        state.messages.size,
+                        showFollowUps,
+                    ) {
+                        if (showFollowUps) {
+                            emptyList()
+                        } else {
+                            composerSuggestions(
+                                lastAssistantText = lastAssistantMessage?.text,
+                                hasFailure = state.failure != null || state.failureKey != null,
+                                hasMessages = state.messages.isNotEmpty(),
+                            )
+                        }
+                    }
+                    val showComposerSuggestions = !state.busy && !state.stopping &&
+                        state.pendingPermission == null &&
+                        state.editingMessageId == null && state.draft.isBlank() &&
+                        composerSuggestionRes.isNotEmpty()
+
                     Composer(
                         value = state.draft,
                         onValueChange = onDraftChange,
@@ -1204,6 +1394,20 @@ fun ChatScreen(
                         busy = state.busy,
                         stopping = state.stopping,
                         enabled = state.workspaceReady,
+                        // Composer C: suggestion chips fill the draft for
+                        // review, never send; the mic is wired to the
+                        // platform recognizer (see the voice block above).
+                        suggestions = if (showComposerSuggestions) composerSuggestionRes else emptyList(),
+                        onSuggestionPick = { text ->
+                            onDraftChange(appendSuggestionToDraft(state.draft, text))
+                        },
+                        onVoice = { onVoiceMicTap() },
+                        voiceState = voiceState,
+                        voiceAvailable = voiceController.isAvailable,
+                        voiceElapsedSeconds = voiceElapsedSeconds,
+                        voiceInterimText = voiceInterim,
+                        onVoiceStop = { voiceController.stop() },
+                        onVoiceUnavailable = { voiceNoticeRes = R.string.voice_unavailable },
                         promptHistory = state.sentPrompts,
                         // The queue is a list (item 6): show the first
                         // follow-up, with a count when more are waiting.

@@ -224,6 +224,17 @@
     <string name="composer_commands">Commands</string>
     <string name="composer_attach">Attach file</string>
     <string name="composer_mention">Mention a file</string>
+    <string name="composer_suggest_fix_error">Fix this error</string>
+    <string name="composer_suggest_explain_error">Explain this error</string>
+    <string name="voice_recording">Recording… %1$s</string>
+    <string name="voice_stop_recording">Stop recording</string>
+    <string name="voice_unavailable">Voice input is not available on this device</string>
+    <string name="voice_permission_denied">Microphone permission was denied. Enable it in Settings to use voice input.</string>
+    <string name="voice_error_no_match">Didn\'t catch that — try speaking again.</string>
+    <string name="voice_error_timeout">No speech heard — try again.</string>
+    <string name="voice_error_network">Voice recognition needs a network connection — try again when you\'re online.</string>
+    <string name="voice_error_permission">Voice recognition doesn\'t have microphone permission.</string>
+    <string name="voice_error_generic">Voice input failed — try again.</string>
     <string name="attach_picker_title">Attach file</string>
     <string name="attach_picker_hint">Search workspace files…</string>
     <string name="attach_picker_empty">No files match “%1$s”</string>

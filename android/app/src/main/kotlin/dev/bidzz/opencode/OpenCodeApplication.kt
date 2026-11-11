@@ -220,6 +220,28 @@ class OpenCodeApplication : Application() {
     val safFilePicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
 
     /**
+     * Voice input (Composer C): asks MainActivity to request the
+     * microphone permission, and the granted/denied answer for it. Same
+     * bridge shape as the SAF attach flow above: the composable only
+     * names the request, MainActivity owns the permission launcher (a
+     * Compose launcher in chat crashed for want of an
+     * ActivityResultRegistryOwner). One-shot events, not state, for the
+     * same reason as the flows above — a replayed request would re-open
+     * the permission dialog on every MainActivity recreation.
+     */
+    fun requestVoicePermission() {
+        voicePermissionRequest.tryEmit(System.currentTimeMillis())
+    }
+
+    /** Delivers the microphone permission answer from MainActivity. */
+    fun deliverVoicePermissionResult(granted: Boolean) {
+        voicePermissionResult.tryEmit(granted)
+    }
+
+    val voicePermissionRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+    val voicePermissionResult = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
+
+    /**
      * A code block the user asked to save through the system picker (SAF).
      * Same bridge shape as the SAF attach flow above: the composable only
      * names the file and its text, MainActivity owns the `CreateDocument`

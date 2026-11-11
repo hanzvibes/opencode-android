@@ -223,6 +223,17 @@
     <string name="composer_commands">Perintah</string>
     <string name="composer_attach">Lampirkan berkas</string>
     <string name="composer_mention">Sebutkan berkas</string>
+    <string name="composer_suggest_fix_error">Perbaiki error ini</string>
+    <string name="composer_suggest_explain_error">Jelaskan errornya</string>
+    <string name="voice_recording">Merekam… %1$s</string>
+    <string name="voice_stop_recording">Berhenti merekam</string>
+    <string name="voice_unavailable">Voice input tidak tersedia di perangkat ini</string>
+    <string name="voice_permission_denied">Izin mikrofon ditolak. Aktifkan di Pengaturan untuk memakai input suara.</string>
+    <string name="voice_error_no_match">Tidak terdengar — coba bicara lagi.</string>
+    <string name="voice_error_timeout">Tidak ada suara yang terdengar — coba lagi.</string>
+    <string name="voice_error_network">Pengenalan suara butuh koneksi internet — coba lagi saat online.</string>
+    <string name="voice_error_permission">Pengenalan suara tidak punya izin mikrofon.</string>
+    <string name="voice_error_generic">Input suara gagal — coba lagi.</string>
     <string name="attach_picker_title">Lampirkan berkas</string>
     <string name="attach_picker_hint">Cari file workspace…</string>
     <string name="attach_picker_empty">Tidak ada file yang cocok dengan “%1$s”</string>
