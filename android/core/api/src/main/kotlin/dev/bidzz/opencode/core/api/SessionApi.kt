@@ -2,6 +2,9 @@ package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.CreateSessionRequest
 import dev.bidzz.opencode.core.api.dto.FileDiffInfo
+import dev.bidzz.opencode.core.api.dto.FormInfo
+import dev.bidzz.opencode.core.api.dto.FormReplyRequest
+import dev.bidzz.opencode.core.api.dto.FormsResponse
 import dev.bidzz.opencode.core.api.dto.LocationRef
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
 import dev.bidzz.opencode.core.api.dto.ModelRef
@@ -193,6 +196,51 @@ class SessionApi(private val client: EngineClient) {
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<PermissionsResponse>(raw).data
         }
+    }
+
+    /**
+     * Pending forms for a session (`GET /api/session/{id}/form`).
+     *
+     * The agent's question tool waits on a form (`forms.ask()` in the
+     * engine): the run stays paused inside the tool call until the form is
+     * replied to or cancelled, so a prompt sent as an ordinary message
+     * never reaches it — that was the question-card deadlock (audit-70
+     * 10-F1). The list is how the app finds the form id for a question
+     * card: the form's metadata ties it to its tool call
+     * (`FormInfo.isQuestionFor`). Verified against the pinned engine
+     * source (protocol `session.form.list`, `packages/protocol/src/groups/
+     * session.ts` at fork pin 92b2ca0).
+     */
+    suspend fun listForms(sessionID: String): ApiResult<List<FormInfo>> {
+        val request = client.request("/api/session/$sessionID/form").get().build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<FormsResponse>(raw).data
+        }
+    }
+
+    /**
+     * Submits an answer to a pending form (`POST
+     * /api/session/{id}/form/{formID}/reply`).
+     *
+     * Responds **204 No Content**. The answer is keyed by field
+     * (`q0`, `q1`, …): a single-choice answer is the option label as a
+     * string, a multi-choice answer is an array of labels. A partial
+     * answer is accepted — the engine only requires fields the form
+     * marks required, and the question tool marks none — so each
+     * question on a card can be answered on its own. Verified against
+     * the pinned engine source (protocol `session.form.reply`, `Form.
+     * Reply = {answer: Record<string, Value>}`).
+     */
+    suspend fun replyForm(
+        sessionID: String,
+        formID: String,
+        answer: Map<String, kotlinx.serialization.json.JsonElement>,
+    ): ApiResult<Unit> {
+        val body = ApiJson.encodeToString(FormReplyRequest(answer = answer))
+        val request = client.request("/api/session/$sessionID/form/$formID/reply")
+            .post(client.jsonBody(body))
+            .build()
+        return client.executeUnit(request)
     }
 
     /** One session's metadata. */

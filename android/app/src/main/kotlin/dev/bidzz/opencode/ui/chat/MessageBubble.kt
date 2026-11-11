@@ -151,7 +151,7 @@ fun MessageBubble(
     model: ModelRef? = null,
     reasoning: String? = null,
     parts: List<ChatTurnPart> = emptyList(),
-    onAnswerQuestion: (String) -> Unit = {},
+    onAnswerQuestion: suspend (QuestionAnswer) -> Boolean = { false },
     /**
      * Seconds since this run started, owned by the screen — not by this
      * bubble. A bubble-local timer reset to 0 every time the streaming

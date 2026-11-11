@@ -17,6 +17,8 @@ import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import dev.bidzz.opencode.core.api.dto.toToolCall
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -1096,17 +1098,68 @@ class ChatViewModel(
     }
 
     /**
-     * Answers a question card (item 9).
+     * Answers one question on a question card (audit-70 10-F1, 10-F3,
+     * 44-F1). Returns true only when the engine confirmed the reply.
      *
-     * Sent as a prompt like any other answer, but through its own path —
-     * never through the draft: the previous code overwrote the composer's
-     * draft with the answer and sent it, destroying whatever the user was
-     * typing, and baked the pending attachments into the answer too. A busy
-     * engine queues the answer like any follow-up, again without touching
-     * the draft or the pending files.
+     * The old path sent the answer as an ordinary prompt — which the
+     * engine never delivered: the question tool waits on a form
+     * (`forms.ask()`), the run stays paused inside the tool call, and a
+     * queued prompt only drains when the run ends. The card already
+     * showed "Answered" while the answer sat in a queue that could
+     * never drain. Now the answer goes straight to the pending form
+     * (`POST /api/session/{id}/form/{formID}/reply`, verified against
+     * the pinned engine source at fork pin 92b2ca0), matched to its
+     * tool call by the form metadata — so identical answers to
+     * different questions go to different forms and never collide in a
+     * queue dedup.
+     *
+     * Anything that keeps the reply from reaching the engine — engine
+     * down, no session, no pending form for this card, a rejected
+     * reply — returns false and puts the answer back into the composer
+     * (appended, never overwriting what the user is typing) with a
+     * failure notice, so the answer is never silently lost and the
+     * card stays open for another try.
      */
-    fun answerQuestion(answer: String) {
-        sendStandalonePrompt(answer)
+    suspend fun answerQuestion(answer: QuestionAnswer): Boolean {
+        if (answer.labels.isEmpty() || answer.displayText.isBlank()) return false
+        val sessionID = _state.value.sessionID
+        val sessions = handle?.sessions
+        if (sessionID == null || sessions == null) {
+            returnAnswerToDraft(answer.displayText)
+            return false
+        }
+        val form = when (val result = sessions.listForms(sessionID)) {
+            is ApiResult.Success -> result.value.firstOrNull { it.isQuestionFor(answer.callId) }
+            is ApiResult.Failure -> null
+        } ?: run {
+            returnAnswerToDraft(answer.displayText)
+            return false
+        }
+        val value = if (answer.multiple) {
+            JsonArray(answer.labels.map { JsonPrimitive(it) })
+        } else {
+            JsonPrimitive(answer.labels.first())
+        }
+        return when (sessions.replyForm(sessionID, form.id, mapOf("q${answer.questionIndex}" to value))) {
+            is ApiResult.Success -> true
+            is ApiResult.Failure -> {
+                returnAnswerToDraft(answer.displayText)
+                false
+            }
+        }
+    }
+
+    /**
+     * Puts an undeliverable question answer back into the composer
+     * (audit-70 44-F1): appended after what the user is typing, never
+     * overwriting it, with a failure notice so the return is visible.
+     * The pending attachments are left alone — they belong to the
+     * message being typed, not to the answer.
+     */
+    private fun returnAnswerToDraft(displayText: String) {
+        val current = _state.value.draft
+        onDraftChange(if (current.isBlank()) displayText else "$current\n$displayText")
+        _state.value = _state.value.copy(failureKey = R.string.question_answer_failed)
     }
 
     /**
@@ -1124,9 +1177,10 @@ class ChatViewModel(
 
     /**
      * Sends [text] as its own prompt, without touching the draft or the
-     * pending attachments. Shared by [answerQuestion] and
-     * [requestDiffRevert]: both are operator decisions that must reach
-     * the engine even while the user is typing something else.
+     * pending attachments. Used by [requestDiffRevert]: an operator
+     * decision that must reach the engine even while the user is typing
+     * something else. (Question answers used to share this path; they
+     * now go to the engine as a form reply — see [answerQuestion].)
      */
     private fun sendStandalonePrompt(text: String) {
         val trimmed = text.trim()

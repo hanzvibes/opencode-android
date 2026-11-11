@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,6 +57,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import kotlinx.coroutines.launch
 
 /**
  * An interactive inline question card in chat.
@@ -68,7 +70,14 @@ fun InlineQuestionCard(
     call: ToolCall,
     questions: List<QuestionItem>,
     modifier: Modifier = Modifier,
-    onAnswer: (String) -> Unit = {},
+    /**
+     * Sends one answer to the engine. True only when the engine
+     * confirmed the reply — the card marks the question answered
+     * only then (audit-70 44-F1): marking it before the reply lands
+     * would show "Answered" for an answer the engine never got, with
+     * no way to try again.
+     */
+    onAnswer: suspend (QuestionAnswer) -> Boolean = { false },
 ) {
     if (questions.isEmpty()) return
 
@@ -76,11 +85,18 @@ fun InlineQuestionCard(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val shape = RoundedCornerShape(radius.md)
+    val scope = rememberCoroutineScope()
 
     // One answer per question, indexed by qIndex ("" = unanswered). A single
     // shared answer used to mark every question done — and show the same
     // answer on all of them — as soon as the first one was submitted.
     var submittedAnswers by rememberSaveable(call.id) { mutableStateOf(listOf<String>()) }
+
+    // Questions with a reply in flight: a second tap while the first is
+    // still travelling is ignored, so the same answer is never sent
+    // twice (the second reply would fail as already-settled and drop
+    // the answer back into the composer).
+    var submitting by remember { mutableStateOf(emptySet<Int>()) }
 
     // The card stays "open" while any question is still unanswered.
     val anyPending = questions.indices.any { qIndex ->
@@ -124,13 +140,34 @@ fun InlineQuestionCard(
                     totalQuestions = questions.size,
                     isDone = sectionDone,
                     resolvedAnswer = sectionResolved,
-                    onSubmit = { answerText ->
-                    val updated = submittedAnswers.toMutableList()
-                    while (updated.size <= qIndex) updated.add("")
-                    updated[qIndex] = answerText
-                    submittedAnswers = updated
-                    onAnswer(answerText)
-                },
+                    onSubmit = { labels, displayText ->
+                        // A second tap while the reply is still
+                        // travelling is ignored (see `submitting`).
+                        if (qIndex in submitting) return@SingleQuestionSection
+                        submitting = submitting + qIndex
+                        scope.launch {
+                            val delivered = onAnswer(
+                                QuestionAnswer(
+                                    callId = call.id,
+                                    questionIndex = qIndex,
+                                    labels = labels,
+                                    multiple = item.multiple,
+                                    displayText = displayText,
+                                ),
+                            )
+                            submitting = submitting - qIndex
+                            // Only an engine-confirmed answer marks the
+                            // question done (audit-70 44-F1). On a
+                            // failure the answer is back in the composer
+                            // and the card stays open for another try.
+                            if (delivered) {
+                                val updated = submittedAnswers.toMutableList()
+                                while (updated.size <= qIndex) updated.add("")
+                                updated[qIndex] = displayText
+                                submittedAnswers = updated
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -144,7 +181,7 @@ private fun SingleQuestionSection(
     totalQuestions: Int,
     isDone: Boolean,
     resolvedAnswer: String?,
-    onSubmit: (String) -> Unit,
+    onSubmit: (labels: List<String>, displayText: String) -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -161,13 +198,13 @@ private fun SingleQuestionSection(
         mutableStateOf(item.options.isEmpty())
     }
 
-    /** Builds "Header: answer1, answer2" and hands it to the card. */
+    /** Builds the labels plus "Header: answer1, answer2" and hands both to the card. */
     fun submitAnswer(selected: List<String>, writeIn: String, writeInOn: Boolean) {
         val chosenLabels = item.options
             .filter { it.id in selected }
             .map { it.label }
         val allAnswers = chosenLabels + (if (writeInOn && writeIn.isNotBlank()) listOf(writeIn.trim()) else emptyList())
-        onSubmit(formatQuestionAnswer(item, allAnswers))
+        onSubmit(allAnswers, formatQuestionAnswer(item, allAnswers))
     }
 
     // Header Row
