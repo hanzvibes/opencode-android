@@ -12,7 +12,8 @@ import org.junit.Test
  * must list `node`, and the child-process environment must carry the library
  * path, the bundled CA bundle, and a shell that exists on the device.
  * Also covers the xz/tar/ar tools (Tier 2 item 22): the tool map must list
- * `xz`, `tar`, and `ar`.
+ * `xz`, `tar`, and `ar`. And the curl tool (Tier 2 item 23, staging part):
+ * the tool map must list `curl` (staged as `libcurl-cli.so`).
  */
 class EngineEnvironmentTest {
 
@@ -45,6 +46,11 @@ class EngineEnvironmentTest {
         assertEquals("xz", EngineBinary.TOOL_LIBRARIES["libxz.so"])
         assertEquals("tar", EngineBinary.TOOL_LIBRARIES["libtar.so"])
         assertEquals("ar", EngineBinary.TOOL_LIBRARIES["libar.so"])
+    }
+
+    @Test
+    fun toolLibrariesContainCurl() {
+        assertEquals("curl", EngineBinary.TOOL_LIBRARIES["libcurl-cli.so"])
     }
 
     @Test
