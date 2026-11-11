@@ -1041,7 +1041,13 @@ fun ChatScreen(
                         stopping = state.stopping,
                         enabled = state.workspaceReady,
                         promptHistory = state.sentPrompts,
-                        queuedText = state.queuedPrompt,
+                        // The queue is a list (item 6): show the first
+                        // follow-up, with a count when more are waiting.
+                        queuedText = when {
+                            state.queuedPrompts.isEmpty() -> null
+                            state.queuedPrompts.size == 1 -> state.queuedPrompts[0].typedText.ifBlank { state.queuedPrompts[0].fullText }
+                            else -> state.queuedPrompts[0].typedText.ifBlank { state.queuedPrompts[0].fullText } + " (+${state.queuedPrompts.size - 1})"
+                        },
                         isEditing = state.editingMessageId != null,
                         onCancelEdit = onCancelEdit,
                         modelLabel = modelLabel,

@@ -73,8 +73,14 @@ data class ChatUiState(
     /** What the banner's single Retry button means for the current failure
      * ([RetryKind.NONE] hides it — see [ChatViewModel.retryError]). */
     val retryKind: RetryKind = RetryKind.NONE,
-    /** A follow-up typed while the agent is working, sent when the run ends. */
-    val queuedPrompt: String? = null,
+    /** A follow-up typed while the agent is working, sent when the run ends.
+     * A list, not one slot: queuing a second follow-up must not overwrite
+     * the first (item 6). [fullText] is what the engine receives — typed
+     * text plus any fenced attachment blocks already baked in — so a flush
+     * never re-reads the draft or re-appends attachments. [typedText] is
+     * what the user typed: only that goes into prompt history, so pressing
+     * Up never restores a 64 KB file dump into the composer. */
+    val queuedPrompts: List<QueuedPrompt> = emptyList(),
     /** True after Stop was tapped until the run actually ends. */
     val stopping: Boolean = false,
     /** Id of the user message being edited in the composer, or null. */
@@ -88,6 +94,14 @@ data class ChatUiState(
     val commands: List<dev.bidzz.opencode.core.api.dto.CommandInfo> = emptyList(),
     /** Active git branch when inside a version-controlled workspace. */
     val branch: String? = null,
+)
+
+/** One follow-up waiting for the run to end (see [ChatUiState.queuedPrompts]). */
+data class QueuedPrompt(
+    /** What the engine receives: typed text plus baked-in attachment blocks. */
+    val fullText: String,
+    /** What the user typed, for prompt history (never the attachment blocks). */
+    val typedText: String,
 )
 
 /** What the error banner's Retry button does for the current failure. */
@@ -216,7 +230,7 @@ class ChatViewModel(
                         sessionID = null,
                         busy = false,
                         stopping = false,
-                        queuedPrompt = null,
+                        queuedPrompts = emptyList(),
                         editingMessageId = null,
                         retryKind = RetryKind.NONE,
                         failureKey = if (status.state == EngineState.FAILED) {
@@ -349,15 +363,22 @@ class ChatViewModel(
             },
         )
 
-        // The run just ended and a follow-up was queued while it worked:
-        // send it now. `send()` reads the draft, so the queued text is put
-        // back into the draft first; it is cleared from the queue before
-        // sending so a failed send cannot re-queue it in a loop.
-        if (wasBusy && !chat.busy) {
-            val queued = _state.value.queuedPrompt
-            if (queued != null) {
-                _state.value = _state.value.copy(queuedPrompt = null, draft = queued)
-                send()
+        // The run just ended and follow-ups were queued while it worked:
+        // send the first one now. It goes straight to sendText — never back
+        // through the draft, so text the user typed after queueing is not
+        // overwritten, and never through send(), so pending attachments
+        // picked for the next message are not baked into it (item 16). The
+        // entry leaves the queue before sending so a failed send cannot
+        // re-queue it in a loop; the rest wait for the next run to end.
+        // Nothing is flushed while a send is still in flight, or while the
+        // engine is gone — the queue belongs to the draft then (item 8).
+        if (wasBusy && !chat.busy && !sendInFlight && repository != null) {
+            val next = _state.value.queuedPrompts.firstOrNull()
+            if (next != null) {
+                _state.value = _state.value.copy(
+                    queuedPrompts = _state.value.queuedPrompts.drop(1),
+                )
+                sendText(next.fullText, next.typedText, emptyList())
             }
         }
     }
@@ -465,18 +486,45 @@ class ChatViewModel(
         val full = buildMessageWithAttachments(typed, attachments)
         if (full.isBlank()) return
         // While the agent works the composer stays typable, and sending queues
-        // the follow-up instead of dropping it: the queue flushes when the
-        // run ends (see onRepoState). The draft is cleared so the queued text
-        // is not also still sitting in the composer. The attachments are
-        // baked into the queued text and cleared with it, so the flush —
-        // which puts the queued text back into the draft and calls send()
-        // again — cannot append them a second time.
+        // the follow-up instead of dropping it: the queue flushes one entry
+        // at a time when each run ends (see onRepoState). The draft is
+        // cleared so the queued text is not also still sitting in the
+        // composer. The attachments are baked into the queued text and
+        // cleared with it, so the flush — which sends the entry directly —
+        // cannot append them a second time. When the entry is dropped as a
+        // duplicate the files stay pending: they were never baked anywhere.
         if (_state.value.busy || sendInFlight) {
-            _state.value = _state.value.copy(queuedPrompt = full, pendingAttachments = emptyList())
+            if (queuePrompt(full, typed)) {
+                _state.value = _state.value.copy(pendingAttachments = emptyList())
+            }
             clearDraft()
             return
         }
         sendText(full, typed, attachments)
+    }
+
+    /**
+     * Appends a follow-up to the queue (see [ChatUiState.queuedPrompts]).
+     * Returns false when the entry was dropped as a duplicate.
+     *
+     * The queue is a list, so a second follow-up never overwrites the first.
+     * A text identical to the last prompt actually sent — or to the entry
+     * already at the back of the queue — is dropped: that is a double-tap
+     * on Send, not a second message, and sending it twice would run the
+     * same prompt twice. Queueing never touches
+     * [ChatUiState.pendingAttachments] itself: callers that baked files
+     * into the queued text clear them, and callers that did not (a resend,
+     * a question answer) leave them pending for the message being typed.
+     */
+    private fun queuePrompt(fullText: String, typedText: String): Boolean {
+        val current = _state.value.queuedPrompts
+        val duplicate = fullText == _state.value.lastSentText ||
+            current.lastOrNull()?.fullText == fullText
+        if (duplicate) return false
+        _state.value = _state.value.copy(
+            queuedPrompts = current + QueuedPrompt(fullText, typedText),
+        )
+        return true
     }
 
     private var sendInFlight = false
@@ -602,7 +650,9 @@ class ChatViewModel(
         val attachments = _state.value.pendingAttachments
         val full = buildMessageWithAttachments(text, attachments)
         if (_state.value.busy || sendInFlight) {
-            _state.value = _state.value.copy(queuedPrompt = full, pendingAttachments = emptyList())
+            if (queuePrompt(full, text)) {
+                _state.value = _state.value.copy(pendingAttachments = emptyList())
+            }
             clearDraft()
             return
         }
@@ -616,7 +666,10 @@ class ChatViewModel(
             ?.text?.trim()
             .takeIf { !it.isNullOrBlank() } ?: return
         if (_state.value.busy || sendInFlight) {
-            _state.value = _state.value.copy(queuedPrompt = text)
+            // Queued as text only: the resend carries no attachments, and
+            // queueing must not burn the files pending for the message the
+            // user is typing (item 16).
+            queuePrompt(text, text)
             return
         }
         sendText(text, text, emptyList())
@@ -868,7 +921,7 @@ class ChatViewModel(
         // and the stop state belong to the old session too. Pending
         // attachments go with the draft: they were picked for the old
         // session's message, and the refusal notice with them.
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
     }
 
@@ -898,7 +951,7 @@ class ChatViewModel(
         // session starts with an empty composer — and no retry target from
         // the previous session. Pending attachments belong to the old
         // session's message too, and the refusal notice with them.
-        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompt = null, editingMessageId = null, deferredPermission = null, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, deferredPermission = null, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
         repo.open(sessionID)
         // The id-only path has no SessionInfo to sync from, so the session's
