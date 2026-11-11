@@ -94,6 +94,7 @@ import dev.bidzz.opencode.ui.sessions.SessionListUiState
 import dev.bidzz.opencode.ui.sessions.SessionListViewModel
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import dev.bidzz.opencode.ui.updateLastSessionShortcut
+import dev.bidzz.opencode.ui.widget.updateSessionWidget
 import dev.bidzz.opencode.ui.settings.SettingsScreen
 import java.io.File
 import kotlinx.coroutines.launch
@@ -415,6 +416,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         val id = chatState.sessionID ?: return@LaunchedEffect
         val title = sessionsState.rows.find { it.id == id }?.title
         updateLastSessionShortcut(hostContext, id, title)
+        updateSessionWidget(hostContext, id, title)
     }
 
     // Agent-done notification (Native C): when a run ends while the app

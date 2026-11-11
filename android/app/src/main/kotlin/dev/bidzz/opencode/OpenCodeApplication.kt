@@ -27,8 +27,10 @@ import kotlinx.coroutines.flow.StateFlow
 class OpenCodeApplication : Application() {
     companion object {
         private const val TAG = "OpenCodeApp"
-        private const val PREFS = "app"
-        private const val KEY_LAST_SESSION = "last_session_id"
+        /** SharedPreferences file the app restores from (also read by the widget). */
+        const val PREFS_NAME = "app"
+        /** Last opened session id (also read by the widget). */
+        const val KEY_LAST_SESSION = "last_session_id"
     }
 
     /** Null until [onCreate] finishes, or when the engine binary is unavailable. */
@@ -69,9 +71,9 @@ class OpenCodeApplication : Application() {
      * longer has — so a reboot never resurrects a dead session.
      */
     var lastSessionID: String?
-        get() = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LAST_SESSION, null)
+        get() = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_LAST_SESSION, null)
         set(value) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().apply {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
                 if (value == null) remove(KEY_LAST_SESSION) else putString(KEY_LAST_SESSION, value)
             }.apply()
         }
