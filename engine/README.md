@@ -61,7 +61,7 @@ The engine shells out to real tools. These are packaged the same way:
 | `sh` | `/system/bin/sh` (system) | — |
 | `git` | Termux aarch64 build | GPLv2 |
 | `rg` | Termux aarch64 build | MIT / Unlicense |
-| `node` | Termux aarch64 build (nodejs-lts 24.22.2) | MIT |
+| `node` | Termux aarch64 build (nodejs-lts 24.22.3) | MIT |
 | `npm` | Termux `npm` 12.2.2 (JS tree in `assets/node/`) | Artistic License 2.0 |
 | `xz` | Termux aarch64 build (xz-utils 5.8.4) | Public domain |
 | `tar` | Termux aarch64 build (GNU tar 1.35) | GPLv3 |
@@ -85,7 +85,7 @@ Derived from dependency analysis, not yet all confirmed on device:
 | File watching | likely unavailable | `@parcel/watcher` has no Android build |
 | PTY / interactive terminal | likely unavailable | node-pty has no Android build |
 | LSP | possibly works | Node.js 24 runtime now bundled; TypeScript LSP installable via npm (not yet verified on device) |
-| Node.js / npm | expected to work | Node 24.22.2 + npm 12.2.2 bundled (`script/android/stage-node.sh`); verify `node --version` and `npm install` on device |
+| Node.js / npm | expected to work | Node 24.22.3 + npm 12.2.2 bundled (`script/android/stage-node.sh`); verify `node --version` and `npm install` on device |
 | Extract .deb / .tar.xz on-device | expected to work | xz 5.8.4 + tar 1.35 + ar (binutils 2.47) bundled (`script/android/stage-xz.sh`); verify `ar x`, `xz -d`, `tar -xf` on device |
 | HTTP downloads / API calls from the engine shell | expected to work | curl 8.23.0 bundled (`script/android/stage-curl.sh`); verify `curl -I https://example.com` on device. Git over HTTPS is still unavailable (git was built without curl/OpenSSL) |
 | MCP over stdio | possibly works | child processes run under the bundled Bun |

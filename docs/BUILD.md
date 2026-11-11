@@ -168,7 +168,7 @@ Requirements: `curl`, `dpkg-deb`, `readelf`, `patchelf` (CI installs it via
 apt; on the VM it lives at `~/workspace/local-ci/tools/bin/patchelf`, pass
 `--patchelf <path>` or set `PATCHELF`).
 
-The script pins `nodejs-lts` 24.22.2-1 + `npm` 12.2.2 and their closure
+The script pins `nodejs-lts` 24.22.3 + `npm` 12.2.2 and their closure
 (ICU 79.1, OpenSSL 3.6.5, libc++ 30, SQLite 3.54.1, c-ares 1.34.9,
 zlib 1.4, ca-certificates) by version and SHA256 from the Termux `stable`
 index, verifies every download, extracts with `dpkg-deb -x`, renames the
@@ -372,7 +372,7 @@ adb shell run-as dev.bidzz.opencode ls -l files/engine/tools/bin
 # curl -> .../libcurl-cli.so (symlinks)
 
 adb shell "run-as dev.bidzz.opencode sh -c 'cd /data/user/0/dev.bidzz.opencode/files/engine/tools/bin && ./git --version && ./rg --version | head -1 && ./node --version && ./xz --version | head -1 && ./tar --version | head -1 && ./ar --version | head -1 && ./curl --version | head -1'"
-# expect: git version 2.56.0 / ripgrep 15.1.0 / v24.22.2 / xz (XZ Utils) 5.8.4 / tar (GNU tar) 1.35 / GNU ar (GNU Binutils) 2.47 / curl 8.23.0
+# expect: git version 2.56.0 / ripgrep 15.1.0 / v24.22.3 / xz (XZ Utils) 5.8.4 / tar (GNU tar) 1.35 / GNU ar (GNU Binutils) 2.47 / curl 8.23.0
 ```
 
 End-to-end, against a real repository:
