@@ -144,6 +144,28 @@ jobs:
             echo "$abi staged: $(ls -1 "$dest" | tr '\n' ' ')"
           done
 
+      # Node.js ships as Termux native libraries, staged from .deb files by
+      # script/android/stage-node.sh (pinned versions + SHA256, patchelf
+      # renames, ELF gates). This is option (a) from the fix list: the
+      # upstream release APK cannot be updated by us, so CI stages Node
+      # itself. The script fails loudly if a library is missing or fails a
+      # gate — a missing libnode.so must never be a silent "note" like the
+      # git/rg check above. It also stages the npm tree + CA bundle into
+      # assets/node/ (extracted to files/engine/node/ at first launch).
+      - name: Stage Node.js from Termux
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq patchelf
+          bash script/android/stage-node.sh --abi arm64-v8a \
+            --jni-out android/app/src/main/jniLibs/arm64-v8a \
+            --assets-out android/app/src/main/assets/node
+          bash script/android/stage-node.sh --abi x86_64 \
+            --jni-out android/app/src/main/jniLibs/x86_64 \
+            --no-assets
+          echo "arm64-v8a staged: $(ls -1 android/app/src/main/jniLibs/arm64-v8a | tr '\n' ' ')"
+          echo "x86_64 staged: $(ls -1 android/app/src/main/jniLibs/x86_64 | tr '\n' ' ')"
+
       - name: Compile and package
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
