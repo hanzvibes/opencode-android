@@ -634,7 +634,7 @@
     <string name="notification_agent_done_body">Tap to open the session</string>
     <string name="composer_take_photo">Take photo</string>
     <string name="photo_saved">Photo saved to %1$s</string>
-    <string name="photo_failed">Couldn't save photo</string>
+    <string name="photo_failed">Couldn\'t save photo</string>
     <string name="widget_open">Open</string>
     <string name="widget_open_session_hint">Tap Open to continue the session</string>
     <string name="widget_no_session">No recent session</string>
