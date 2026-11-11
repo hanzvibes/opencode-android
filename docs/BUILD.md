@@ -4,8 +4,9 @@ How to produce the two APKs — debug for testing, signed release for distributi
 including the `git` and `rg` binaries the engine shells out to.
 
 Status: the full pipeline runs on this machine and the result has been executed
-on the x86_64 emulator (Android 16 / API 36). The **arm64 APK has not been run on
-a physical device** — see "Known gaps" at the end.
+on the x86_64 emulator (Android 16 / API 36). The **arm64 APK has since been run
+on a physical ARM tablet** — it launched, and a launch crash in the SAF file
+picker was found that way and fixed in `main`.
 
 ---
 
@@ -292,10 +293,10 @@ from the engine — check `tools/bin` and the engine's `PATH`.
 
 ## Known gaps
 
-- **The arm64 APK has never been executed.** The emulator available here is
-  x86_64 only, so arm64 is verified statically (`e_machine`, `PT_LOAD` alignment,
-  `DT_NEEDED`, interpreter) but not at runtime. A physical arm64 device is
-  required.
+- **The arm64 APK has now been executed on a physical device** (ARM tablet,
+  November 2026): it launched and ran. The only crash found that way — a
+  missing `ActivityResultRegistryOwner` for the SAF file picker — is fixed in
+  `main`. Long-session stability on small-RAM phones is still unmeasured.
 - **git has no network support.** Built with `NO_CURL` and `NO_OPENSSL`, so
   clone/push/fetch over https do not work. Local operations (status, diff,
   commit, branch, log) are complete. Adding networking means bundling libcurl,

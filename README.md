@@ -40,24 +40,37 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 
 | | |
 |---|---|
-| **Chat that streams** | Replies appear token by token, with Markdown, tables, and code blocks. Copy a block, or save it straight to a file. |
-| **See what the agent does** | Tool calls show as a readable timeline ("Reading index.html"), live while it runs and in history afterwards, with failures marked. |
-| **You stay in control** | Permission prompts arrive in the chat: *Allow once*, *Always*, or *Reject*. |
+| **Chat that streams** | Replies appear token by token, with Markdown, tables, and code blocks you can copy. Edit a sent message and re-send it, quote a reply, and see tokens, cost and duration under each turn. |
+| **See what the agent does** | Tool calls show as a readable timeline ("Reading index.html"), live while it runs and in history afterwards, with failures marked, durations on every step, and real diffs (+n −m) for file edits. |
+| **You stay in control** | Permission prompts arrive in the chat: *Allow once*, *Always*, or *Reject* — or *Answer later* to decide when you're ready. Risky operations are flagged by risk class. |
+| **Attach files** | `@`-mention any file in the workspace, or browse device files outside it: text files are inlined into your message (64 KB cap). Anything else is refused with a clear message, never silently dropped. |
 | **Bring your own provider** | Add an API key for a built-in provider, or define a custom OpenAI-compatible endpoint from inside the app. Replace or delete keys at any time. |
-| **Modes, models, commands** | Switch mode and model from the composer, and use `/` commands with autocomplete. |
+| **Modes, models, commands** | Switch mode, model and agent from the composer — with search, provider grouping and recents — and use `/` commands with autocomplete, plus `@` file mentions. |
 | **Real project folders** | Point the app at any folder on shared storage; the agent works on real POSIX paths. Switch projects and the engine restarts for you. |
-| **Files and diffs** | Browse the project, read and edit files with syntax highlighting, and review real `git` diffs with A/M/D badges. |
+| **Files and diffs** | Browse the project, read and edit files with syntax highlighting, quick-open and find-in-file, and review real `git` diffs with A/M/D badges. |
 | **Search that works** | `git` and `ripgrep` are bundled, so the agent's `grep` and `glob` tools function. |
-| **Session history** | Reopen any past conversation, for this project or all of them. |
+| **Session history** | Reopen any past conversation, for this project or all of them, with previews and transcript search. |
+| **First-run onboarding** | A three-step first run — project, provider, permissions — and a sample project you can seed to try the agent on. |
+| **Tablet layout** | On wide screens (≥840dp) the session list stays visible beside the chat, with list-detail navigation; content caps at 720dp everywhere else. |
 | **Survives the swipe** | A foreground service keeps the engine alive when you leave the app or swipe it from recents. |
-| **Two languages, two themes** | English and Indonesian, switchable at runtime without leaving the screen. Dark and light themes. |
-| **Built-in diagnostics** | Engine state, log, runtime paths, and `git`/`rg` self-checks, so release builds can be debugged without `adb`. |
+| **Two languages, three themes** | English and Indonesian, switchable at runtime without leaving the screen. System, dark and light themes, with bundled Inter and JetBrains Mono type. |
+| **Built-in diagnostics** | Engine state, a searchable log viewer with follow mode, runtime paths, and `git`/`rg` self-checks, so release builds can be debugged without `adb`. Restart the engine from here. |
 
 ### Not yet
 
-MCP servers, an interactive terminal, LSP, session fork/revert, `git` over https (`clone`/`push`/
-`fetch`), and adaptive tablet layouts. See [`docs/BUILD.md`](docs/BUILD.md#known-gaps) for the
-current list of known gaps.
+MCP servers, an interactive terminal, LSP, session fork/revert, and `git` over https
+(`clone`/`push`/`fetch`). See [`docs/BUILD.md`](docs/BUILD.md#known-gaps) for the
+current list of known build gaps.
+
+### Known limitations
+
+- **Editing a message re-sends it as a new message** — the original stays visible. Truly
+  truncating the turn and re-running needs a verified engine API, which the app does not
+  have yet.
+- **"Always" permissions live on the engine** and can't be listed or revoked from the app
+  yet. The list API exists; the UI doesn't call it.
+- **Session previews load full history**, so opening the session list can be slow on long
+  sessions.
 
 ## Screenshots
 
@@ -78,6 +91,8 @@ current list of known gaps.
 
 Captured from the app running on a device, dark theme. A conversation screenshot is deliberately
 missing: every screen above needs no API key, and a transcript would have to be staged to look real.
+The screenshots predate the current interface (redesigned November 2026 as "The quiet terminal"):
+layout, typography and styling have changed since.
 
 ## Install
 
@@ -145,7 +160,8 @@ Android 15+ devices with 16 KB memory pages work: every bundled binary is 16 KB 
 - **Tools.** `git` 2.56.0 and `ripgrep` 15.1.0 are built with NDK 29 and are 16 KB page aligned,
   so they run on Android 15+ devices too.
 - **UI.** Plain Compose with its own small design system (`core:design`) and hand-drawn icons.
-  No navigation library and no icon pack.
+  No navigation library and no icon pack. The interface follows one identity ("The quiet
+  terminal"): one accent colour, three opaque surfaces, bundled Inter and JetBrains Mono.
 
 | Module | Role |
 |---|---|
@@ -224,12 +240,18 @@ executable, source published with each release) and **ripgrep** (MIT).
 yang asli langsung di dalam aplikasi Android, dengan antarmuka Jetpack Compose. Bukan remote
 control desktop, bukan WebView.
 
-- Chat streaming dengan Markdown dan blok kode (salin atau simpan ke file).
-- Jejak tool call yang terbaca, dan kartu izin: *Izinkan sekali*, *Selalu*, atau *Tolak*.
+- Chat streaming dengan Markdown dan blok kode (salin), edit dan kirim ulang pesan, dan
+  footer token/biaya/durasi di tiap giliran.
+- Jejak tool call yang terbaca dengan durasi dan diff, dan kartu izin: *Izinkan sekali*,
+  *Selalu*, *Tolak*, atau *Jawab nanti*.
+- Lampirkan file: `@`-mention file workspace, atau browse file device (teks, maks 64 KB).
 - Hubungkan penyedia sendiri: kunci API atau endpoint kustom, langsung dari aplikasi.
 - Pilih folder proyek di penyimpanan bersama, jelajahi dan edit file, lihat diff git.
 - `git` dan `ripgrep` sudah dibundel. Engine tetap hidup walau aplikasi di-swipe.
+- Onboarding tiga langkah, sidebar tablet persisten (≥840dp), pemilih tema Sistem/Gelap/Terang.
 - Bahasa Indonesia dan Inggris, tema gelap dan terang.
+
+**Belum ada:** MCP server, terminal interaktif, LSP, session fork/revert, dan `git` over https.
 
 **Pasang:** unduh APK dari halaman [Releases](https://github.com/hanzvibes/opencode-android/releases)
 (`arm64-v8a` untuk hampir semua HP), pasang, lalu berikan *Akses semua file*. Butuh Android 10
