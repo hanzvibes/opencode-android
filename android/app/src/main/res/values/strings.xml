@@ -220,6 +220,7 @@
     <string name="session_action_rename">Rename</string>
     <string name="session_action_delete">Delete</string>
     <string name="session_action_inbox">Inbox</string>
+    <string name="session_action_move">Move</string>
     <string name="session_rename_title">Rename chat</string>
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
@@ -240,6 +241,15 @@
     <string name="inbox_delivery_steer">Steer</string>
     <string name="inbox_delivery_queue">Queue</string>
     <string name="inbox_files">%1$d files</string>
+
+    <!-- Move session -->
+    <string name="move_title">Move session</string>
+    <string name="move_body">Move this session to another project. The session keeps its history.</string>
+    <string name="move_empty">No other projects found on the engine.</string>
+    <string name="move_confirm">Move</string>
+    <string name="move_moving">Moving…</string>
+    <string name="move_done">Session moved.</string>
+    <string name="move_current">Current project</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <!-- Redesign C working progress: %1$s is the live step sentence ("Reading ChatScreen.kt")

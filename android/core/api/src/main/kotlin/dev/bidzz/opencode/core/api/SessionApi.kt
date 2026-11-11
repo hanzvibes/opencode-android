@@ -8,6 +8,7 @@ import dev.bidzz.opencode.core.api.dto.FormsResponse
 import dev.bidzz.opencode.core.api.dto.LocationRef
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.api.dto.MoveSessionRequest
 import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
 import dev.bidzz.opencode.core.api.dto.PermissionsResponse
@@ -249,6 +250,25 @@ class SessionApi(private val client: EngineClient) {
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<SingleResponse<SessionInfo>>(raw).data
         }
+    }
+
+    /**
+     * Moves a session to another project directory
+     * (`POST /api/session/{id}/move`).
+     *
+     * The request is just the destination `{ directory }` — verified
+     * against the pinned engine source (see [MoveSessionRequest]): the
+     * engine resolves the project from the directory itself. Answers
+     * **204 No Content**; a bad directory fails with `InvalidRequestError`.
+     * The session keeps its history; its project changes, so callers must
+     * refresh the session list afterwards.
+     */
+    suspend fun move(sessionID: String, directory: String): ApiResult<Unit> {
+        val body = ApiJson.encodeToString(MoveSessionRequest(directory = directory))
+        val request = client.request("/api/session/$sessionID/move")
+            .post(client.jsonBody(body))
+            .build()
+        return client.executeUnit(request)
     }
 
     /** Deletes a session from the engine. */

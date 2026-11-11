@@ -61,6 +61,8 @@ import dev.bidzz.opencode.ui.diff.SessionDiffScreen
 import dev.bidzz.opencode.ui.diff.SessionDiffViewModel
 import dev.bidzz.opencode.ui.inbox.InboxScreen
 import dev.bidzz.opencode.ui.inbox.InboxViewModel
+import dev.bidzz.opencode.ui.move.MoveSessionScreen
+import dev.bidzz.opencode.ui.move.MoveSessionViewModel
 import dev.bidzz.opencode.ui.files.DiffViewModel
 import dev.bidzz.opencode.ui.files.ExplorerScreen
 import dev.bidzz.opencode.ui.files.ExplorerViewModel
@@ -107,6 +109,7 @@ internal sealed interface Screen {
     data class Diff(val file: String) : Screen
     data object SessionDiff : Screen
     data class Inbox(val sessionID: String) : Screen
+    data class MoveSession(val sessionID: String) : Screen
     data object Settings : Screen
     data object Providers : Screen
     data object Diagnostics : Screen
@@ -133,6 +136,7 @@ internal fun Screen.parent(): Screen = when (this) {
     Screen.Worktrees -> Screen.Settings
     Screen.EngineConfig -> Screen.Settings
     is Screen.Inbox -> Screen.Sessions
+    is Screen.MoveSession -> Screen.Sessions
     Screen.About -> Screen.Chat
     else -> Screen.Chat
 }
@@ -150,7 +154,7 @@ internal fun Screen.depth(): Int = when (this) {
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Worktrees,
     Screen.EngineConfig, Screen.About -> 3
-    is Screen.Inbox -> 3
+    is Screen.Inbox, is Screen.MoveSession -> 3
     is Screen.Diff -> 4
 }
 
@@ -241,6 +245,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val inboxViewModel: InboxViewModel = viewModel(factory = viewModelFactory { _ ->
         InboxViewModel(app.engineApi)
     })
+
+    val moveSessionViewModel: MoveSessionViewModel = viewModel(factory = viewModelFactory { _ ->
+        MoveSessionViewModel(app.engineApi)
+    })
     val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory { _ ->
         ProvidersViewModel(
             api = app.engineApi,
@@ -270,6 +278,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val diffState by diffViewModel.state.collectAsState()
     val sessionDiffState by sessionDiffViewModel.state.collectAsState()
     val inboxState by inboxViewModel.state.collectAsState()
+    val moveSessionState by moveSessionViewModel.state.collectAsState()
     val providersState by providersViewModel.state.collectAsState()
     val mcpServersState by mcpServersViewModel.state.collectAsState()
     val pluginsState by pluginsViewModel.state.collectAsState()
@@ -567,6 +576,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 inboxViewModel.load(row.id)
                                 screen = Screen.Inbox(row.id)
                             },
+                            onMove = { row ->
+                                moveSessionViewModel.load(row.id)
+                                screen = Screen.MoveSession(row.id)
+                            },
                             details = sessionsState.details,
                             selectedSessionId = chatState.sessionID,
                             // Shared-element pilot: NO flight here. This pane
@@ -650,6 +663,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onInbox = { row ->
                             inboxViewModel.load(row.id)
                             screen = Screen.Inbox(row.id)
+                        },
+                        onMove = { row ->
+                            moveSessionViewModel.load(row.id)
+                            screen = Screen.MoveSession(row.id)
                         },
                         // Shared-element pilot: the full-screen list is the
                         // origin side of the session-title flight.
@@ -766,6 +783,19 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     state = inboxState,
                     onBack = { screen = Screen.Sessions },
                     onRefresh = inboxViewModel::refresh,
+                )
+
+                is Screen.MoveSession -> MoveSessionScreen(
+                    sessionID = target.sessionID,
+                    state = moveSessionState,
+                    onBack = { screen = Screen.Sessions },
+                    onRefresh = moveSessionViewModel::refresh,
+                    onSelect = moveSessionViewModel::select,
+                    onMove = moveSessionViewModel::move,
+                    onMoved = {
+                        sessionViewModel.load(sessionScopeToProject)
+                        screen = Screen.Sessions
+                    },
                 )
                 }
             }

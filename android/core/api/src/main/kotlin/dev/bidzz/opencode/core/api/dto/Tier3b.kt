@@ -60,3 +60,23 @@ data class InboxResponse(
     val data: List<InboxItem> = emptyList(),
     val location: LocationRef? = null,
 )
+
+/**
+ * Body of `POST /api/session/{id}/move`.
+ *
+ * Verified against the engine fork source at pin 92b2ca0
+ * (`packages/protocol/src/groups/session.ts` — the `session.move`
+ * endpoint — and `packages/server/src/handlers/session.ts`): the payload
+ * is `Location.PublicRef` plus an optional `delivery`, i.e. just
+ * `{ directory, delivery? }` — NOT `{ projectID, subpath?, location? }`
+ * (that shape is the move *inbox item* payload, not the request). The
+ * handler moves by directory and fails with `InvalidRequestError` when
+ * the directory does not exist or is not a directory. The endpoint
+ * answers **204 No Content**. `delivery` is left unset, so the engine
+ * uses its default boundary.
+ */
+@Serializable
+data class MoveSessionRequest(
+    val directory: String,
+    val delivery: String? = null,
+)

@@ -78,6 +78,7 @@ fun SessionListScreen(
     onDelete: (SessionRow) -> Unit = {},
     onTogglePin: (SessionRow) -> Unit = {},
     onInbox: (SessionRow) -> Unit = {},
+    onMove: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     /**
      * Animation C shared-element pilot: the scopes for the session-title
@@ -104,6 +105,7 @@ fun SessionListScreen(
             onDelete = onDelete,
             onTogglePin = onTogglePin,
             onInbox = onInbox,
+            onMove = onMove,
             details = details,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
@@ -131,6 +133,7 @@ fun SessionListPane(
     onDelete: (SessionRow) -> Unit = {},
     onTogglePin: (SessionRow) -> Unit = {},
     onInbox: (SessionRow) -> Unit = {},
+    onMove: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     selectedSessionId: String? = null,
     /**
@@ -333,6 +336,7 @@ fun SessionListPane(
                                 onRenameClick = { sessionToRename = row },
                                 onDeleteClick = { sessionToDelete = row },
                                 onInboxClick = { onInbox(row) },
+                                onMoveClick = { onMove(row) },
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
                             )
@@ -368,6 +372,7 @@ private fun SessionRowItem(
     onDeleteClick: () -> Unit,
     /** Null hides the menu entry: only callers that can open it pass one. */
     onInboxClick: (() -> Unit)? = null,
+    onMoveClick: (() -> Unit)? = null,
     detail: SessionDetail? = null,
     /** Accent background for the session open in the detail pane beside the list. */
     selected: Boolean = false,
@@ -541,6 +546,7 @@ private fun SessionRowItem(
                     onRenameClick = onRenameClick,
                     onDeleteClick = onDeleteClick,
                     onInboxClick = onInboxClick,
+                    onMoveClick = onMoveClick,
                 )
             }
         }

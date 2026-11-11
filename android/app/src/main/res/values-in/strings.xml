@@ -219,6 +219,7 @@
     <string name="session_action_rename">Ganti nama</string>
     <string name="session_action_delete">Hapus</string>
     <string name="session_action_inbox">Kotak masuk</string>
+    <string name="session_action_move">Pindahkan</string>
     <string name="session_rename_title">Ganti nama obrolan</string>
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
@@ -239,6 +240,15 @@
     <string name="inbox_delivery_steer">Steer</string>
     <string name="inbox_delivery_queue">Antre</string>
     <string name="inbox_files">%1$d berkas</string>
+
+    <!-- Pindahkan sesi -->
+    <string name="move_title">Pindahkan sesi</string>
+    <string name="move_body">Pindahkan sesi ini ke project lain. Riwayat sesi tetap tersimpan.</string>
+    <string name="move_empty">Tidak ada project lain di engine.</string>
+    <string name="move_confirm">Pindahkan</string>
+    <string name="move_moving">Memindahkan…</string>
+    <string name="move_done">Sesi sudah dipindahkan.</string>
+    <string name="move_current">Project saat ini</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <!-- Redesign C working progress: %1$s kalimat langkah live ("Membaca ChatScreen.kt")

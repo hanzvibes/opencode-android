@@ -1,6 +1,8 @@
 package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.InboxResponse
+import dev.bidzz.opencode.core.api.dto.MoveSessionRequest
+import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -70,5 +72,31 @@ class Tier3bDecodingTest {
         assertEquals("", parsed.data[0].type)
         assertEquals(null, parsed.data[0].delivery)
         assertTrue(parsed.data[0].payload.isEmpty())
+    }
+
+    @Test
+    fun `move request sends only the directory`() {
+        // Verified against the fork source: the payload is
+        // Location.PublicRef ({directory}) plus optional delivery. The
+        // inbox MovePayload shape ({projectID, subpath, location}) is NOT
+        // the request shape, and must never be sent here.
+        val encoded = ApiJson.encodeToString(
+            MoveSessionRequest(directory = "/storage/emulated/0/Projects/other"),
+        )
+        assertEquals(
+            """{"directory":"/storage/emulated/0/Projects/other"}""",
+            encoded,
+        )
+    }
+
+    @Test
+    fun `move request keeps an explicit delivery when set`() {
+        val encoded = ApiJson.encodeToString(
+            MoveSessionRequest(directory = "/storage/emulated/0/Projects/other", delivery = "queue"),
+        )
+        assertEquals(
+            """{"directory":"/storage/emulated/0/Projects/other","delivery":"queue"}""",
+            encoded,
+        )
     }
 }
