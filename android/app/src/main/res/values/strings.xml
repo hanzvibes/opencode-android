@@ -76,6 +76,9 @@
     <string name="plugin_status_active">Active</string>
     <string name="plugin_status_failed">Failed</string>
     <string name="plugin_status_unknown">Unknown</string>
+    <string name="worktree_title">Worktrees</string>
+    <string name="worktree_body">Worktrees saved on the engine, grouped by project. Creating, removing and refreshing worktrees are not available yet.</string>
+    <string name="worktree_empty">No worktrees saved on the engine.</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Skip</string>

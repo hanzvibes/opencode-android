@@ -12,6 +12,8 @@ import dev.bidzz.opencode.core.api.ModelApi
 import dev.bidzz.opencode.core.api.McpApi
 import dev.bidzz.opencode.core.api.PermissionApi
 import dev.bidzz.opencode.core.api.PluginApi
+import dev.bidzz.opencode.core.api.ProjectApi
+import dev.bidzz.opencode.core.api.WorktreeApi
 import dev.bidzz.opencode.core.api.ProviderApi
 import dev.bidzz.opencode.core.api.SkillApi
 import dev.bidzz.opencode.core.api.SessionApi
@@ -38,6 +40,8 @@ class EngineApi(private val workspaceDirectory: () -> String) {
         val skills: SkillApi,
         val mcp: McpApi,
         val plugins: PluginApi,
+        val projects: ProjectApi,
+        val worktrees: WorktreeApi,
         val providers: ProviderApi,
         val permissions: PermissionApi,
         val integrations: IntegrationApi,
@@ -68,6 +72,8 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             skills = SkillApi(client),
             mcp = McpApi(client),
             plugins = PluginApi(client),
+            projects = ProjectApi(client),
+            worktrees = WorktreeApi(client),
             providers = ProviderApi(client),
             permissions = PermissionApi(client),
             integrations = IntegrationApi(client),

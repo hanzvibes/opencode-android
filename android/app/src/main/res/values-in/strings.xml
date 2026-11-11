@@ -75,6 +75,9 @@
     <string name="plugin_status_active">Aktif</string>
     <string name="plugin_status_failed">Gagal</string>
     <string name="plugin_status_unknown">Tidak diketahui</string>
+    <string name="worktree_title">Worktree</string>
+    <string name="worktree_body">Worktree yang tersimpan di engine, dikelompokkan per project. Membuat, menghapus dan refresh worktree belum tersedia.</string>
+    <string name="worktree_empty">Tidak ada worktree yang tersimpan di engine.</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Lewati</string>

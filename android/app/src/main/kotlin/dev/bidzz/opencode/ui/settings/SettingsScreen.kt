@@ -101,6 +101,7 @@ fun SettingsScreen(
     onProviders: () -> Unit,
     onMcpServers: () -> Unit,
     onPlugins: () -> Unit,
+    onWorktrees: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -192,6 +193,8 @@ fun SettingsScreen(
     val mcpSubtitle = stringResource(R.string.mcp_body)
     val pluginTitle = stringResource(R.string.plugin_title)
     val pluginSubtitle = stringResource(R.string.plugin_body)
+    val worktreeTitle = stringResource(R.string.worktree_title)
+    val worktreeSubtitle = stringResource(R.string.worktree_body)
     val languageTitle = stringResource(R.string.settings_language)
     val languageValue = languageLabel(language)
     val providerTitle = stringResource(R.string.settings_provider_title)
@@ -228,7 +231,8 @@ fun SettingsScreen(
     )
     val mcpVisible = matchesSettingsQuery(query, mcpTitle, mcpSubtitle)
     val pluginVisible = matchesSettingsQuery(query, pluginTitle, pluginSubtitle)
-    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible
+    val worktreeVisible = matchesSettingsQuery(query, worktreeTitle, worktreeSubtitle)
+    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible
     val languageVisible = matchesSettingsQuery(query, languageTitle, languageValue)
     val visibleThemeModes = ThemeMode.entries.filter { mode ->
         matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
@@ -416,6 +420,14 @@ fun SettingsScreen(
                             title = pluginTitle,
                             subtitle = pluginSubtitle,
                             onClick = onPlugins,
+                        )
+                    }
+                    if (worktreeVisible) {
+                        SettingsRow(
+                            glyph = Glyph.GitBranch,
+                            title = worktreeTitle,
+                            subtitle = worktreeSubtitle,
+                            onClick = onWorktrees,
                         )
                     }
                 }

@@ -150,6 +150,37 @@ data class PluginsResponse(
 )
 
 /**
+ * One project known to the engine (`GET /api/project`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/project.ts`): `Project.Info` is
+ * `{ id, canonical, vcs?, name?, icon?, commands?, time, sandboxes }`.
+ * Only the fields the UI shows are modelled; the rest are dropped by
+ * `ignoreUnknownKeys`.
+ */
+@Serializable
+data class ProjectInfo(
+    val id: String,
+    val canonical: String,
+    val name: String? = null,
+    val vcs: String? = null,
+)
+
+/**
+ * One saved worktree (`GET /api/worktree`).
+ *
+ * Shape verified against the engine fork source at pin 92b2ca0
+ * (`packages/schema/src/worktree.ts`): the list answers
+ * `Worktree.Directory` — `{ directory, strategy? }` — where `strategy`
+ * is the discovery strategy that found it, when the engine records one.
+ */
+@Serializable
+data class WorktreeDirectory(
+    val directory: String,
+    val strategy: String? = null,
+)
+
+/**
  * Body of `POST /api/session/{id}/command`.
  *
  * `name` selects the command; `text` is whatever followed it on the command line. The
