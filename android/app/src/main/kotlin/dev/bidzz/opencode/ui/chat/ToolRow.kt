@@ -72,6 +72,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
  * The tool trace for one message, presented as a high-tech terminal console execution.
@@ -96,6 +97,11 @@ fun ToolTrace(
      * per-tool startedAt/completedAt timestamps (the engine sends none
      * today, so no duration is invented here). */
     toolDurations: Map<String, Long> = emptyMap(),
+    /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
+     * item 5): the same client-side stamps the durations come from, so a
+     * still-running step can show a live elapsed time instead of no
+     * duration at all. A tool the client never saw live has no entry. */
+    toolStartedAtMillis: Map<String, Long> = emptyMap(),
 ) {
     if (tools.isEmpty()) return
 
@@ -366,6 +372,7 @@ fun ToolTrace(
                         isFirst = index == 0,
                         isLast = index == filteredVisible.lastIndex,
                         durationMillis = toolDurations[call.id],
+                        startedAtMillis = toolStartedAtMillis[call.id],
                     )
                 }
             }
@@ -450,6 +457,10 @@ fun ToolStep(
      * the chip — a duration is only shown from real per-tool timestamps,
      * never estimated from the trace start time. */
     durationMillis: Long? = null,
+    /** Client-side start stamp for this step, epoch millis (Fase 2,
+     * item 5). Only read while the step is still running, to show a live
+     * elapsed time; a finished step uses [durationMillis] instead. */
+    startedAtMillis: Long? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -459,6 +470,19 @@ fun ToolStep(
     // A step that is running right now starts expanded, so its live output
     // is visible without a tap; a finished step still starts collapsed.
     var open by rememberSaveable(call.id) { mutableStateOf(active) }
+
+    // Live elapsed clock for a running step (Fase 2, item 5): ticks once a
+    // second while the step runs, and stops with it — the infinite loop
+    // only exists while active, so nothing ticks on a finished turn.
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(active, startedAtMillis) {
+        if (active && startedAtMillis != null) {
+            while (isActive) {
+                nowMillis = System.currentTimeMillis()
+                delay(1000)
+            }
+        }
+    }
 
     // A step that starts running after it was composed (pending → running)
     // opens too. Never force one closed: a user-opened step stays open.
@@ -826,7 +850,22 @@ fun ToolStep(
                         // Duration chip (finding 20): only when the caller
                         // knows the real per-step duration. A finished step
                         // without one shows no chip rather than a guess.
-                        if (durationMillis != null && !active) {
+                        // A running step shows a live elapsed time instead
+                        // (Fase 2, item 5): same chip, activity colour, so
+                        // "how long has this been running" is answered
+                        // while it runs, not only after it finishes.
+                        if (active && startedAtMillis != null) {
+                            Text(
+                                text = formatStepDuration(liveElapsedMillis(startedAtMillis, nowMillis)),
+                                style = OpenCodeTypography.caption.copy(
+                                    fontFamily = OpenCodeTypography.mono,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Normal,
+                                ),
+                                color = colors.activity,
+                                maxLines = 1,
+                            )
+                        } else if (durationMillis != null && !active) {
                             Text(
                                 text = formatStepDuration(durationMillis),
                                 style = OpenCodeTypography.caption.copy(
@@ -1434,6 +1473,10 @@ fun computeDiffHunks(oldText: String, newText: String): List<DiffHunk> {
 /** "350ms" under a second, "1.2s" above it — the same shape as the turn footer. */
 internal fun formatStepDuration(millis: Long): String =
     if (millis < 1000) "${millis}ms" else "${millis / 1000}.${(millis % 1000) / 100}s"
+
+/** Elapsed time of a running step, never negative — a clock that jumped backwards must not show "-3ms". */
+internal fun liveElapsedMillis(startedAtMillis: Long, nowMillis: Long): Long =
+    maxOf(0L, nowMillis - startedAtMillis)
 
 /**
  * Concise unified diff for one edit/write step: the same added/removed

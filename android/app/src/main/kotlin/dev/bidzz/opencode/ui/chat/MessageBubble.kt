@@ -190,6 +190,10 @@ fun MessageBubble(
      * finding 20): client-side stamps from the ViewModel. Empty until a
      * tool is seen live; a finished step without one shows no duration. */
     toolDurations: Map<String, Long> = emptyMap(),
+    /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
+     * item 5): the same client-side stamps the durations come from, so a
+     * still-running step can show a live elapsed time. */
+    toolStartedAtMillis: Map<String, Long> = emptyMap(),
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -383,6 +387,7 @@ fun MessageBubble(
                                 streaming = part.streaming,
                                 startedAtMillis = toolsStartedAtMillis,
                                 toolDurations = toolDurations,
+                                toolStartedAtMillis = toolStartedAtMillis,
                                 modifier = Modifier.padding(bottom = spacing.sm),
                             )
                         }
