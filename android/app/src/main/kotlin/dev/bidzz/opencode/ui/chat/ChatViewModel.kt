@@ -473,13 +473,25 @@ class ChatViewModel(
     fun selectAgent(agentID: String) {
         val sessionID = _state.value.sessionID
         val h = handle ?: return
+        // Optimistic: the chip moves at once. If the engine rejects the
+        // switch the chip must move back (item 23) — otherwise it shows an
+        // agent the prompt never runs on. Only revert when the user is still
+        // on this session showing the rejected agent; a newer pick wins.
+        val previous = _state.value.activeAgent
         _state.value = _state.value.copy(activeAgent = agentID)
         // A mode chosen before the first message has no session to bind to yet;
         // createSession picks it up from activeAgent when the session is made.
         if (sessionID == null) return
         viewModelScope.launch {
             when (val result = h.agents.set(sessionID, agentID)) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
+                is ApiResult.Failure -> {
+                    val current = _state.value
+                    _state.value = if (current.sessionID == sessionID && current.activeAgent == agentID) {
+                        current.copy(activeAgent = previous, failure = result)
+                    } else {
+                        current.copy(failure = result)
+                    }
+                }
                 is ApiResult.Success -> Unit
             }
         }
@@ -489,11 +501,19 @@ class ChatViewModel(
     fun selectModel(model: dev.bidzz.opencode.core.api.dto.ModelRef) {
         val sessionID = _state.value.sessionID
         val h = handle ?: return
+        val previous = _state.value.activeModel
         _state.value = _state.value.copy(activeModel = model)
         if (sessionID == null) return
         viewModelScope.launch {
             when (val result = h.sessions.setModel(sessionID, model)) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
+                is ApiResult.Failure -> {
+                    val current = _state.value
+                    _state.value = if (current.sessionID == sessionID && current.activeModel == model) {
+                        current.copy(activeModel = previous, failure = result)
+                    } else {
+                        current.copy(failure = result)
+                    }
+                }
                 is ApiResult.Success -> Unit
             }
         }
@@ -1018,9 +1038,11 @@ class ChatViewModel(
         // the engine and could clobber the session's real model/agent.
         // NOTE: agent sync reads SessionInfo.agent, which the engine returns
         // in Session.Info.agent (docs/API-REFERENCE.md) — no new endpoint.
+        // A null model/agent clears the chip (item 23): keeping the previous
+        // session's value would show a model this session never runs on.
         _state.value = _state.value.copy(
-            activeModel = session.model ?: _state.value.activeModel,
-            activeAgent = session.agent ?: _state.value.activeAgent,
+            activeModel = session.model,
+            activeAgent = session.agent,
         )
         openSessionById(session.id)
     }
@@ -1047,10 +1069,19 @@ class ChatViewModel(
         val h = handle ?: return
         viewModelScope.launch {
             when (val result = h.sessions.get(sessionID)) {
-                is ApiResult.Success -> _state.value = _state.value.copy(
-                    activeModel = result.value.model ?: _state.value.activeModel,
-                    activeAgent = result.value.agent ?: _state.value.activeAgent,
-                )
+                is ApiResult.Success -> {
+                    // Guarded by the repository's attached session (item 23),
+                    // not the UI state's: opening A then B fast must not let
+                    // A's late GET overwrite B's chip. The repository sets
+                    // its session id synchronously in open(), so this holds
+                    // even before the collector's first emission.
+                    if (repository?.state?.value?.sessionID == sessionID) {
+                        _state.value = _state.value.copy(
+                            activeModel = result.value.model,
+                            activeAgent = result.value.agent,
+                        )
+                    }
+                }
                 is ApiResult.Failure -> Unit
             }
         }
