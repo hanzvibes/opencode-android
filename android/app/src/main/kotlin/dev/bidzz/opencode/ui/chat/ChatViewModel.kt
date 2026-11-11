@@ -122,6 +122,13 @@ data class QueuedPrompt(
     val fullText: String,
     /** What the user typed, for prompt history (never the attachment blocks). */
     val typedText: String,
+    /**
+     * The files baked into [fullText]. They are carried so the queue can
+     * give them back as chips when the engine dies (audit-70 13-F3) instead
+     * of losing the file content with the baked block. The drain sends
+     * [fullText] directly, so these are never baked a second time.
+     */
+    val attachments: List<AttachedFile> = emptyList(),
 )
 
 /** What the error banner's Retry button does for the current failure. */
@@ -278,10 +285,25 @@ class ChatViewModel(
                     // words: the engine dying must not throw them away
                     // (item 8). They go back into the composer — after
                     // whatever the user typed since — with a notice, instead
-                    // of vanishing with the queue.
-                    val returned = _state.value.queuedPrompts
-                        .map { it.typedText.ifBlank { it.fullText } }
-                        .filter { it.isNotBlank() }
+                    // of vanishing with the queue. Their attachments come
+                    // back as chips too: the queued entry carries the files
+                    // baked into its fullText, and returning only the typed
+                    // text would throw the file content away (audit-70 13-F3).
+                    // An attachment-only entry has no typed text, so its
+                    // draft part is empty — the chips carry the content, and
+                    // re-baking the fullText block as well would duplicate it.
+                    val queued = _state.value.queuedPrompts
+                    val returned = queued.map {
+                        when {
+                            it.typedText.isNotBlank() -> it.typedText
+                            it.attachments.isEmpty() -> it.fullText
+                            else -> ""
+                        }
+                    }.filter { it.isNotBlank() }
+                    val returnedAttachments = queued.flatMap { it.attachments }
+                        .distinctBy { it.id }
+                    val anythingReturned = returned.isNotEmpty() ||
+                        returnedAttachments.isNotEmpty()
                     val draft = _state.value.draft
                     val restoredDraft = when {
                         returned.isEmpty() -> draft
@@ -297,6 +319,8 @@ class ChatViewModel(
                         stopping = false,
                         queuedPrompts = emptyList(),
                         draft = restoredDraft,
+                        pendingAttachments = (returnedAttachments +
+                            _state.value.pendingAttachments).distinctBy { it.id },
                         editingMessageId = null,
                         // The engine is gone, so a prompt it was waiting on
                         // is dead too (item 22): leaving it would show
@@ -307,7 +331,7 @@ class ChatViewModel(
                         permissionReplyFailed = false,
                         retryKind = RetryKind.NONE,
                         failureKey = when {
-                            returned.isNotEmpty() -> R.string.chat_queued_returned
+                            anythingReturned -> R.string.chat_queued_returned
                             status.state == EngineState.FAILED -> R.string.error_engine_not_running
                             else -> null
                         },
@@ -740,7 +764,7 @@ class ChatViewModel(
         // user typed (audit-70 13-F1). The files stay pending too: they were
         // never baked anywhere.
         if (_state.value.busy || sendInFlight) {
-            if (queuePrompt(full, typed)) {
+            if (queuePrompt(full, typed, attachments)) {
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
                 clearDraft()
             }
@@ -762,13 +786,17 @@ class ChatViewModel(
      * into the queued text clear them, and callers that did not (a resend,
      * a question answer) leave them pending for the message being typed.
      */
-    private fun queuePrompt(fullText: String, typedText: String): Boolean {
+    private fun queuePrompt(
+        fullText: String,
+        typedText: String,
+        attachments: List<AttachedFile> = emptyList(),
+    ): Boolean {
         val current = _state.value.queuedPrompts
         val duplicate = fullText == _state.value.lastSentText ||
             current.lastOrNull()?.fullText == fullText
         if (duplicate) return false
         _state.value = _state.value.copy(
-            queuedPrompts = current + QueuedPrompt(fullText, typedText),
+            queuedPrompts = current + QueuedPrompt(fullText, typedText, attachments),
         )
         return true
     }
@@ -901,7 +929,7 @@ class ChatViewModel(
         val attachments = _state.value.pendingAttachments
         val full = buildMessageWithAttachments(text, attachments)
         if (_state.value.busy || sendInFlight) {
-            if (queuePrompt(full, text)) {
+            if (queuePrompt(full, text, attachments)) {
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
                 draftBeforeEdit = null
                 _state.value = _state.value.copy(editingMessageId = null)
