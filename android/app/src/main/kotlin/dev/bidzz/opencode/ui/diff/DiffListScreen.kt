@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.diff
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.RowDivider
+import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.files.FileTypeBadge
 import dev.bidzz.opencode.ui.files.FileTypes
@@ -116,6 +118,7 @@ fun DiffListScreen(
                             isFirst = index == 0,
                             isLast = index == filteredList.lastIndex,
                             onClick = { onOpen(entry.file) },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -227,8 +230,11 @@ private fun ChangedFileCardItem(
     isFirst: Boolean,
     isLast: Boolean,
     onClick: () -> Unit,
+    /** Carries LazyColumn placement animation (animateItem) from the list. */
+    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val r = OpenCodeTheme.tokens.radius.md
 
@@ -243,9 +249,13 @@ private fun ChangedFileCardItem(
     val name = entry.file.substringAfterLast('/')
     val fileInfo = remember(entry.file) { FileTypes.resolve(entry.file) }
 
+    // Animation C: shared press feedback on the whole file card; the
+    // interaction source is shared with the row's clickable below.
+    val cardPressSource = remember { MutableInteractionSource() }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .pressScale(motion, cardPressSource)
             .clip(shape)
             .background(colors.surface),
     ) {
@@ -254,7 +264,11 @@ private fun ChangedFileCardItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
-                .clickable(role = Role.Button, onClick = onClick)
+                .clickable(
+                    interactionSource = cardPressSource,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
                 .padding(horizontal = spacing.md, vertical = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {

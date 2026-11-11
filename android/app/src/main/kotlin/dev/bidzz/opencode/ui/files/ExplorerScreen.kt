@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -63,6 +64,7 @@ import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.RowDivider
+import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
 import dev.bidzz.opencode.ui.message
@@ -307,6 +309,7 @@ private fun ExplorerListContent(
                     isLast = index == filteredRows.lastIndex,
                     selected = row.path == selectedFilePath,
                     onClick = { onOpenRow(row) },
+                    modifier = Modifier.animateItem(),
                 )
             }
         }
@@ -331,6 +334,7 @@ private fun QuickOpenPalette(
     onRetry: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
@@ -510,11 +514,19 @@ private fun QuickOpenPalette(
                     itemsIndexed(results, key = { _, row -> row.path }) { rowIndex, row ->
                         val fileInfo = remember(row.name) { FileTypes.resolve(row.name) }
                         val isSelected = rowIndex == selectedIndex
+                        // Animation C: shared press feedback on the row.
+                        val rowPressSource = remember { MutableInteractionSource() }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .animateItem()
+                                .pressScale(motion, rowPressSource)
                                 .background(if (isSelected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
-                                .clickable(role = Role.Button, onClick = { onPick(row) })
+                                .clickable(
+                                    interactionSource = rowPressSource,
+                                    role = Role.Button,
+                                    onClick = { onPick(row) },
+                                )
                                 .padding(horizontal = spacing.md, vertical = spacing.sm),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -672,8 +684,11 @@ private fun FileRowItem(
     isLast: Boolean,
     onClick: () -> Unit,
     selected: Boolean = false,
+    /** Carries LazyColumn placement animation (animateItem) from the list. */
+    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val r = OpenCodeTheme.tokens.radius.md
 
@@ -688,9 +703,13 @@ private fun FileRowItem(
         FileTypes.resolve(row.name, row.isDirectory)
     }
 
+    // Animation C: shared press feedback on the whole file card; the
+    // interaction source is shared with the row's clickable below.
+    val rowPressSource = remember { MutableInteractionSource() }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .pressScale(motion, rowPressSource)
             .clip(shape)
             .background(if (selected) colors.accent.copy(alpha = 0.12f) else colors.surface),
     ) {
@@ -699,7 +718,11 @@ private fun FileRowItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 52.dp)
-                .clickable(role = Role.Button, onClick = onClick)
+                .clickable(
+                    interactionSource = rowPressSource,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
                 .padding(horizontal = spacing.md, vertical = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {

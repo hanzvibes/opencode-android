@@ -59,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
@@ -238,12 +239,47 @@ fun MessageBubble(
                 bottomEnd = radius.xs,
             )
             Column(horizontalAlignment = Alignment.End) {
+                // White B: the bubble stays neutral (userBubble is the
+                // raised surface in both themes, Phase 1 §7 — never blue),
+                // so on a #F9F9FA page a white bubble reads as a bubble
+                // by edge + shadow, not colour: the whiteCard treatment
+                // (card shadow + 1dp cardBorder, ui/Cards.kt), applied
+                // with this bubble's own asymmetric shape so the tail
+                // corner survives — whiteCard() itself would force a
+                // symmetric 16dp radius. Dark keeps the flat hairline
+                // edge with no shadow, exactly like whiteCard().
+                // Text stays onUserBubble (onSurface) on the white.
+                val cardShadow = OpenCodeTheme.tokens.shadow.card
+                val userBubbleEdge: Modifier = if (colors.isDark) {
+                    Modifier
+                        .clip(userBubbleShape)
+                        .background(colors.userBubble)
+                        .border(
+                            OpenCodeTheme.tokens.dimensions.hairline,
+                            colors.hairline,
+                            userBubbleShape,
+                        )
+                } else {
+                    Modifier
+                        .shadow(
+                            elevation = cardShadow.elevation,
+                            shape = userBubbleShape,
+                            ambientColor = cardShadow.ambientColor,
+                            spotColor = cardShadow.spotColor,
+                        )
+                        .clip(userBubbleShape)
+                        .background(colors.userBubble)
+                        .border(
+                            OpenCodeTheme.tokens.shadow.cardBorderWidth,
+                            colors.cardBorder,
+                            userBubbleShape,
+                        )
+                }
                 Box(
                     modifier = Modifier
                         .padding(start = dims.minTouchTarget)
                         .widthIn(max = maxBubbleWidth)
-                        .clip(userBubbleShape)
-                        .background(colors.userBubble)
+                        .then(userBubbleEdge)
                         .padding(horizontal = spacing.lg, vertical = spacing.md - 2.dp),
                 ) {
                     // The bubble is neutral now (surfaceRaised, Phase 1 §7),
@@ -476,7 +512,8 @@ fun MessageBubble(
                         if (part.markdown.isNotBlank()) {
                             AnimatedVisibility(
                                 visible = true,
-                                enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                                enter = fadeIn(OpenCodeTheme.tokens.motion.tweenStandard()) +
+                                    expandVertically(OpenCodeTheme.tokens.motion.tweenStandard()),
                                 modifier = Modifier.padding(bottom = spacing.sm),
                             ) {
                                 MarkdownText(
@@ -742,8 +779,8 @@ fun ThinkingDisclosure(
         // Collapsible reasoning text drawer
         AnimatedVisibility(
             visible = isExpanded && hasContent,
-            enter = fadeIn(tween(180)) + expandVertically(tween(200)),
-            exit = fadeOut(tween(150)) + shrinkVertically(tween(180)),
+            enter = fadeIn(motion.tweenStandard()) + expandVertically(motion.tweenStandard()),
+            exit = fadeOut(motion.tweenQuick()) + shrinkVertically(motion.tweenStandard()),
         ) {
             Box(
                 modifier = Modifier

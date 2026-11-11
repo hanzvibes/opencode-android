@@ -1,8 +1,14 @@
 package dev.bidzz.opencode.ui.sessions
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.rememberSharedContentState
+import androidx.compose.animation.sharedBounds
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,9 +46,11 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.sessionTitleSharedKey
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.RowDivider
+import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
 import dev.bidzz.opencode.ui.message
@@ -59,6 +67,7 @@ import dev.bidzz.opencode.ui.message
  * and search falls back to matching titles.
  */
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun SessionListScreen(
     state: SessionListUiState,
     onBack: () -> Unit,
@@ -69,6 +78,13 @@ fun SessionListScreen(
     onDelete: (SessionRow) -> Unit = {},
     onTogglePin: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
+    /**
+     * Animation C shared-element pilot: the scopes for the session-title
+     * flight to the chat header. Null disables the flight (the expanded
+     * list-detail pane passes null — see OpenCodeApp).
+     */
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     ScreenScaffold(
         title = stringResource(R.string.history_title),
@@ -87,6 +103,8 @@ fun SessionListScreen(
             onDelete = onDelete,
             onTogglePin = onTogglePin,
             details = details,
+            sharedTransitionScope = sharedTransitionScope,
+            animatedVisibilityScope = animatedVisibilityScope,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -102,6 +120,7 @@ fun SessionListScreen(
  * null (the full screen) highlights nothing.
  */
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun SessionListPane(
     state: SessionListUiState,
     onOpen: (SessionRow) -> Unit,
@@ -111,6 +130,13 @@ fun SessionListPane(
     onTogglePin: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     selectedSessionId: String? = null,
+    /**
+     * Animation C shared-element pilot: the scopes for the session-title
+     * flight to the chat header. Null disables the flight (the expanded
+     * list-detail pane passes null — see OpenCodeApp).
+     */
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     val spacing = OpenCodeTheme.tokens.spacing
@@ -266,6 +292,7 @@ fun SessionListPane(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .animateItem()
                                     .padding(
                                         top = spacing.md,
                                         bottom = spacing.xs,
@@ -292,6 +319,7 @@ fun SessionListPane(
                         itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
                             SessionRowItem(
                                 row = row,
+                                modifier = Modifier.animateItem(),
                                 selected = row.id == selectedSessionId,
                                 detail = details[row.id],
                                 showDirectory = state.filterDirectory == null,
@@ -301,6 +329,8 @@ fun SessionListPane(
                                 onPinToggle = { onTogglePin(row) },
                                 onRenameClick = { sessionToRename = row },
                                 onDeleteClick = { sessionToDelete = row },
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
                             )
                         }
                     }
@@ -322,6 +352,7 @@ fun SessionAge.label(): String = when (unit) {
 
 /** One session. First and last round the card's corners; the rest are square. */
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 private fun SessionRowItem(
     row: SessionRow,
     showDirectory: Boolean,
@@ -334,8 +365,18 @@ private fun SessionRowItem(
     detail: SessionDetail? = null,
     /** Accent background for the session open in the detail pane beside the list. */
     selected: Boolean = false,
+    /** Carries LazyColumn placement animation (animateItem) from the list. */
+    modifier: Modifier = Modifier,
+    /**
+     * Animation C shared-element pilot: the scopes for the session-title
+     * flight to the chat header. Null disables the flight (the expanded
+     * list-detail pane passes null — see OpenCodeApp).
+     */
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val colors = OpenCodeTheme.colors
+    val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val r = OpenCodeTheme.tokens.radius.lg
     val shape = RoundedCornerShape(
@@ -356,9 +397,53 @@ private fun SessionRowItem(
     val meta = listOfNotNull(detail?.model, detail?.status, age, directory, row.cost, tokenLabel).joinToString(" · ")
     val preview = detail?.preview?.trim()?.takeIf { it.isNotEmpty() }
 
+    // Animation C shared-element pilot: this title is the origin side of
+    // the flight to the chat header. sharedBounds, not sharedElement —
+    // the two sides differ in size and style, so only the bounds fly.
+    // Both scopes must be present: the expanded list-detail pane passes
+    // null, because the detail chat beside it shows the same title at
+    // the same time and a shared key may only exist once per transition.
+    val sharedTitleModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+        with(sharedTransitionScope) {
+            Modifier.sharedBounds(
+                rememberSharedContentState(key = sessionTitleSharedKey(row.id)),
+                animatedVisibilityScope = animatedVisibilityScope,
+            )
+        }
+    } else {
+        Modifier
+    }
+
+    // Animation C: shared press feedback on the whole row card; the
+    // interaction source is shared with the row's clickable below.
+    val rowPressSource = remember { MutableInteractionSource() }
+    // White B: rows in a group form one floating card — the shadow is
+    // drawn per row with the grouped shape, but siblings paint their
+    // opaque white background over each neighbour's shadow, so only the
+    // group's outer edges show it. Light only; dark stays flat.
+    // (Literal whiteCard() would force a symmetric 16dp radius and
+    // break the grouped first/last corner shape, so the equivalent
+    // is applied here with the row's own shape.)
+    val rowCardModifier = if (!colors.isDark) {
+        val shadow = OpenCodeTheme.tokens.shadow.card
+        Modifier
+            .shadow(
+                elevation = shadow.elevation,
+                shape = shape,
+                ambientColor = shadow.ambientColor,
+                spotColor = shadow.spotColor,
+            )
+            .border(
+                OpenCodeTheme.tokens.shadow.cardBorderWidth,
+                colors.cardBorder,
+                shape,
+            )
+    } else Modifier
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
+            .pressScale(motion, rowPressSource)
+            .then(rowCardModifier)
             .clip(shape)
             .background(if (selected) colors.accent.copy(alpha = 0.12f) else colors.surface)
             .then(
@@ -372,7 +457,11 @@ private fun SessionRowItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
-                .clickable(role = Role.Button, onClick = onClick)
+                .clickable(
+                    interactionSource = rowPressSource,
+                    role = Role.Button,
+                    onClick = onClick,
+                )
                 .padding(horizontal = spacing.md, vertical = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -395,7 +484,7 @@ private fun SessionRowItem(
                         color = if (selected) colors.accentText else colors.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
+                        modifier = Modifier.weight(1f, fill = false).then(sharedTitleModifier),
                     )
                 }
                 if (meta.isNotEmpty()) {

@@ -4,6 +4,11 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.rememberSharedContentState
+import androidx.compose.animation.sharedBounds
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -147,6 +152,7 @@ import dev.bidzz.opencode.ui.sessions.formatCompactTokens
 import dev.bidzz.opencode.ui.sessions.groupSessions
 import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
+import dev.bidzz.opencode.ui.sessionTitleSharedKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -163,6 +169,7 @@ import kotlinx.coroutines.withContext
  * there are no cards, gradients or shadows, per the anti-slop rules in `plan.md` §12.
  */
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun ChatScreen(
     state: ChatUiState,
     sessions: List<SessionRow>,
@@ -279,6 +286,13 @@ fun ChatScreen(
      * and no modal drawer, just the conversation.
      */
     showSidebar: Boolean = true,
+    /**
+     * Animation C shared-element pilot: the scopes for the session-title
+     * flight from the session list. Null disables the flight (the
+     * expanded sessions detail pane passes null — see OpenCodeApp).
+     */
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -314,6 +328,10 @@ fun ChatScreen(
             last.offset + last.size <= info.viewportEndOffset + tolerancePx
         }
     }
+
+    // Animation C: a new message enters with a 24dp upward slide
+    // (resolved once here — a transitionSpec cannot read LocalDensity).
+    val messageEntrySlidePx = with(density) { 24.dp.roundToPx() }
 
     var lastReadMessageCount by remember { mutableStateOf(state.messages.size) }
 
@@ -765,6 +783,11 @@ fun ChatScreen(
                 // conversation this is — not just which folder it is in.
                 sessionTitle = sessions.firstOrNull { it.id == state.sessionID }
                     ?.title?.takeIf { it.isNotBlank() },
+                // Shared-element pilot: the header side of the flight.
+                // The id (not the title) is the key — see ChatHeader.
+                sessionId = state.sessionID,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
                 workspacePath = state.workspacePath,
                 engineState = state.engineState,
                 busy = state.busy,
@@ -887,7 +910,7 @@ fun ChatScreen(
                             if (state.hasMoreOlder) {
                                 item(key = "load-earlier") {
                                     Box(
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier.fillMaxWidth().animateItem(),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Text(
@@ -935,128 +958,144 @@ fun ChatScreen(
                                     else -> spacing.lg
                                 }
 
-                                Column(
-                                    modifier = Modifier
-                                        .padding(top = topSpacing)
-                                        .animateItem(),
+                                // Animation C: a message enters with a
+                                // fade + 24dp slide, staggered so the
+                                // newest turn never waits (delay 0) and
+                                // older visible turns cascade in behind
+                                // it, capped at 150ms. Slide/fade change
+                                // no layout size, so the bottom-pin scroll
+                                // math is untouched.
+                                val entryDelay = messageEntryDelayMillis(index, state.messages.lastIndex)
+                                AnimatedVisibility(
+                                    visible = true,
+                                    enter = fadeIn(
+                                        animationSpec = motion.tweenStandard(delayMillis = entryDelay),
+                                    ) + slideInVertically(
+                                        animationSpec = motion.tweenStandard(delayMillis = entryDelay),
+                                    ) { messageEntrySlidePx },
+                                    modifier = Modifier.animateItem(),
                                 ) {
-                                    // Date divider (audit C-A): a new day in
-                                    // the transcript gets a labelled hairline
-                                    // ("Today", "Yesterday", or the date).
-                                    // Messages without an engine timestamp
-                                    // never start one — a divider must come
-                                    // from real dates, not from message order.
-                                    val createdAt = message.createdAtMillis
-                                    val prevCreatedAt = prevMessage?.createdAtMillis
-                                    val showDateDivider = createdAt != null &&
-                                        (prevCreatedAt == null || !isSameDay(prevCreatedAt, createdAt))
-                                    if (showDateDivider && createdAt != null) {
-                                        // Fades in on entry instead of
-                                        // popping in with the message.
-                                        androidx.compose.animation.AnimatedVisibility(
-                                            visible = true,
-                                            enter = fadeIn(
-                                                animationSpec = tween(motion.standard),
-                                            ),
-                                        ) {
-                                            DateDivider(
-                                                millis = createdAt,
+                                    Column(
+                                        modifier = Modifier.padding(top = topSpacing),
+                                    ) {
+                                        // Date divider (audit C-A): a new day in
+                                        // the transcript gets a labelled hairline
+                                        // ("Today", "Yesterday", or the date).
+                                        // Messages without an engine timestamp
+                                        // never start one — a divider must come
+                                        // from real dates, not from message order.
+                                        val createdAt = message.createdAtMillis
+                                        val prevCreatedAt = prevMessage?.createdAtMillis
+                                        val showDateDivider = createdAt != null &&
+                                            (prevCreatedAt == null || !isSameDay(prevCreatedAt, createdAt))
+                                        if (showDateDivider && createdAt != null) {
+                                            // Fades in on entry instead of
+                                            // popping in with the message.
+                                            androidx.compose.animation.AnimatedVisibility(
+                                                visible = true,
+                                                enter = fadeIn(
+                                                    animationSpec = tween(motion.standard),
+                                                ),
+                                            ) {
+                                                DateDivider(
+                                                    millis = createdAt,
+                                                    modifier = Modifier.padding(bottom = spacing.sm),
+                                                )
+                                            }
+                                        }
+                                        // "New messages" divider (audit 15):
+                                        // the same hairline language as the date
+                                        // divider, marking the first message the
+                                        // reader has not seen yet.
+                                        if (index == firstUnreadIndex) {
+                                            NewMessagesDivider(
                                                 modifier = Modifier.padding(bottom = spacing.sm),
                                             )
                                         }
-                                    }
-                                    // "New messages" divider (audit 15):
-                                    // the same hairline language as the date
-                                    // divider, marking the first message the
-                                    // reader has not seen yet.
-                                    if (index == firstUnreadIndex) {
-                                        NewMessagesDivider(
-                                            modifier = Modifier.padding(bottom = spacing.sm),
+                                        // Hairline turn divider above the first part
+                                        // of a new assistant turn (not the first
+                                        // message). No card, no background — the
+                                        // assistant still has no bubble, per plan.md §12.
+                                        if (showProvenance && index > 0) {
+                                            HairlineSeparator(
+                                                modifier = Modifier.padding(bottom = spacing.sm),
+                                            )
+                                        }
+                                        MessageBubble(
+                                            role = message.role,
+                                            markdown = message.text,
+                                            streaming = message.streaming,
+                                            tools = message.tools,
+                                            provenance = provenanceLabel(
+                                                message.agent,
+                                                message.model,
+                                                state.agents,
+                                                state.models,
+                                            ),
+                                            showProvenance = showProvenance,
+                                            model = message.model,
+                                            reasoning = message.reasoning,
+                                            parts = message.parts,
+                                            // Per-turn thinking time (Phase 2,
+                                            // finding 7): a finished turn shows
+                                            // its own stored seconds; a streaming
+                                            // turn falls back to the live run
+                                            // timer; an idle turn shows nothing —
+                                            // the run clock (0 when idle) is never
+                                            // passed to every turn.
+                                            thinkingElapsedSeconds = message.thinkingSeconds
+                                                ?: if (message.streaming) busyElapsedSeconds else null,
+                                            // Turn footer (Phase 2, finding 6)
+                                            // and per-tool durations (finding 20).
+                                            usageTokens = message.usageTokens,
+                                            usageCostUsd = message.usageCostUsd,
+                                            turnDurationMs = message.turnDurationMs,
+                                            stopReason = message.stopReason,
+                                            toolDurations = message.toolDurations,
+                                            // Live elapsed time for a running step
+                                            // (Fase 2, item 5): the start stamps
+                                            // behind the finished-step durations.
+                                            toolStartedAtMillis = message.toolStartedAtMillis,
+                                            // Edit/resend (Phase 2, finding 3):
+                                            // user bubbles only.
+                                            onEdit = if (message.role == Role.USER) {
+                                                { onEditMessage(message.id, message.text) }
+                                            } else {
+                                                null
+                                            },
+                                            onResend = if (message.role == Role.USER) {
+                                                { onResendMessage(message.id) }
+                                            } else {
+                                                null
+                                            },
+                                            // Delivered (C-B): a user message counts
+                                            // as answered once any assistant turn
+                                            // appears after it — a local read
+                                            // receipt, not a server status.
+                                            delivered = message.role == Role.USER &&
+                                                state.messages.drop(index + 1).any { it.role == Role.ASSISTANT },
+                                            // Turn start time for the tool trace
+                                            // (C-C): the engine records no
+                                            // per-tool timestamps, so the trace
+                                            // shows when its turn started.
+                                            toolsStartedAtMillis = message.createdAtMillis,
+                                            // Opsi A: the turn's own clock time,
+                                            // beside its actions.
+                                            createdAtMillis = message.createdAtMillis,
+                                            // Quote into the composer (C-E): the
+                                            // quote is appended after the draft,
+                                            // never over it.
+                                            onQuote = { quote ->
+                                                val prefix = if (state.draft.isBlank()) "" else state.draft.trimEnd() + "\n"
+                                                onDraftChange(prefix + quote)
+                                            },
+                                            onAnswerQuestion = onAnswerQuestion,
+                                            workspacePath = state.workspacePath,
+                                            onOpenToolFile = onOpenToolFile,
+                                            onRequestDiffRevert = onRequestDiffRevert,
+                                            onSaveCode = onSaveCode,
                                         )
                                     }
-                                    // Hairline turn divider above the first part
-                                    // of a new assistant turn (not the first
-                                    // message). No card, no background — the
-                                    // assistant still has no bubble, per plan.md §12.
-                                    if (showProvenance && index > 0) {
-                                        HairlineSeparator(
-                                            modifier = Modifier.padding(bottom = spacing.sm),
-                                        )
-                                    }
-                                    MessageBubble(
-                                        role = message.role,
-                                        markdown = message.text,
-                                        streaming = message.streaming,
-                                        tools = message.tools,
-                                        provenance = provenanceLabel(
-                                            message.agent,
-                                            message.model,
-                                            state.agents,
-                                            state.models,
-                                        ),
-                                        showProvenance = showProvenance,
-                                        model = message.model,
-                                        reasoning = message.reasoning,
-                                        parts = message.parts,
-                                        // Per-turn thinking time (Phase 2,
-                                        // finding 7): a finished turn shows
-                                        // its own stored seconds; a streaming
-                                        // turn falls back to the live run
-                                        // timer; an idle turn shows nothing —
-                                        // the run clock (0 when idle) is never
-                                        // passed to every turn.
-                                        thinkingElapsedSeconds = message.thinkingSeconds
-                                            ?: if (message.streaming) busyElapsedSeconds else null,
-                                        // Turn footer (Phase 2, finding 6)
-                                        // and per-tool durations (finding 20).
-                                        usageTokens = message.usageTokens,
-                                        usageCostUsd = message.usageCostUsd,
-                                        turnDurationMs = message.turnDurationMs,
-                                        stopReason = message.stopReason,
-                                        toolDurations = message.toolDurations,
-                                        // Live elapsed time for a running step
-                                        // (Fase 2, item 5): the start stamps
-                                        // behind the finished-step durations.
-                                        toolStartedAtMillis = message.toolStartedAtMillis,
-                                        // Edit/resend (Phase 2, finding 3):
-                                        // user bubbles only.
-                                        onEdit = if (message.role == Role.USER) {
-                                            { onEditMessage(message.id, message.text) }
-                                        } else {
-                                            null
-                                        },
-                                        onResend = if (message.role == Role.USER) {
-                                            { onResendMessage(message.id) }
-                                        } else {
-                                            null
-                                        },
-                                        // Delivered (C-B): a user message counts
-                                        // as answered once any assistant turn
-                                        // appears after it — a local read
-                                        // receipt, not a server status.
-                                        delivered = message.role == Role.USER &&
-                                            state.messages.drop(index + 1).any { it.role == Role.ASSISTANT },
-                                        // Turn start time for the tool trace
-                                        // (C-C): the engine records no
-                                        // per-tool timestamps, so the trace
-                                        // shows when its turn started.
-                                        toolsStartedAtMillis = message.createdAtMillis,
-                                        // Opsi A: the turn's own clock time,
-                                        // beside its actions.
-                                        createdAtMillis = message.createdAtMillis,
-                                        // Quote into the composer (C-E): the
-                                        // quote is appended after the draft,
-                                        // never over it.
-                                        onQuote = { quote ->
-                                            val prefix = if (state.draft.isBlank()) "" else state.draft.trimEnd() + "\n"
-                                            onDraftChange(prefix + quote)
-                                        },
-                                        onAnswerQuestion = onAnswerQuestion,
-                                        workspacePath = state.workspacePath,
-                                        onOpenToolFile = onOpenToolFile,
-                                        onRequestDiffRevert = onRequestDiffRevert,
-                                        onSaveCode = onSaveCode,
-                                    )
                                 }
                             }
                             // Placeholder → answer transition. This slot stays
@@ -1107,8 +1146,8 @@ fun ChatScreen(
                         // Floating jump-to-bottom button with badge and smooth animation
                         androidx.compose.animation.AnimatedVisibility(
                             visible = !nearBottom,
-                            enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.85f, animationSpec = tween(180)) + slideInVertically(initialOffsetY = { it / 2 }, animationSpec = tween(180)),
-                            exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.85f, animationSpec = tween(150)) + slideOutVertically(targetOffsetY = { it / 2 }, animationSpec = tween(150)),
+                            enter = fadeIn(motion.tweenStandard()) + scaleIn(initialScale = 0.85f, animationSpec = motion.tweenStandard()) + slideInVertically(initialOffsetY = { it / 2 }, animationSpec = motion.tweenStandard()),
+                            exit = fadeOut(motion.tweenQuick()) + scaleOut(targetScale = 0.85f, animationSpec = motion.tweenQuick()) + slideOutVertically(targetOffsetY = { it / 2 }, animationSpec = motion.tweenQuick()),
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(end = spacing.lg, bottom = spacing.md),
@@ -1171,8 +1210,8 @@ fun ChatScreen(
                 ) {
                     androidx.compose.animation.AnimatedVisibility(
                         visible = state.pendingPermission != null,
-                        enter = fadeIn(tween(180)) + expandVertically(tween(180)),
-                        exit = fadeOut(tween(140)) + shrinkVertically(tween(140)),
+                        enter = fadeIn(motion.tweenStandard()) + expandVertically(motion.tweenStandard()),
+                        exit = fadeOut(motion.tweenQuick()) + shrinkVertically(motion.tweenStandard()),
                     ) {
                         state.pendingPermission?.let { request ->
                             PermissionPrompt(
@@ -1569,6 +1608,21 @@ private fun isSameDay(aMillis: Long, bMillis: Long): Boolean {
 }
 
 /**
+ * Entry stagger for transcript messages (Animation C): the delay before
+ * a message's fade + 24dp slide-in starts. Measured back from the newest
+ * message, so a just-arrived turn enters immediately (delay 0) while
+ * older visible turns cascade in behind it, one [stepMillis] apart.
+ * Capped at [maxDelayMillis] so a long history never makes the newest
+ * visible turns wait.
+ */
+internal fun messageEntryDelayMillis(
+    index: Int,
+    lastIndex: Int,
+    stepMillis: Int = 30,
+    maxDelayMillis: Int = 150,
+): Int = ((lastIndex - index).coerceAtLeast(0) * stepMillis).coerceAtMost(maxDelayMillis)
+
+/**
  * Text-safe status colour: WORKING reads [OpenCodeColors.accentText] in
  * light (accent #007AFF is only 4.02:1 as text), while READY / ERROR /
  * IDLE already are the dark AA text variants. Dots, fills, borders and
@@ -1904,6 +1958,7 @@ private fun ReconnectingIndicator(
  * the status chip collapsed to a dot: the dialog is one tap away.
  */
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun ChatHeader(
     title: String,
     engineState: dev.bidzz.opencode.core.engine.EngineState,
@@ -1917,6 +1972,15 @@ fun ChatHeader(
     branch: String? = null,
     isScrolled: Boolean = false,
     sessionTitle: String? = null,
+    /** The id behind [sessionTitle]: the shared-element key. Null while no session is open. */
+    sessionId: String? = null,
+    /**
+     * Animation C shared-element pilot: the scopes for the session-title
+     * flight from the session list. Null disables the flight (the
+     * expanded sessions detail pane passes null — see OpenCodeApp).
+     */
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     workspacePath: String? = null,
     models: List<dev.bidzz.opencode.core.api.dto.ModelInfo> = emptyList(),
     activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
@@ -1979,6 +2043,27 @@ fun ChatHeader(
         }
     }
 
+    // Animation C shared-element pilot: this title is the destination
+    // side of the flight from the session list. sharedBounds, not
+    // sharedElement — the two sides differ in size and style, so only
+    // the bounds fly. The key is the session id, never the title text:
+    // a rename must not break the match, and the row uses the same key.
+    // Computed unconditionally when the scopes are present (the key falls
+    // back to "" with no session open, when no title is rendered at all),
+    // so the remember call below never appears or disappears as the
+    // session loads. Both scopes null — the expanded sessions detail
+    // pane — disables the flight; see OpenCodeApp.
+    val sharedTitleModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+        with(sharedTransitionScope) {
+            Modifier.sharedBounds(
+                rememberSharedContentState(key = sessionTitleSharedKey(sessionId.orEmpty())),
+                animatedVisibilityScope = animatedVisibilityScope,
+            )
+        }
+    } else {
+        Modifier
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -2039,7 +2124,7 @@ fun ChatHeader(
                             color = colors.onSurfaceMuted,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).then(sharedTitleModifier),
                         )
                     }
                 }
@@ -4085,9 +4170,11 @@ private fun ActionableStarterCard(
     val isPressed by interactionSource.collectIsPressedAsState()
     val isHovered by interactionSource.collectIsHoveredAsState()
 
+    // Animation C shared press pattern (see pressScale): 0.97 on press,
+    // spring back on release with springResponsive.
     val cardScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.985f else 1f,
-        animationSpec = tween(durationMillis = 100),
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = OpenCodeTheme.tokens.motion.springResponsive(),
         label = "starterCardScale",
     )
 

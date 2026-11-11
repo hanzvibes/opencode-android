@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.chat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
@@ -191,8 +192,10 @@ fun Composer(
         animationSpec = motion.tweenQuick(),
         label = "composer_border_width",
     )
-    // Flat omnibar: no glow / shadow. Depth comes from the hairline border
-    // plus the accent focus ring (borderColor / borderWidth above) only.
+    // White B: the omnibar floats as a white card — the card shadow from
+    // tokens.shadow.card, keeping the flat 12dp omnibar shape (NOT
+    // whiteCard(), which would force a 16dp radius). Dark stays flat:
+    // no shadow, depth still comes from the hairline border only.
     // The background crossfades between the focused gradient and the solid
     // unfocused surface; multi-line growth eases on motion.springSmooth().
     Box(
@@ -200,6 +203,17 @@ fun Composer(
             .fillMaxWidth()
             .padding(horizontal = spacing.md, vertical = spacing.sm)
             .animateContentSize(motion.springSmooth())
+            .then(
+                if (!colors.isDark) {
+                    val shadow = OpenCodeTheme.tokens.shadow.card
+                    Modifier.shadow(
+                        elevation = shadow.elevation,
+                        shape = shape,
+                        ambientColor = shadow.ambientColor,
+                        spotColor = shadow.spotColor,
+                    )
+                } else Modifier
+            )
             .clip(shape)
             .border(borderWidth, borderColor, shape),
     ) {
@@ -1076,6 +1090,20 @@ private fun ActionButton(
             animationSpec = motion.tweenQuick(),
             label = "composer_action_icon",
         ) { state ->
+            // Animation C: the incoming icon pops in from 0.85 with a
+            // responsive spring on top of the crossfade, so Send → Stop
+            // (and back) reads as a swap, not a dissolve. Each state
+            // composes fresh inside Crossfade, so the pop re-runs on
+            // every swap and never on a plain recomposition.
+            val iconScale = remember { Animatable(0.85f) }
+            LaunchedEffect(state) { iconScale.animateTo(1f, motion.springResponsive()) }
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    scaleX = iconScale.value
+                    scaleY = iconScale.value
+                },
+                contentAlignment = Alignment.Center,
+            ) {
             when (state) {
                 ActionState.BUSY -> {
                     // 14dp, up from 11dp: the stop square was the
@@ -1103,6 +1131,7 @@ private fun ActionButton(
                         size = dims.iconMedium,
                     )
                 }
+            }
             }
         }
         }
