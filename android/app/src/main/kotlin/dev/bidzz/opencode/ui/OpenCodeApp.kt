@@ -611,7 +611,7 @@ private fun ChatDestination(
         onLoadBranches = chatViewModel::loadBranches,
         // Turn diff (Tier 2): only while a session is open — without one
         // there is no latest turn to diff, and the dialog hides the entry.
-        onTurnDiff = if (chatState.sessionID != null) { { screen = Screen.SessionDiff } } else null,
+        onTurnDiff = if (chatState.sessionID != null) { { onNavigate(Screen.SessionDiff) } } else null,
         onDismissError = chatViewModel::dismissError,
         onRetryError = chatViewModel::retryError,
         onLoadEarlier = chatViewModel::loadEarlier,
