@@ -29,7 +29,7 @@ class WorkspaceAgentsMdTest {
         val workspace = tempFolder.newFolder("project")
         assertTrue(WorkspaceAgentsMd.copyIfMissing(stream(), workspace))
         assertEquals("line one\nline two\n", File(workspace, "AGENTS.md").readText())
-        assertFalse(File(workspace, "AGENTS.md.tmp").exists())
+        assertTrue(workspace.listFiles().orEmpty().none { it.name.endsWith(".tmp") })
     }
 
     @Test
@@ -70,6 +70,71 @@ class WorkspaceAgentsMdTest {
         }
         assertFalse(WorkspaceAgentsMd.copyIfMissing(broken, workspace))
         assertFalse(File(workspace, "AGENTS.md").exists())
-        assertFalse(File(workspace, "AGENTS.md.tmp").exists())
+        assertTrue(workspace.listFiles().orEmpty().none { it.name.endsWith(".tmp") })
+    }
+
+    /**
+     * The seed used to write through a fixed `AGENTS.md.tmp`, truncating a
+     * user file of that name — or following a symlink of that name and
+     * overwriting its target (audit-70 42-F1). The scratch file is now
+     * uniquely named, so the user's file is not in the way at all.
+     */
+    @Test
+    fun `a pre-existing tmp file is never touched`() {
+        val workspace = tempFolder.newFolder("project")
+        File(workspace, "AGENTS.md.tmp").writeText("mine\n")
+        assertTrue(WorkspaceAgentsMd.copyIfMissing(stream(), workspace))
+        assertEquals("line one\nline two\n", File(workspace, "AGENTS.md").readText())
+        assertEquals("mine\n", File(workspace, "AGENTS.md.tmp").readText())
+    }
+
+    @Test
+    fun `a tmp symlink is never followed`() {
+        val workspace = tempFolder.newFolder("project")
+        val victim = File(workspace, "victim.txt").apply { writeText("do not touch\n") }
+        java.nio.file.Files.createSymbolicLink(
+            File(workspace, "AGENTS.md.tmp").toPath(),
+            victim.toPath(),
+        )
+        assertTrue(WorkspaceAgentsMd.copyIfMissing(stream(), workspace))
+        assertEquals("line one\nline two\n", File(workspace, "AGENTS.md").readText())
+        assertEquals("do not touch\n", victim.readText())
+        assertTrue(java.nio.file.Files.isSymbolicLink(File(workspace, "AGENTS.md.tmp").toPath()))
+    }
+
+    /**
+     * `File.exists()` answers false for a dangling symlink, so the seed
+     * used to replace the user's link with a regular file (audit-70 42-F2).
+     */
+    @Test
+    fun `a dangling target symlink is preserved`() {
+        val workspace = tempFolder.newFolder("project")
+        val link = File(workspace, "AGENTS.md")
+        java.nio.file.Files.createSymbolicLink(link.toPath(), File(workspace, "elsewhere.md").toPath())
+        assertFalse(WorkspaceAgentsMd.copyIfMissing(stream(), workspace))
+        assertTrue(java.nio.file.Files.isSymbolicLink(link.toPath()))
+        assertFalse(link.exists())
+    }
+
+    /**
+     * A file that appears while the template is being copied — the user,
+     * a sync, another process — wins over the seed instead of being
+     * replaced by the rename (audit-70 42-F3).
+     */
+    @Test
+    fun `a target created mid-copy wins`() {
+        val workspace = tempFolder.newFolder("project")
+        val racing = object : InputStream() {
+            private var created = false
+            override fun read(): Int {
+                if (!created) {
+                    created = true
+                    File(workspace, "AGENTS.md").writeText("user won\n")
+                }
+                return -1
+            }
+        }
+        assertFalse(WorkspaceAgentsMd.copyIfMissing(racing, workspace))
+        assertEquals("user won\n", File(workspace, "AGENTS.md").readText())
     }
 }
