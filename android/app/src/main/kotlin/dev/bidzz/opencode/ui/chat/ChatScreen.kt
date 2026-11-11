@@ -130,6 +130,7 @@ import dev.bidzz.opencode.ui.sessions.DeleteSessionDialog
 import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
 import dev.bidzz.opencode.ui.sessions.SessionActionMenu
 import dev.bidzz.opencode.ui.sessions.SessionDateGroup
+import dev.bidzz.opencode.ui.sessions.formatCompactTokens
 import dev.bidzz.opencode.ui.sessions.groupSessions
 import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
@@ -2503,7 +2504,8 @@ private fun SessionDrawerItem(
     var menuExpanded by remember { mutableStateOf(false) }
 
     val age = row.age?.label()
-    val meta = listOfNotNull(age, row.cost).joinToString(" · ")
+    val tokenLabel = row.tokenTotal?.let { stringResource(R.string.turn_footer_tokens, formatCompactTokens(it)) }
+    val meta = listOfNotNull(age, row.cost, tokenLabel).joinToString(" · ")
 
     // The selected background animates instead of snapping when the
     // selection moves between rows.
