@@ -315,9 +315,9 @@ fun FileViewScreen(
             title = state.path.substringAfterLast('/'),
             onBack = handleBack,
             subtitle = when {
-                state.dirty -> stringResource(R.string.fileview_lines_unsaved, lineCount)
-                state.truncated -> stringResource(R.string.fileview_lines_truncated, lineCount, state.totalLines)
-                shownText.isNotEmpty() -> stringResource(R.string.fileview_lines, lineCount)
+                state.dirty -> stringResource(if (lineCount == 1) R.string.fileview_lines_unsaved_one else R.string.fileview_lines_unsaved, lineCount)
+                state.truncated -> stringResource(if (lineCount == 1) R.string.fileview_lines_truncated_one else R.string.fileview_lines_truncated, lineCount, state.totalLines)
+                shownText.isNotEmpty() -> stringResource(if (lineCount == 1) R.string.fileview_lines_one else R.string.fileview_lines, lineCount)
                 else -> null
             },
             subtitleColor = if (state.dirty) colors.warning else null,

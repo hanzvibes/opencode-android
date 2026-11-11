@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.annotation.StringRes
 import androidx.compose.ui.res.stringResource
 import dev.bidzz.opencode.R
 import androidx.compose.ui.semantics.Role
@@ -211,13 +212,22 @@ private fun AgentSelector(
     // otherwise recent agents come first under a RECENT header.
     val recentHeader = stringResource(R.string.chat_recent)
     val query = agentQuery.trim().lowercase()
-    val entries: List<SelectorEntry> = remember(selectableAgents, recentAgentIds, query, recentHeader, colors) {
+    // Resolved agent descriptions for search matching. Resolved here, not
+    // inside remember: remember's calculation forbids @Composable calls
+    // (@DisallowComposableCalls), so stringResource cannot run there — not
+    // even in a plain loop. The map is a remember key so a language change
+    // re-filters on the new strings.
+    val agentDescriptions = selectableAgents.associate { agent ->
+        val presentation = resolveAgentPresentation(agent, colors)
+        agent.id to (presentation.descriptionText ?: stringResource(presentation.descriptionRes))
+    }
+    val entries: List<SelectorEntry> = remember(selectableAgents, recentAgentIds, query, recentHeader, colors, agentDescriptions) {
         if (query.isNotEmpty()) {
             selectableAgents.filter { agent ->
                 val presentation = resolveAgentPresentation(agent, colors)
                 listOf(
                     presentation.title,
-                    presentation.description,
+                    agentDescriptions[agent.id].orEmpty(),
                     agent.id,
                     agent.name,
                     agent.mode.orEmpty(),
@@ -507,17 +517,25 @@ private fun AgentSelector(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
-                                        if (presentation.badge != null) {
+                                        // Neutral badge, same as the model tier badge:
+                                        // dot-coloured text on a dot-coloured tint fails
+                                        // AA (light accent #007AFF is 4.02:1 on white
+                                        // before the tint). The agent colour is carried
+                                        // by the dot in this row.
+                                        val badgeText = presentation.badgeText
+                                            ?: presentation.badgeRes?.let { stringResource(it) }
+                                        if (badgeText != null) {
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(radius.xs))
-                                                    .background(presentation.dotColor.copy(alpha = 0.12f))
+                                                    .background(colors.surfaceSunken)
+                                                    .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.xs))
                                                     .padding(horizontal = 5.dp, vertical = 1.dp),
                                             ) {
                                                 Text(
-                                                    text = presentation.badge,
+                                                    text = badgeText,
                                                     style = OpenCodeTypography.caption,
-                                                    color = presentation.dotColor,
+                                                    color = colors.onSurfaceMuted,
                                                 )
                                             }
                                         }
@@ -532,16 +550,17 @@ private fun AgentSelector(
                                     }
                                 }
 
-                                if (presentation.description.isNotBlank()) {
-                                    Text(
-                                        text = presentation.description,
-                                        style = OpenCodeTypography.caption,
-                                        color = colors.onSurfaceMuted,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(start = 32.dp, top = 2.dp),
-                                    )
-                                }
+                                // Agent descriptions come from the agent definition
+                                // (engine data) when present; otherwise the localised
+                                // template for this agent kind.
+                                Text(
+                                    text = presentation.descriptionText ?: stringResource(presentation.descriptionRes),
+                                    style = OpenCodeTypography.caption,
+                                    color = colors.onSurfaceMuted,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(start = 32.dp, top = 2.dp),
+                                )
                             }
                         }
                         is SelectorEntry.ModelRow -> Unit
@@ -914,17 +933,23 @@ internal fun ModelSelector(
                                         modifier = Modifier.weight(1f, fill = false),
                                     )
 
-                                    if (presentation.tierBadge != null) {
+                                    // Tier badge in the same neutral style as the context
+                                    // badge below: brand-coloured text on a brand tint
+                                    // failed WCAG AA for most providers (e.g. Mistral
+                                    // 3.29:1, Nvidia 3.39:1 in light). The brand is
+                                    // already carried by the dot in this row.
+                                    if (presentation.tierBadgeRes != null) {
                                         Box(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(radius.xs))
-                                                .background(presentation.brandColor.copy(alpha = 0.12f))
+                                                .background(colors.surfaceSunken)
+                                                .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.xs))
                                                 .padding(horizontal = 4.dp, vertical = 1.dp),
                                         ) {
                                             Text(
-                                                text = presentation.tierBadge,
+                                                text = stringResource(presentation.tierBadgeRes),
                                                 style = OpenCodeTypography.caption,
-                                                color = presentation.brandColor,
+                                                color = colors.onSurfaceMuted,
                                             )
                                         }
                                     }
@@ -958,16 +983,15 @@ internal fun ModelSelector(
                                 }
 
                                 // Description line
-                                if (presentation.description.isNotBlank()) {
-                                    Text(
-                                        text = presentation.description,
-                                        style = OpenCodeTypography.caption,
-                                        color = colors.onSurfaceMuted,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(start = 11.dp, top = 2.dp),
-                                    )
-                                }
+                                Text(
+                                    text = presentation.descriptionArg?.let { stringResource(presentation.descriptionRes, it) }
+                                        ?: stringResource(presentation.descriptionRes),
+                                    style = OpenCodeTypography.caption,
+                                    color = colors.onSurfaceMuted,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(start = 11.dp, top = 2.dp),
+                                )
                             }
                         }
                         is SelectorEntry.AgentRow -> Unit
@@ -982,8 +1006,12 @@ internal fun ModelSelector(
 
 private data class AgentPresentation(
     val title: String,
-    val description: String,
-    val badge: String?,
+    /** Engine-supplied description; null means use [descriptionRes]. */
+    val descriptionText: String?,
+    @StringRes val descriptionRes: Int,
+    /** Fixed badge template; null means use [badgeText] (agent mode). */
+    @StringRes val badgeRes: Int?,
+    val badgeText: String?,
     val dotColor: Color,
     val icon: Glyph,
 )
@@ -998,36 +1026,46 @@ private fun resolveAgentPresentation(agent: AgentInfo, colors: OpenCodeColors): 
     return when {
         "build" in key || "coder" in key || "developer" in key || "code" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Build" }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Full access to edit files, run commands & build features",
-            badge = "Full Access",
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_build,
+            badgeRes = R.string.agent_badge_full_access,
+            badgeText = null,
             dotColor = customColor ?: colors.warning,
             icon = Glyph.Terminal,
         )
         "plan" in key || "architect" in key || "designer" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Plan" }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Analyzes codebase & designs architecture without edits",
-            badge = "Read Only",
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_plan,
+            badgeRes = R.string.agent_badge_read_only,
+            badgeText = null,
             dotColor = customColor ?: colors.syntaxKeyword,
             icon = Glyph.Pencil,
         )
         "chat" in key || "ask" in key || "general" in key || "discuss" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Chat" }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Conversational guidance, reasoning & design advice",
-            badge = "Discussion",
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_chat,
+            badgeRes = R.string.agent_badge_discussion,
+            badgeText = null,
             dotColor = customColor ?: colors.success,
             icon = Glyph.NewChat,
         )
         "review" in key || "audit" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Review" }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Inspects code changes & identifies potential issues",
-            badge = "Review",
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_review,
+            badgeRes = R.string.agent_badge_review,
+            badgeText = null,
             dotColor = customColor ?: colors.accent,
             icon = Glyph.Search,
         )
         else -> AgentPresentation(
             title = agent.name.ifBlank { agent.id }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Specialized agent configuration",
-            badge = agent.mode?.takeIf { it.isNotBlank() }?.uppercase(),
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_default,
+            badgeRes = null,
+            badgeText = agent.mode?.takeIf { it.isNotBlank() }?.uppercase(),
             dotColor = customColor ?: colors.accent,
             icon = Glyph.Sliders,
         )
@@ -1040,9 +1078,11 @@ private data class ModelPresentation(
     val brandName: String,
     val brandTag: String,
     val displayName: String,
-    val tierBadge: String?,
+    @StringRes val tierBadgeRes: Int?,
     val contextWindow: String?,
-    val description: String,
+    @StringRes val descriptionRes: Int,
+    /** Family name for the one description template that embeds it. */
+    val descriptionArg: String? = null,
     val brandColor: Color,
 )
 
@@ -1149,42 +1189,48 @@ private fun formatContextWindow(limitContext: Long?, rawText: String): String? {
     }
 }
 
-private fun resolveTierBadge(text: String): String? {
+private fun resolveTierBadge(text: String): Int? {
     val lower = text.lowercase()
     return when {
-        "gpt-5" in lower -> "Pro"
-        "r1" in lower || "o1" in lower || "o3" in lower || "thinking" in lower || "reasoning" in lower || "3-7" in lower || "3.7" in lower -> "Reasoning"
-        "mini" in lower || "haiku" in lower || "flash" in lower || "small" in lower -> "Fast"
-        "sonnet" in lower || "opus" in lower || "4o" in lower || "pro" in lower || "plus" in lower || "large" in lower -> "Pro"
+        "gpt-5" in lower -> R.string.model_tier_pro
+        "r1" in lower || "o1" in lower || "o3" in lower || "thinking" in lower || "reasoning" in lower || "3-7" in lower || "3.7" in lower -> R.string.model_tier_reasoning
+        "mini" in lower || "haiku" in lower || "flash" in lower || "small" in lower -> R.string.model_tier_fast
+        "sonnet" in lower || "opus" in lower || "4o" in lower || "pro" in lower || "plus" in lower || "large" in lower -> R.string.model_tier_pro
         else -> null
     }
 }
 
-private fun resolveModelDescription(text: String, family: String?): String {
+/**
+ * A localised model description: a string resource, plus the family name
+ * for the one template that embeds it.
+ */
+private data class ModelDescription(@StringRes val res: Int, val arg: String? = null)
+
+private fun resolveModelDescription(text: String, family: String?): ModelDescription {
     val lower = text.lowercase()
     return when {
-        "claude-opus-4" in lower || "opus-4" in lower -> "Flagship reasoning & coding with extended thinking"
-        "claude-sonnet-4" in lower || "sonnet-4" in lower -> "Balanced flagship for coding, reasoning & agents"
-        "claude-haiku-4" in lower || "haiku-4" in lower -> "Fast compact model for quick edits & responses"
-        "gpt-5" in lower -> "Latest flagship reasoning model with deep context"
-        "nemotron" in lower -> "NVIDIA open reasoning model tuned for agentic coding"
-        "3-7-sonnet" in lower || "3.7" in lower -> "Hybrid reasoning & coding with top-tier precision"
-        "3-5-sonnet" in lower || ("sonnet" in lower && "3-5" in lower) -> "Flagship intelligence for complex code architecture"
-        "haiku" in lower -> "High-speed compact model for quick edits & responses"
-        "opus" in lower -> "Deep contextual understanding for intricate problems"
-        "gpt-4o-mini" in lower || "4o-mini" in lower -> "Fast, cost-efficient model for focused coding tasks"
-        "gpt-4o" in lower || "4o" in lower -> "Versatile flagship model balancing speed & reasoning"
-        "o1" in lower || "o3-mini" in lower -> "Advanced chain-of-thought logic & math capabilities"
-        "deepseek-r1" in lower || (lower.contains("deepseek") && lower.contains("r1")) -> "Open reasoning model with transparent step-by-step thinking"
-        "deepseek" in lower -> "High-performance open model optimized for coding & chat"
-        "gemini-2" in lower && "flash" in lower -> "Ultra-fast multimodal model with massive 1M context"
-        "gemini" in lower && "pro" in lower -> "Google flagship model with deep 2M token context"
-        "gemini" in lower -> "Multimodal intelligence with expanded context capacity"
-        "llama" in lower -> "State-of-the-art open weights model for developer workflows"
-        "qwen" in lower -> "Specialized open coding model with broad language support"
-        "mistral" in lower || "codestral" in lower -> "Efficient code synthesis & reasoned explanations"
-        !family.isNullOrBlank() -> "$family architecture optimized for programming"
-        else -> "General purpose language model for development"
+        "claude-opus-4" in lower || "opus-4" in lower -> ModelDescription(R.string.model_desc_opus4)
+        "claude-sonnet-4" in lower || "sonnet-4" in lower -> ModelDescription(R.string.model_desc_sonnet4)
+        "claude-haiku-4" in lower || "haiku-4" in lower -> ModelDescription(R.string.model_desc_haiku4)
+        "gpt-5" in lower -> ModelDescription(R.string.model_desc_gpt5)
+        "nemotron" in lower -> ModelDescription(R.string.model_desc_nemotron)
+        "3-7-sonnet" in lower || "3.7" in lower -> ModelDescription(R.string.model_desc_sonnet37)
+        "3-5-sonnet" in lower || ("sonnet" in lower && "3-5" in lower) -> ModelDescription(R.string.model_desc_sonnet35)
+        "haiku" in lower -> ModelDescription(R.string.model_desc_haiku)
+        "opus" in lower -> ModelDescription(R.string.model_desc_opus)
+        "gpt-4o-mini" in lower || "4o-mini" in lower -> ModelDescription(R.string.model_desc_gpt4o_mini)
+        "gpt-4o" in lower || "4o" in lower -> ModelDescription(R.string.model_desc_gpt4o)
+        "o1" in lower || "o3-mini" in lower -> ModelDescription(R.string.model_desc_o1)
+        "deepseek-r1" in lower || (lower.contains("deepseek") && lower.contains("r1")) -> ModelDescription(R.string.model_desc_deepseek_r1)
+        "deepseek" in lower -> ModelDescription(R.string.model_desc_deepseek)
+        "gemini-2" in lower && "flash" in lower -> ModelDescription(R.string.model_desc_gemini_flash)
+        "gemini" in lower && "pro" in lower -> ModelDescription(R.string.model_desc_gemini_pro)
+        "gemini" in lower -> ModelDescription(R.string.model_desc_gemini)
+        "llama" in lower -> ModelDescription(R.string.model_desc_llama)
+        "qwen" in lower -> ModelDescription(R.string.model_desc_qwen)
+        "mistral" in lower || "codestral" in lower -> ModelDescription(R.string.model_desc_mistral)
+        !family.isNullOrBlank() -> ModelDescription(R.string.model_desc_family, family)
+        else -> ModelDescription(R.string.model_desc_default)
     }
 }
 
@@ -1202,9 +1248,10 @@ private fun resolveModelPresentation(model: ModelInfo, colors: OpenCodeColors): 
         brandName = brandName,
         brandTag = brandTag,
         displayName = cleanName,
-        tierBadge = tier,
+        tierBadgeRes = tier,
         contextWindow = context,
-        description = description,
+        descriptionRes = description.res,
+        descriptionArg = description.arg,
         brandColor = brandColor,
     )
 }

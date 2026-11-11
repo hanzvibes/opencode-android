@@ -453,7 +453,7 @@ private fun CodeBlock(language: String?, code: String, streaming: Boolean = fals
             // hands out the full block, collapsed or not.
             if (!streaming || isLongBlock) {
                 val expandLabel = if (collapsed) {
-                    stringResource(R.string.code_show_more, lineCount)
+                    stringResource(if (lineCount == 1) R.string.code_show_more_one else R.string.code_show_more, lineCount)
                 } else {
                     stringResource(R.string.tool_show_less)
                 }

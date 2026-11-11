@@ -68,6 +68,30 @@ patches applied. Its licence is the upstream project's licence; check
 The engine is a `bun build --compile` output, so the Bun runtime is embedded.
 Bun is MIT-licensed. https://github.com/oven-sh/bun
 
+## Bundled libraries and fonts
+
+These are linked into the app or shipped as assets, so they travel inside
+the APK. All are Apache-2.0 except the two fonts (OFL-1.1). Versions are
+the ones in `android/gradle/libs.versions.toml`.
+
+| Component | Version | Licence | Upstream |
+|---|---|---|---|
+| OkHttp | 4.12.0 | Apache-2.0 | https://square.github.io/okhttp/ |
+| kotlinx-coroutines | 1.9.0 | Apache-2.0 | https://github.com/Kotlin/kotlinx.coroutines |
+| kotlinx-serialization | 1.7.3 | Apache-2.0 | https://github.com/Kotlin/kotlinx.serialization |
+| Jetpack Compose (BOM) | 2024.12.01 | Apache-2.0 | https://developer.android.com/jetpack/androidx |
+| activity-compose | 1.8.2 | Apache-2.0 | https://developer.android.com/jetpack/androidx |
+| lifecycle-runtime-compose / lifecycle-viewmodel-compose | 2.8.3 | Apache-2.0 | https://developer.android.com/jetpack/androidx |
+| Kotlin standard library | 2.1.0 | Apache-2.0 | https://kotlinlang.org/ |
+| Inter (bundled TTFs in `core/design/src/main/res/font/`) | — | OFL-1.1 | https://github.com/rsms/inter |
+| JetBrains Mono (bundled TTFs in `core/design/src/main/res/font/`) | — | OFL-1.1 | https://github.com/JetBrains/JetBrainsMono |
+
+Apache-2.0 licence text: https://www.apache.org/licenses/LICENSE-2.0.
+The OFL-1.1 text is in `licenses/OFL.txt`.
+
+Test-only dependencies (JUnit, `org.json`, `kotlinx-coroutines-test`) are
+not shipped in the APK, so they are not listed here.
+
 ---
 
 ## Licence texts

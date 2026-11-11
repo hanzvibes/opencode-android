@@ -1,9 +1,9 @@
 import java.util.Properties
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 /**
@@ -119,26 +119,26 @@ dependencies {
 
     // Declared directly: `implementation` in :core:engine does not expose
     // coroutines to consumers, and the activity uses CoroutineScope and Flow.
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
 
     // Compose host for the activity. Versions come from the BOM that :core:design
     // exports, so they stay aligned with the design system.
-    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
-    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation(platform(libs.compose.bom))
+    implementation(libs.activity.compose)
     // WindowSizeClass for the adaptive tablet layout (persistent sidebar +
     // list-detail at >=840dp). Version comes from the Compose BOM above.
-    implementation("androidx.compose.material3:material3-window-size-class")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.3")
+    implementation(libs.material3.window.size)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
 
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
     // The API DTOs are @Serializable; decoding them in a test needs the runtime on
     // the test classpath, which `implementation` in :core:api does not expose.
-    testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    testImplementation(libs.kotlinx.serialization.json)
     // `EngineConfigStore` writes through `org.json`, which is a stub in the mockable
     // android.jar. The mockable jar sits last on the test classpath, so the real
     // implementation here is what runs — otherwise every assertion about the file
     // the app wrote would be vacuous.
-    testImplementation("org.json:json:20240303")
+    testImplementation(libs.json)
 }

@@ -1896,6 +1896,11 @@ private fun DialogDetailRow(
     onCopy: (() -> Unit)? = null,
 ) {
     val colors = OpenCodeTheme.colors
+    // Stays true while the dialog is open (same pattern as the ToolRow
+    // copy buttons): the glyph flips to a green check so the tap is
+    // visible. The state dies with the dialog, so a reopened dialog
+    // starts un-copied again.
+    var copied by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1925,12 +1930,12 @@ private fun DialogDetailRow(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .clickable(role = SemanticsRole.Button, onClick = onCopy),
+                        .clickable(role = SemanticsRole.Button, onClick = { copied = true; onCopy() }),
                     contentAlignment = Alignment.Center,
                 ) {
                     GlyphIcon(
-                        glyph = Glyph.Copy,
-                        tint = colors.onSurfaceMuted,
+                        glyph = if (copied) Glyph.Check else Glyph.Copy,
+                        tint = if (copied) colors.success else colors.onSurfaceMuted,
                         size = 12.dp,
                     )
                 }

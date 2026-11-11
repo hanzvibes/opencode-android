@@ -59,7 +59,6 @@
     <string name="settings_saved_permissions_revoke">Cabut</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
-    <string name="onboarding_title">Selamat datang di OpenCode</string>
     <string name="onboarding_skip">Lewati</string>
     <string name="onboarding_step_of">Langkah %1$d dari %2$d</string>
     <string name="onboarding_project_title">Pilih proyek</string>
@@ -83,11 +82,7 @@
     <string name="about_role">Pelajar · Penjelajah · Pembangun</string>
     <string name="about_bio">Pelajar yang menekuni pengembangan web, OSINT, keamanan digital, dan reverse engineering, didorong rasa ingin tahu tentang cara kerja sistem yang sebenarnya.</string>
     <string name="about_section_links">Temukan saya</string>
-    <string name="about_portfolio">Portofolio</string>
-    <string name="about_telegram">Telegram</string>
-    <string name="about_instagram">Instagram</string>
     <string name="about_github">GitHub</string>
-    <string name="about_email">Email</string>
     <string name="about_open_failed">Tidak ada aplikasi di perangkat ini yang bisa membuka tautan itu.</string>
     <string name="about_version">OpenCode Android %1$s</string>
 
@@ -110,7 +105,6 @@
     <string name="chat_reconnecting">Menghubungkan ulang…</string>
     <string name="chat_question_waiting_one">1 pertanyaan menunggu</string>
     <string name="chat_question_waiting_other">%1$d pertanyaan menunggu</string>
-    <string name="chat_working">Sedang bekerja…</string>
     <string name="chat_status_working">Bekerja</string>
     <string name="chat_status_ready">Siap</string>
     <string name="chat_status_preparing">Bersiap</string>
@@ -151,10 +145,6 @@
     <string name="starter_review_title">Tinjau perubahan</string>
     <string name="starter_review_desc">Audit diff terbaru untuk kualitas dan keamanan</string>
     <string name="starter_review_prompt">Tinjau perubahan git terbaru untuk mencari regresi atau perbaikan potensial.</string>
-    <string name="workspace_readiness_section">Ruang Kerja &amp; Lingkungan</string>
-    <string name="workspace_engine_label">Mesin</string>
-    <string name="workspace_path_label">Ruang Kerja</string>
-    <string name="workspace_git_label">Cabang Git</string>
     <string name="workspace_git_untracked">Tidak dilacak</string>
     <string name="drawer_files">File</string>
     <string name="drawer_project">Proyek</string>
@@ -164,7 +154,6 @@
     <string name="drawer_all_sessions">Semua sesi</string>
     <string name="drawer_view_all">Lihat semua sesi</string>
     <string name="drawer_diagnostics">Diagnostik</string>
-    <string name="drawer_developer">Pengembang</string>
     <string name="drawer_switch_workspace">Ganti ruang kerja</string>
 
     <!-- Session Groups -->
@@ -250,12 +239,9 @@
     <string name="tool_lines_one">%1$d baris</string>
     <string name="tool_lines">%1$d baris</string>
     <string name="tool_stdout">STDOUT</string>
-    <string name="tool_stdin">STDIN</string>
     <string name="tool_stderr">STDERR</string>
     <string name="tool_command">Perintah</string>
     <string name="tool_input">Masukan</string>
-    <string name="tool_output">Keluaran</string>
-    <string name="tool_error">Galat</string>
     <string name="tool_show_full">Tampilkan semua output</string>
     <string name="tool_show_less">Tampilkan lebih sedikit</string>
     <string name="tool_filter_all">Semua</string>
@@ -264,7 +250,6 @@
     <string name="tool_filter_read">Baca</string>
     <string name="code_show_more">Tampilkan semua %1$d baris</string>
     <string name="code_label">kode</string>
-    <string name="code_download">Unduh</string>
     <string name="code_saved">Tersimpan</string>
     <string name="code_copy">Salin</string>
     <string name="code_copied">Tersalin</string>
@@ -378,7 +363,6 @@
     <string name="providers_custom_section">Endpoint kustom</string>
     <string name="providers_models_suffix"> · %1$d model</string>
     <string name="providers_add_custom">Tambah endpoint kustom…</string>
-    <string name="providers_catalog">Katalog</string>
     <string name="providers_loading">Memuat penyedia…</string>
     <string name="providers_no_match">Tidak ada penyedia yang cocok dengan \"%1$s\".</string>
     <string name="providers_keys_one">%1$d kunci · ketuk untuk mengelola</string>
@@ -387,7 +371,6 @@
     <string name="providers_state_add_key">ketuk untuk menambah kunci API</string>
     <string name="providers_state_no_method">tidak ada metode kunci API</string>
     <string name="providers_search">Cari penyedia</string>
-    <string name="providers_badge_on">AKTIF</string>
     <string name="providers_key_title">Kunci API untuk %1$s</string>
     <string name="providers_key_body">Disimpan oleh mesin di databasenya sendiri, di dalam penyimpanan pribadi aplikasi. Tidak ditulis ke file konfigurasi mana pun.</string>
     <string name="providers_new_key_title">Kunci baru untuk %1$s</string>
@@ -418,12 +401,9 @@
     <string name="providers_status_missing_key">Kunci Belum Ada</string>
     <string name="providers_quick_test">Uji Kunci</string>
     <string name="providers_testing">Menguji…</string>
-    <string name="providers_test_passed">Kunci terverifikasi &amp; siap disimpan</string>
-    <string name="providers_test_failed">Verifikasi kunci gagal</string>
     <string name="providers_key_empty">Kunci API tidak boleh kosong</string>
     <string name="providers_key_spaces">Kunci tidak boleh berisi spasi</string>
     <string name="providers_key_too_short">Kunci terlalu pendek (min 8 karakter)</string>
-    <string name="providers_key_valid">Format kunci valid</string>
     <string name="providers_paste_action">Tempel</string>
     <string name="providers_clear_action">Hapus</string>
     <string name="providers_show_key">Tampilkan kunci</string>
@@ -446,7 +426,6 @@
     <string name="diag_storage">Penyimpanan</string>
     <string name="diag_process_pid">PID Proses</string>
     <string name="diag_engine_pid">PID Mesin</string>
-    <string name="diag_app_pid">PID Aplikasi</string>
     <string name="diag_tab_all">Semua Log</string>
     <string name="diag_tab_engine_log">Log Disk</string>
     <string name="diag_tab_output">Konsol</string>
@@ -460,20 +439,14 @@
     <string name="diag_password_hidden">•••••• (ketuk untuk lihat)</string>
     <string name="diag_linked">tertaut</string>
     <string name="diag_missing">HILANG</string>
-    <string name="diag_no_so">(tidak ada .so di APK)</string>
     <string name="diag_missing_suffix">(tidak ada)</string>
-    <string name="diag_timeout">TIMEOUT setelah %1$d dtk</string>
-    <string name="diag_exit">keluar %1$d: %2$s</string>
     <string name="diag_no_output">tanpa keluaran</string>
     <string name="diag_no_tools">(tidak ada tool dideklarasikan)</string>
-    <string name="diag_tap_refresh">ketuk Segarkan untuk menjalankan git --version dan rg --version</string>
     <string name="diag_probe_note">Probe yang gagal dengan exit 126 / Permission denied berarti label SELinux pada biner tertaut menolak exec. Tool harus dijangkau lewat symlink di toolBin, tidak pernah disalin ke filesDir.</string>
-    <string name="diag_no_output_yet">(belum ada keluaran)</string>
     <string name="diag_nothing_read">(belum terbaca, berkasnya mungkin belum ada)</string>
     <string name="diag_lines_newest_last">%1$d baris, terbaru di akhir</string>
     <string name="diag_section_tools">Alat</string>
     <string name="diag_section_paths">Path</string>
-    <string name="diag_section_output">Keluaran engine (proses ini)</string>
     <string name="diag_section_log">Log engine (di disk)</string>
     <string name="diag_log_search_hint">Cari log</string>
     <string name="diag_log_search_clear">Hapus pencarian</string>
@@ -524,4 +497,50 @@
     <string name="providers_name_taken">Penyedia dengan nama ini sudah ada</string>
     <string name="providers_config_shadowed">Tersimpan, tetapi `opencode.jsonc` di sebelahnya lebih diutamakan. Engine akan membaca berkas itu, bukan yang ini.</string>
     <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
+    <string name="cmd_init_desc">Inisialisasi workspace atau konfigurasi proyek</string>
+    <string name="cmd_test_desc">Jalankan test suite atau target test</string>
+    <string name="cmd_review_desc">Tinjau perubahan, git diff, atau pull request</string>
+    <string name="cmd_fix_desc">Diagnosis error dan terapkan perbaikan otomatis</string>
+    <string name="cmd_clear_desc">Hapus pesan percakapan dan reset konteks</string>
+    <string name="cmd_undo_desc">Kembalikan perubahan terakhir asisten</string>
+    <string name="cmd_help_desc">Tampilkan perintah yang tersedia dan panduan penggunaannya</string>
+    <string name="cmd_model_desc">Ganti model atau provider aktif</string>
+    <string name="fileview_lines_one">%1$d baris</string>
+    <string name="fileview_lines_unsaved_one">%1$d baris · belum disimpan</string>
+    <string name="fileview_lines_truncated_one">%1$d dari %2$d baris</string>
+    <string name="code_show_more_one">Tampilkan semua %1$d baris</string>
+    <string name="model_desc_opus4">Penalaran &amp; coding flagship dengan extended thinking</string>
+    <string name="model_desc_sonnet4">Flagship seimbang untuk coding, penalaran, dan agen</string>
+    <string name="model_desc_haiku4">Model ringkas yang cepat untuk edit dan respons singkat</string>
+    <string name="model_desc_gpt5">Model flagship terbaru dengan penalaran dan konteks mendalam</string>
+    <string name="model_desc_nemotron">Model penalaran terbuka NVIDIA yang dioptimalkan untuk agentic coding</string>
+    <string name="model_desc_sonnet37">Penalaran &amp; coding hibrida dengan presisi kelas atas</string>
+    <string name="model_desc_sonnet35">Kecerdasan flagship untuk arsitektur kode yang kompleks</string>
+    <string name="model_desc_haiku">Model ringkas berkecepatan tinggi untuk edit dan respons singkat</string>
+    <string name="model_desc_opus">Pemahaman kontekstual yang mendalam untuk masalah rumit</string>
+    <string name="model_desc_gpt4o_mini">Cepat dan hemat biaya untuk tugas coding yang terfokus</string>
+    <string name="model_desc_gpt4o">Model flagship serbaguna yang menyeimbangkan kecepatan dan penalaran</string>
+    <string name="model_desc_o1">Logika chain-of-thought dan matematika tingkat lanjut</string>
+    <string name="model_desc_deepseek_r1">Model penalaran terbuka dengan pemikiran langkah-demi-langkah yang transparan</string>
+    <string name="model_desc_deepseek">Model terbuka berperforma tinggi yang dioptimalkan untuk coding dan chat</string>
+    <string name="model_desc_gemini_flash">Model multimodal super cepat dengan konteks 1M yang besar</string>
+    <string name="model_desc_gemini_pro">Model flagship Google dengan konteks token 2M yang mendalam</string>
+    <string name="model_desc_gemini">Kecerdasan multimodal dengan kapasitas konteks yang diperluas</string>
+    <string name="model_desc_llama">Model open weights tercanggih untuk alur kerja developer</string>
+    <string name="model_desc_qwen">Model coding terbuka khusus dengan dukungan bahasa yang luas</string>
+    <string name="model_desc_mistral">Sintesis kode yang efisien dan penjelasan bernalar</string>
+    <string name="model_desc_family">Arsitektur %1$s yang dioptimalkan untuk pemrograman</string>
+    <string name="model_desc_default">Model bahasa serbaguna untuk pengembangan</string>
+    <string name="model_tier_pro">Pro</string>
+    <string name="model_tier_reasoning">Penalaran</string>
+    <string name="model_tier_fast">Cepat</string>
+    <string name="agent_desc_build">Akses penuh untuk mengedit file, menjalankan perintah &amp; membangun fitur</string>
+    <string name="agent_desc_plan">Menganalisis codebase &amp; merancang arsitektur tanpa edit</string>
+    <string name="agent_desc_chat">Panduan percakapan, penalaran &amp; saran desain</string>
+    <string name="agent_desc_review">Memeriksa perubahan kode &amp; mengidentifikasi potensi masalah</string>
+    <string name="agent_desc_default">Konfigurasi agen khusus</string>
+    <string name="agent_badge_full_access">Akses Penuh</string>
+    <string name="agent_badge_read_only">Hanya Baca</string>
+    <string name="agent_badge_discussion">Diskusi</string>
+    <string name="agent_badge_review">Tinjauan</string>
 </resources>
