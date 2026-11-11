@@ -105,9 +105,12 @@ class OpenCodeApplication : Application() {
             processManager = ProcessManager(binary, environment)
             Log.i(TAG, "engine resolved at ${binary.executable.absolutePath}")
             Log.i(TAG, "workspace: ${environment.workspace.absolutePath}")
-        } catch (e: EngineStartupException) {
+        } catch (e: Exception) {
             // Keep the app usable so a diagnostics screen can explain the problem
-            // instead of the process dying on launch.
+            // instead of the process dying on launch. This catches
+            // EngineStartupException and anything else resolve() can throw
+            // (item 1): a disk error staging git/rg used to escape as a bare
+            // IOException and crash the process on every launch.
             startupFailure = e.message
             unavailableStatus.value = EngineStatus(lastError = e.message)
             Log.e(TAG, "engine unavailable: ${e.message}")
