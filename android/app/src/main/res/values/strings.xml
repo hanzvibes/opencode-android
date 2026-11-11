@@ -279,6 +279,26 @@
     <string name="export_size">%1$d characters</string>
     <string name="export_copy">Copy JSON</string>
     <string name="export_copied">Copied</string>
+
+    <!-- Usage limits -->
+    <string name="usage_title">Usage limits</string>
+    <string name="usage_body">OpenCode Go allowance and Console budgets for the workspace this location is signed in to.</string>
+    <string name="usage_empty">No usage limits to show. The workspace may not be signed in to OpenCode Console.</string>
+    <string name="usage_section_go">OpenCode Go</string>
+    <string name="usage_meter_rolling">Rolling</string>
+    <string name="usage_meter_weekly">Weekly</string>
+    <string name="usage_meter_monthly">Monthly</string>
+    <string name="usage_limited">Limited</string>
+    <string name="usage_resets">Resets %1$s</string>
+    <string name="usage_section_budgets">Budgets</string>
+    <string name="usage_budget_spent">%1$s of %2$s</string>
+    <string name="usage_scope_each">Per member</string>
+    <string name="usage_scope_combined">Combined</string>
+    <string name="usage_per_set">Across models</string>
+    <string name="usage_per_model">Per model</string>
+    <string name="usage_coverage_all">All models and services</string>
+    <string name="usage_coverage_models">Selected models</string>
+    <string name="usage_budget_shared">Shared</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <!-- Redesign C working progress: %1$s is the live step sentence ("Reading ChatScreen.kt")

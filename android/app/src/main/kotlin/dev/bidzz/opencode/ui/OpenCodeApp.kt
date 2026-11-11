@@ -67,6 +67,8 @@ import dev.bidzz.opencode.ui.move.MoveSessionScreen
 import dev.bidzz.opencode.ui.move.MoveSessionViewModel
 import dev.bidzz.opencode.ui.stats.StatsScreen
 import dev.bidzz.opencode.ui.stats.StatsViewModel
+import dev.bidzz.opencode.ui.usage.UsageLimitsScreen
+import dev.bidzz.opencode.ui.usage.UsageLimitsViewModel
 import dev.bidzz.opencode.ui.files.DiffViewModel
 import dev.bidzz.opencode.ui.files.ExplorerScreen
 import dev.bidzz.opencode.ui.files.ExplorerViewModel
@@ -116,6 +118,7 @@ internal sealed interface Screen {
     data class MoveSession(val sessionID: String) : Screen
     data class SessionExport(val sessionID: String) : Screen
     data object SessionStats : Screen
+    data object UsageLimits : Screen
     data object Settings : Screen
     data object Providers : Screen
     data object Diagnostics : Screen
@@ -145,6 +148,7 @@ internal fun Screen.parent(): Screen = when (this) {
     is Screen.MoveSession -> Screen.Sessions
     is Screen.SessionExport -> Screen.Sessions
     Screen.SessionStats -> Screen.Settings
+    Screen.UsageLimits -> Screen.Settings
     Screen.About -> Screen.Chat
     else -> Screen.Chat
 }
@@ -163,7 +167,7 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Worktrees,
     Screen.EngineConfig, Screen.About -> 3
     is Screen.Inbox, is Screen.MoveSession, is Screen.SessionExport,
-    Screen.SessionStats -> 3
+    Screen.SessionStats, Screen.UsageLimits -> 3
     is Screen.Diff -> 4
 }
 
@@ -266,6 +270,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val statsViewModel: StatsViewModel = viewModel(factory = viewModelFactory { _ ->
         StatsViewModel(app.engineApi)
     })
+
+    val usageLimitsViewModel: UsageLimitsViewModel = viewModel(factory = viewModelFactory { _ ->
+        UsageLimitsViewModel(app.engineApi)
+    })
     val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory { _ ->
         ProvidersViewModel(
             api = app.engineApi,
@@ -298,6 +306,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val moveSessionState by moveSessionViewModel.state.collectAsState()
     val exportState by exportViewModel.state.collectAsState()
     val statsState by statsViewModel.state.collectAsState()
+    val usageLimitsState by usageLimitsViewModel.state.collectAsState()
     val providersState by providersViewModel.state.collectAsState()
     val mcpServersState by mcpServersViewModel.state.collectAsState()
     val pluginsState by pluginsViewModel.state.collectAsState()
@@ -756,6 +765,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     onWorktrees = { screen = Screen.Worktrees },
                     onEngineConfig = { screen = Screen.EngineConfig },
                     onSessionStats = { screen = Screen.SessionStats },
+                    onUsageLimits = { screen = Screen.UsageLimits },
                     onAbout = { screen = Screen.About },
                 )
 
@@ -837,6 +847,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     state = statsState,
                     onBack = { screen = Screen.Settings },
                     onRefresh = statsViewModel::refresh,
+                )
+
+                Screen.UsageLimits -> UsageLimitsScreen(
+                    state = usageLimitsState,
+                    onBack = { screen = Screen.Settings },
+                    onRefresh = usageLimitsViewModel::refresh,
                 )
                 }
             }

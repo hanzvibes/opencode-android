@@ -4,6 +4,7 @@ import dev.bidzz.opencode.core.api.dto.InboxResponse
 import dev.bidzz.opencode.core.api.dto.MoveSessionRequest
 import dev.bidzz.opencode.core.api.dto.SessionStatsResponse
 import dev.bidzz.opencode.core.api.dto.SessionTransferResponse
+import dev.bidzz.opencode.core.api.dto.UsageLimitsResponse
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -157,5 +158,51 @@ class Tier3bDecodingTest {
         assertEquals("ses_1", (parsed.info["id"] as? kotlinx.serialization.json.JsonPrimitive)?.content)
         assertEquals("Demo", (parsed.info["title"] as? kotlinx.serialization.json.JsonPrimitive)?.content)
         assertEquals(1, parsed.messages.size)
+    }
+
+    @Test
+    fun `decodes usage limits with Go meters and budgets`() {
+        val raw = """
+            {"data":{"workspace":{"id":"ws_1","name":"Acme","usageURL":"https://console.example/usage"},
+            "go":{"rolling":{"percent":42.5,"limited":false,"resetsAt":1794052727000},
+            "weekly":{"percent":10.0,"limited":false,"resetsAt":1794052727000},
+            "monthly":{"percent":99.0,"limited":true,"resetsAt":1794052727000}},
+            "budgets":[{"id":"bud_1","limit":50.0,"spent":12.5,"scope":"each","per":"set",
+            "coverage":"all","models":[],"vendors":[],"picked":false,"shared":false,
+            "resetsAt":1794052727000}]},
+            "location":{"directory":"/storage/emulated/0/Projects/demo"}}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<UsageLimitsResponse>(raw)
+        val info = parsed.data!!
+        assertEquals("ws_1", info.workspace?.id)
+        assertEquals("Acme", info.workspace?.name)
+        assertEquals(42.5, info.go?.rolling?.percent!!, 0.001)
+        assertEquals(false, info.go?.rolling?.limited)
+        assertEquals(true, info.go?.monthly?.limited)
+        assertEquals(1, info.budgets.size)
+        assertEquals("bud_1", info.budgets[0].id)
+        assertEquals(12.5, info.budgets[0].spent, 0.001)
+        assertEquals("each", info.budgets[0].scope)
+        assertEquals("/storage/emulated/0/Projects/demo", parsed.location?.directory)
+    }
+
+    @Test
+    fun `usage limits decode tolerates a null data answer`() {
+        // The engine answers data: null when the location is not signed
+        // in to an OpenCode Console workspace. That is a normal answer.
+        val parsed = ApiJson.decodeFromString<UsageLimitsResponse>(
+            """{"data":null,"location":{"directory":"/storage/emulated/0/Projects/demo"}}""",
+        )
+        assertNull(parsed.data)
+    }
+
+    @Test
+    fun `usage limits decode tolerates a missing Go allowance`() {
+        val parsed = ApiJson.decodeFromString<UsageLimitsResponse>(
+            """{"data":{"workspace":{"id":"ws_1"},"budgets":[]}}""",
+        )
+        assertNull(parsed.data?.go)
+        assertTrue(parsed.data?.budgets?.isEmpty() == true)
     }
 }

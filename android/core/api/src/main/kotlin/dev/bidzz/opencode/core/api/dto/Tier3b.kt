@@ -187,3 +187,78 @@ data class SessionTransferData(
     val info: JsonObject = JsonObject(emptyMap()),
     val messages: List<JsonObject> = emptyList(),
 )
+
+/**
+ * Usage limits (`GET /api/experimental/usage/limits`).
+ *
+ * Verified against the engine fork source at pin 92b2ca0
+ * (`packages/protocol/src/groups/usage.ts` and
+ * `packages/schema/src/usage-limits.ts`): the endpoint answers
+ * `Location.response(NullOr(UsageLimits.Info))`, i.e.
+ * `{location: {directory}, data: UsageLimits.Info | null}` — `data` is
+ * **null when the location is not signed in to an OpenCode Console
+ * workspace**, and that null is a normal answer, not an error. The
+ * `location` query parameter (`LocationQuery`, all fields optional) is
+ * not sent, so the engine reports its default location. `go` is
+ * optional (a workspace may subscribe to no Go allowance); `percent`
+ * is 0–100; `resetsAt` is millis since the epoch. The endpoint is
+ * experimental, so every nested field is optional-or-defaulted: a
+ * shape change must degrade to an empty row, never a failed decode.
+ */
+@Serializable
+data class UsageLimitsResponse(
+    val data: UsageLimitsInfo? = null,
+    val location: LocationRef? = null,
+)
+
+@Serializable
+data class UsageLimitsInfo(
+    val workspace: UsageWorkspace? = null,
+    val go: UsageGo? = null,
+    val budgets: List<UsageBudget> = emptyList(),
+)
+
+@Serializable
+data class UsageWorkspace(
+    val id: String = "",
+    val name: String? = null,
+    val usageURL: String = "",
+)
+
+@Serializable
+data class UsageGo(
+    val rolling: UsageMeter? = null,
+    val weekly: UsageMeter? = null,
+    val monthly: UsageMeter? = null,
+)
+
+@Serializable
+data class UsageMeter(
+    val percent: Double = 0.0,
+    val limited: Boolean = false,
+    val resetsAt: Long? = null,
+)
+
+@Serializable
+data class UsageBudget(
+    val id: String = "",
+    val limit: Double = 0.0,
+    val spent: Double = 0.0,
+    val scope: String = "",
+    val per: String = "",
+    val coverage: String = "",
+    val models: List<UsageBudgetModel> = emptyList(),
+    val vendors: List<String> = emptyList(),
+    val inputPriceAtLeast: Double? = null,
+    val picked: Boolean = false,
+    val shared: Boolean = false,
+    val resetsAt: Long? = null,
+)
+
+@Serializable
+data class UsageBudgetModel(
+    val providerID: String = "",
+    val modelID: String = "",
+    val name: String = "",
+    val spent: Double? = null,
+)

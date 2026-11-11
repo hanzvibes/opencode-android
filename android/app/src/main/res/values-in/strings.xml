@@ -278,6 +278,26 @@
     <string name="export_size">%1$d karakter</string>
     <string name="export_copy">Salin JSON</string>
     <string name="export_copied">Disalin</string>
+
+    <!-- Batas pemakaian -->
+    <string name="usage_title">Batas pemakaian</string>
+    <string name="usage_body">Jatah OpenCode Go dan budget Console untuk workspace tempat lokasi ini masuk.</string>
+    <string name="usage_empty">Tidak ada batas pemakaian untuk ditampilkan. Workspace mungkin belum masuk ke OpenCode Console.</string>
+    <string name="usage_section_go">OpenCode Go</string>
+    <string name="usage_meter_rolling">Bergulir</string>
+    <string name="usage_meter_weekly">Mingguan</string>
+    <string name="usage_meter_monthly">Bulanan</string>
+    <string name="usage_limited">Dibatasi</string>
+    <string name="usage_resets">Reset %1$s</string>
+    <string name="usage_section_budgets">Budget</string>
+    <string name="usage_budget_spent">%1$s dari %2$s</string>
+    <string name="usage_scope_each">Per anggota</string>
+    <string name="usage_scope_combined">Gabungan</string>
+    <string name="usage_per_set">Lintas model</string>
+    <string name="usage_per_model">Per model</string>
+    <string name="usage_coverage_all">Semua model dan layanan</string>
+    <string name="usage_coverage_models">Model terpilih</string>
+    <string name="usage_budget_shared">Bersama</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <!-- Redesign C working progress: %1$s kalimat langkah live ("Membaca ChatScreen.kt")
