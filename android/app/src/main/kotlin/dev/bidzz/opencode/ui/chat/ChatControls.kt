@@ -218,7 +218,7 @@ private fun AgentSelector(
                 val presentation = resolveAgentPresentation(agent, colors)
                 listOf(
                     presentation.title,
-                    presentation.description,
+                    presentation.descriptionText ?: stringResource(presentation.descriptionRes),
                     agent.id,
                     agent.name,
                     agent.mode.orEmpty(),
@@ -508,17 +508,25 @@ private fun AgentSelector(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
-                                        if (presentation.badge != null) {
+                                        // Neutral badge, same as the model tier badge:
+                                        // dot-coloured text on a dot-coloured tint fails
+                                        // AA (light accent #007AFF is 4.02:1 on white
+                                        // before the tint). The agent colour is carried
+                                        // by the dot in this row.
+                                        val badgeText = presentation.badgeText
+                                            ?: presentation.badgeRes?.let { stringResource(it) }
+                                        if (badgeText != null) {
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(radius.xs))
-                                                    .background(presentation.dotColor.copy(alpha = 0.12f))
+                                                    .background(colors.surfaceSunken)
+                                                    .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.xs))
                                                     .padding(horizontal = 5.dp, vertical = 1.dp),
                                             ) {
                                                 Text(
-                                                    text = presentation.badge,
+                                                    text = badgeText,
                                                     style = OpenCodeTypography.caption,
-                                                    color = presentation.dotColor,
+                                                    color = colors.onSurfaceMuted,
                                                 )
                                             }
                                         }
@@ -534,18 +542,16 @@ private fun AgentSelector(
                                 }
 
                                 // Agent descriptions come from the agent definition
-                                // (engine data), so they stay a plain string — only
-                                // the MODEL descriptions are localised resources.
-                                if (presentation.description.isNotBlank()) {
-                                    Text(
-                                        text = presentation.description,
-                                        style = OpenCodeTypography.caption,
-                                        color = colors.onSurfaceMuted,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(start = 32.dp, top = 2.dp),
-                                    )
-                                }
+                                // (engine data) when present; otherwise the localised
+                                // template for this agent kind.
+                                Text(
+                                    text = presentation.descriptionText ?: stringResource(presentation.descriptionRes),
+                                    style = OpenCodeTypography.caption,
+                                    color = colors.onSurfaceMuted,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(start = 32.dp, top = 2.dp),
+                                )
                             }
                         }
                         is SelectorEntry.ModelRow -> Unit
@@ -991,8 +997,12 @@ internal fun ModelSelector(
 
 private data class AgentPresentation(
     val title: String,
-    val description: String,
-    val badge: String?,
+    /** Engine-supplied description; null means use [descriptionRes]. */
+    val descriptionText: String?,
+    @StringRes val descriptionRes: Int,
+    /** Fixed badge template; null means use [badgeText] (agent mode). */
+    @StringRes val badgeRes: Int?,
+    val badgeText: String?,
     val dotColor: Color,
     val icon: Glyph,
 )
@@ -1007,36 +1017,46 @@ private fun resolveAgentPresentation(agent: AgentInfo, colors: OpenCodeColors): 
     return when {
         "build" in key || "coder" in key || "developer" in key || "code" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Build" }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Full access to edit files, run commands & build features",
-            badge = "Full Access",
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_build,
+            badgeRes = R.string.agent_badge_full_access,
+            badgeText = null,
             dotColor = customColor ?: colors.warning,
             icon = Glyph.Terminal,
         )
         "plan" in key || "architect" in key || "designer" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Plan" }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Analyzes codebase & designs architecture without edits",
-            badge = "Read Only",
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_plan,
+            badgeRes = R.string.agent_badge_read_only,
+            badgeText = null,
             dotColor = customColor ?: colors.syntaxKeyword,
             icon = Glyph.Pencil,
         )
         "chat" in key || "ask" in key || "general" in key || "discuss" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Chat" }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Conversational guidance, reasoning & design advice",
-            badge = "Discussion",
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_chat,
+            badgeRes = R.string.agent_badge_discussion,
+            badgeText = null,
             dotColor = customColor ?: colors.success,
             icon = Glyph.NewChat,
         )
         "review" in key || "audit" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Review" }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Inspects code changes & identifies potential issues",
-            badge = "Review",
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_review,
+            badgeRes = R.string.agent_badge_review,
+            badgeText = null,
             dotColor = customColor ?: colors.accent,
             icon = Glyph.Search,
         )
         else -> AgentPresentation(
             title = agent.name.ifBlank { agent.id }.replaceFirstChar { it.uppercase() },
-            description = customDesc ?: "Specialized agent configuration",
-            badge = agent.mode?.takeIf { it.isNotBlank() }?.uppercase(),
+            descriptionText = customDesc,
+            descriptionRes = R.string.agent_desc_default,
+            badgeRes = null,
+            badgeText = agent.mode?.takeIf { it.isNotBlank() }?.uppercase(),
             dotColor = customColor ?: colors.accent,
             icon = Glyph.Sliders,
         )

@@ -534,4 +534,13 @@
     <string name="model_tier_pro">Pro</string>
     <string name="model_tier_reasoning">Penalaran</string>
     <string name="model_tier_fast">Cepat</string>
+    <string name="agent_desc_build">Akses penuh untuk mengedit file, menjalankan perintah &amp; membangun fitur</string>
+    <string name="agent_desc_plan">Menganalisis codebase &amp; merancang arsitektur tanpa edit</string>
+    <string name="agent_desc_chat">Panduan percakapan, penalaran &amp; saran desain</string>
+    <string name="agent_desc_review">Memeriksa perubahan kode &amp; mengidentifikasi potensi masalah</string>
+    <string name="agent_desc_default">Konfigurasi agen khusus</string>
+    <string name="agent_badge_full_access">Akses Penuh</string>
+    <string name="agent_badge_read_only">Hanya Baca</string>
+    <string name="agent_badge_discussion">Diskusi</string>
+    <string name="agent_badge_review">Tinjauan</string>
 </resources>

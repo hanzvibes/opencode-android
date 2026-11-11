@@ -535,4 +535,13 @@
     <string name="model_tier_pro">Pro</string>
     <string name="model_tier_reasoning">Reasoning</string>
     <string name="model_tier_fast">Fast</string>
+    <string name="agent_desc_build">Full access to edit files, run commands &amp; build features</string>
+    <string name="agent_desc_plan">Analyzes codebase &amp; designs architecture without edits</string>
+    <string name="agent_desc_chat">Conversational guidance, reasoning &amp; design advice</string>
+    <string name="agent_desc_review">Inspects code changes &amp; identifies potential issues</string>
+    <string name="agent_desc_default">Specialized agent configuration</string>
+    <string name="agent_badge_full_access">Full Access</string>
+    <string name="agent_badge_read_only">Read Only</string>
+    <string name="agent_badge_discussion">Discussion</string>
+    <string name="agent_badge_review">Review</string>
 </resources>
