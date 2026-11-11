@@ -735,12 +735,15 @@ class ChatViewModel(
         // composer. The attachments are baked into the queued text and
         // cleared with it, so the flush — which sends the entry directly —
         // cannot append them a second time. When the entry is dropped as a
-        // duplicate the files stay pending: they were never baked anywhere.
+        // duplicate the draft is kept, not cleared: the text was never
+        // accepted anywhere, so clearing it would silently destroy what the
+        // user typed (audit-70 13-F1). The files stay pending too: they were
+        // never baked anywhere.
         if (_state.value.busy || sendInFlight) {
             if (queuePrompt(full, typed)) {
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
+                clearDraft()
             }
-            clearDraft()
             return
         }
         sendText(full, typed, attachments)
@@ -892,8 +895,6 @@ class ChatViewModel(
             cancelEdit()
             return
         }
-        draftBeforeEdit = null
-        _state.value = _state.value.copy(editingMessageId = null)
         // An edit submits like a send, attachments included: a file picked
         // while editing is part of the message being submitted, not the
         // draft that was there before the edit.
@@ -902,10 +903,18 @@ class ChatViewModel(
         if (_state.value.busy || sendInFlight) {
             if (queuePrompt(full, text)) {
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
+                draftBeforeEdit = null
+                _state.value = _state.value.copy(editingMessageId = null)
+                clearDraft()
             }
-            clearDraft()
+            // Dropped as a duplicate: stay in edit mode. draftBeforeEdit and
+            // editingMessageId are untouched, so Cancel still restores the
+            // pre-edit draft instead of losing both the edit and its backup
+            // (audit-70 13-F1).
             return
         }
+        draftBeforeEdit = null
+        _state.value = _state.value.copy(editingMessageId = null)
         sendText(full, text, attachments)
     }
 
