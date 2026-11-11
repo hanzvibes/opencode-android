@@ -533,15 +533,19 @@ private fun AgentSelector(
                                     }
                                 }
 
-                                Text(
-                                    text = presentation.descriptionArg?.let { stringResource(presentation.descriptionRes, it) }
-                                        ?: stringResource(presentation.descriptionRes),
-                                    style = OpenCodeTypography.caption,
-                                    color = colors.onSurfaceMuted,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(start = 32.dp, top = 2.dp),
-                                )
+                                // Agent descriptions come from the agent definition
+                                // (engine data), so they stay a plain string — only
+                                // the MODEL descriptions are localised resources.
+                                if (presentation.description.isNotBlank()) {
+                                    Text(
+                                        text = presentation.description,
+                                        style = OpenCodeTypography.caption,
+                                        color = colors.onSurfaceMuted,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(start = 32.dp, top = 2.dp),
+                                    )
+                                }
                             }
                         }
                         is SelectorEntry.ModelRow -> Unit
