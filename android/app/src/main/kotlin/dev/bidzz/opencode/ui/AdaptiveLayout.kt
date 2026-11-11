@@ -24,8 +24,11 @@ import androidx.compose.ui.unit.dp
  */
 val ExpandedWidthBreakpoint: Dp = 840.dp
 
-/** Width of the persistent navigation sidebar: the same 320dp as the modal drawer. */
-val PersistentSidebarWidth: Dp = 320.dp
+/** Width of the persistent navigation sidebar (Opsi 2 redesign): 285dp, slimmer than the old 320dp. */
+val PersistentSidebarWidth: Dp = 285.dp
+
+/** Width of the collapsed sidebar rail: logomark + New session icon, both on 48dp targets. */
+val CollapsedSidebarWidth: Dp = 64.dp
 
 /** Width of the list pane in a list-detail layout (sessions, files). */
 val ListPaneWidth: Dp = 360.dp

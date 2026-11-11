@@ -176,6 +176,10 @@
     <string name="drawer_view_all">Lihat semua sesi</string>
     <string name="drawer_diagnostics">Diagnostik</string>
     <string name="drawer_switch_workspace">Ganti ruang kerja</string>
+    <string name="sidebar_collapse">Ciutkan sidebar</string>
+    <string name="sidebar_expand">Bentangkan sidebar</string>
+    <string name="sidebar_close">Tutup sidebar</string>
+    <string name="sidebar_empty_hint">Mulai sesi baru untuk memulai</string>
 
     <!-- Session Groups -->
     <string name="session_group_pinned">Disematkan</string>

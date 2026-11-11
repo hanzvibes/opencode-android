@@ -87,4 +87,44 @@ class SessionGroupTest {
         assertEquals(1, groups.size)
         assertTrue(groups.containsKey(SessionDateGroup.TODAY))
     }
+
+    @Test
+    fun `blank query returns every row`() {
+        val rows = listOf(session("1"), session("2"))
+        assertEquals(rows, filterSessionRows(rows, ""))
+        assertEquals(rows, filterSessionRows(rows, "   "))
+    }
+
+    @Test
+    fun `query matches titles case-insensitively`() {
+        val s1 = session("1").copy(title = "Fix login crash")
+        val s2 = session("2").copy(title = "Refactor parser")
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "LOGIN"))
+    }
+
+    @Test
+    fun `query matches transcript previews from details`() {
+        val s1 = session("1").copy(title = "Untitled")
+        val s2 = session("2").copy(title = "Untitled")
+        val details = mapOf("1" to SessionDetail(preview = "How do I fix the sidebar?"))
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "sidebar", details))
+    }
+
+    @Test
+    fun `query matches model and outcome from details`() {
+        val s1 = session("1")
+        val s2 = session("2")
+        val details = mapOf(
+            "1" to SessionDetail(model = "anthropic/claude-sonnet-4", status = "succeeded"),
+            "2" to SessionDetail(model = "google/gemini-3-flash", status = "failed"),
+        )
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "claude", details))
+        assertEquals(listOf(s2), filterSessionRows(listOf(s1, s2), "failed", details))
+    }
+
+    @Test
+    fun `query with no match returns an empty list`() {
+        val rows = listOf(session("1"), session("2"))
+        assertTrue(filterSessionRows(rows, "zzz-no-such-session").isEmpty())
+    }
 }

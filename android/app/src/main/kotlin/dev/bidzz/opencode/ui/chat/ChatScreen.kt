@@ -57,6 +57,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -77,12 +78,14 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -120,6 +123,8 @@ import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.Status
+import dev.bidzz.opencode.core.engine.EngineState
+import dev.bidzz.opencode.ui.CollapsedSidebarWidth
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
@@ -133,6 +138,8 @@ import dev.bidzz.opencode.ui.sessions.DeleteSessionDialog
 import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
 import dev.bidzz.opencode.ui.sessions.SessionActionMenu
 import dev.bidzz.opencode.ui.sessions.SessionDateGroup
+import dev.bidzz.opencode.ui.sessions.SessionDetail
+import dev.bidzz.opencode.ui.sessions.filterSessionRows
 import dev.bidzz.opencode.ui.sessions.formatCompactTokens
 import dev.bidzz.opencode.ui.sessions.groupSessions
 import dev.bidzz.opencode.ui.sessions.label
@@ -236,6 +243,16 @@ fun ChatScreen(
     /** URIs picked in the system file picker; read in as text below. */
     safFilePicked: Flow<Uri> = emptyFlow(),
     onDismissAttachNotice: () -> Unit = {},
+    /**
+     * Per-session preview/model/status for the sidebar rows (Phase 2,
+     * finding 21): the list endpoint returns no transcript, so a row
+     * without an entry here shows title + age/cost/tokens only.
+     */
+    sessionDetails: Map<String, SessionDetail> = emptyMap(),
+    /** Engine state for the sidebar footer's status dot + label. */
+    engineState: EngineState = EngineState.STOPPED,
+    /** True while the engine answers requests; the footer status reads Working then. */
+    busy: Boolean = false,
     modifier: Modifier = Modifier,
     /**
      * True at >=840dp wide (see [dev.bidzz.opencode.ui.isExpandedWidth]):
@@ -257,6 +274,15 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+
+    // Opsi 2 sidebar collapse (tablet only): rememberSaveable so a
+    // rotation keeps the rail collapsed. The rail always offers a way
+    // back (expand button + logomark tap), so the sidebar can never
+    // strand the user without a reopen path.
+    var sidebarCollapsed by rememberSaveable { mutableStateOf(false) }
+    // Sidebar search query, hoisted so switching between the modal
+    // drawer and the persistent sidebar does not clear what was typed.
+    var sidebarQuery by rememberSaveable { mutableStateOf("") }
 
     // Follow the conversation as it grows, but only while the reader is already at the bottom,
     // so scrolling up during a stream is not yanked back down.
@@ -1250,25 +1276,38 @@ fun ChatScreen(
                     .fillMaxSize()
                     .background(colors.background),
             ) {
-                ChatSidebar(
-                    projectTitle = headerTitle(state.workspacePath),
-                    currentSessionID = state.sessionID,
-                    sessions = sessions,
-                    // No close-then-open here: there is no drawer to close,
-                    // and selecting a session opens it in the detail pane
-                    // beside the sidebar without a screen switch.
-                    onNewSession = onNewSession,
-                    onOpenSession = onOpenSession,
-                    onAllSessions = onSessionsClick,
-                    onFiles = onFilesClick,
-                    onProject = onProjectClick,
-                    onSettings = onSettingsClick,
-                    onDiagnostics = onDiagnosticsClick,
-                    onDeveloper = onAboutClick,
-                    onRenameSession = onRenameSession,
-                    onDeleteSession = onDeleteSession,
-                    onTogglePinSession = onTogglePinSession,
-                )
+                if (sidebarCollapsed) {
+                    CollapsedSidebarRail(
+                        onExpand = { sidebarCollapsed = false },
+                        onNewSession = onNewSession,
+                    )
+                } else {
+                    ChatSidebar(
+                        projectTitle = headerTitle(state.workspacePath),
+                        currentSessionID = state.sessionID,
+                        sessions = sessions,
+                        sessionDetails = sessionDetails,
+                        engineState = engineState,
+                        busy = busy,
+                        sidebarQuery = sidebarQuery,
+                        onSidebarQueryChange = { sidebarQuery = it },
+                        // No close-then-open here: there is no drawer to close,
+                        // and selecting a session opens it in the detail pane
+                        // beside the sidebar without a screen switch.
+                        onNewSession = onNewSession,
+                        onOpenSession = onOpenSession,
+                        onAllSessions = onSessionsClick,
+                        onFiles = onFilesClick,
+                        onProject = onProjectClick,
+                        onSettings = onSettingsClick,
+                        onDiagnostics = onDiagnosticsClick,
+                        onDeveloper = onAboutClick,
+                        onRenameSession = onRenameSession,
+                        onDeleteSession = onDeleteSession,
+                        onTogglePinSession = onTogglePinSession,
+                        onToggleCollapse = { sidebarCollapsed = true },
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -1290,6 +1329,11 @@ fun ChatScreen(
                         projectTitle = headerTitle(state.workspacePath),
                         currentSessionID = state.sessionID,
                         sessions = sessions,
+                        sessionDetails = sessionDetails,
+                        engineState = engineState,
+                        busy = busy,
+                        sidebarQuery = sidebarQuery,
+                        onSidebarQueryChange = { sidebarQuery = it },
                         onNewSession = { closeThen(onNewSession) },
                         onOpenSession = { id -> closeThen { onOpenSession(id) } },
                         onAllSessions = { closeThen(onSessionsClick) },
@@ -1301,6 +1345,7 @@ fun ChatScreen(
                         onRenameSession = onRenameSession,
                         onDeleteSession = onDeleteSession,
                         onTogglePinSession = onTogglePinSession,
+                        onCloseDrawer = { scope.launch { drawerState.close() } },
                     )
                 },
             ) {
@@ -2229,6 +2274,11 @@ private fun ChatDrawer(
     projectTitle: String,
     currentSessionID: String?,
     sessions: List<SessionRow>,
+    sessionDetails: Map<String, SessionDetail>,
+    engineState: EngineState,
+    busy: Boolean,
+    sidebarQuery: String,
+    onSidebarQueryChange: (String) -> Unit,
     onNewSession: () -> Unit,
     onOpenSession: (String) -> Unit,
     onAllSessions: () -> Unit,
@@ -2240,24 +2290,33 @@ private fun ChatDrawer(
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
+    onCloseDrawer: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
 
     // Drawer covers at most 85% of the width on narrow phones, so a sliver
-    // of the chat stays visible; wide screens keep the 320dp sheet.
+    // of the chat stays visible; wide screens keep the 300dp sheet (Opsi 2).
     BoxWithConstraints {
         ModalDrawerSheet(
             drawerShape = RoundedCornerShape(topEnd = radius.lg, bottomEnd = radius.lg),
             drawerContainerColor = colors.surface,
             drawerContentColor = colors.onSurface,
             drawerTonalElevation = 0.dp,
-            modifier = Modifier.width(minOf(320.dp, maxWidth * 0.85f)),
+            modifier = Modifier.width(minOf(300.dp, maxWidth * 0.85f)),
         ) {
             ChatDrawerContent(
                 projectTitle = projectTitle,
                 currentSessionID = currentSessionID,
                 sessions = sessions,
+                sessionDetails = sessionDetails,
+                engineState = engineState,
+                busy = busy,
+                sidebarQuery = sidebarQuery,
+                onSidebarQueryChange = onSidebarQueryChange,
+                onHeaderAction = onCloseDrawer,
+                headerActionGlyph = Glyph.Close,
+                headerActionDescriptionRes = R.string.sidebar_close,
                 onNewSession = onNewSession,
                 onOpenSession = onOpenSession,
                 onAllSessions = onAllSessions,
@@ -2275,14 +2334,15 @@ private fun ChatDrawer(
 }
 
 /**
- * Navigation and recent sessions.
+ * Navigation and recent sessions — Opsi 2 sidebar redesign.
  *
- * Matching modern Cursor / ChatGPT sidebar experience:
- * - Clean workspace switch / project picker integration at top
- * - New chat and file explorer shortcuts
- * - Conversation history grouped by date (Pinned, Today, Yesterday, Previous 7 days, Older)
- * - Quick action menu (Rename, Delete, Pin) on every session
- * - Settings, Diagnostics, and Developer profile links at bottom
+ * Order top to bottom, matching the approved mockup: brand header
+ * (logomark + collapse/close), session search, a filled primary
+ * New session button, Files / All sessions, grouped history
+ * (Pinned, Today, Yesterday, Previous 7 days, Older) with a preview
+ * plus age/cost/tokens per row, a mini empty state at the top of the
+ * list area, and one footer block (compact workspace switcher,
+ * Settings, Diagnostics, developer profile with engine status).
  *
  * Shared by the modal drawer ([ChatDrawer], phones) and the persistent
  * sidebar ([ChatSidebar], expanded widths), so the two never drift apart.
@@ -2294,6 +2354,15 @@ private fun ChatDrawerContent(
     projectTitle: String,
     currentSessionID: String?,
     sessions: List<SessionRow>,
+    sessionDetails: Map<String, SessionDetail>,
+    engineState: EngineState,
+    busy: Boolean,
+    sidebarQuery: String,
+    onSidebarQueryChange: (String) -> Unit,
+    /** Header button action: collapse (persistent sidebar) or close (modal drawer). */
+    onHeaderAction: () -> Unit,
+    headerActionGlyph: Glyph,
+    headerActionDescriptionRes: Int,
     onNewSession: () -> Unit,
     onOpenSession: (String) -> Unit,
     onAllSessions: () -> Unit,
@@ -2347,61 +2416,74 @@ private fun ChatDrawerContent(
             .fillMaxSize()
             .padding(top = spacing.md),
     ) {
-        // Workspace switch / project picker integration
+        // Brand header: logomark + app name, and the collapse button
+        // (persistent sidebar) or close button (modal drawer) — one
+        // 48dp target, never a bare glyph.
+        // Hoisted: stringResource() is @Composable and cannot be called
+        // inside a .semantics {} block.
+        val headerActionDescription = stringResource(headerActionDescriptionRes)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = spacing.sm, vertical = spacing.xxs)
-                .clip(RoundedCornerShape(radius.md))
-                .background(colors.surfaceVariant.copy(alpha = 0.5f))
-                .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
-                .clickable(role = SemanticsRole.Button, onClick = onProject)
-                .padding(horizontal = spacing.md, vertical = spacing.sm),
+                .padding(horizontal = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(radius.sm))
-                    .background(colors.accent.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(30.dp),
             ) {
-                GlyphIcon(Glyph.Folder, tint = colors.accent, size = dims.iconMedium)
+                Image(
+                    painter = painterResource(R.drawable.ic_logomark),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
-            Column(
+            Text(
+                text = "OpenCode",
+                style = OpenCodeTypography.bodyStrong,
+                color = colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = spacing.sm),
+            )
+            Box(
+                modifier = Modifier
+                    .size(dims.minTouchTarget)
+                    .clip(RoundedCornerShape(radius.sm))
+                    .clickable(
+                        role = SemanticsRole.Button,
+                        onClick = onHeaderAction,
+                    )
+                    .semantics { contentDescription = headerActionDescription },
+                contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = projectTitle.ifBlank { "OpenCode" },
-                    style = OpenCodeTypography.bodyStrong,
-                    color = colors.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = stringResource(R.string.drawer_switch_workspace),
-                    style = OpenCodeTypography.caption,
-                    color = colors.onSurfaceFaint,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                GlyphIcon(
+                    glyph = headerActionGlyph,
+                    tint = colors.onSurfaceMuted,
+                    size = 16.dp,
                 )
             }
-            GlyphIcon(
-                glyph = Glyph.ChevronDown,
-                tint = colors.onSurfaceFaint,
-                size = 14.dp,
-            )
         }
 
-        Spacer(Modifier.height(spacing.xxs))
+        Spacer(Modifier.height(spacing.xs))
 
-        DrawerItem(
+        // Session search: same pattern as the sessions list screen —
+        // matches titles and, when supplied, transcript previews, model
+        // names and outcomes (see filterSessionRows).
+        SidebarSearchField(
+            query = sidebarQuery,
+            onQueryChange = onSidebarQueryChange,
+        )
+
+        Spacer(Modifier.height(spacing.xs))
+
+        // New session is the primary action: a filled accent button,
+        // not another tinted row like Files / All sessions below it.
+        SidebarPrimaryButton(
             label = stringResource(R.string.chat_new_session),
             glyph = Glyph.NewChat,
             onClick = onNewSession,
-            accent = true,
         )
         DrawerItem(
             label = stringResource(R.string.drawer_files),
@@ -2422,26 +2504,55 @@ private fun ChatDrawerContent(
                 .background(colors.hairline),
         )
 
-    // Grouped conversation history, capped at DRAWER_SESSIONS: the
-    // drawer used to render every session the engine knew, and the
-    // constant that was supposed to cap it was never read.
-    val drawerSessions = remember(sessions) { sessions.take(DRAWER_SESSIONS) }
+    // Grouped conversation history, searched first and then capped at
+    // DRAWER_SESSIONS: the drawer used to render every session the
+    // engine knew, and the constant that was supposed to cap it was
+    // never read. Search matches titles and transcript previews
+    // (see filterSessionRows), so an older session is reachable here
+    // without opening the full sessions screen.
+    val filteredSessions = remember(sessions, sidebarQuery, sessionDetails) {
+        filterSessionRows(sessions, sidebarQuery, sessionDetails)
+    }
+    val drawerSessions = remember(filteredSessions) { filteredSessions.take(DRAWER_SESSIONS) }
     val groupedSessions = remember(drawerSessions) { groupSessions(drawerSessions) }
 
-    if (sessions.isEmpty()) {
+    if (filteredSessions.isEmpty()) {
+        // Mini empty state, pinned to the top of the list area: the old
+        // centred "No sessions yet" filled the whole middle of the
+        // drawer with dead space. The list area still takes the
+        // remaining height (weight(1f)) so the footer stays at the bottom.
         Box(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = spacing.lg, vertical = spacing.xl),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth(),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            Text(
-                text = stringResource(R.string.drawer_no_sessions),
-                style = OpenCodeTypography.bodySmall,
-                color = colors.onSurfaceMuted,
-                textAlign = TextAlign.Center,
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.lg, vertical = spacing.xl),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = if (sidebarQuery.isBlank()) {
+                        stringResource(R.string.drawer_no_sessions)
+                    } else {
+                        stringResource(R.string.history_search_no_results, sidebarQuery)
+                    },
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                    textAlign = TextAlign.Center,
+                )
+                if (sidebarQuery.isBlank()) {
+                    Text(
+                        text = stringResource(R.string.sidebar_empty_hint),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceFaint,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = spacing.xs),
+                    )
+                }
+            }
         }
     } else {
         LazyColumn(
@@ -2477,6 +2588,7 @@ private fun ChatDrawerContent(
                     val selected = row.id == currentSessionID
                     SessionDrawerItem(
                         row = row,
+                        detail = sessionDetails[row.id],
                         selected = selected,
                         onClick = { onOpenSession(row.id) },
                         onPinToggle = { onTogglePinSession(row.id) },
@@ -2490,7 +2602,7 @@ private fun ChatDrawerContent(
 
         // Past the cap, the full history lives one tap away on the
         // sessions screen instead of scrolling forever in the drawer.
-        if (sessions.size > DRAWER_SESSIONS) {
+        if (filteredSessions.size > DRAWER_SESSIONS) {
             DrawerItem(
                 label = stringResource(R.string.drawer_view_all),
                 glyph = Glyph.History,
@@ -2506,34 +2618,46 @@ private fun ChatDrawerContent(
             .background(colors.hairline),
     )
 
-    // Bottom footer with Settings, Diagnostics, and Developer Profile
+    // One footer block (Opsi 2): compact workspace switcher, Settings,
+    // Diagnostics, then the developer profile with engine status — all
+    // plain 48dp rows, no pill buttons. The workspace switcher moved
+    // down here from the top card, so the header is brand + search.
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = spacing.sm, vertical = spacing.xs),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-        ) {
-            DrawerFooterButton(
-                label = stringResource(R.string.settings_title),
-                glyph = Glyph.Sliders,
-                onClick = onSettings,
-                modifier = Modifier.weight(1f),
-            )
-            DrawerFooterButton(
-                label = stringResource(R.string.drawer_diagnostics),
-                glyph = Glyph.Pulse,
-                onClick = onDiagnostics,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        DrawerItem(
+            label = projectTitle.ifBlank { "OpenCode" },
+            glyph = Glyph.Folder,
+            onClick = onProject,
+            trailing = {
+                GlyphIcon(
+                    glyph = Glyph.ChevronDown,
+                    tint = colors.onSurfaceFaint,
+                    size = 14.dp,
+                )
+            },
+        )
+        DrawerItem(
+            label = stringResource(R.string.settings_title),
+            glyph = Glyph.Sliders,
+            onClick = onSettings,
+        )
+        DrawerItem(
+            label = stringResource(R.string.drawer_diagnostics),
+            glyph = Glyph.Pulse,
+            onClick = onDiagnostics,
+        )
 
-        // 48dp minimum height: the 30dp avatar + xs padding used
-        // to make this row ~40dp tall, shorter than the footer
-        // buttons above it.
+        // Developer profile with engine status: the logomark, 30dp,
+        // is the drawer's identity mark since the name was removed
+        // (user decision 2026-11-11). The status dot + label reuse the
+        // header's wording (Ready / Working / Unhealthy / …), so the
+        // footer never invents a second vocabulary for the same state.
+        val engineStatus = engineState.toStatus(busy)
+        val engineLabel = engineState.statusLabel(busy)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2549,9 +2673,6 @@ private fun ChatDrawerContent(
                     .size(30.dp)
                     .clip(RoundedCornerShape(radius.sm)),
             ) {
-                // The logomark, 30dp: the drawer's identity mark since the
-                // name was removed (user decision 2026-11-11). It replaces
-                // the "R" initial circle.
                 Image(
                     painter = painterResource(R.drawable.ic_logomark),
                     contentDescription = null,
@@ -2570,10 +2691,24 @@ private fun ChatDrawerContent(
                     .weight(1f)
                     .padding(horizontal = spacing.sm),
             )
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(statusDotColor(colors, engineStatus)),
+            )
+            Text(
+                text = engineLabel,
+                style = OpenCodeTypography.caption,
+                color = colors.onSurfaceMuted,
+                maxLines = 1,
+                modifier = Modifier.padding(start = spacing.xs),
+            )
             GlyphIcon(
                 glyph = Glyph.ChevronRight,
                 tint = colors.onSurfaceMuted,
                 size = 14.dp,
+                modifier = Modifier.padding(start = spacing.xs),
             )
         }
     }
@@ -2582,17 +2717,22 @@ private fun ChatDrawerContent(
 
 /**
  * Persistent navigation sidebar for expanded widths: the same drawer
- * content in a fixed 320dp column with a hairline end divider, instead
- * of the modal sheet. The conversation sits beside it (see ChatScreen),
- * so selecting a session opens it in the detail pane without a screen
- * switch. The footer already pads for the navigation bar; the status bar
- * is padded here because there is no sheet to do it.
+ * content in a fixed 285dp column (Opsi 2) with a hairline end divider,
+ * instead of the modal sheet. The conversation sits beside it (see
+ * ChatScreen), so selecting a session opens it in the detail pane
+ * without a screen switch. The footer already pads for the navigation
+ * bar; the status bar is padded here because there is no sheet to do it.
  */
 @Composable
 private fun ChatSidebar(
     projectTitle: String,
     currentSessionID: String?,
     sessions: List<SessionRow>,
+    sessionDetails: Map<String, SessionDetail>,
+    engineState: EngineState,
+    busy: Boolean,
+    sidebarQuery: String,
+    onSidebarQueryChange: (String) -> Unit,
     onNewSession: () -> Unit,
     onOpenSession: (String) -> Unit,
     onAllSessions: () -> Unit,
@@ -2604,6 +2744,7 @@ private fun ChatSidebar(
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
+    onToggleCollapse: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -2620,6 +2761,14 @@ private fun ChatSidebar(
             projectTitle = projectTitle,
             currentSessionID = currentSessionID,
             sessions = sessions,
+            sessionDetails = sessionDetails,
+            engineState = engineState,
+            busy = busy,
+            sidebarQuery = sidebarQuery,
+            onSidebarQueryChange = onSidebarQueryChange,
+            onHeaderAction = onToggleCollapse,
+            headerActionGlyph = Glyph.ChevronLeft,
+            headerActionDescriptionRes = R.string.sidebar_collapse,
             onNewSession = onNewSession,
             onOpenSession = onOpenSession,
             onAllSessions = onAllSessions,
@@ -2643,8 +2792,151 @@ private fun ChatSidebar(
     }
 }
 
+/**
+ * The collapsed tablet sidebar: a 64dp rail with the logomark and a
+ * New session icon. Both the logomark and the expand button at the
+ * bottom reopen the full sidebar, so collapsing can never hide the
+ * navigation without a way back.
+ */
 @Composable
-private fun DrawerFooterButton(
+private fun CollapsedSidebarRail(
+    onExpand: () -> Unit,
+    onNewSession: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+
+    // Hoisted: stringResource() is @Composable and cannot be called
+    // inside a .semantics {} block.
+    val expandDescription = stringResource(R.string.sidebar_expand)
+    val newSessionDescription = stringResource(R.string.chat_new_session)
+
+    Column(
+        modifier = modifier
+            .width(CollapsedSidebarWidth)
+            .fillMaxHeight()
+            .background(colors.surface)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(vertical = spacing.sm),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(dims.minTouchTarget)
+                .clip(RoundedCornerShape(radius.sm))
+                .clickable(role = SemanticsRole.Button, onClick = onExpand)
+                .semantics { contentDescription = expandDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_logomark),
+                contentDescription = null,
+                modifier = Modifier.size(30.dp),
+            )
+        }
+        Spacer(Modifier.height(spacing.xs))
+        Box(
+            modifier = Modifier
+                .size(dims.minTouchTarget)
+                .clip(RoundedCornerShape(radius.md))
+                .background(colors.accent)
+                .clickable(role = SemanticsRole.Button, onClick = onNewSession)
+                .semantics { contentDescription = newSessionDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                glyph = Glyph.NewChat,
+                tint = colors.onAccent,
+                size = dims.iconMedium,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Box(
+            modifier = Modifier
+                .size(dims.minTouchTarget)
+                .clip(RoundedCornerShape(radius.sm))
+                .clickable(role = SemanticsRole.Button, onClick = onExpand)
+                .semantics { contentDescription = expandDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                glyph = Glyph.ChevronRight,
+                tint = colors.onSurfaceMuted,
+                size = 16.dp,
+            )
+        }
+    }
+}
+
+/** Session search field, same pattern as the sessions list screen. */
+@Composable
+private fun SidebarSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.sm)
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surface)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+            .padding(horizontal = spacing.md, vertical = spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        GlyphIcon(
+            glyph = Glyph.Search,
+            tint = colors.onSurfaceMuted,
+            size = 16.dp,
+        )
+        Box(modifier = Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.history_search_hint),
+                    style = OpenCodeTypography.body,
+                    color = colors.onSurfaceFaint,
+                )
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
+                cursorBrush = SolidColor(colors.accent),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(radius.sm))
+                    .clickable(role = SemanticsRole.Button) { onQueryChange("") },
+                contentAlignment = Alignment.Center,
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Close,
+                    tint = colors.onSurfaceMuted,
+                    size = 16.dp,
+                )
+            }
+        }
+    }
+}
+
+/** The primary New session action: a filled accent button, 48dp tall. */
+@Composable
+private fun SidebarPrimaryButton(
     label: String,
     glyph: Glyph,
     onClick: () -> Unit,
@@ -2655,30 +2947,26 @@ private fun DrawerFooterButton(
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
 
-    // Footer buttons are a full 48dp touch target (dims.minTouchTarget):
-    // at caption size with only xs vertical padding they used to be ~30dp
-    // tall and read as cramped next to the 40dp composer chips.
     Row(
         modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.sm, vertical = spacing.xxs)
             .height(dims.minTouchTarget)
             .clip(RoundedCornerShape(radius.md))
-            // Opaque surfaceRaised: the 0.6-alpha surfaceVariant washed
-            // out against the drawer background in the light theme.
-            .background(colors.surfaceRaised)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+            .background(colors.accent)
             .clickable(role = SemanticsRole.Button, onClick = onClick)
-            .padding(horizontal = spacing.sm),
+            .padding(horizontal = spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        GlyphIcon(glyph, tint = colors.onSurfaceMuted, size = dims.iconMedium)
+        GlyphIcon(glyph, tint = colors.onAccent, size = dims.iconMedium)
         Text(
             text = label,
-            style = OpenCodeTypography.label.copy(fontWeight = FontWeight.Medium),
-            color = colors.onSurface,
+            style = OpenCodeTypography.bodyStrong,
+            color = colors.onAccent,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = spacing.xs),
+            modifier = Modifier.padding(start = spacing.sm),
         )
     }
 }
@@ -2772,6 +3060,8 @@ private fun SessionDrawerItem(
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Transcript preview from the details lookup; null until it lands, and the row stays title-only. */
+    detail: SessionDetail? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -2784,6 +3074,7 @@ private fun SessionDrawerItem(
     val age = row.age?.label()
     val tokenLabel = row.tokenTotal?.let { stringResource(R.string.turn_footer_tokens, formatCompactTokens(it)) }
     val meta = listOfNotNull(age, row.cost, tokenLabel).joinToString(" · ")
+    val preview = detail?.preview?.trim()?.takeIf { it.isNotEmpty() }
 
     // The selected background animates instead of snapping when the
     // selection moves between rows.
@@ -2840,6 +3131,16 @@ private fun SessionDrawerItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
+                )
+            }
+            if (preview != null) {
+                Text(
+                    text = preview,
+                    style = OpenCodeTypography.bodySmall,
+                    color = if (selected) colors.accentText.copy(alpha = 0.75f) else colors.onSurfaceMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
             if (meta.isNotEmpty()) {

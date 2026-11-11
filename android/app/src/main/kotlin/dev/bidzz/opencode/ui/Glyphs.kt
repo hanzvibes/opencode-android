@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
  * differently on every device. One stroke weight keeps them reading as a family.
  */
 enum class Glyph {
-    Menu, NewChat, ArrowUp, ArrowDown, ArrowLeft, ChevronDown, ChevronRight,
+    Menu, NewChat, ArrowUp, ArrowDown, ArrowLeft, ChevronDown, ChevronRight, ChevronLeft,
     File, Folder, Pencil, Terminal, Search, Globe, Sliders,
     Send, Camera, Code, Mail, External, Info, Copy, Check, Close, Mic,
     Eye, EyeOff, Key, Sparkle, Refresh,
@@ -72,6 +72,7 @@ fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp
                 shape(6f to 12f, 12f to 18f, 18f to 12f)
             }
             Glyph.ChevronRight -> shape(9f to 6f, 15f to 12f, 9f to 18f)
+            Glyph.ChevronLeft -> shape(15f to 6f, 9f to 12f, 15f to 18f)
             Glyph.ArrowLeft -> {
                 line(19f, 12f, 5f, 12f)
                 shape(11f to 6f, 5f to 12f, 11f to 18f)
