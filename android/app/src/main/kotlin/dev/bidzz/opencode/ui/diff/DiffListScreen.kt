@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.diff
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -266,6 +267,7 @@ private fun ChangedFileCardItem(
                 .heightIn(min = 56.dp)
                 .clickable(
                     interactionSource = cardPressSource,
+                    indication = LocalIndication.current,
                     role = Role.Button,
                     onClick = onClick,
                 )

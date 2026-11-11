@@ -7,8 +7,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.rememberSharedContentState
-import androidx.compose.animation.sharedBounds
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -140,7 +138,8 @@ import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.files.FileRow
 import dev.bidzz.opencode.ui.files.rankQuickOpen
 import dev.bidzz.opencode.ui.PersistentSidebarWidth
-import dev.bidzz.opencode.ui.LocalizedAlertDialog
+import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
+import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.sessions.DeleteSessionDialog
 import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
@@ -966,6 +965,9 @@ fun ChatScreen(
                                 // no layout size, so the bottom-pin scroll
                                 // math is untouched.
                                 val entryDelay = messageEntryDelayMillis(index, state.messages.lastIndex)
+                                Column(
+                                    modifier = Modifier.animateItem(),
+                                ) {
                                 AnimatedVisibility(
                                     visible = true,
                                     enter = fadeIn(
@@ -973,7 +975,6 @@ fun ChatScreen(
                                     ) + slideInVertically(
                                         animationSpec = motion.tweenStandard(delayMillis = entryDelay),
                                     ) { messageEntrySlidePx },
-                                    modifier = Modifier.animateItem(),
                                 ) {
                                     Column(
                                         modifier = Modifier.padding(top = topSpacing),
@@ -1096,6 +1097,7 @@ fun ChatScreen(
                                             onSaveCode = onSaveCode,
                                         )
                                     }
+                                }
                                 }
                             }
                             // Placeholder → answer transition. This slot stays
@@ -2274,8 +2276,9 @@ private fun EngineStatusDialog(
         dev.bidzz.opencode.core.engine.EngineState.STOPPED -> R.string.chat_status_desc_stopped
     }
 
-    LocalizedAlertDialog(
-        onDismissRequest = onDismiss,
+    LocalizedDraggableBottomSheet(
+        onDismiss = onDismiss,
+        initialStop = SheetStop.HALF,
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -2293,7 +2296,7 @@ private fun EngineStatusDialog(
                 )
             }
         },
-        text = {
+        content = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(spacing.md),
@@ -2485,19 +2488,17 @@ private fun EngineStatusDialog(
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = onOpenDiagnostics) {
-                Text(
-                    text = stringResource(R.string.chat_status_dialog_diagnostics),
-                    color = colors.accentText,
-                )
-            }
-        },
-        dismissButton = {
+        actions = {
             TextButton(onClick = onDismiss) {
                 Text(
                     text = stringResource(R.string.chat_status_dialog_close),
                     color = colors.onSurfaceMuted,
+                )
+            }
+            TextButton(onClick = onOpenDiagnostics) {
+                Text(
+                    text = stringResource(R.string.chat_status_dialog_diagnostics),
+                    color = colors.accentText,
                 )
             }
         },

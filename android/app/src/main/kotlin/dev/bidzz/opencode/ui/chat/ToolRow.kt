@@ -7,6 +7,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -192,6 +193,7 @@ fun ToolTrace(
                 .pressScale(motion, headerPressSource)
                 .clickable(
                     interactionSource = headerPressSource,
+                    indication = LocalIndication.current,
                     role = Role.Button,
                 ) {
                     open = !open
@@ -724,6 +726,7 @@ fun ToolStep(
                         .pressScale(motion, stepPressSource)
                         .clickable(
                             interactionSource = stepPressSource,
+                            indication = LocalIndication.current,
                             enabled = hasDetails,
                         ) { open = !open }
                         .padding(horizontal = spacing.sm, vertical = 7.dp),

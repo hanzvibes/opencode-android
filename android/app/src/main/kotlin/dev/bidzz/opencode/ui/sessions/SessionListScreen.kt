@@ -3,8 +3,7 @@ package dev.bidzz.opencode.ui.sessions
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.rememberSharedContentState
-import androidx.compose.animation.sharedBounds
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
@@ -459,6 +459,7 @@ private fun SessionRowItem(
                 .heightIn(min = 56.dp)
                 .clickable(
                     interactionSource = rowPressSource,
+                    indication = LocalIndication.current,
                     role = Role.Button,
                     onClick = onClick,
                 )

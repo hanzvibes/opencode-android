@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.files
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -524,6 +525,7 @@ private fun QuickOpenPalette(
                                 .background(if (isSelected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
                                 .clickable(
                                     interactionSource = rowPressSource,
+                                    indication = LocalIndication.current,
                                     role = Role.Button,
                                     onClick = { onPick(row) },
                                 )
@@ -720,6 +722,7 @@ private fun FileRowItem(
                 .heightIn(min = 52.dp)
                 .clickable(
                     interactionSource = rowPressSource,
+                    indication = LocalIndication.current,
                     role = Role.Button,
                     onClick = onClick,
                 )
