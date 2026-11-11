@@ -42,6 +42,13 @@ class EngineBinary private constructor(
             // Its shared libs (ICU, OpenSSL, ...) are staged alongside it and
             // found via LD_LIBRARY_PATH (EngineEnvironment), not this map.
             "libnode.so" to "node",
+            // xz / tar / ar (Termux bionic builds, staged by
+            // script/android/stage-xz.sh). Their shared libs (liblzma,
+            // libbfd, ...) are staged alongside them and found via
+            // LD_LIBRARY_PATH (EngineEnvironment), not this map.
+            "libxz.so" to "xz",
+            "libtar.so" to "tar",
+            "libar.so" to "ar",
         )
 
         fun resolve(nativeLibraryDir: File, filesDir: File): EngineBinary {
