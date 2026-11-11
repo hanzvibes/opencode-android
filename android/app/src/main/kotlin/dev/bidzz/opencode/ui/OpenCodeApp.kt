@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -31,6 +33,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.LanguageStore
 import dev.bidzz.opencode.R
@@ -51,6 +55,8 @@ import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.design.ThemeStore
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.about.AboutScreen
+import dev.bidzz.opencode.ui.browser.InAppBrowserScreen
+import dev.bidzz.opencode.ui.browser.isBrowsableUrl
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
@@ -112,6 +118,7 @@ internal sealed interface Screen {
     data object Worktrees : Screen
     data object EngineConfig : Screen
     data object About : Screen
+    data class InAppBrowser(val url: String) : Screen
 }
 
 /**
@@ -145,7 +152,7 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Projects, Screen.Files, Screen.Settings, Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Worktrees,
-    Screen.EngineConfig, Screen.About -> 3
+    Screen.EngineConfig, Screen.About, is Screen.InAppBrowser -> 3
     is Screen.Diff -> 4
 }
 
@@ -370,10 +377,27 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         mutableStateOf(OnboardingStore.shouldShow(hostContext, app.workspaceStore))
     }
 
+    // Links in chat open in the in-app browser (Native C): http/https
+    // stay inside the app; mailto:/tel: and the rest go to the system,
+    // guarded like the chat link guard. MarkdownText's safe handler
+    // delegates to this ambient handler, so no call site needs threading.
+    val browserUriHandler = object : UriHandler {
+        override fun openUri(uri: String) {
+            if (isBrowsableUrl(uri)) {
+                screen = Screen.InAppBrowser(uri)
+            } else {
+                runCatching {
+                    hostContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
+                }
+            }
+        }
+    }
+
     CompositionLocalProvider(
         LocalContext provides localized,
         LocalConfiguration provides localized.resources.configuration,
         LocalAppContext provides localized,
+        LocalUriHandler provides browserUriHandler,
     ) {
     OpenCodeTheme(themeMode = themeMode) {
         // Animation C: screen transitions slide 24dp with a 320ms
@@ -523,6 +547,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     onBack = { screen = Screen.Chat },
                     onOpen = sessionDiffViewModel::openFile,
                     onCloseFile = sessionDiffViewModel::closeFile,
+                )
+
+                is Screen.InAppBrowser -> InAppBrowserScreen(
+                    url = target.url,
+                    onBack = { screen = Screen.Chat },
                 )
 
                 Screen.Sessions -> if (isExpanded) {

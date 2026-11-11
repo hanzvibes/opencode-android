@@ -14,6 +14,7 @@ class NavigationTest {
         assertEquals(Screen.Settings, Screen.Plugins.parent())
         assertEquals(Screen.Settings, Screen.Worktrees.parent())
         assertEquals(Screen.Settings, Screen.EngineConfig.parent())
+        assertEquals(Screen.Chat, Screen.InAppBrowser("https://example.com").parent())
     }
 
     @Test
@@ -33,6 +34,7 @@ class NavigationTest {
         assertEquals(3, Screen.DiffList.depth())
         assertEquals(4, Screen.Diff("a.kt").depth())
         assertEquals(3, Screen.SessionDiff.depth())
+        assertEquals(3, Screen.InAppBrowser("https://example.com").depth())
     }
 
     @Test

@@ -617,4 +617,13 @@
     <string name="agent_badge_read_only">Read Only</string>
     <string name="agent_badge_discussion">Discussion</string>
     <string name="agent_badge_review">Review</string>
+    <string name="browser_back">Back</string>
+    <string name="browser_forward">Forward</string>
+    <string name="browser_reload">Reload</string>
+    <string name="browser_share">Share link</string>
+    <string name="browser_open_external">Open in browser</string>
+    <string name="browser_copy_link">Copy link</string>
+    <string name="browser_copied">Link copied</string>
+    <string name="browser_download_started">Download started</string>
+    <string name="browser_download_failed">Download failed</string>
 </resources>

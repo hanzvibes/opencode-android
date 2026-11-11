@@ -616,4 +616,13 @@
     <string name="agent_badge_read_only">Hanya Baca</string>
     <string name="agent_badge_discussion">Diskusi</string>
     <string name="agent_badge_review">Tinjauan</string>
+    <string name="browser_back">Kembali</string>
+    <string name="browser_forward">Maju</string>
+    <string name="browser_reload">Muat ulang</string>
+    <string name="browser_share">Bagikan tautan</string>
+    <string name="browser_open_external">Buka di browser</string>
+    <string name="browser_copy_link">Salin tautan</string>
+    <string name="browser_copied">Tautan disalin</string>
+    <string name="browser_download_started">Unduhan dimulai</string>
+    <string name="browser_download_failed">Unduhan gagal</string>
 </resources>
