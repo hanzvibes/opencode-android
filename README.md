@@ -49,6 +49,7 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 | **Real project folders** | Point the app at any folder on shared storage; the agent works on real POSIX paths. Switch projects and the engine restarts for you. |
 | **Files and diffs** | Browse the project, read and edit files with syntax highlighting, quick-open and find-in-file, and review real `git` diffs with A/M/D badges. |
 | **Search that works** | `git` and `ripgrep` are bundled, so the agent's `grep` and `glob` tools function. |
+| **Agent runtime guide** | Every project gets an `AGENTS.md` seeded into the workspace on first launch, so the agent knows the bundled tools (Node, npm, xz, tar, curl) and their limits. Your edits are never overwritten. |
 | **Session history** | Reopen any past conversation, for this project or all of them, with previews and transcript search. |
 | **First-run onboarding** | A three-step first run — project, provider, permissions — and a sample project you can seed to try the agent on. |
 | **Tablet layout** | On wide screens (≥840dp) the session list stays visible beside the chat, with list-detail navigation; content caps at 720dp everywhere else. |
