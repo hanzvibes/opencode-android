@@ -136,6 +136,19 @@ private fun selectorEntryKey(entry: SelectorEntry): Any = when (entry) {
 }
 
 /**
+ * Menu keys are built from the engine's identifiers, so a list the engine
+ * advertises twice (same provider + model id, same agent id) hands
+ * LazyColumn a duplicate key and the menu crashes on open with
+ * `IllegalArgumentException: Key ... was already used`. Drop the later
+ * copies, keeping the first — the entries are identical by key.
+ */
+internal fun dedupeModels(models: List<ModelInfo>): List<ModelInfo> =
+    models.distinctBy { "${it.providerID}/${it.modelID ?: it.id}" }
+
+internal fun dedupeAgents(agents: List<AgentInfo>): List<AgentInfo> =
+    agents.distinctBy { it.id }
+
+/**
  * Recent selections, newest first, kept in order in one preference
  * string (a string set would lose the order). Shared with the empty
  * state's dismissed starters: same "opencode_chat" file.
@@ -189,7 +202,7 @@ private fun AgentSelector(
 
     val selectableAgents = remember(agents) {
         val filtered = agents.filter { it.hidden != true && it.mode != "subagent" }
-        if (filtered.isNotEmpty()) filtered else agents
+        dedupeAgents(if (filtered.isNotEmpty()) filtered else agents)
     }
 
     val currentAgent = remember(selectableAgents, activeAgent) {
@@ -257,7 +270,14 @@ private fun AgentSelector(
     val menuListState = rememberLazyListState()
     LaunchedEffect(expanded) {
         if (expanded && selectedEntryIndex >= 0) {
-            menuListState.scrollToItem(selectedEntryIndex)
+            // The index was computed from an earlier composition; if the
+            // list shrank since (agents refetched while the menu was
+            // opening), scrolling past the end throws — open at the top.
+            try {
+                menuListState.scrollToItem(selectedEntryIndex)
+            } catch (_: IllegalArgumentException) {
+                // Entries changed under us; no scroll is the right fallback.
+            }
         }
     }
 
@@ -608,12 +628,14 @@ internal fun ModelSelector(
     // Search filters on the rendered name plus the raw identifiers, so
     // "claude", "anthropic" and "gpt-4o" all match; with an empty query
     // the list keeps its default order.
-    val filteredModels = remember(models, modelQuery, colors) {
+    val dedupedModels = remember(models) { dedupeModels(models) }
+
+    val filteredModels = remember(dedupedModels, modelQuery, colors) {
         val query = modelQuery.trim().lowercase()
         if (query.isEmpty()) {
-            models
+            dedupedModels
         } else {
-            models.filter { model ->
+            dedupedModels.filter { model ->
                 val presentation = resolveModelPresentation(model, colors)
                 listOf(
                     presentation.displayName,
@@ -630,14 +652,14 @@ internal fun ModelSelector(
     // grouped under their provider, in first-appearance order.
     val recentHeader = stringResource(R.string.chat_recent)
     val query = modelQuery.trim().lowercase()
-    val entries: List<SelectorEntry> = remember(models, filteredModels, recentModelRefs, query, recentHeader, colors) {
+    val entries: List<SelectorEntry> = remember(dedupedModels, filteredModels, recentModelRefs, query, recentHeader, colors) {
         if (query.isNotEmpty()) {
             filteredModels.map { SelectorEntry.ModelRow(it) }
         } else {
             val recents = recentModelRefs.mapNotNull { ref ->
-                models.firstOrNull { modelRefKey(it) == ref }
+                dedupedModels.firstOrNull { modelRefKey(it) == ref }
             }
-            val rest = models.filter { model -> recents.none { it.ref() == model.ref() } }
+            val rest = dedupedModels.filter { model -> recents.none { it.ref() == model.ref() } }
             buildList {
                 if (recents.isNotEmpty()) {
                     add(SelectorEntry.Header(recentHeader))
@@ -661,14 +683,21 @@ internal fun ModelSelector(
     val menuListState = rememberLazyListState()
     LaunchedEffect(expanded) {
         if (expanded && selectedEntryIndex >= 0) {
-            menuListState.scrollToItem(selectedEntryIndex)
+            // The index was computed from an earlier composition; if the
+            // list shrank since (models refetched while the menu was
+            // opening), scrolling past the end throws — open at the top.
+            try {
+                menuListState.scrollToItem(selectedEntryIndex)
+            } catch (_: IllegalArgumentException) {
+                // Entries changed under us; no scroll is the right fallback.
+            }
         }
     }
 
-    val currentModel = remember(models, activeModel) {
-        models.firstOrNull { it.ref() == activeModel || (activeModel != null && (it.modelID ?: it.id) == activeModel.id) }
+    val currentModel = remember(dedupedModels, activeModel) {
+        dedupedModels.firstOrNull { it.ref() == activeModel || (activeModel != null && (it.modelID ?: it.id) == activeModel.id) }
             ?: activeModel?.let { ModelInfo(id = it.id, providerID = it.providerID) }
-            ?: models.firstOrNull()
+            ?: dedupedModels.firstOrNull()
     }
 
     val currentPresentation = currentModel?.let { resolveModelPresentation(it, colors) }
@@ -792,7 +821,7 @@ internal fun ModelSelector(
                     color = colors.onSurfaceFaint,
                 )
                 Text(
-                    text = "${models.size} available",
+                    text = "${dedupedModels.size} available",
                     style = OpenCodeTypography.caption,
                     color = colors.onSurfaceFaint,
                 )
