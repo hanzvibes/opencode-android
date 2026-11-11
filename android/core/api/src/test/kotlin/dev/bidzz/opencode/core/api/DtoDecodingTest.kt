@@ -3,6 +3,7 @@ package dev.bidzz.opencode.core.api
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
 import dev.bidzz.opencode.core.api.dto.ModelsResponse
 import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
+import dev.bidzz.opencode.core.api.dto.SavedPermissionsResponse
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
@@ -138,6 +139,28 @@ class DtoDecodingTest {
         // field name is load-bearing and worth pinning.
         val body = ApiJson.encodeToString(PermissionReplyRequest(decision = "always"))
         assertEquals("""{"decision":"always"}""", body)
+    }
+
+    @Test
+    fun `decodes saved permissions, ignoring the unmodelled time field`() {
+        // `time` is listed in the reference without a shape, so the DTO omits
+        // it; a response carrying it as an object must still decode.
+        val raw = """
+            {"data":[
+              {"id":"perm_01","projectID":"81d8a9e29a4c267059be6b14ec914cff729bd300",
+               "action":"bash","resource":"bash:ls *","time":{"created":1793447927442}},
+              {"id":"perm_02","projectID":"81d8a9e29a4c267059be6b14ec914cff729bd300",
+               "action":"edit","resource":"/storage/emulated/0/Projects/demo/README.md"}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<SavedPermissionsResponse>(raw)
+        assertEquals(2, parsed.data.size)
+        assertEquals("perm_01", parsed.data[0].id)
+        assertEquals("bash", parsed.data[0].action)
+        assertEquals("bash:ls *", parsed.data[0].resource)
+        assertEquals("edit", parsed.data[1].action)
+        assertEquals("/storage/emulated/0/Projects/demo/README.md", parsed.data[1].resource)
     }
 
     @Test

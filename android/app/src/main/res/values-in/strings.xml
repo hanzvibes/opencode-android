@@ -55,7 +55,7 @@
     <string name="settings_about_body">Portofolio dan cara menghubungi.</string>
     <string name="settings_saved_permissions">Izin tersimpan</string>
     <string name="settings_saved_permissions_body">Izin yang disimpan dengan “Selalu”. Cabut salah satu agar ditanya lagi lain kali.</string>
-    <string name="settings_saved_permissions_empty">Belum ada izin tersimpan. Izin tersimpan ada di engine, yang belum menyediakan daftarnya, jadi belum ada yang bisa dicantumkan atau dicabut dari sini.</string>
+    <string name="settings_saved_permissions_empty">Belum ada izin tersimpan. Jawab “Selalu” pada permintaan izin untuk menyimpan satu.</string>
     <string name="settings_saved_permissions_revoke">Cabut</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->

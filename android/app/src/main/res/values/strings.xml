@@ -56,7 +56,7 @@
     <string name="settings_about_body">Portfolio and ways to get in touch.</string>
     <string name="settings_saved_permissions">Saved permissions</string>
     <string name="settings_saved_permissions_body">Permissions saved with “Always”. Revoke one to be asked again next time.</string>
-    <string name="settings_saved_permissions_empty">No saved permissions yet. Saved permissions live on the engine, which does not expose the list yet, so nothing can be listed or revoked from here.</string>
+    <string name="settings_saved_permissions_empty">No saved permissions yet. Answer “Always” to a permission prompt to save one.</string>
     <string name="settings_saved_permissions_revoke">Revoke</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
