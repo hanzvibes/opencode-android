@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -173,6 +174,7 @@ private fun modelRefKey(model: ModelInfo): String =
  * neither falls short of the chip nor covers it.
  */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun AgentSelector(
     agents: List<AgentInfo>,
     activeAgent: String?,
@@ -603,6 +605,7 @@ private fun AgentSelector(
  * covers it.
  */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 internal fun ModelSelector(
     models: List<ModelInfo>,
     activeModel: ModelRef?,
