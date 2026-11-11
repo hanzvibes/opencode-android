@@ -125,6 +125,8 @@ class ProcessManager(
         private const val STARTUP_TIMEOUT_MS = 60_000L
         private const val HEALTH_INTERVAL_MS = 2_000L
         private const val HEALTH_FAILURE_LIMIT = 5
+        /** Extra consecutive failures while DEGRADED before escalating to FAILED (item 21). */
+        private const val DEGRADED_ESCALATION_LIMIT = 5
         private const val SHUTDOWN_GRACE_MS = 5_000L
         private const val MAX_OUTPUT_LINES = 200
         /** The stdout line the engine prints its password on. Shared with [redactEnginePassword]. */
@@ -132,6 +134,9 @@ class ProcessManager(
 
         /** Covers the gap between fork and the child's exec when looking up its pid. */
         private const val PID_LOOKUP_ATTEMPTS = 20
+
+        /** How long a reaped orphan gets to vanish from /proc before start proceeds (item 29). */
+        private const val ZOMBIE_REAP_WAIT_MS = 2_000L
 
         /** One retry covers a port stolen between allocation and bind. */
         private const val MAX_START_ATTEMPTS = 3
@@ -204,6 +209,13 @@ class ProcessManager(
         if (!current.canStart) {
             return@withContext Result.failure(IllegalTransitionException(current, EngineState.INITIALIZING))
         }
+
+        // A previous life of this app may have left its engine behind
+        // (item 29): the child survives the parent's death, and the
+        // service's onDestroy is not guaranteed to run. Reap orphans
+        // before the first attempt, so the new engine never contends
+        // with a ghost for its port or workspace.
+        reapZombies()
 
         var lastFailure: Throwable? = null
         for (attempt in 1..MAX_START_ATTEMPTS) {
@@ -360,9 +372,31 @@ class ProcessManager(
                 }
             } else {
                 failures++
-                if (failures >= HEALTH_FAILURE_LIMIT && _status.value.state == EngineState.RUNNING) {
-                    Log.w(TAG, "engine unhealthy $failures times, marking DEGRADED")
-                    transition(EngineState.DEGRADED, error = "Health check failing")
+                when (_status.value.state) {
+                    EngineState.RUNNING -> {
+                        if (failures >= HEALTH_FAILURE_LIMIT) {
+                            Log.w(TAG, "engine unhealthy $failures times, marking DEGRADED")
+                            transition(EngineState.DEGRADED, error = "Health check failing")
+                        }
+                    }
+                    EngineState.DEGRADED -> {
+                        // A server that stays unhealthy does not heal (item 21):
+                        // after a second full failure window the supervisor
+                        // stops waiting and escalates to FAILED, so the
+                        // resurrect path brings a fresh engine and the
+                        // composer stops accepting sends that would hang
+                        // until the 120s timeout. The process is terminated
+                        // first — FAILED with a live process would resurrect
+                        // a second engine next to it.
+                        if (failures >= HEALTH_FAILURE_LIMIT + DEGRADED_ESCALATION_LIMIT) {
+                            Log.w(TAG, "engine unhealthy $failures times while DEGRADED, escalating to FAILED")
+                            terminate(proc)
+                            process.compareAndSet(proc, null)
+                            transition(EngineState.FAILED, error = "Engine stayed unhealthy")
+                            return
+                        }
+                    }
+                    else -> Unit
                 }
             }
         }
@@ -411,20 +445,56 @@ class ProcessManager(
         return null
     }
 
-    private fun scanForEnginePid(executable: String): Int? {
-        val entries = File("/proc").listFiles() ?: return null
-        for (entry in entries) {
-            val pid = entry.name.toIntOrNull() ?: continue
-            if (pid == android.os.Process.myPid()) continue
-            val argv = runCatching {
-                File(entry, "cmdline").readBytes()
-                    .toString(Charsets.UTF_8)
-                    .split('\u0000')
-            }.getOrNull() ?: continue
-            if (argv[0] == executable && argv.getOrNull(1) == "serve") return pid
+    /**
+     * Kills engine processes left over from a previous life of this app
+     * (item 29), and waits briefly for them to vanish.
+     *
+     * The engine is a child of the app process, and Android does not kill
+     * children when the parent dies — a force-stop or a low-memory kill
+     * leaves the engine holding its port and ~200 MB with nothing left to
+     * talk to it. The service's onDestroy is the only other place the
+     * process is killed, and Android does not guarantee it runs, so every
+     * start reaps orphans first. A candidate is any process whose argv[0]
+     * is the engine binary and whose argv[1] is "serve": the exact command
+     * this class execs, and no other process can exec that path (it lives
+     * in this app's private native library dir). The currently tracked
+     * engine, if one exists, is never a candidate — start only runs from
+     * a state with no live process, and its pid is skipped anyway.
+     *
+     * The kill is a parameter so tests can substitute it: the platform
+     * `killProcess` is an Android stub under JVM unit tests.
+     *
+     * Returns the number of orphans found.
+     */
+    internal suspend fun reapZombies(
+        kill: (Int) -> Unit = { pid -> android.os.Process.killProcess(pid) },
+        ownPid: Int = android.os.Process.myPid(),
+    ): Int {
+        val executable = binary.executable.absolutePath
+        val currentPid = _status.value.pid
+        val zombies = scanForEnginePids(executable, ownPid = ownPid).filter { it != currentPid }
+        for (pid in zombies) {
+            Log.w(TAG, "reaping orphaned engine pid=$pid")
+            runCatching { kill(pid) }
+                .onFailure { Log.w(TAG, "could not kill orphaned engine pid=$pid: ${it.message}") }
         }
-        return null
+        // A SIGKILLed process usually vanishes at once; give it a moment
+        // before the new engine binds, so the old one cannot still hold
+        // the port when the new one starts.
+        val deadline = System.currentTimeMillis() + ZOMBIE_REAP_WAIT_MS
+        for (pid in zombies) {
+            while (System.currentTimeMillis() < deadline && File("/proc/$pid").exists()) {
+                delay(50)
+            }
+            if (File("/proc/$pid").exists()) {
+                Log.w(TAG, "orphaned engine pid=$pid still present after reap")
+            }
+        }
+        return zombies.size
     }
+
+    private fun scanForEnginePid(executable: String): Int? =
+        scanForEnginePids(executable).firstOrNull()
 
     /** True when the engine's own output says it could not bind the port. */
     private fun looksLikePortConflict(output: String): Boolean = isPortConflict(output)
@@ -535,6 +605,37 @@ internal fun isPortConflict(output: String): Boolean {
     val lower = output.lowercase()
     if (lower.contains("eaddrinuse") || lower.contains("address already in use")) return true
     return lower.contains("failed to start server") && lower.contains("in use")
+}
+
+/**
+ * Every engine pid in /proc: the reap needs all orphans, not just the
+ * first (item 29). A match is a process whose argv[0] is the engine
+ * binary and whose argv[1] is "serve" — the exact command
+ * [ProcessManager] execs, and no other process can exec that path (it
+ * lives in this app's private native library dir).
+ *
+ * Kept as a free function so it can be tested directly: the proc root and
+ * own pid are parameters so tests can drive the scan against a fake tree
+ * without the Android stubs.
+ */
+internal fun scanForEnginePids(
+    executable: String,
+    procRoot: File = File("/proc"),
+    ownPid: Int = android.os.Process.myPid(),
+): List<Int> {
+    val found = mutableListOf<Int>()
+    val entries = procRoot.listFiles() ?: return found
+    for (entry in entries) {
+        val pid = entry.name.toIntOrNull() ?: continue
+        if (pid == ownPid) continue
+        val argv = runCatching {
+            File(entry, "cmdline").readBytes()
+                .toString(Charsets.UTF_8)
+                .split('\u0000')
+        }.getOrNull() ?: continue
+        if (argv.getOrNull(0) == executable && argv.getOrNull(1) == "serve") found += pid
+    }
+    return found
 }
 
 /**

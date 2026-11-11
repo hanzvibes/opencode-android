@@ -180,6 +180,10 @@ fun AttachFilePicker(
      * would leave a dangling `@query` token behind.
      */
     onBrowseDeviceFiles: (() -> Unit)? = null,
+    /** True when the index walk hit a failure: the index is partial. */
+    failed: Boolean = false,
+    /** Re-runs the walk; only used when the index failed. */
+    onRetry: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -313,6 +317,33 @@ fun AttachFilePicker(
             )
         }
 
+        // A partial index says so and offers a retry, instead of silently
+        // searching only the folders that happened to load.
+        if (failed && !loading) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.md, vertical = spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = stringResource(R.string.files_quick_open_failed),
+                    style = OpenCodeTypography.caption,
+                    color = colors.onSurfaceMuted,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = stringResource(R.string.chat_retry),
+                    style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
+                    color = colors.accent,
+                    modifier = Modifier
+                        .clickable(role = Role.Button, onClick = onRetry)
+                        .padding(start = spacing.sm),
+                )
+            }
+        }
+
         when {
             loading && totalFiles == 0 -> {
                 Text(
@@ -324,7 +355,9 @@ fun AttachFilePicker(
             }
             results.isEmpty() -> {
                 Text(
-                    text = if (query.isEmpty()) {
+                    text = if (failed) {
+                        stringResource(R.string.files_quick_open_failed)
+                    } else if (query.isEmpty()) {
                         stringResource(R.string.attach_picker_no_files)
                     } else {
                         stringResource(R.string.attach_picker_empty, query)

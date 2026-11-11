@@ -96,6 +96,11 @@ data class MessagesResponse(
     val cursor: PageCursor? = null,
 )
 
+@Serializable
+data class PermissionsResponse(
+    val data: List<PendingPermission> = emptyList(),
+)
+
 /**
  * One entry in a session's history.
  *

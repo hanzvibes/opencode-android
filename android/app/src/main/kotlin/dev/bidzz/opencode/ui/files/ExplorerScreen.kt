@@ -171,6 +171,8 @@ fun ExplorerScreen(
                         openRow(row)
                     },
                     onClose = { quickOpenOpen = false },
+                    failed = state.quickOpenFailed,
+                    onRetry = onEnsureQuickOpenIndex,
                 )
 
                 detailActive -> Row(modifier = Modifier.fillMaxSize()) {
@@ -323,6 +325,10 @@ private fun QuickOpenPalette(
     loading: Boolean,
     onPick: (FileRow) -> Unit,
     onClose: () -> Unit,
+    /** True when the walk hit a failure: the index is partial. */
+    failed: Boolean = false,
+    /** Re-runs the walk; only used when the index failed. */
+    onRetry: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -445,6 +451,33 @@ private fun QuickOpenPalette(
                 )
             }
 
+            // A partial index says so and offers a retry, instead of
+            // silently searching only the folders that happened to load.
+            if (failed && !loading) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = spacing.md, vertical = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = stringResource(R.string.files_quick_open_failed),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = stringResource(R.string.chat_retry),
+                        style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
+                        color = colors.accent,
+                        modifier = Modifier
+                            .clickable(role = Role.Button, onClick = onRetry)
+                            .padding(start = spacing.md),
+                    )
+                }
+            }
+
             when {
                 loading && index.isEmpty() -> {
                     Text(
@@ -457,7 +490,11 @@ private fun QuickOpenPalette(
 
                 results.isEmpty() -> {
                     Text(
-                        text = stringResource(R.string.files_quick_open_empty, query),
+                        text = if (failed) {
+                            stringResource(R.string.files_quick_open_failed)
+                        } else {
+                            stringResource(R.string.files_quick_open_empty, query)
+                        },
                         style = OpenCodeTypography.bodySmall,
                         color = colors.onSurfaceMuted,
                         modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.md),

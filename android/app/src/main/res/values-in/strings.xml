@@ -98,9 +98,12 @@
     <string name="chat_jump_latest_unread">Ke pesan terbaru, %1$d belum dibaca</string>
     <string name="chat_new_messages">Pesan baru</string>
     <string name="chat_retry">Coba lagi</string>
+    <string name="chat_load_earlier">Muat pesan sebelumnya</string>
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
+    <string name="workspace_too_broad">Folder itu adalah seluruh storage — pilih folder proyek saja.</string>
     <string name="a11y_run_finished">Proses selesai</string>
     <string name="a11y_run_failed">Proses gagal</string>
     <string name="a11y_permission_arrived">Izin diminta</string>
@@ -313,6 +316,7 @@
     <string name="files_quick_open_empty">Tidak ada file yang cocok dengan \"%1$s\"</string>
     <string name="files_quick_open_loading">Mengindeks file workspace…</string>
     <string name="files_quick_open_results">%1$d dari %2$d file</string>
+    <string name="files_quick_open_failed">Beberapa folder gagal diindeks — hasilnya mungkin tidak lengkap.</string>
     <string name="files_quick_open_close">Tutup buka cepat</string>
     <string name="files_detail_empty">Pilih file untuk melihatnya di sini.</string>
     <string name="fileview_find">Cari</string>

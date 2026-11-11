@@ -14,6 +14,7 @@ import dev.bidzz.opencode.core.api.dto.TextEnded
 import dev.bidzz.opencode.core.api.dto.TextStarted
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +46,10 @@ data class ChatState(
     val pendingPermission: PendingPermission? = null,
     /** Tool calls seen on the stream this run, keyed by call id. Cleared on resync. */
     val liveTools: Map<String, LiveTool> = emptyMap(),
+    /** True when the transcript window cut older messages: more are available above. */
+    val hasMoreOlder: Boolean = false,
+    /** True while an explicit "load earlier" fetch is in flight. */
+    val loadingEarlier: Boolean = false,
 )
 
 /** A tool call from the live stream, tied to the assistant message that owns it. */
@@ -64,6 +69,15 @@ class ChatRepository(
 ) {
     companion object {
         private const val TAG = "ChatRepository"
+
+        /** Minimum gap between streaming emissions; deltas inside the window coalesce (item 28). */
+        private const val PUBLISH_THROTTLE_MS = 100L
+
+        /** First transcript window: newest N messages; older ones load on demand (item 28). */
+        private const val INITIAL_MESSAGE_LIMIT = 100
+
+        /** Each "load earlier" grows the window by this many messages. */
+        private const val MESSAGE_PAGE = 100
     }
 
     private val _state = MutableStateFlow(ChatState())
@@ -72,8 +86,27 @@ class ChatRepository(
     private var sessionID: String? = null
     private var streamJob: Job? = null
 
-    /** Text received per assistant message id, for the message being streamed. */
-    private val buffers = mutableMapOf<String, StringBuilder>()
+    /** Transcript window for resync: grows with "load earlier", resets on open (item 28). */
+    private var messageLimit = INITIAL_MESSAGE_LIMIT
+
+    /** Last streaming emission, for the publish throttle (item 28). */
+    private var lastPublishAtMs = 0L
+
+    /** Coalesced flush for publishes skipped by the throttle. */
+    private var publishFlushJob: Job? = null
+
+    /** Request id with a reply in flight: a double-tap (or a tap after a
+     * rotation re-arms the buttons) must not answer twice (item 22). */
+    private var replyingPermissionId: String? = null
+
+    /**
+     * Text received per (assistant message id, block ordinal), for the message
+     * being streamed. One assistant message carries several text blocks — a
+     * reply before a tool call and one after it, for example — and keying by
+     * id alone mixes them: a delta for block 1 lands in block 0's text, and
+     * TEXT_ENDED for block 1 overwrites block 0 entirely (item 25).
+     */
+    private val buffers = mutableMapOf<Pair<String, Int>, StringBuilder>()
 
     /** Prompt text by message id, for user messages the engine returns without text. */
     private val sentText = mutableMapOf<String, String>()
@@ -88,6 +121,9 @@ class ChatRepository(
         if (this.sessionID == sessionID && streamJob?.isActive == true) return
         close()
         this.sessionID = sessionID
+        // A fresh open starts at the default window (item 28): earlier
+        // messages are one tap away, not fetched up front every time.
+        messageLimit = INITIAL_MESSAGE_LIMIT
         _state.value = ChatState(sessionID = sessionID)
 
         streamJob = scope.launch {
@@ -114,8 +150,27 @@ class ChatRepository(
     fun close() {
         streamJob?.cancel()
         streamJob = null
+        publishFlushJob?.cancel()
+        publishFlushJob = null
         sessionID = null
         buffers.clear()
+    }
+
+    /**
+     * Grows the transcript window by one page and re-fetches (item 28).
+     * The engine's message endpoint only takes a limit, so paging grows
+     * the window instead of cursoring: each load re-reads a bigger newest
+     * slice. Loads are user-initiated and rare; the window resets on open.
+     */
+    fun loadEarlier() {
+        val id = sessionID ?: return
+        if (_state.value.loadingEarlier || !_state.value.hasMoreOlder) return
+        messageLimit += MESSAGE_PAGE
+        _state.value = _state.value.copy(loadingEarlier = true)
+        scope.launch {
+            resync()
+            if (sessionID == id) _state.value = _state.value.copy(loadingEarlier = false)
+        }
     }
 
     private fun isAssistantContinuation(current: SessionMessage, prev: SessionMessage): Boolean {
@@ -138,8 +193,14 @@ class ChatRepository(
     /** Rebuilds from REST. Called on open and after every reconnect. */
     private suspend fun resync() {
         val id = sessionID ?: return
-        when (val result = sessionApi.messages(id)) {
+        when (val result = sessionApi.messages(id, limit = messageLimit)) {
             is ApiResult.Success -> {
+                // The session may have changed while the call was in flight:
+                // the terminal-event resync is launched on the repository
+                // scope, not the stream job, so close() does not cancel it.
+                // An old transcript must never overwrite the new session's
+                // (item 26) — and neither must its failure or permission.
+                if (sessionID != id) return
                 // The engine returns history newest-first (idle, assistant, user...).
                 // Reversing here means the UI and every consumer can assume
                 // oldest-first, which is the only order a chat transcript can use.
@@ -171,11 +232,38 @@ class ChatRepository(
                     // `idle` message, so an idle-only check spins "Working" forever.
                     busy = newest != null && !newest.isIdle && newest.time?.completed == null,
                     lastFailure = null,
+                    // A full page back means the window may have cut older
+                    // messages (item 28); a short page means we are at the
+                    // beginning. Exactly one full page with nothing older
+                    // costs one harmless extra tap.
+                    hasMoreOlder = result.value.size >= messageLimit,
                 )
+                // A permission the engine still waits on survives reconnects
+                // and reopens (item 22): the stream only announces new asks,
+                // so restore it from REST. Only ever sets — an empty list
+                // must not wipe a request that arrived via SSE while this
+                // call was in flight, and a failed call leaves the prompt
+                // untouched.
+                when (val pending = sessionApi.listPermissions(id)) {
+                    is ApiResult.Success -> {
+                        if (sessionID != id) return
+                        pending.value.firstOrNull()?.let { request ->
+                            _state.value = _state.value.copy(pendingPermission = request)
+                        }
+                    }
+                    is ApiResult.Failure -> Log.w(TAG, "permission restore failed: ${pending.message}")
+                }
             }
             is ApiResult.Failure -> {
+                if (sessionID != id) return
                 Log.w(TAG, "resync failed: ${result.message}")
-                _state.value = _state.value.copy(lastFailure = result)
+                // A failed resync must not leave the streaming entry behind:
+                // the run is over, no more deltas are coming, and the entry
+                // would keep the message's spinner and hide its Copy/footer
+                // forever (item 25). The buffers stay — a failed resync on a
+                // reconnect mid-run must not lose the text accumulated so
+                // far; the next delta re-publishes it in full.
+                _state.value = _state.value.copy(lastFailure = result, streaming = emptyMap())
             }
         }
     }
@@ -231,15 +319,29 @@ class ChatRepository(
     suspend fun replyPermission(decision: String, message: String? = null): ApiResult<Unit> {
         val pending = _state.value.pendingPermission
             ?: return ApiResult.Failure(code = -1, tag = "NoPendingPermission")
-        return when (val result = sessionApi.replyPermission(pending.sessionID, pending.id, decision, message)) {
-            is ApiResult.Success -> {
-                _state.value = _state.value.copy(pendingPermission = null)
-                ApiResult.Success(Unit)
+        // A reply for this request is already on its way: the in-flight one
+        // covers it, and a second POST would only fail against the engine
+        // (already answered) and re-arm a dead prompt.
+        if (replyingPermissionId == pending.id) return ApiResult.Success(Unit)
+        replyingPermissionId = pending.id
+        try {
+            return when (val result = sessionApi.replyPermission(pending.sessionID, pending.id, decision, message)) {
+                is ApiResult.Success -> {
+                    // Clear by id (item 22): a newer request may have arrived
+                    // via SSE while this reply was in flight, and wiping it
+                    // would leave the run blocked with no prompt on screen.
+                    _state.value = _state.value.copy(
+                        pendingPermission = _state.value.pendingPermission?.takeIf { it.id != pending.id },
+                    )
+                    ApiResult.Success(Unit)
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(lastFailure = result)
+                    result
+                }
             }
-            is ApiResult.Failure -> {
-                _state.value = _state.value.copy(lastFailure = result)
-                result
-            }
+        } finally {
+            replyingPermissionId = null
         }
     }
 
@@ -248,22 +350,27 @@ class ChatRepository(
         when (event.type) {
             EventTypes.TEXT_STARTED -> {
                 val started = event.decode<TextStarted>() ?: return
-                buffers.getOrPut(started.assistantMessageID) { StringBuilder() }
+                buffers.getOrPut(started.assistantMessageID to started.ordinal) { StringBuilder() }
                 publish(started.assistantMessageID)
             }
 
             EventTypes.TEXT_DELTA -> {
                 val delta = event.decode<TextDelta>() ?: return
-                buffers.getOrPut(delta.assistantMessageID) { StringBuilder() }.append(delta.delta)
+                buffers.getOrPut(delta.assistantMessageID to delta.ordinal) { StringBuilder() }
+                    .append(delta.delta)
                 publish(delta.assistantMessageID)
             }
 
             EventTypes.TEXT_ENDED -> {
                 val ended = event.decode<TextEnded>() ?: return
-                // The final text is authoritative: replace whatever the deltas built,
-                // so a dropped delta does not leave a truncated message.
-                buffers[ended.assistantMessageID] = StringBuilder(ended.text)
-                publish(ended.assistantMessageID)
+                // The final text is authoritative: replace whatever the deltas
+                // built, so a dropped delta does not leave a truncated
+                // message — but only this block's buffer, never the whole
+                // message (item 25).
+                buffers[ended.assistantMessageID to ended.ordinal] = StringBuilder(ended.text)
+                // Forced: the final text must land immediately, never up to
+                // a throttle window late (item 28).
+                publish(ended.assistantMessageID, force = true)
             }
 
             EventTypes.EXECUTION_STARTED -> _state.value = _state.value.copy(busy = true)
@@ -302,6 +409,16 @@ class ChatRepository(
                 // A finished run cannot still be waiting for an answer; drop the
                 // prompt so a dead request does not sit on screen.
                 _state.value = _state.value.copy(busy = false, pendingPermission = null)
+                // The run is over: no more deltas will arrive for its
+                // messages, so their buffers are stale (item 25). The
+                // streaming entries themselves stay until the resync below
+                // lands — clearing them here would blink the just-finished
+                // answer out of the transcript on every turn; the resync
+                // replaces them atomically on success and drops them on
+                // failure, so the indicator can never stick either way.
+                buffers.clear()
+                publishFlushJob?.cancel()
+                publishFlushJob = null
                 // Pull the finished message from REST so tool calls and token counts
                 // that never appeared as deltas are included.
                 scope.launch { resync() }
@@ -349,9 +466,47 @@ class ChatRepository(
         _state.value = _state.value.copy(liveTools = tools + (id to LiveTool(messageID, next)))
     }
 
-    private fun publish(messageID: String) {
-        val text = buffers[messageID]?.toString() ?: return
-        _state.value = _state.value.copy(streaming = _state.value.streaming + (messageID to text))
+    /**
+     * Publishes one message's streamed text, at most once per
+     * [PUBLISH_THROTTLE_MS]: a token delta used to emit a whole-transcript
+     * rebuild each time (item 28). A skipped publish is not dropped — a
+     * delayed flush lands the newest text at most one window later — and
+     * TEXT_ENDED always forces, so the final text is never late.
+     */
+    private fun publish(messageID: String, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastPublishAtMs < PUBLISH_THROTTLE_MS) {
+            if (publishFlushJob?.isActive != true) {
+                publishFlushJob = scope.launch {
+                    delay(PUBLISH_THROTTLE_MS - (now - lastPublishAtMs))
+                    flushPublishes()
+                }
+            }
+            return
+        }
+        publishNow(messageID)
+    }
+
+    private fun publishNow(messageID: String) {
+        lastPublishAtMs = System.currentTimeMillis()
+        _state.value = _state.value.copy(streaming = _state.value.streaming + (messageID to streamedText(messageID)))
+    }
+
+    /** Current streamed text for one message: its blocks in ordinal order. */
+    private fun streamedText(messageID: String): String =
+        buffers.entries
+            .filter { it.key.first == messageID }
+            .sortedBy { it.key.second }
+            .joinToString("\n\n") { it.value.toString() }
+
+    /** Publishes every buffered message's current text (the coalesced flush). */
+    private fun flushPublishes() {
+        lastPublishAtMs = System.currentTimeMillis()
+        val streaming = _state.value.streaming.toMutableMap()
+        buffers.keys.map { it.first }.toSet().forEach { messageID ->
+            streaming[messageID] = streamedText(messageID)
+        }
+        _state.value = _state.value.copy(streaming = streaming)
     }
 
     /** Session id from any event payload; every event carries one. */

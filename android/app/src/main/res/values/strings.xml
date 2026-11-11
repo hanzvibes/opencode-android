@@ -99,9 +99,12 @@
     <string name="chat_jump_latest_unread">Jump to latest message, %1$d unread</string>
     <string name="chat_new_messages">New messages</string>
     <string name="chat_retry">Retry</string>
+    <string name="chat_load_earlier">Load earlier messages</string>
     <string name="chat_rate_limited_guidance">Rate limited — switch model or wait a moment, then send again.</string>
+    <string name="chat_session_gone_guidance">This session is gone on the engine — start a new session from the drawer.</string>
     <string name="chat_queued_returned">Engine stopped — queued follow-up returned to the composer.</string>
     <string name="workspace_unavailable">Workspace unavailable — using the internal workspace for now. Re-pick it in Projects.</string>
+    <string name="workspace_too_broad">That folder is the whole storage — pick a project folder instead.</string>
     <string name="a11y_run_finished">Run finished</string>
     <string name="a11y_run_failed">Run failed</string>
     <string name="a11y_permission_arrived">Permission requested</string>
@@ -314,6 +317,7 @@
     <string name="files_quick_open_empty">No files match \"%1$s\"</string>
     <string name="files_quick_open_loading">Indexing workspace files…</string>
     <string name="files_quick_open_results">%1$d of %2$d files</string>
+    <string name="files_quick_open_failed">Some folders couldn’t be indexed — results may be incomplete.</string>
     <string name="files_quick_open_close">Close quick open</string>
     <string name="files_detail_empty">Select a file to view it here.</string>
     <string name="fileview_find">Find</string>

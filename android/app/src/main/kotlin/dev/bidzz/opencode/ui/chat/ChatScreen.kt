@@ -174,6 +174,8 @@ fun ChatScreen(
     onDismissError: () -> Unit = {},
     /** Re-sends the last prompt after a failure; no-op when there is none. */
     onRetryError: () -> Unit = {},
+    /** Grows the transcript window and fetches older messages (item 28). */
+    onLoadEarlier: () -> Unit = {},
     /** Re-auth after an auth failure: restarts the engine so fresh
      * credentials are issued (the banner routes REAUTH here). */
     onReauth: () -> Unit = {},
@@ -195,6 +197,8 @@ fun ChatScreen(
     fileIndex: List<FileRow> = emptyList(),
     /** True while that index is being built. */
     fileIndexLoading: Boolean = false,
+    /** True when the index walk hit a failure: the index is partial. */
+    fileIndexFailed: Boolean = false,
     /** Builds the index lazily on first picker open; no-op once built. */
     onEnsureFileIndex: () -> Unit = {},
     /**
@@ -657,6 +661,39 @@ fun ChatScreen(
                                 bottom = 64.dp,
                             ),
                         ) {
+                            // The transcript is windowed (item 28): only the
+                            // newest messages load up front, and older ones
+                            // arrive one tap at a time.
+                            if (state.hasMoreOlder) {
+                                item(key = "load-earlier") {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = if (state.loadingEarlier) {
+                                                stringResource(R.string.common_loading)
+                                            } else {
+                                                stringResource(R.string.chat_load_earlier)
+                                            },
+                                            style = OpenCodeTypography.caption.copy(
+                                                fontWeight = FontWeight.SemiBold,
+                                            ),
+                                            color = colors.accent,
+                                            modifier = Modifier
+                                                .clickable(
+                                                    role = SemanticsRole.Button,
+                                                    enabled = !state.loadingEarlier,
+                                                    onClick = onLoadEarlier,
+                                                )
+                                                .padding(
+                                                    horizontal = spacing.md,
+                                                    vertical = spacing.sm,
+                                                ),
+                                        )
+                                    }
+                                }
+                            }
                             itemsIndexed(state.messages, key = { _, it -> it.id }) { index, message ->
                                 val prevMessage = if (index > 0) state.messages[index - 1] else null
                                 val isConsecutiveAssistant = prevMessage?.role == Role.ASSISTANT && message.role == Role.ASSISTANT
@@ -947,6 +984,8 @@ fun ChatScreen(
                             results = if (attachPickerOpen) attachResults else mentionResults,
                             totalFiles = fileIndex.size,
                             loading = fileIndexLoading,
+                            failed = fileIndexFailed,
+                            onRetry = onEnsureFileIndex,
                             query = if (attachPickerOpen) attachPickerQuery else mentionQuery.orEmpty(),
                             onQueryChange = { if (attachPickerOpen) attachPickerQuery = it },
                             selectedIndex = attachSelectedIndex,
@@ -1963,8 +2002,8 @@ private fun ChatDrawer(
  *
  * Shared by the modal drawer ([ChatDrawer], phones) and the persistent
  * sidebar ([ChatSidebar], expanded widths), so the two never drift apart.
- * The caller supplies the sizing: the drawer sheet sizes it, the sidebar
- * passes [Modifier.fillMaxSize].
+ * One Column fills the available height in both hosts: the session list
+ * takes the remaining space and the footer stays at the bottom.
  */
 @Composable
 private fun ChatDrawerContent(
@@ -2013,9 +2052,15 @@ private fun ChatDrawerContent(
             },
         )
     }
+    // One Column owns the whole height in both hosts (item 19): the
+    // session list takes the remaining space (weight(1f)) and the footer
+    // sits at the bottom. The header used to be its own Column with the
+    // divider and footer as siblings, which only stacked correctly
+    // inside ModalDrawerSheet; in the sidebar's Box the footer drew on
+    // top of the workspace switcher and New Chat.
     Column(
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(top = spacing.md),
     ) {
         // Workspace switch / project picker integration
@@ -2169,7 +2214,6 @@ private fun ChatDrawerContent(
             )
         }
     }
-    }
 
     Box(
         Modifier
@@ -2248,6 +2292,7 @@ private fun ChatDrawerContent(
                 size = 14.dp,
             )
         }
+    }
     }
 }
 

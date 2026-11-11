@@ -81,4 +81,44 @@ class ChatTurnPartsTest {
         assertTrue(merged[2] is ChatTurnPart.Text)
         assertEquals("Part 2 text", (merged[2] as ChatTurnPart.Text).markdown)
     }
+
+    @Test
+    fun `mergeLiveToolsIntoParts appends a tool group after streamed text instead of freezing the trace`() {
+        val parts = listOf(ChatTurnPart.Text("Let me check the files."))
+        val live = listOf(ToolCall(id = "t1", name = "read", status = "running"))
+
+        val merged = mergeLiveToolsIntoParts(parts, live, isStreaming = true)
+
+        assertEquals(2, merged.size)
+        assertTrue(merged[0] is ChatTurnPart.Text)
+        assertEquals("Let me check the files.", (merged[0] as ChatTurnPart.Text).markdown)
+        assertTrue(merged[1] is ChatTurnPart.ToolGroup)
+        val group = merged[1] as ChatTurnPart.ToolGroup
+        assertEquals(1, group.tools.size)
+        assertEquals("read", group.tools[0].name)
+        assertTrue(group.streaming)
+    }
+
+    @Test
+    fun `mergeLiveToolsIntoParts updates a tool in place by id without duplicating it`() {
+        val parts = listOf(
+            ChatTurnPart.Text("Let me check the files."),
+            ChatTurnPart.ToolGroup(
+                tools = listOf(ToolCall(id = "t1", name = "read", status = "running")),
+                streaming = true,
+            ),
+        )
+        val live = listOf(ToolCall(id = "t1", name = "read", status = "completed"))
+
+        val merged = mergeLiveToolsIntoParts(parts, live, isStreaming = true)
+        // Re-merging the same calls (every toUiMessages rebuild does) is a no-op.
+        val mergedAgain = mergeLiveToolsIntoParts(merged, live, isStreaming = true)
+
+        assertEquals(2, merged.size)
+        val group = merged[1] as ChatTurnPart.ToolGroup
+        assertEquals(1, group.tools.size)
+        assertEquals("completed", group.tools[0].status)
+        assertEquals(false, group.streaming)
+        assertEquals(merged, mergedAgain)
+    }
 }
