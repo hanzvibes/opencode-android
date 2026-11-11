@@ -134,7 +134,23 @@ class EngineConfigStore(configHome: File) {
         models: List<ModelSpec>,
     ): WriteResult {
         val root = readRoot() ?: JSONObject()
+        // "providers" must be an object to merge into: a hand-made config
+        // may hold a string, an array or null there, and replacing it with
+        // a fresh object would silently delete it (audit-70 38-F4). Refuse
+        // instead — the caller reports the write as failed and nothing is
+        // lost. The same holds for the entry itself: an id whose value is
+        // not an object (e.g. "old": "disabled") is invisible to
+        // customProviders(), so the duplicate-slug check cannot see it, and
+        // overwriting it would delete a hand-made entry without warning.
+        if (root.has("providers") && root.optJSONObject("providers") == null) {
+            Log.w(TAG, "refusing to replace a non-object 'providers' value")
+            throw IOException("Existing config has a non-object 'providers' value; refusing to replace it")
+        }
         val providers = root.optJSONObject("providers") ?: JSONObject().also { root.put("providers", it) }
+        if (providers.has(id) && providers.optJSONObject(id) == null) {
+            Log.w(TAG, "refusing to replace non-object provider entry '$id'")
+            throw IOException("Existing provider '$id' is not an object; refusing to replace it")
+        }
 
         val entry = JSONObject()
         entry.put("name", name)
