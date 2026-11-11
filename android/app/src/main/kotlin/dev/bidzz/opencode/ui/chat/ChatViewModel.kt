@@ -129,7 +129,11 @@ data class QueuedPrompt(
      * [fullText] directly, so these are never baked a second time.
      */
     val attachments: List<AttachedFile> = emptyList(),
-)
+) : java.io.Serializable {
+    companion object {
+        private const val serialVersionUID = 1L
+    }
+}
 
 /** What the error banner's Retry button does for the current failure. */
 enum class RetryKind {
@@ -221,13 +225,93 @@ class ChatViewModel(
     private val onSessionCleared: () -> Unit = {},
 ) : ViewModel() {
 
+    /**
+     * What the last process left in the saved-state handle (audit-70 69-F2):
+     * the queue, the pending attachment chips, the retry target and the
+     * prompt history. Only the draft was persisted before, so a process
+     * death silently dropped everything else the user had lined up.
+     */
+    private val restoredQueue: List<QueuedPrompt> =
+        savedStateHandle?.get<ArrayList<QueuedPrompt>>(QUEUE_KEY)?.toList().orEmpty()
+    private val restoredAttachments: List<AttachedFile> =
+        savedStateHandle?.get<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)?.toList().orEmpty()
+    private val restoredLastSent: String? = savedStateHandle?.get<String>(LAST_SENT_KEY)
+    private val restoredSentPrompts: List<String> =
+        savedStateHandle?.get<ArrayList<String>>(SENT_PROMPTS_KEY)?.toList().orEmpty()
+
+    /**
+     * True until the first repo state after a restore decides the restored
+     * queue's fate: if the run it was waiting on is still going, the normal
+     * flush sends it when the run ends; if the run is already over, the
+     * queue goes back to the composer instead of sitting there forever.
+     */
+    private var restoredQueuePending = restoredQueue.isNotEmpty()
+
     private val _state = MutableStateFlow(
         ChatUiState(
             workspacePath = workspace(),
             draft = savedStateHandle?.get<String>(DRAFT_KEY) ?: "",
+            queuedPrompts = restoredQueue,
+            pendingAttachments = restoredAttachments,
+            lastSentText = restoredLastSent,
+            sentPrompts = restoredSentPrompts,
         ),
     )
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
+
+    init {
+        // Keep the handle's copy of the queue, attachments, retry target
+        // and history in step with the live state, so a process death at
+        // any moment restores what the user had lined up (audit-70 69-F2).
+        // Only when a handle exists: unit tests construct this view model
+        // without one, and touching the scope there would need a Main
+        // dispatcher the tests do not have. Writes happen only on change,
+        // and only into the handle's in-memory map — the system serialises
+        // it when it actually saves state.
+        val handle = savedStateHandle
+        if (handle != null) {
+            viewModelScope.launch {
+                var lastQueue: List<QueuedPrompt>? = null
+                var lastAttachments: List<AttachedFile>? = null
+                var lastSent: String? = null
+                var lastHistory: List<String>? = null
+                _state.collect { state ->
+                    if (state.queuedPrompts != lastQueue) {
+                        lastQueue = state.queuedPrompts
+                        if (state.queuedPrompts.isEmpty()) {
+                            handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
+                        } else {
+                            handle[QUEUE_KEY] = ArrayList(state.queuedPrompts)
+                        }
+                    }
+                    if (state.pendingAttachments != lastAttachments) {
+                        lastAttachments = state.pendingAttachments
+                        if (state.pendingAttachments.isEmpty()) {
+                            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
+                        } else {
+                            handle[ATTACHMENTS_KEY] = ArrayList(state.pendingAttachments)
+                        }
+                    }
+                    if (state.lastSentText != lastSent) {
+                        lastSent = state.lastSentText
+                        if (state.lastSentText == null) {
+                            handle.remove<String>(LAST_SENT_KEY)
+                        } else {
+                            handle[LAST_SENT_KEY] = state.lastSentText
+                        }
+                    }
+                    if (state.sentPrompts != lastHistory) {
+                        lastHistory = state.sentPrompts
+                        if (state.sentPrompts.isEmpty()) {
+                            handle.remove<ArrayList<String>>(SENT_PROMPTS_KEY)
+                        } else {
+                            handle[SENT_PROMPTS_KEY] = ArrayList(state.sentPrompts)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private var repository: ChatRepository? = null
     private var collector: Job? = null
@@ -296,6 +380,46 @@ class ChatViewModel(
     private fun takeParkedComposer(sessionID: String): ParkedComposer? =
         parkedComposers.remove(sessionID)
 
+    /**
+     * Moves the queued follow-ups (and their attachments) back into the
+     * composer. Shared by the engine-death path and the process-death
+     * restore: in both cases the run the queue was waiting on is gone, so
+     * the text belongs in the composer, not in a queue that will never
+     * flush. Returns true when anything was returned. An attachment-only
+     * entry has no typed text, so its draft part is empty — the chips carry
+     * the content, and re-baking the fullText block as well would duplicate
+     * it (audit-70 13-F3).
+     */
+    private fun returnQueueToDraft(): Boolean {
+        val queued = _state.value.queuedPrompts
+        val returned = queued.map {
+            when {
+                it.typedText.isNotBlank() -> it.typedText
+                it.attachments.isEmpty() -> it.fullText
+                else -> ""
+            }
+        }.filter { it.isNotBlank() }
+        val returnedAttachments = queued.flatMap { it.attachments }.distinctBy { it.id }
+        val anythingReturned = returned.isNotEmpty() || returnedAttachments.isNotEmpty()
+        if (!anythingReturned) return false
+        val draft = _state.value.draft
+        val restoredDraft = when {
+            returned.isEmpty() -> draft
+            draft.isBlank() -> returned.joinToString("\n")
+            else -> draft.trimEnd() + "\n" + returned.joinToString("\n")
+        }
+        if (returned.isNotEmpty()) {
+            savedStateHandle?.set(DRAFT_KEY, restoredDraft)
+        }
+        _state.value = _state.value.copy(
+            queuedPrompts = emptyList(),
+            draft = restoredDraft,
+            pendingAttachments = (returnedAttachments +
+                _state.value.pendingAttachments).distinctBy { it.id },
+        )
+        return true
+    }
+
     /** Called by the screen whenever engine status changes. */
     fun onEngineStatus(status: EngineStatus) {
         val previous = _state.value.engineState
@@ -314,42 +438,12 @@ class ChatViewModel(
                     // words: the engine dying must not throw them away
                     // (item 8). They go back into the composer — after
                     // whatever the user typed since — with a notice, instead
-                    // of vanishing with the queue. Their attachments come
-                    // back as chips too: the queued entry carries the files
-                    // baked into its fullText, and returning only the typed
-                    // text would throw the file content away (audit-70 13-F3).
-                    // An attachment-only entry has no typed text, so its
-                    // draft part is empty — the chips carry the content, and
-                    // re-baking the fullText block as well would duplicate it.
-                    val queued = _state.value.queuedPrompts
-                    val returned = queued.map {
-                        when {
-                            it.typedText.isNotBlank() -> it.typedText
-                            it.attachments.isEmpty() -> it.fullText
-                            else -> ""
-                        }
-                    }.filter { it.isNotBlank() }
-                    val returnedAttachments = queued.flatMap { it.attachments }
-                        .distinctBy { it.id }
-                    val anythingReturned = returned.isNotEmpty() ||
-                        returnedAttachments.isNotEmpty()
-                    val draft = _state.value.draft
-                    val restoredDraft = when {
-                        returned.isEmpty() -> draft
-                        draft.isBlank() -> returned.joinToString("\n")
-                        else -> draft.trimEnd() + "\n" + returned.joinToString("\n")
-                    }
-                    if (returned.isNotEmpty()) {
-                        savedStateHandle?.set(DRAFT_KEY, restoredDraft)
-                    }
+                    // of vanishing with the queue.
+                    val anythingReturned = returnQueueToDraft()
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
                         stopping = false,
-                        queuedPrompts = emptyList(),
-                        draft = restoredDraft,
-                        pendingAttachments = (returnedAttachments +
-                            _state.value.pendingAttachments).distinctBy { it.id },
                         editingMessageId = null,
                         // The engine is gone, so a prompt it was waiting on
                         // is dead too (item 22): leaving it would show
@@ -556,6 +650,16 @@ class ChatViewModel(
                 )
                 sendText(next.fullText, next.typedText, emptyList())
             }
+        }
+
+        // A queue restored after process death (audit-70 69-F2): the first
+        // repo state decides its fate. A run still going clears the flag
+        // and the normal flush above sends the entries when it ends; a run
+        // already over means the queue would never flush, so the text goes
+        // back to the composer instead of sitting there forever.
+        if (restoredQueuePending) {
+            restoredQueuePending = false
+            if (!chat.busy) returnQueueToDraft()
         }
 
         // Context meter (Tier 2): a new session starts unknown, and a
@@ -1482,6 +1586,14 @@ class ChatViewModel(
 
     companion object {
         private const val DRAFT_KEY = "chat_draft"
+        /** Queued follow-ups, so they survive process death (audit-70 69-F2). */
+        private const val QUEUE_KEY = "chat_queue"
+        /** Pending attachment chips, same reason as [QUEUE_KEY]. */
+        private const val ATTACHMENTS_KEY = "chat_attachments"
+        /** Retry target, so Retry still works after a restore (audit-70 69-F2). */
+        private const val LAST_SENT_KEY = "chat_last_sent"
+        /** Prompt history (Up navigation), same reason as [LAST_SENT_KEY]. */
+        private const val SENT_PROMPTS_KEY = "chat_sent_prompts"
         /** Failed reloads before the banner points at a new session (item 24). */
         private const val SESSION_RELOAD_LIMIT = 2
     }

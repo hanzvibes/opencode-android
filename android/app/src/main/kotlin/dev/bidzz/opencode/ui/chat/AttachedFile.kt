@@ -36,7 +36,10 @@ data class AttachedFile(
     val id: String,
     val name: String,
     val content: String,
-) {
+) : java.io.Serializable {
+    companion object {
+        private const val serialVersionUID = 1L
+    }
     /**
      * The block pasted into the prompt: a fenced code block headed by the
      * filename (```filename), so the agent sees which file the text came
