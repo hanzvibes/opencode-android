@@ -48,13 +48,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.AgentInfo
@@ -103,26 +98,19 @@ fun ChatControls(
 }
 
 /**
- * Offset for a selector [DropdownMenu] anchored to a chip in the composer.
- *
- * The composer sits at the bottom of the screen, so a menu that opens
- * downward runs off the bottom on short screens. When the chip sits in the
- * bottom half of the screen the menu opens upward instead: the negative
- * offset lifts it by the chip height plus its own (capped) height, so its
- * bottom edge lands on the chip's top edge. The 380dp height cap stays, so
- * the estimate is capped the same way. The selectors stay in the composer
- * — nothing moves to the header — only the menu direction changes.
+ * Menu placement is deliberately NOT steered with a manual offset: the
+ * selectors pass [DpOffset.Zero] and let Material3's
+ * DropdownMenuPositionProvider choose below/above the chip from the
+ * menu's own measured size. A manual drop-up offset used to live here
+ * (lift by chip + estimated menu height), but it floated the menu: the
+ * provider tries below-anchor first and applies the SAME offset to
+ * every candidate, so when the estimate undercounted the real height
+ * the below-placement was rejected and the above-placement applied the
+ * negative offset a second time — the menu ended up one whole
+ * (chip + menu + gap) above the chip. No estimate can be trusted
+ * here (header, search, recents/group headers and two-line rows all
+ * fall outside any per-row guess), so there is no offset to estimate.
  */
-private fun selectorMenuOffset(
-    openAbove: Boolean,
-    menuHeight: Dp,
-    chipHeight: Dp,
-    gap: Dp,
-): DpOffset = if (openAbove) {
-    DpOffset(0.dp, -(chipHeight + menuHeight + gap))
-} else {
-    DpOffset(0.dp, gap)
-}
 
 /** One row of a selector menu: a section header or a selectable entry. */
 private sealed interface SelectorEntry {
@@ -169,9 +157,11 @@ private fun modelRefKey(model: ModelInfo): String =
  * Agent / Mode Selector chip with a distinct color-coded indicator badge and
  * rich popover menu detailing agent capabilities, permissions, and active selection.
  *
- * Menu behaviour (audit 15): search, recents first, scroll-to-selected on
- * open, and the lift offset corrected with the menu's measured height so it
- * neither falls short of the chip nor covers it.
+ * Menu behaviour (audit 15): search, recents first, scroll-to-selected
+ * on open. Placement is left to DropdownMenuPositionProvider with a
+ * zero offset (see the note above [DpOffset.Zero]): from the composer
+ * the menu opens above the chip, from the header below it, and in
+ * both cases its edge sits flush with the chip.
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -277,29 +267,17 @@ private fun AgentSelector(
         }
     }
 
-    // Drop-up: the composer chip sits at the bottom of the screen, so the
-    // menu opens above it when the chip is in the bottom half of the screen.
-    var anchorTopDp by remember { mutableStateOf(0.dp) }
-    val density = LocalDensity.current
-    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
-    val openAbove = anchorTopDp > 0.dp && anchorTopDp > screenHeightDp / 2
-    // Header ~36dp plus one ~64dp row per agent, capped like the menu itself.
-    val estimatedMenuHeight = (36.dp + 64.dp * selectableAgents.size).coerceAtMost(380.dp)
-    // The offset is corrected with the menu's measured height once laid
-    // out: the estimate falls short (or overshoots) whenever rows wrap or
-    // the search/recents sections change the height, and a wrong estimate
-    // leaves a gap above the chip or covers the chip itself.
-    var measuredMenuHeight by remember { mutableStateOf<Dp?>(null) }
-    val menuHeightForOffset = measuredMenuHeight ?: estimatedMenuHeight
+    // Placement: no manual drop-up offset (see the note above). The
+    // chip sits at the bottom of the screen, so the provider's
+    // below-anchor candidate cannot fit and it falls through to the
+    // above-anchor one, which lands the menu's bottom edge exactly on
+    // the chip's top edge. The Box is the popup's anchor; it carries no
+    // positioning logic of its own.
 
     // Selector chips are 40dp tall (the composer touch target), not 28dp:
     // they sit in the same controls row as the composer chips, and a 28dp
     // chip next to a 40dp hit area was the smallest tap target in the row.
-    Box(
-        modifier = Modifier.onGloballyPositioned {
-            anchorTopDp = with(density) { it.positionInWindow().y.toDp() }
-        },
-    ) {
+    Box {
         Row(
             modifier = Modifier
                 .height(dims.composerChipTouchTarget)
@@ -355,19 +333,11 @@ private fun AgentSelector(
             onDismissRequest = {
                 expanded = false
                 agentQuery = ""
-                measuredMenuHeight = null
             },
-            modifier = Modifier
-                .widthIn(min = 270.dp, max = 320.dp)
-                .onGloballyPositioned { coords ->
-                    measuredMenuHeight = with(density) { coords.size.height.toDp() }
-                },
-            offset = selectorMenuOffset(
-                openAbove,
-                menuHeightForOffset,
-                dims.composerChipTouchTarget,
-                spacing.xs,
-            ),
+            modifier = Modifier.widthIn(min = 270.dp, max = 320.dp),
+            // Zero offset: the provider flips the menu above/below the
+            // chip from its own measured size (see the note above).
+            offset = DpOffset.Zero,
             shape = RoundedCornerShape(radius.lg),
             containerColor = colors.surfaceRaised,
             tonalElevation = 0.dp,
@@ -600,9 +570,10 @@ private fun AgentSelector(
  * Shared with the header: [ChatHeader] calls this directly, because the
  * picker lives in the 56dp header row (audit 8), not in the composer
  * controls. Menu behaviour (audit 15): search, recents first, provider
- * grouping, scroll-to-selected on open, and the lift offset corrected with
- * the menu's measured height so it neither falls short of the chip nor
- * covers it.
+ * grouping, scroll-to-selected on open. Placement is left to
+ * DropdownMenuPositionProvider with a zero offset (see the note above):
+ * from the composer the menu opens above the chip, from the header
+ * below it, and in both cases its edge sits flush with the chip.
  */
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -712,29 +683,12 @@ internal fun ModelSelector(
     )
     val chipShape = RoundedCornerShape(radius.full)
 
-    // Drop-up, same as the agent menu: the model chip sits in the composer
-    // at the bottom of the screen, so its menu opens above it. (From the
-    // header the chip is at the top instead, and the menu opens below it —
-    // the direction follows the anchor either way.)
-    var anchorTopDp by remember { mutableStateOf(0.dp) }
-    val density = LocalDensity.current
-    val screenHeightDp = LocalConfiguration.current.screenHeightDp.dp
-    val openAbove = anchorTopDp > 0.dp && anchorTopDp > screenHeightDp / 2
-    // Search field ~48dp plus header ~36dp plus one ~56dp row per model,
-    // capped like the menu itself.
-    val estimatedMenuHeight = (84.dp + 56.dp * filteredModels.size).coerceAtMost(380.dp)
-    // The offset is corrected with the menu's measured height once laid
-    // out: the estimate falls short (or overshoots) whenever rows wrap or
-    // the search/recents/group sections change the height, and a wrong
-    // estimate leaves a gap above the chip or covers the chip itself.
-    var measuredMenuHeight by remember { mutableStateOf<Dp?>(null) }
-    val menuHeightForOffset = measuredMenuHeight ?: estimatedMenuHeight
+    // Placement: no manual drop-up offset, same as the agent menu (see
+    // the note above). The direction follows the anchor either way:
+    // from the composer the menu opens above the chip, from the header
+    // below it, and in both cases its edge sits flush with the chip.
 
-    Box(
-        modifier = Modifier.onGloballyPositioned {
-            anchorTopDp = with(density) { it.positionInWindow().y.toDp() }
-        },
-    ) {
+    Box {
         Row(
             modifier = Modifier
                 .height(dims.composerChipTouchTarget)
@@ -790,19 +744,11 @@ internal fun ModelSelector(
             onDismissRequest = {
                 expanded = false
                 modelQuery = ""
-                measuredMenuHeight = null
             },
-            modifier = Modifier
-                .widthIn(min = 290.dp, max = 340.dp)
-                .onGloballyPositioned { coords ->
-                    measuredMenuHeight = with(density) { coords.size.height.toDp() }
-                },
-            offset = selectorMenuOffset(
-                openAbove,
-                menuHeightForOffset,
-                dims.composerChipTouchTarget,
-                spacing.xs,
-            ),
+            modifier = Modifier.widthIn(min = 290.dp, max = 340.dp),
+            // Zero offset: the provider flips the menu above/below the
+            // chip from its own measured size (see the note above).
+            offset = DpOffset.Zero,
             shape = RoundedCornerShape(radius.lg),
             containerColor = colors.surfaceRaised,
             tonalElevation = 0.dp,
