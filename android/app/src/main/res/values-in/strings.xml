@@ -218,6 +218,7 @@
     <string name="session_action_unpin">Lepas sematan</string>
     <string name="session_action_rename">Ganti nama</string>
     <string name="session_action_delete">Hapus</string>
+    <string name="session_action_inbox">Kotak masuk</string>
     <string name="session_rename_title">Ganti nama obrolan</string>
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
@@ -225,6 +226,19 @@
     <string name="session_actions">Tindakan sesi</string>
     <string name="session_action_cancel">Batal</string>
     <string name="session_action_save">Simpan</string>
+
+    <!-- Kotak masuk sesi -->
+    <string name="inbox_title">Kotak masuk</string>
+    <string name="inbox_body">Pekerjaan antrean sesi ini yang belum terkirim.</string>
+    <string name="inbox_empty">Tidak ada antrean untuk sesi ini.</string>
+    <string name="inbox_type_user">Pesan</string>
+    <string name="inbox_type_synthetic">Catatan</string>
+    <string name="inbox_type_compaction">Compaction</string>
+    <string name="inbox_type_move">Pindah</string>
+    <string name="inbox_type_unknown">Item antrean</string>
+    <string name="inbox_delivery_steer">Steer</string>
+    <string name="inbox_delivery_queue">Antre</string>
+    <string name="inbox_files">%1$d berkas</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <!-- Redesign C working progress: %1$s kalimat langkah live ("Membaca ChatScreen.kt")

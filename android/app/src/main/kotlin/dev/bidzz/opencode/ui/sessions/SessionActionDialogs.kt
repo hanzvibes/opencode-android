@@ -50,6 +50,8 @@ fun SessionActionMenu(
     onPinToggle: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    /** Null hides the entry: only callers that can open the screen pass one. */
+    onInboxClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -110,6 +112,29 @@ fun SessionActionMenu(
                 onRenameClick()
             },
         )
+
+        if (onInboxClick != null) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(R.string.session_action_inbox),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    GlyphIcon(
+                        glyph = Glyph.Mail,
+                        tint = colors.onSurfaceMuted,
+                        size = dims.iconSmall,
+                    )
+                },
+                onClick = {
+                    onDismissRequest()
+                    onInboxClick()
+                },
+            )
+        }
 
         Box(
             modifier = Modifier

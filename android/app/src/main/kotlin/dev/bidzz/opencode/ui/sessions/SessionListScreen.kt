@@ -77,6 +77,7 @@ fun SessionListScreen(
     onRename: (SessionRow, String) -> Unit = { _, _ -> },
     onDelete: (SessionRow) -> Unit = {},
     onTogglePin: (SessionRow) -> Unit = {},
+    onInbox: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     /**
      * Animation C shared-element pilot: the scopes for the session-title
@@ -102,6 +103,7 @@ fun SessionListScreen(
             onRename = onRename,
             onDelete = onDelete,
             onTogglePin = onTogglePin,
+            onInbox = onInbox,
             details = details,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
@@ -128,6 +130,7 @@ fun SessionListPane(
     onRename: (SessionRow, String) -> Unit = { _, _ -> },
     onDelete: (SessionRow) -> Unit = {},
     onTogglePin: (SessionRow) -> Unit = {},
+    onInbox: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     selectedSessionId: String? = null,
     /**
@@ -329,6 +332,7 @@ fun SessionListPane(
                                 onPinToggle = { onTogglePin(row) },
                                 onRenameClick = { sessionToRename = row },
                                 onDeleteClick = { sessionToDelete = row },
+                                onInboxClick = { onInbox(row) },
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
                             )
@@ -362,6 +366,8 @@ private fun SessionRowItem(
     onPinToggle: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    /** Null hides the menu entry: only callers that can open it pass one. */
+    onInboxClick: (() -> Unit)? = null,
     detail: SessionDetail? = null,
     /** Accent background for the session open in the detail pane beside the list. */
     selected: Boolean = false,
@@ -534,6 +540,7 @@ private fun SessionRowItem(
                     onPinToggle = onPinToggle,
                     onRenameClick = onRenameClick,
                     onDeleteClick = onDeleteClick,
+                    onInboxClick = onInboxClick,
                 )
             }
         }

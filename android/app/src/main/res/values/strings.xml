@@ -219,6 +219,7 @@
     <string name="session_action_unpin">Unpin</string>
     <string name="session_action_rename">Rename</string>
     <string name="session_action_delete">Delete</string>
+    <string name="session_action_inbox">Inbox</string>
     <string name="session_rename_title">Rename chat</string>
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
@@ -226,6 +227,19 @@
     <string name="session_actions">Session actions</string>
     <string name="session_action_cancel">Cancel</string>
     <string name="session_action_save">Save</string>
+
+    <!-- Session inbox -->
+    <string name="inbox_title">Inbox</string>
+    <string name="inbox_body">Queued work for this session that has not been delivered yet.</string>
+    <string name="inbox_empty">Nothing queued for this session.</string>
+    <string name="inbox_type_user">Message</string>
+    <string name="inbox_type_synthetic">Note</string>
+    <string name="inbox_type_compaction">Compaction</string>
+    <string name="inbox_type_move">Move</string>
+    <string name="inbox_type_unknown">Queued item</string>
+    <string name="inbox_delivery_steer">Steer</string>
+    <string name="inbox_delivery_queue">Queue</string>
+    <string name="inbox_files">%1$d files</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <!-- Redesign C working progress: %1$s is the live step sentence ("Reading ChatScreen.kt")
