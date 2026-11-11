@@ -82,6 +82,10 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="opencode" android:host="session" />
             </intent-filter>
+            <!-- Launcher shortcuts (Native C): long-press the app icon. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!--

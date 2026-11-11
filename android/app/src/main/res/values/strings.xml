@@ -627,4 +627,6 @@
     <string name="browser_download_started">Download started</string>
     <string name="browser_download_failed">Download failed</string>
     <string name="message_share">Share</string>
+    <string name="shortcut_new_session">New session</string>
+    <string name="shortcut_last_session">Continue last session</string>
 </resources>

@@ -626,4 +626,6 @@
     <string name="browser_download_started">Unduhan dimulai</string>
     <string name="browser_download_failed">Unduhan gagal</string>
     <string name="message_share">Bagikan</string>
+    <string name="shortcut_new_session">Sesi baru</string>
+    <string name="shortcut_last_session">Lanjut sesi terakhir</string>
 </resources>

@@ -296,6 +296,17 @@ class OpenCodeApplication : Application() {
     val sessionOpenRequested = MutableSharedFlow<String>(extraBufferCapacity = 1)
 
     /**
+     * A launcher shortcut asked for a fresh session (Native C). Same
+     * bridge shape as the share above.
+     */
+    fun requestNewSession() {
+        newSessionRequested.tryEmit(System.currentTimeMillis())
+    }
+
+    /** Fresh-session requests from launcher shortcuts. */
+    val newSessionRequested = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+
+    /**
      * Delivers a command to [EngineService].
      *
      * `startForegroundService` is used for both actions, not just start: the

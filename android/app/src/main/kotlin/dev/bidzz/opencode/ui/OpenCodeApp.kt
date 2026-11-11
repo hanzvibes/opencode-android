@@ -91,6 +91,7 @@ import dev.bidzz.opencode.ui.sessions.SessionListScreen
 import dev.bidzz.opencode.ui.sessions.SessionListUiState
 import dev.bidzz.opencode.ui.sessions.SessionListViewModel
 import dev.bidzz.opencode.ui.sessions.SessionRow
+import dev.bidzz.opencode.ui.updateLastSessionShortcut
 import dev.bidzz.opencode.ui.settings.SettingsScreen
 import java.io.File
 import kotlinx.coroutines.launch
@@ -328,6 +329,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 screen = Screen.Chat
             }
         }
+        launch {
+            app.newSessionRequested.collect {
+                chatViewModel.newSession()
+                screen = Screen.Chat
+            }
+        }
     }
 
     // Load history whenever the screen is shown, and reload when the scope flips.
@@ -397,6 +404,15 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // marks it completed in prefs, so it never reappears.
     var showOnboarding by remember {
         mutableStateOf(OnboardingStore.shouldShow(hostContext, app.workspaceStore))
+    }
+
+    // The launcher shortcut follows the last opened session (Native C):
+    // its label is the session title when the list knows it. Placed
+    // after hostContext on purpose — the effect reads it.
+    LaunchedEffect(chatState.sessionID, sessionsState.rows) {
+        val id = chatState.sessionID ?: return@LaunchedEffect
+        val title = sessionsState.rows.find { it.id == id }?.title
+        updateLastSessionShortcut(hostContext, id, title)
     }
 
     // Links in chat open in the in-app browser (Native C): http/https

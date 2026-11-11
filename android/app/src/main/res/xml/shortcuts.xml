@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher shortcuts (Native C): long-press the app icon. The dynamic
+  "last session" shortcut is published from code (SessionShortcuts.kt);
+  this file only holds the static one, which never changes. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_session"
+        android:enabled="true"
+        android:icon="@drawable/ic_logomark"
+        android:shortcutShortLabel="@string/shortcut_new_session"
+        android:shortcutLongLabel="@string/shortcut_new_session">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="dev.bidzz.opencode"
+            android:targetClass="dev.bidzz.opencode.MainActivity">
+            <extra
+                android:name="opencode_action"
+                android:value="new_session" />
+        </intent>
+        <categories android:name="android.intent.category.LAUNCHER" />
+    </shortcut>
+</shortcuts>

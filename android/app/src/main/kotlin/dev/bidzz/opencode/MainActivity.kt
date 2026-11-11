@@ -17,6 +17,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import java.io.File
+import dev.bidzz.opencode.ui.ACTION_NEW_SESSION
+import dev.bidzz.opencode.ui.ACTION_OPEN_SESSION
+import dev.bidzz.opencode.ui.EXTRA_OPENCODE_ACTION
+import dev.bidzz.opencode.ui.EXTRA_SESSION_ID
 import dev.bidzz.opencode.ui.OpenCodeApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -141,6 +145,18 @@ class MainActivity : ComponentActivity() {
     private fun handleExternalIntent(intent: Intent) {
         val app = application as OpenCodeApplication
         when (intent.action) {
+            Intent.ACTION_MAIN -> {
+                // Launcher shortcut (Native C): a home-screen tap has no
+                // extras, so this only fires for the shortcut intents.
+                when (intent.getStringExtra(EXTRA_OPENCODE_ACTION)) {
+                    ACTION_NEW_SESSION -> app.requestNewSession()
+                    ACTION_OPEN_SESSION -> {
+                        val id = intent.getStringExtra(EXTRA_SESSION_ID)
+                            ?.takeIf { it.isNotBlank() } ?: return
+                        app.deliverSessionOpen(id)
+                    }
+                }
+            }
             Intent.ACTION_SEND -> {
                 if (intent.type?.startsWith("text/") != true) return
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)
