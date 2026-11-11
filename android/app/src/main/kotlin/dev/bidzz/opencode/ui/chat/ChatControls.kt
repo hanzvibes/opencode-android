@@ -212,13 +212,22 @@ private fun AgentSelector(
     // otherwise recent agents come first under a RECENT header.
     val recentHeader = stringResource(R.string.chat_recent)
     val query = agentQuery.trim().lowercase()
-    val entries: List<SelectorEntry> = remember(selectableAgents, recentAgentIds, query, recentHeader, colors) {
+    // Resolved agent descriptions for search matching. Resolved here, not
+    // inside remember: remember's calculation forbids @Composable calls
+    // (@DisallowComposableCalls), so stringResource cannot run there — not
+    // even in a plain loop. The map is a remember key so a language change
+    // re-filters on the new strings.
+    val agentDescriptions = selectableAgents.associate { agent ->
+        val presentation = resolveAgentPresentation(agent, colors)
+        agent.id to (presentation.descriptionText ?: stringResource(presentation.descriptionRes))
+    }
+    val entries: List<SelectorEntry> = remember(selectableAgents, recentAgentIds, query, recentHeader, colors, agentDescriptions) {
         if (query.isNotEmpty()) {
             selectableAgents.filter { agent ->
                 val presentation = resolveAgentPresentation(agent, colors)
                 listOf(
                     presentation.title,
-                    presentation.descriptionText ?: stringResource(presentation.descriptionRes),
+                    agentDescriptions[agent.id].orEmpty(),
                     agent.id,
                     agent.name,
                     agent.mode.orEmpty(),
