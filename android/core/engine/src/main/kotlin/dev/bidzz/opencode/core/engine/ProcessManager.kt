@@ -127,7 +127,8 @@ class ProcessManager(
         private const val HEALTH_FAILURE_LIMIT = 5
         private const val SHUTDOWN_GRACE_MS = 5_000L
         private const val MAX_OUTPUT_LINES = 200
-        private const val PASSWORD_PREFIX = "server password"
+        /** The stdout line the engine prints its password on. Shared with [redactEnginePassword]. */
+        internal const val PASSWORD_PREFIX = "server password"
 
         /** Covers the gap between fork and the child's exec when looking up its pid. */
         private const val PID_LOOKUP_ATTEMPTS = 20
@@ -433,7 +434,9 @@ class ProcessManager(
      *
      * Credentials and the port survive into DEGRADED (the monitor needs them to
      * test recovery) and are cleared everywhere else, so a stopped supervisor
-     * never reports a stale password or port.
+     * never reports a stale password or port. The console output is cleared
+     * the same way on terminal states (item 18): it belongs to the dead
+     * process, and the failure reason already survives in lastError.
      */
     private fun transition(
         next: EngineState,
@@ -466,7 +469,11 @@ class ProcessManager(
                 EngineState.DEGRADED -> current.port
                 else -> null
             },
-            lastError = error,
+            lastError = error?.let(::redactEnginePassword),
+            recentOutput = when (next) {
+                EngineState.FAILED, EngineState.STOPPED -> emptyList()
+                else -> current.recentOutput
+            },
         )
         true
     }
@@ -474,7 +481,7 @@ class ProcessManager(
     private fun appendOutput(line: String) {
         synchronized(stateLock) {
             _status.value = _status.value.copy(
-                recentOutput = (_status.value.recentOutput + line).takeLast(MAX_OUTPUT_LINES),
+                recentOutput = (_status.value.recentOutput + redactEnginePassword(line)).takeLast(MAX_OUTPUT_LINES),
             )
         }
     }
@@ -489,6 +496,22 @@ class ProcessManager(
 /** Seam so the supervisor can be tested without a real HTTP server. */
 interface HealthCheck {
     suspend fun isHealthy(credentials: EngineCredentials): Boolean
+}
+
+/**
+ * Masks the engine password in a log line (item 18).
+ *
+ * The engine prints `server password <secret>` to stdout on start; the line
+ * must never be stored verbatim — Diagnostics shows recentOutput and copies
+ * it to the clipboard, and lastError is built from it. The fact that a
+ * password was printed stays visible; the secret does not. The same mask is
+ * applied when the engine's own log file is read for display.
+ */
+internal fun redactEnginePassword(line: String): String {
+    val prefix = ProcessManager.PASSWORD_PREFIX
+    val idx = line.indexOf(prefix)
+    if (idx < 0) return line
+    return line.substring(0, idx + prefix.length) + " [redacted]"
 }
 
 /**
