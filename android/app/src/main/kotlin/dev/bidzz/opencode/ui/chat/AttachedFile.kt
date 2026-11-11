@@ -150,9 +150,10 @@ fun readSafFile(contentResolver: ContentResolver, uri: Uri): SafReadResult {
             val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
             if (sizeIndex >= 0) cursor.getLong(sizeIndex) else -1L
         } ?: -1L
-    } catch (e: SecurityException) {
-        return SafReadResult.Unreadable(name)
-    } catch (e: IllegalArgumentException) {
+    } catch (_: Exception) {
+        // A broken provider can throw anything here (a dead provider
+        // process, an IllegalStateException from its cursor): the file is
+        // unreadable, not a crash (item 5).
         return SafReadResult.Unreadable(name)
     }
     // Over the cap on the declared size: refuse without reading a byte.
@@ -177,9 +178,10 @@ fun readSafFile(contentResolver: ContentResolver, uri: Uri): SafReadResult {
             }
             out.toByteArray()
         } ?: return SafReadResult.Unreadable(name)
-    } catch (e: SecurityException) {
-        return SafReadResult.Unreadable(name)
-    } catch (e: java.io.IOException) {
+    } catch (_: Exception) {
+        // Same rule as the query above (item 5): any failure reading from
+        // the provider — dead process, revoked grant mid-read — is an
+        // unreadable file, not a crash.
         return SafReadResult.Unreadable(name)
     }
 

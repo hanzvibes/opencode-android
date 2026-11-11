@@ -86,7 +86,11 @@ class MainActivity : ComponentActivity() {
                 if (!app.workspaceStore.hasAllFilesAccess()) {
                     requestStorageIfNeeded()
                 } else {
-                    pickDirectory.launch(null)
+                    // Best-effort like the SAF launch below (item 5): a
+                    // missing DocumentsUI or a finishing activity must not
+                    // crash the app; the folder simply never opens.
+                    runCatching { pickDirectory.launch(null) }
+                        .onFailure { Log.w("MainActivity", "Directory picker launch failed", it) }
                 }
             }
         }
