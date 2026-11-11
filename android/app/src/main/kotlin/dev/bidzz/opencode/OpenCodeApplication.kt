@@ -168,26 +168,30 @@ class OpenCodeApplication : Application() {
 
     /** Opens the system folder picker. The result arrives in the activity. */
     fun requestWorkspaceFolder() {
-        workspaceFolderRequest.value = System.currentTimeMillis()
+        workspaceFolderRequest.tryEmit(System.currentTimeMillis())
     }
 
     /** Opens the all-files-access settings screen. */
     fun requestAllFilesAccess() {
-        allFilesAccessRequest.value = System.currentTimeMillis()
+        allFilesAccessRequest.tryEmit(System.currentTimeMillis())
     }
 
     /**
      * Signals that the UI wants a system dialog.
      *
-     * A counter rather than a boolean: repeated taps must re-trigger the flow, and
-     * a boolean would need resetting by the observer.
+     * One-shot events, not state: a StateFlow replays its last value to
+     * every new collector, so a request fired once re-opened its dialog on
+     * every later MainActivity recreation — a cold start with a live process
+     * popped the file picker instead of the app UI. A SharedFlow with no
+     * replay delivers each tap once; the timestamp value still lets repeated
+     * taps re-trigger.
      */
-    val workspaceFolderRequest = MutableStateFlow(0L)
-    val allFilesAccessRequest = MutableStateFlow(0L)
+    val workspaceFolderRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+    val allFilesAccessRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
 
     /** Opens the system file picker for a file outside the workspace (SAF). The result arrives in the activity. */
     fun requestSafFile() {
-        safFileRequest.value = System.currentTimeMillis()
+        safFileRequest.tryEmit(System.currentTimeMillis())
     }
 
     /** Delivers the URI picked in the system file picker. */
@@ -195,7 +199,7 @@ class OpenCodeApplication : Application() {
         safFilePicked.tryEmit(uri)
     }
 
-    val safFileRequest = MutableStateFlow(0L)
+    val safFileRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
     /** URIs picked in the system file picker; the chat screen reads them in as text. */
     val safFilePicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
 
