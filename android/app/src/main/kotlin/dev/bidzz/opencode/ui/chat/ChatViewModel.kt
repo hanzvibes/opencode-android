@@ -694,6 +694,26 @@ class ChatViewModel(
     }
 
     /**
+     * Answers a question card (item 9).
+     *
+     * Sent as a prompt like any other answer, but through its own path —
+     * never through the draft: the previous code overwrote the composer's
+     * draft with the answer and sent it, destroying whatever the user was
+     * typing, and baked the pending attachments into the answer too. A busy
+     * engine queues the answer like any follow-up, again without touching
+     * the draft or the pending files.
+     */
+    fun answerQuestion(answer: String) {
+        val text = answer.trim()
+        if (text.isBlank()) return
+        if (_state.value.busy || sendInFlight) {
+            queuePrompt(text, text)
+            return
+        }
+        sendText(text, text, emptyList())
+    }
+
+    /**
      * Re-sends the last prompt that was sent, after a failure.
      *
      * Retries the recorded [ChatUiState.lastSentText], never the current

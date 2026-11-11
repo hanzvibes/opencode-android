@@ -181,6 +181,8 @@ fun ChatScreen(
      * composer in editing mode, and re-send one user message's text. */
     onEditMessage: (String, String) -> Unit = { _, _ -> },
     onResendMessage: (String) -> Unit = {},
+    /** Answers a question card without touching the draft (item 9). */
+    onAnswerQuestion: (String) -> Unit = {},
     /** Submit / cancel the edit in progress in the composer. */
     onSubmitEdit: () -> Unit = {},
     onCancelEdit: () -> Unit = {},
@@ -785,10 +787,7 @@ fun ChatScreen(
                                             val prefix = if (state.draft.isBlank()) "" else state.draft.trimEnd() + "\n"
                                             onDraftChange(prefix + quote)
                                         },
-                                        onAnswerQuestion = { answer ->
-                                            onDraftChange(answer)
-                                            onSend()
-                                        },
+                                        onAnswerQuestion = onAnswerQuestion,
                                     )
                                 }
                             }

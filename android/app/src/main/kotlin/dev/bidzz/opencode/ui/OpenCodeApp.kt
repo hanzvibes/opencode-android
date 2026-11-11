@@ -528,6 +528,7 @@ private fun ChatDestination(
         onReauth = app::restartEngine,
         onEditMessage = { id, text -> chatViewModel.startEdit(id, text) },
         onResendMessage = chatViewModel::resendMessage,
+        onAnswerQuestion = chatViewModel::answerQuestion,
         onSubmitEdit = chatViewModel::submitEdit,
         onCancelEdit = chatViewModel::cancelEdit,
         onDeferPermission = chatViewModel::deferPermission,
