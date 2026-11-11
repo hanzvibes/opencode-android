@@ -144,7 +144,7 @@ fun DraggableBottomSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),
+                .windowInsetsPadding(WindowInsets.ime + WindowInsets.navigationBars),
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val maxHeightPx = with(density) { maxHeight.toPx() }
