@@ -25,10 +25,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.AgentInfo
 import dev.bidzz.opencode.core.api.dto.ModelInfo
@@ -339,12 +337,12 @@ fun ProvenanceBadge(
         if (!tag.mode.isNullOrBlank()) {
             Text(
                 text = tag.mode,
-                style = OpenCodeTypography.label.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Medium),
+                style = OpenCodeTypography.caption,
                 color = colors.onSurfaceFaint,
             )
             Text(
                 text = "·",
-                style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                style = OpenCodeTypography.caption,
                 color = colors.onSurfaceFaint,
             )
         }
@@ -357,7 +355,7 @@ fun ProvenanceBadge(
         if (!isOpenCodeFallback) {
             Text(
                 text = tag.model?.let { cleanModelName(it, it) }.orEmpty(),
-                style = OpenCodeTypography.label.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Medium),
+                style = OpenCodeTypography.caption,
                 color = colors.onSurfaceMuted,
             )
         }

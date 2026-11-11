@@ -77,6 +77,16 @@ data class OpenCodeColors(
     val userBubble: Color,
     /** Text on [userBubble]. Always [onSurface]. */
     val onUserBubble: Color,
+    /**
+     * Grey bubble behind an assistant turn (Redesign C): light #EFEFF1,
+     * dark the raised surface. Text on it is [onAssistantBubble]
+     * ([onSurface] in both themes). The bubble is flat — no shadow, just
+     * a hairline edge — so it reads as a message bubble, not a floating
+     * card; the white user bubble keeps the card shadow instead.
+     */
+    val assistantBubble: Color,
+    /** Text on [assistantBubble]. Always [onSurface]. */
+    val onAssistantBubble: Color,
     val success: Color,
     val warning: Color,
     val danger: Color,
@@ -283,6 +293,8 @@ private val DarkColors = OpenCodeColors(
     activity = Palette.darkAccent,
     userBubble = Palette.darkUserBubble,
     onUserBubble = Palette.darkOnUserBubble,
+    assistantBubble = Palette.darkAssistantBubble,
+    onAssistantBubble = Palette.darkOnAssistantBubble,
     success = Palette.success,
     warning = Palette.warning,
     danger = Palette.danger,
@@ -350,6 +362,8 @@ private val LightColors = OpenCodeColors(
     activity = Palette.lightAccent,
     userBubble = Palette.lightUserBubble,
     onUserBubble = Palette.lightOnUserBubble,
+    assistantBubble = Palette.lightAssistantBubble,
+    onAssistantBubble = Palette.lightOnAssistantBubble,
     // Light semantic TEXT roles are the dark AA variants (see Palette):
     // bright #34C759 / #FF9500 / #FF3B30 / #007AFF fail AA as text.
     success = Palette.lightSuccessText,
@@ -432,6 +446,8 @@ private fun OpenCodeColors.animated(animationSpec: AnimationSpec<Color>): OpenCo
     activity = animateColorAsState(activity, animationSpec, label = "activity").value,
     userBubble = animateColorAsState(userBubble, animationSpec, label = "userBubble").value,
     onUserBubble = animateColorAsState(onUserBubble, animationSpec, label = "onUserBubble").value,
+    assistantBubble = animateColorAsState(assistantBubble, animationSpec, label = "assistantBubble").value,
+    onAssistantBubble = animateColorAsState(onAssistantBubble, animationSpec, label = "onAssistantBubble").value,
     success = animateColorAsState(success, animationSpec, label = "success").value,
     warning = animateColorAsState(warning, animationSpec, label = "warning").value,
     danger = animateColorAsState(danger, animationSpec, label = "danger").value,

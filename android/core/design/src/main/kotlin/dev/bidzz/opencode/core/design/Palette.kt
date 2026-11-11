@@ -76,6 +76,13 @@ object Palette {
     val darkUserBubble = darkSurfaceRaised
     val darkOnUserBubble = darkOnSurface
 
+    // Assistant bubble (Redesign C): the classic grey bubble for
+    // assistant turns, with a small logomark avatar beside it. Dark is
+    // the raised surface — the same neutral the user bubble uses, so the
+    // dark side of the pattern is the surface the app already speaks.
+    val darkAssistantBubble = darkSurfaceRaised
+    val darkOnAssistantBubble = darkOnSurface
+
     // ---- Light (White B) ----
     // Three canonical opaque surfaces: background #F9F9FA, raised #FFFFFF,
     // sunken #F7F7F8 (code blocks). `surface` aliases the raised value;
@@ -123,6 +130,16 @@ object Palette {
     // NEUTRAL user bubble (Phase 1 §7): the raised surface, not blue.
     val lightUserBubble = lightSurfaceRaised
     val lightOnUserBubble = lightOnSurface
+
+    // Assistant bubble (Redesign C): grey #EFEFF1, one step below the
+    // chips neutral #F5F5F7 so it reads as a bubble on the #F9F9FA page
+    // and stays distinct from the white user bubble on the other side.
+    // Every light text token stays AA on it — worst are faint #64646C
+    // at 5.11:1 and accentText at 5.21:1 (see WhiteThemeTest). It is
+    // deliberately NOT surfaceVariant: chips must keep their own neutral,
+    // and a bubble the colour of a chip reads as a chip.
+    val lightAssistantBubble = Color(0xFFEFEFF1)
+    val lightOnAssistantBubble = lightOnSurface
 
     // ---- Status (Apple System semantic) ----
     // Base values are the DARK theme's: bright Apple colours, which pass AA

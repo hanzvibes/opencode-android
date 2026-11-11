@@ -228,6 +228,10 @@
     <string name="session_action_save">Save</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
+    <!-- Redesign C working progress: %1$s is the live step sentence ("Reading ChatScreen.kt")
+         or the busy label above; %2$d is seconds since the run started. The "s" suffix matches
+         the "Thought for 12s" / turn-footer convention elsewhere in chat. -->
+    <string name="composer_working_progress">%1$s · %2$ds</string>
     <string name="composer_hint">Ask anything about this project</string>
     <string name="composer_hint_named">Ask %1$s…</string>
     <string name="composer_stopping">Stopping…</string>
