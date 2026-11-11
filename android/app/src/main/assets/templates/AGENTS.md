@@ -38,3 +38,29 @@
   start interactive programs (editors, pagers, REPLs).
 - If a bundled tool reports "not found", stop and say so instead of
   inventing a workaround.
+
+## Native capabilities (app features — the user drives them)
+
+These belong to the app around you, not to your shell. You cannot trigger
+them yourself; write links and paths, and the user opens them:
+
+- **In-app browser**: links you write as markdown (`https://…`) open in
+  the app's own browser, not outside. Always write full `https://` URLs —
+  bare domains and relative links do not open. Files downloaded from the
+  browser land in the device's Downloads folder, outside this project.
+- **Share**: the user can share your answers to other apps, and can share
+  text or a link from any app into here — it arrives as a fresh draft.
+  Expect prompts that are just a pasted link: treat the link as the task.
+- **Camera photos**: photos the user takes from the composer are saved
+  into this project at `.opencode-photos/IMG_....jpg` and mentioned as
+  `@.opencode-photos/IMG_....jpg`. Reference them by that path. You
+  cannot see the image itself — this client sends no image input — so
+  never claim to have looked at a photo; work from the path and what
+  the user tells you about it.
+- **Deep links, shortcuts, widget**: a session can be opened from
+  outside the app (`opencode://session/<id>`), from a launcher shortcut,
+  or from the home-screen widget. A session opened that way is the same
+  session you already know — nothing about it changes.
+- **Notifications**: when a run finishes while the app is in the
+  background, the user gets a notification and taps it to come back.
+  Keep working normally; you do not need to announce completion.
