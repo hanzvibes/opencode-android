@@ -576,9 +576,13 @@ class ChatViewModel(
             },
         )
         sendInFlight = true
+        // The session and the repository are captured here, before the
+        // coroutine runs: reading them inside sendNow — after a suspension —
+        // could pick up a session the user has already left (item 15).
+        val sessionID = _state.value.sessionID
         viewModelScope.launch {
             try {
-                sendNow(repo, fullText, typedText, attachments)
+                sendNow(repo, sessionID, fullText, typedText, attachments)
             } finally {
                 sendInFlight = false
             }
@@ -736,7 +740,8 @@ class ChatViewModel(
                 // A retry re-sends the recorded prompt verbatim — typed text
                 // plus any attachment blocks it already contains — so it
                 // never re-appends the (already cleared) pending files.
-                sendNow(repo, text, text, emptyList())
+                // The session is captured now, like sendText does (item 15).
+                sendNow(repo, _state.value.sessionID, text, text, emptyList())
             } finally {
                 sendInFlight = false
             }
@@ -787,16 +792,30 @@ class ChatViewModel(
         repo.open(id)
     }
 
+    /**
+     * Sends one prompt through [repo] into [capturedSessionID].
+     *
+     * Both are captured by the caller before the coroutine runs (item 15):
+     * the session the user meant is the one current when Send was tapped,
+     * not whichever session is current after a suspension. If the user has
+     * since started a new session (a different repository) or opened
+     * another session on this one, the send is abandoned — a prompt to the
+     * wrong session is worse than an unsent one, and the draft still holds
+     * the text. `open()` is never called here: opening a session belongs
+     * to the open/switch flow only, and calling it from a send attached a
+     * fresh stream to a repository the screen had already left behind.
+     */
     private suspend fun sendNow(
         repo: ChatRepository,
+        capturedSessionID: String?,
         text: String,
         typedText: String,
         attachments: List<AttachedFile>,
     ) {
-        val sessionID = _state.value.sessionID ?: createSession(repo) ?: return
-        if (repository?.state?.value?.sessionID != sessionID) {
-            repo.open(sessionID)
-        }
+        val sessionID = capturedSessionID ?: createSession(repo) ?: return
+        // The session changed under us while the send was in flight.
+        if (repository !== repo) return
+        if (repo.state.value.sessionID != sessionID) return
         // A leading slash is a command, not a prompt. The engine runs it and answers
         // 204; the output arrives over the event stream exactly like a normal turn.
         val result = if (text.startsWith("/")) {
@@ -850,12 +869,23 @@ class ChatViewModel(
     }
 
     private suspend fun createSession(repo: ChatRepository): String? {
+        // The session was already attached while this send was queued:
+        // the state just had not flowed into the UI yet. Reuse it instead
+        // of creating a duplicate empty session (item 15).
+        repo.state.value.sessionID?.let { return it }
+        // The repository was replaced (a new session) while this send was
+        // queued: do not create anything on the abandoned one.
+        if (repository !== repo) return null
         val h = handle ?: return null
         _state.value = _state.value.copy(connecting = true, failure = null, failureKey = null)
         val result = h.sessions.create(workspace())
         _state.value = _state.value.copy(connecting = false)
         return when (result) {
             is ApiResult.Success -> {
+                // The user opened another session while the create call was
+                // in flight: leave that choice alone instead of clobbering
+                // it by opening the session we just made.
+                if (repository !== repo || repo.state.value.sessionID != null) return null
                 repo.open(result.value.id)
                 // A mode or model picked before the first message has no session to bind
                 // to at the time it is chosen, so it is applied here instead. Failures are
