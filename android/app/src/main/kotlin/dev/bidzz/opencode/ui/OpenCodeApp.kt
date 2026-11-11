@@ -161,9 +161,20 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // Restore the last conversation once the engine is reachable. The engine keeps
     // running across a task swipe, so returning to the app should show the session
     // that is still there rather than an empty screen.
+    // The stored workspace may have been unusable, so the app fell back to the
+    // internal one (item 12): say so once per path, instead of on every engine
+    // restart, and let the user re-pick it in Projects.
+    var workspaceUnavailableNoted by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(engineStatus.state) {
         if (engineStatus.state == EngineState.RUNNING) {
             chatViewModel.onResume(app.lastSessionID)
+        }
+        val unavailable = app.workspaceStore.lastUnavailablePath
+        if (unavailable != null && unavailable != workspaceUnavailableNoted) {
+            workspaceUnavailableNoted = unavailable
+            chatViewModel.reportWorkspaceUnavailable()
+        } else if (unavailable == null) {
+            workspaceUnavailableNoted = null
         }
     }
 

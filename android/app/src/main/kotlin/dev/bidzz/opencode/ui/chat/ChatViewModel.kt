@@ -1090,6 +1090,16 @@ class ChatViewModel(
         }.getOrDefault(false)
     }
 
+    /**
+     * The stored workspace was unusable, so the app fell back to the
+     * internal one (item 12). A banner says so: silently working in a
+     * different project would strand the user's files where they cannot
+     * find them.
+     */
+    fun reportWorkspaceUnavailable() {
+        _state.value = _state.value.copy(failureKey = R.string.workspace_unavailable)
+    }
+
     /** Remembers the session id so a relaunch can restore it. */
     fun currentSessionID(): String? = _state.value.sessionID
 

@@ -67,20 +67,39 @@ class WorkspaceStore(private val context: Context) {
     }
 
     /**
+     * The last stored path [resolve] found unusable, or null.
+     *
+     * In memory only: it is a note for the current launch ("your project
+     * folder is unreachable for now"), not a second copy of the selection.
+     * The selection itself is never cleared by a fallback (item 12) — a
+     * transient failure (SD card unmounted, permission toggled off and on)
+     * must not delete the project the user picked.
+     */
+    var lastUnavailablePath: String? = null
+        private set
+
+    /**
      * The directory the engine should use.
      *
      * Falls back to the internal workspace whenever the stored path is unusable,
-     * and clears the stale selection so the UI does not keep showing a project
-     * that is no longer reachable.
+     * and remembers the stored path in [lastUnavailablePath] so the UI can say
+     * so. The selection is never cleared here (item 12): a transient failure
+     * must not delete the project the user picked — it may be back on the
+     * next launch, and re-picking it by hand is the user's call, not the
+     * fallback's.
      */
     fun resolve(): File {
-        val stored = selectedPath ?: return internalWorkspace(context)
+        val stored = selectedPath ?: run {
+            lastUnavailablePath = null
+            return internalWorkspace(context)
+        }
         val dir = File(stored)
         val usable = dir.isDirectory && dir.canWrite() && hasAllFilesAccess()
         if (!usable) {
-            selectedPath = null
+            lastUnavailablePath = stored
             return internalWorkspace(context)
         }
+        lastUnavailablePath = null
         return dir
     }
 
