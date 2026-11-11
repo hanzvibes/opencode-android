@@ -26,6 +26,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -199,6 +201,18 @@ fun MessageBubble(
             modifier = modifier.fillMaxWidth(),
             contentAlignment = Alignment.CenterEnd,
         ) {
+            // Pill row scroll (PR #9 follow-up): the row under the bubble
+            // (checkmark + Copy + Edit + Resend) is wider than a narrow
+            // screen once the pills size to their labels, and a plain Row
+            // clips the rightmost pill off the edge. The row scrolls
+            // horizontally instead, and starts scrolled to the end so the
+            // Resend pill — the one that was clipped — is visible first.
+            // The effect re-runs when the scrollable range changes (pills
+            // appearing), which also re-anchors the end after rotation.
+            val userPillScrollState = rememberScrollState()
+            LaunchedEffect(userPillScrollState.maxValue) {
+                userPillScrollState.scrollTo(userPillScrollState.maxValue)
+            }
             val maxBubbleWidth = (maxWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp)
             val userBubbleShape = RoundedCornerShape(
                 topStart = radius.bubble,
@@ -248,7 +262,9 @@ fun MessageBubble(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                        modifier = Modifier.padding(top = spacing.xs),
+                        modifier = Modifier
+                            .padding(top = spacing.xs)
+                            .horizontalScroll(userPillScrollState),
                     ) {
                         DeliveryCheckmark(delivered = delivered)
                         CopyButton(text = markdown)
@@ -291,6 +307,11 @@ fun MessageBubble(
 
             val hasReasoning = effectiveParts.any { it is ChatTurnPart.Reasoning }
             val isThinkingActive = effectiveParts.any { it is ChatTurnPart.Reasoning && it.isActivelyStreaming }
+
+            // Same scroll guard as the user row (PR #9 follow-up): Copy +
+            // Reply cannot clip on a narrow turn. Left-aligned, so no
+            // scroll-to-end — the row starts at Copy as before.
+            val assistantPillScrollState = rememberScrollState()
 
             var elapsedSeconds by remember(streaming) { mutableIntStateOf(0) }
             var recordedDuration by remember { mutableIntStateOf(0) }
@@ -409,7 +430,9 @@ fun MessageBubble(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                    modifier = Modifier.padding(top = spacing.xs),
+                    modifier = Modifier
+                        .padding(top = spacing.xs)
+                        .horizontalScroll(assistantPillScrollState),
                 ) {
                     CopyButton(text = allProse)
                     ReplyButton(
