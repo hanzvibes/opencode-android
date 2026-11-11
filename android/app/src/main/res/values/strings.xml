@@ -130,6 +130,7 @@
     <string name="chat_status_dialog_state">State</string>
     <string name="chat_status_dialog_diagnostics">Diagnostics</string>
     <string name="chat_status_dialog_close">Close</string>
+    <string name="chat_status_dialog_turn_diff">Turn diff</string>
     <string name="chat_status_desc_ready">Engine is online and ready for prompts.</string>
     <string name="chat_status_desc_working">Engine is actively running tasks or generating responses.</string>
     <string name="chat_status_desc_starting">Engine is starting up and establishing runtime connections.</string>
@@ -339,6 +340,7 @@
     <string name="diff_modified">Modified</string>
     <string name="difflist_title">Changes (%1$d)</string>
     <string name="difflist_empty">No changes in the working tree.\n\nEither the agent has not edited anything yet, or git is not available.</string>
+    <string name="sessiondiff_empty">The latest turn changed no files.</string>
 
     <!-- History -->
     <string name="history_title">History</string>

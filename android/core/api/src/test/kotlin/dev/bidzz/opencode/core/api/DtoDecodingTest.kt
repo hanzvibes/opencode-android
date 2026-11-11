@@ -9,8 +9,10 @@ import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
 import dev.bidzz.opencode.core.api.dto.SkillsResponse
+import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -108,6 +110,32 @@ class DtoDecodingTest {
         assertTrue(assistant.isAssistant)
         assertEquals(1020L, assistant.tokens?.input)
         assertEquals(800L, assistant.tokens?.cache?.read)
+    }
+
+    @Test
+    fun `decodes a session turn diff`() {
+        // GET /api/session/{id}/diff answers the same {data: FileDiff.Info[]}
+        // envelope as the VCS diff — file, patch, counts, status, and the
+        // truncation flag — so the same DTO decodes both.
+        val raw = """
+            {"data":[
+              {"file":"src/main.kt","patch":"@@ -1,2 +1,3 @@\n context\n-old\n+new\n+extra\n","additions":2,"deletions":1,"status":"modified","more":false},
+              {"file":"README.md","patch":"","additions":0,"deletions":0,"status":"added"}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<VcsDiffResponse>(raw)
+        assertEquals(2, parsed.data.size)
+        val first = parsed.data[0]
+        assertEquals("src/main.kt", first.file)
+        assertEquals(2, first.additions)
+        assertEquals(1, first.deletions)
+        assertEquals("modified", first.status)
+        assertEquals(false, first.more)
+        assertTrue(first.patch.contains("+new"))
+        val second = parsed.data[1]
+        assertEquals("added", second.status)
+        assertNull(second.more)
     }
 
     @Test

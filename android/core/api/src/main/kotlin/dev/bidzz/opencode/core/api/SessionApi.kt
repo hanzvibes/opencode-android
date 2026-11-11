@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.CreateSessionRequest
+import dev.bidzz.opencode.core.api.dto.FileDiffInfo
 import dev.bidzz.opencode.core.api.dto.LocationRef
 import dev.bidzz.opencode.core.api.dto.MessagesResponse
 import dev.bidzz.opencode.core.api.dto.ModelRef
@@ -14,6 +15,7 @@ import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SetModelRequest
 import dev.bidzz.opencode.core.api.dto.SingleResponse
 import dev.bidzz.opencode.core.api.dto.UpdateSessionRequest
+import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import kotlinx.serialization.encodeToString
 
 /**
@@ -105,6 +107,33 @@ class SessionApi(private val client: EngineClient) {
         val request = client.request("/api/session/$sessionID/context").get().build()
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<MessagesResponse>(raw).data
+        }
+    }
+
+    /**
+     * Structured diffs of the files a turn changed (`GET /api/session/{id}/diff`).
+     *
+     * Same `{data: FileDiff.Info[]}` envelope as the VCS diff; verified against
+     * the pinned engine source (`SessionDiff.turn` returns `Snapshot.diff`,
+     * whose entries are `FileDiff.Info`). No `from`/`to` means the latest
+     * turn; `from`/`to` are user-message ids bounding the range. Only a step
+     * still running in the active session compares against the working copy.
+     */
+    suspend fun diff(sessionID: String, from: String? = null, to: String? = null): ApiResult<List<FileDiffInfo>> {
+        val query = buildString {
+            append("/api/session/").append(sessionID).append("/diff")
+            var first = true
+            fun param(name: String, value: String) {
+                append(if (first) "?" else "&").append(name).append("=")
+                    .append(java.net.URLEncoder.encode(value, "UTF-8"))
+                first = false
+            }
+            if (from != null) param("from", from)
+            if (to != null) param("to", to)
+        }
+        val request = client.request(query).get().build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<VcsDiffResponse>(raw).data
         }
     }
 

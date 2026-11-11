@@ -164,6 +164,9 @@ fun ChatScreen(
     onModel: (dev.bidzz.opencode.core.api.dto.ModelRef) -> Unit,
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
+    /** Turn diff (Tier 2): opens the latest turn's file diffs. Null while no
+     * session is open — the status dialog then hides the entry. */
+    onTurnDiff: (() -> Unit)? = null,
     onOpenSession: (String) -> Unit,
     onDrawerOpen: () -> Unit,
     onSessionsClick: () -> Unit,
@@ -609,6 +612,7 @@ fun ChatScreen(
                 },
                 onStatusClick = onStatusClick,
                 onNewSession = onNewSession,
+                onTurnDiff = onTurnDiff,
             )
 
             // Pinned status banners: the error and the reconnecting state
@@ -1619,6 +1623,8 @@ fun ChatHeader(
      * bar and the dialog row hide instead of guessing. */
     contextUsedTokens: Long? = null,
     contextLimit: Long? = null,
+    /** Turn diff (Tier 2); null while no session is open. */
+    onTurnDiff: (() -> Unit)? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -1805,6 +1811,7 @@ fun ChatHeader(
             branch = branch,
             contextUsedTokens = contextUsedTokens,
             contextLimit = contextLimit,
+            onTurnDiff = onTurnDiff,
             onOpenDiagnostics = {
                 showStatusDialog = false
                 onStatusClick()
@@ -1830,6 +1837,8 @@ private fun EngineStatusDialog(
     /** Context meter (Tier 2); both null while unknown, and the row hides. */
     contextUsedTokens: Long? = null,
     contextLimit: Long? = null,
+    /** Turn diff (Tier 2); null while no session is open, and the entry hides. */
+    onTurnDiff: (() -> Unit)? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -1953,6 +1962,28 @@ private fun EngineStatusDialog(
                         label = stringResource(R.string.chat_status_dialog_state),
                         value = if (busy) stringResource(R.string.chat_status_working) else statusLabel,
                     )
+                }
+
+                // Turn diff (Tier 2): what the latest turn changed, in the
+                // same diff viewer as the working tree. Closes the dialog
+                // first, like the Diagnostics button does.
+                if (onTurnDiff != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                    ) {
+                        TextButton(
+                            onClick = {
+                                onDismiss()
+                                onTurnDiff()
+                            },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_status_dialog_turn_diff),
+                                color = colors.accentText,
+                            )
+                        }
+                    }
                 }
             }
         },

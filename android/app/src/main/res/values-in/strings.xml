@@ -129,6 +129,7 @@
     <string name="chat_status_dialog_state">Status</string>
     <string name="chat_status_dialog_diagnostics">Diagnostik</string>
     <string name="chat_status_dialog_close">Tutup</string>
+    <string name="chat_status_dialog_turn_diff">Diff turn</string>
     <string name="chat_status_desc_ready">Mesin online dan siap menerima perintah.</string>
     <string name="chat_status_desc_working">Mesin sedang menjalankan tugas atau membuat respons.</string>
     <string name="chat_status_desc_starting">Mesin sedang memulai dan menyiapkan koneksi runtime.</string>
@@ -338,6 +339,7 @@
     <string name="diff_modified">Dimodifikasi</string>
     <string name="difflist_title">Perubahan (%1$d)</string>
     <string name="difflist_empty">Tidak ada perubahan di working tree.\n\nAgen belum mengedit apa pun, atau git tidak tersedia.</string>
+    <string name="sessiondiff_empty">Turn terakhir tidak mengubah file apa pun.</string>
 
     <!-- History -->
     <string name="history_title">Riwayat</string>
