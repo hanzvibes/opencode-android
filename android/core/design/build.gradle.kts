@@ -1,7 +1,7 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -29,11 +29,11 @@ android {
 dependencies {
     // `api` rather than `implementation`: consumers compose with these types
     // directly, so they need the Compose runtime on their compile classpath too.
-    api(platform("androidx.compose:compose-bom:2024.12.01"))
-    api("androidx.compose.ui:ui")
-    api("androidx.compose.foundation:foundation")
-    api("androidx.compose.material3:material3")
-    api("androidx.compose.material:material-icons-core")
-    api("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+    api(platform(libs.compose.bom))
+    api(libs.compose.ui)
+    api(libs.compose.foundation)
+    api(libs.compose.material3)
+    api(libs.compose.material.icons.core)
+    api(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling)
 }
