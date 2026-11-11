@@ -104,7 +104,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val engineStatus by app.engineStatus.collectAsState()
 
     val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory {
-        ChatViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+        ChatViewModel(
+            app.engineApi,
+            { app.workspaceStore.resolve().absolutePath },
+            onSessionCleared = { app.lastSessionID = null },
+        )
     })
 
     val sessionViewModel: SessionListViewModel = viewModel(factory = viewModelFactory {

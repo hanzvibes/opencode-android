@@ -179,6 +179,12 @@ class ChatViewModel(
      * either way.
      */
     private val savedStateHandle: SavedStateHandle? = null,
+    /**
+     * Called when the session is reset ([newSession]): the caller forgets
+     * the remembered session id, so a later resume cannot resurrect the
+     * session that was just abandoned (item 14).
+     */
+    private val onSessionCleared: () -> Unit = {},
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -991,6 +997,10 @@ class ChatViewModel(
         // session's message, and the refusal notice with them.
         _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         savedStateHandle?.remove<String>(DRAFT_KEY)
+        // The abandoned session must not come back on the next resume:
+        // without this, switching workspaces reopened the old workspace's
+        // session under the new project's header (item 14).
+        onSessionCleared()
     }
 
     /** Loads an existing session. */
@@ -1045,12 +1055,39 @@ class ChatViewModel(
      * If the engine is already running and the user has an open session, reload its
      * history: the process survives a task swipe, so returning to the app should
      * show the conversation that is still there rather than an empty screen.
+     *
+     * The remembered id is verified first (item 14): the session must belong
+     * to the active workspace, or a workspace switch would resurrect the old
+     * project's session under the new project's header and prompts would land
+     * in the wrong project. A session the engine no longer has is skipped
+     * silently — an empty chat beats an error banner for a session that is
+     * simply gone. A null location cannot be verified (older engines), so it
+     * is allowed through rather than breaking resume.
      */
     fun onResume(lastSessionID: String?) {
         val repo = repository ?: return
         val target = lastSessionID ?: return
         if (_state.value.messages.isNotEmpty()) return
-        repo.open(target)
+        val h = handle ?: return
+        viewModelScope.launch {
+            when (val result = h.sessions.get(target)) {
+                is ApiResult.Success -> {
+                    val dir = result.value.location?.directory
+                    if (dir == null || sameDirectory(dir, workspace())) {
+                        repo.open(target)
+                    }
+                }
+                is ApiResult.Failure -> Unit
+            }
+        }
+    }
+
+    /** Same directory, allowing for symlinked storage roots. */
+    private fun sameDirectory(a: String, b: String): Boolean {
+        if (a == b) return true
+        return runCatching {
+            java.io.File(a).canonicalPath == java.io.File(b).canonicalPath
+        }.getOrDefault(false)
     }
 
     /** Remembers the session id so a relaunch can restore it. */
