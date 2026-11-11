@@ -1,6 +1,9 @@
 package dev.bidzz.opencode.core.design
 
 import android.content.Context
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -51,6 +54,12 @@ data class OpenCodeColors(
     val onSurfaceFaint: Color,
     val outline: Color,
     val hairline: Color,
+    /**
+     * White-card edge colour (White B): 1dp #EBEBEB in light, the hairline
+     * in dark (dark cards stay flat — no shadow, no card border). Read by
+     * `Modifier.whiteCard` (ui/Cards.kt) together with `OpenCodeTokens.shadow`.
+     */
+    val cardBorder: Color = hairline,
     val fill: Color,
     val surfacePressed: Color,
     val accent: Color,
@@ -74,9 +83,10 @@ data class OpenCodeColors(
     val neutral: Color,
     /**
      * Text-safe accent. In dark this is [accent] itself (5.76:1 on black);
-     * in light it is the darkened #005FCC (5.98:1 on white, 4.77:1 on
-     * raised) because [accent] #007AFF is only 4.02:1 on white and must
-     * never be used as text. Dots, fills and backgrounds keep [accent].
+     * in light it is the darkened #005FCC (5.98:1 on white, 5.69:1 on
+     * background #F9F9FA, 5.59:1 on sunken #F7F7F8) because [accent]
+     * #007AFF is only 4.02:1 on white and must never be used as text.
+     * Dots, fills and backgrounds keep [accent].
      */
     val accentText: Color = accent,
     /** Vivid success for dots/fills only. In dark == [success]; in light
@@ -265,6 +275,7 @@ private val DarkColors = OpenCodeColors(
     onSurfaceFaint = Palette.darkOnSurfaceFaint,
     outline = Palette.darkOutline,
     hairline = Palette.darkHairline,
+    cardBorder = Palette.darkHairline,
     fill = Palette.darkFill,
     surfacePressed = Palette.darkSurfacePressed,
     accent = Palette.darkAccent,
@@ -331,6 +342,7 @@ private val LightColors = OpenCodeColors(
     onSurfaceFaint = Palette.lightOnSurfaceFaint,
     outline = Palette.lightOutline,
     hairline = Palette.lightHairline,
+    cardBorder = Palette.lightCardBorder,
     fill = Palette.lightFill,
     surfacePressed = Palette.lightSurfacePressed,
     accent = Palette.lightAccent,
@@ -390,6 +402,83 @@ private val LightColors = OpenCodeColors(
 private val LocalColors = staticCompositionLocalOf { DarkColors }
 private val LocalTokens = staticCompositionLocalOf { OpenCodeTokens() }
 
+/**
+ * Animates every semantic colour from its current value to this palette's
+ * value, so switching theme (system change, or the Appearance picker in
+ * Settings) fades instead of cutting. On first composition each
+ * [animateColorAsState] starts at its target, so launch shows no fade —
+ * the animation only runs when the target actually changes.
+ *
+ * Every stored colour field is animated (one state per field, all sharing
+ * [animationSpec]); [isDark] is a Boolean and copies across unchanged.
+ */
+@Composable
+private fun OpenCodeColors.animated(animationSpec: AnimationSpec<Color>): OpenCodeColors = copy(
+    background = animateColorAsState(background, animationSpec, label = "background").value,
+    surface = animateColorAsState(surface, animationSpec, label = "surface").value,
+    surfaceRaised = animateColorAsState(surfaceRaised, animationSpec, label = "surfaceRaised").value,
+    surfaceSunken = animateColorAsState(surfaceSunken, animationSpec, label = "surfaceSunken").value,
+    surfaceVariant = animateColorAsState(surfaceVariant, animationSpec, label = "surfaceVariant").value,
+    onSurface = animateColorAsState(onSurface, animationSpec, label = "onSurface").value,
+    onSurfaceMuted = animateColorAsState(onSurfaceMuted, animationSpec, label = "onSurfaceMuted").value,
+    onSurfaceFaint = animateColorAsState(onSurfaceFaint, animationSpec, label = "onSurfaceFaint").value,
+    outline = animateColorAsState(outline, animationSpec, label = "outline").value,
+    hairline = animateColorAsState(hairline, animationSpec, label = "hairline").value,
+    cardBorder = animateColorAsState(cardBorder, animationSpec, label = "cardBorder").value,
+    fill = animateColorAsState(fill, animationSpec, label = "fill").value,
+    surfacePressed = animateColorAsState(surfacePressed, animationSpec, label = "surfacePressed").value,
+    accent = animateColorAsState(accent, animationSpec, label = "accent").value,
+    onAccent = animateColorAsState(onAccent, animationSpec, label = "onAccent").value,
+    activity = animateColorAsState(activity, animationSpec, label = "activity").value,
+    userBubble = animateColorAsState(userBubble, animationSpec, label = "userBubble").value,
+    onUserBubble = animateColorAsState(onUserBubble, animationSpec, label = "onUserBubble").value,
+    success = animateColorAsState(success, animationSpec, label = "success").value,
+    warning = animateColorAsState(warning, animationSpec, label = "warning").value,
+    danger = animateColorAsState(danger, animationSpec, label = "danger").value,
+    neutral = animateColorAsState(neutral, animationSpec, label = "neutral").value,
+    accentText = animateColorAsState(accentText, animationSpec, label = "accentText").value,
+    successBright = animateColorAsState(successBright, animationSpec, label = "successBright").value,
+    warningBright = animateColorAsState(warningBright, animationSpec, label = "warningBright").value,
+    dangerBright = animateColorAsState(dangerBright, animationSpec, label = "dangerBright").value,
+    syntaxKeyword = animateColorAsState(syntaxKeyword, animationSpec, label = "syntaxKeyword").value,
+    syntaxString = animateColorAsState(syntaxString, animationSpec, label = "syntaxString").value,
+    syntaxNumber = animateColorAsState(syntaxNumber, animationSpec, label = "syntaxNumber").value,
+    syntaxComment = animateColorAsState(syntaxComment, animationSpec, label = "syntaxComment").value,
+    syntaxFunction = animateColorAsState(syntaxFunction, animationSpec, label = "syntaxFunction").value,
+    syntaxType = animateColorAsState(syntaxType, animationSpec, label = "syntaxType").value,
+    toolRunning = animateColorAsState(toolRunning, animationSpec, label = "toolRunning").value,
+    toolRunningBg = animateColorAsState(toolRunningBg, animationSpec, label = "toolRunningBg").value,
+    toolSuccess = animateColorAsState(toolSuccess, animationSpec, label = "toolSuccess").value,
+    toolSuccessBg = animateColorAsState(toolSuccessBg, animationSpec, label = "toolSuccessBg").value,
+    toolError = animateColorAsState(toolError, animationSpec, label = "toolError").value,
+    toolErrorBg = animateColorAsState(toolErrorBg, animationSpec, label = "toolErrorBg").value,
+    toolWarning = animateColorAsState(toolWarning, animationSpec, label = "toolWarning").value,
+    toolWarningBg = animateColorAsState(toolWarningBg, animationSpec, label = "toolWarningBg").value,
+    toolPending = animateColorAsState(toolPending, animationSpec, label = "toolPending").value,
+    toolPendingBg = animateColorAsState(toolPendingBg, animationSpec, label = "toolPendingBg").value,
+    diffAdded = animateColorAsState(diffAdded, animationSpec, label = "diffAdded").value,
+    diffAddedBg = animateColorAsState(diffAddedBg, animationSpec, label = "diffAddedBg").value,
+    diffAddedGutter = animateColorAsState(diffAddedGutter, animationSpec, label = "diffAddedGutter").value,
+    diffRemoved = animateColorAsState(diffRemoved, animationSpec, label = "diffRemoved").value,
+    diffRemovedBg = animateColorAsState(diffRemovedBg, animationSpec, label = "diffRemovedBg").value,
+    diffRemovedGutter = animateColorAsState(diffRemovedGutter, animationSpec, label = "diffRemovedGutter").value,
+    diffModified = animateColorAsState(diffModified, animationSpec, label = "diffModified").value,
+    diffModifiedBg = animateColorAsState(diffModifiedBg, animationSpec, label = "diffModifiedBg").value,
+    diffHunkHeader = animateColorAsState(diffHunkHeader, animationSpec, label = "diffHunkHeader").value,
+    diffHunkHeaderBg = animateColorAsState(diffHunkHeaderBg, animationSpec, label = "diffHunkHeaderBg").value,
+    providerAnthropic = animateColorAsState(providerAnthropic, animationSpec, label = "providerAnthropic").value,
+    providerOpenAI = animateColorAsState(providerOpenAI, animationSpec, label = "providerOpenAI").value,
+    providerGoogle = animateColorAsState(providerGoogle, animationSpec, label = "providerGoogle").value,
+    providerDeepSeek = animateColorAsState(providerDeepSeek, animationSpec, label = "providerDeepSeek").value,
+    providerMistral = animateColorAsState(providerMistral, animationSpec, label = "providerMistral").value,
+    providerOllama = animateColorAsState(providerOllama, animationSpec, label = "providerOllama").value,
+    providerMeta = animateColorAsState(providerMeta, animationSpec, label = "providerMeta").value,
+    providerGroq = animateColorAsState(providerGroq, animationSpec, label = "providerGroq").value,
+    providerCohere = animateColorAsState(providerCohere, animationSpec, label = "providerCohere").value,
+    providerQwen = animateColorAsState(providerQwen, animationSpec, label = "providerQwen").value,
+    providerNvidia = animateColorAsState(providerNvidia, animationSpec, label = "providerNvidia").value,
+)
+
 /** Access point for semantic colours: `OpenCodeTheme.colors.accent`. */
 object OpenCodeTheme {
     val colors: OpenCodeColors
@@ -405,6 +494,11 @@ object OpenCodeTheme {
  * [themeMode] resolves to dark/light here: System follows the phone, Dark /
  * Light pin the palette. The default keeps the old system-only behaviour
  * for previews and any caller that does not pass a mode.
+ *
+ * Switching theme fades: every semantic colour animates to its new value
+ * over [Motion.standard] (220ms, standard easing) via [OpenCodeColors.animated],
+ * so the dark/light selection logic itself is unchanged — only the cut
+ * between palettes is gone.
  */
 @Composable
 fun OpenCodeTheme(
@@ -416,8 +510,11 @@ fun OpenCodeTheme(
         ThemeMode.Dark -> true
         ThemeMode.Light -> false
     }
-    val colors = if (darkTheme) DarkColors else LightColors
     val tokens = OpenCodeTokens()
+    val targetColors = if (darkTheme) DarkColors else LightColors
+    val colors = targetColors.animated(
+        tween(durationMillis = tokens.motion.standard, easing = tokens.motion.easingStandard),
+    )
 
     val material = if (darkTheme) {
         darkColorScheme(

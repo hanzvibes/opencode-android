@@ -7,10 +7,12 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,6 +70,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.diff.DiffHunk
 import dev.bidzz.opencode.ui.diff.DiffLine
 import dev.bidzz.opencode.ui.diff.DiffParser
@@ -137,6 +140,9 @@ fun ToolTrace(
     // below must never close a trace the reader opened on purpose.
     var userExpanded by rememberSaveable { mutableStateOf(false) }
 
+    // Animation C: shared press feedback on the summary toggle header.
+    val headerPressSource = remember { MutableInteractionSource() }
+
     // One glyph rotating 0° (right, collapsed) ↔ 90° (down, open)
     // instead of two glyphs swapping on every tap.
     val headerChevronRotation by animateFloatAsState(
@@ -184,7 +190,12 @@ fun ToolTrace(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(role = Role.Button) {
+                .pressScale(motion, headerPressSource)
+                .clickable(
+                    interactionSource = headerPressSource,
+                    indication = LocalIndication.current,
+                    role = Role.Button,
+                ) {
                     open = !open
                     if (open) userExpanded = true
                 }
@@ -511,6 +522,9 @@ fun ToolStep(
     // is visible without a tap; a finished step still starts collapsed.
     var open by rememberSaveable(call.id) { mutableStateOf(active) }
 
+    // Animation C: shared press feedback on the step's main row.
+    val stepPressSource = remember { MutableInteractionSource() }
+
     // Live elapsed clock for a running step (Fase 2, item 5): ticks once a
     // second while the step runs, and stops with it — the infinite loop
     // only exists while active, so nothing ticks on a finished turn.
@@ -709,7 +723,12 @@ fun ToolStep(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(enabled = hasDetails) { open = !open }
+                        .pressScale(motion, stepPressSource)
+                        .clickable(
+                            interactionSource = stepPressSource,
+                            indication = LocalIndication.current,
+                            enabled = hasDetails,
+                        ) { open = !open }
                         .padding(horizontal = spacing.sm, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

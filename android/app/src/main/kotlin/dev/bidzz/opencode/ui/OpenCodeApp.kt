@@ -2,7 +2,20 @@ package dev.bidzz.opencode.ui
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -14,8 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.LanguageStore
 import dev.bidzz.opencode.R
 import androidx.compose.runtime.collectAsState
@@ -29,6 +45,7 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.bidzz.opencode.OpenCodeApplication
+import dev.bidzz.opencode.core.design.Motion
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.design.ThemeStore
@@ -104,7 +121,58 @@ internal fun Screen.parent(): Screen = when (this) {
     else -> Screen.Chat
 }
 
+/**
+ * Depth in the navigation hierarchy (Animation C): the screen-transition
+ * slide direction. Chat is the root; a deeper screen slides up from
+ * below on entry, a shallower one slides down — so forward and back read
+ * differently instead of every transition sliding the same way.
+ */
+internal fun Screen.depth(): Int = when (this) {
+    Screen.Chat -> 0
+    Screen.Sessions -> 1
+    Screen.Projects, Screen.Files, Screen.Settings, Screen.Diagnostics -> 2
+    is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
+    Screen.Providers, Screen.McpServers, Screen.About -> 3
+    is Screen.Diff -> 4
+}
+
+/**
+ * Animation C shared press feedback: one pattern for every tappable
+ * card/row — shrink to 0.97 on press, spring back on release with
+ * [Motion.springResponsive]. The caller hoists a single
+ * [InteractionSource] and passes the same instance to its `clickable`
+ * and here, so the scale tracks the real press state (and the default
+ * ripple indication is untouched).
+ */
 @Composable
+internal fun Modifier.pressScale(
+    motion: Motion,
+    interactionSource: InteractionSource,
+    pressedScale: Float = 0.97f,
+): Modifier {
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) pressedScale else 1f,
+        animationSpec = motion.springResponsive(),
+        label = "press_scale",
+    )
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}
+
+/**
+ * Animation C shared-element pilot: the key for the session-title flight
+ * between a session row and the chat header. Both sides must call this
+ * with the session id, so the keys can never drift apart. The key is the
+ * raw session id: it is unique per session, and this is the only shared
+ * pair in the app, so no namespace prefix is needed.
+ */
+internal fun sessionTitleSharedKey(sessionId: String): String = sessionId
+
+@Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun OpenCodeApp(app: OpenCodeApplication) {
     var screen by remember { mutableStateOf<Screen>(Screen.Chat) }
     var sessionScopeToProject by remember { mutableStateOf(true) }
@@ -280,6 +348,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         LocalAppContext provides localized,
     ) {
     OpenCodeTheme(themeMode = themeMode) {
+        // Animation C: screen transitions slide 24dp with a 320ms
+        // emphasized fade. The pixel offset is resolved once here,
+        // because a transitionSpec cannot read LocalDensity.
+        val motion = OpenCodeTheme.tokens.motion
+        val screenSlidePx = with(LocalDensity.current) { 24.dp.roundToPx() }
         if (showOnboarding) {
             // First run, empty workspace: the 3-step flow replaces the
             // navigation until it is dismissed or finished. Either way it
@@ -302,110 +375,224 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     showOnboarding = false
                 },
             )
-        } else when (screen) {
-            Screen.Chat -> ChatDestination(
-                chatState = chatState,
-                sessionsState = sessionsState,
-                chatViewModel = chatViewModel,
-                sessionViewModel = sessionViewModel,
-                app = app,
-                sessionScopeToProject = sessionScopeToProject,
-                onNavigate = { screen = it },
-                isExpanded = isExpanded,
-                showSidebar = true,
-                fileIndex = explorerState.quickOpenIndex,
-                fileIndexLoading = explorerState.quickOpenLoading,
-                fileIndexFailed = explorerState.quickOpenFailed,
-                onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
-            )
+        } else SharedTransitionLayout {
+            // Animation C shared-element pilot: the SharedTransitionScope
+            // both sides of the session-title flight share. Captured here,
+            // once, so the row and the header create their shared states
+            // in the same scope — a state created in any other scope
+            // would never match its pair.
+            val sharedTransitionScope = this
+            AnimatedContent(
+                targetState = screen,
+                transitionSpec = {
+                    // Deeper = forward: the new screen slides up from below
+                    // and the old one slides up out; back reverses it, so
+                    // forward and back read differently instead of every
+                    // transition sliding the same way. Only whole-screen
+                    // changes animate — the expanded-width Sessions branch
+                    // below keeps its list-detail Row as-is.
+                    val forward = targetState.depth() >= initialState.depth()
+                    val enterOffset = if (forward) screenSlidePx else -screenSlidePx
+                    val exitOffset = if (forward) -screenSlidePx else screenSlidePx
+                    (fadeIn(animationSpec = motion.tweenEmphasized()) +
+                        slideInVertically(animationSpec = motion.tweenEmphasized()) { enterOffset }) togetherWith
+                        (fadeOut(animationSpec = motion.tweenEmphasized()) +
+                            slideOutVertically(animationSpec = motion.tweenEmphasized()) { exitOffset })
+                },
+                label = "screen_transition",
+            ) { target ->
+                // The AnimatedContent scope the shared elements need: each
+                // side passes its own invocation's scope, and the shared
+                // transition matches them by key.
+                val animatedVisibilityScope = this@AnimatedContent
+                when (target) {
+                Screen.Chat -> ChatDestination(
+                    chatState = chatState,
+                    sessionsState = sessionsState,
+                    chatViewModel = chatViewModel,
+                    sessionViewModel = sessionViewModel,
+                    app = app,
+                    sessionScopeToProject = sessionScopeToProject,
+                    onNavigate = { screen = it },
+                    isExpanded = isExpanded,
+                    showSidebar = true,
+                    // Shared-element pilot: the chat header is the
+                    // destination side of the session-title flight.
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    fileIndex = explorerState.quickOpenIndex,
+                    fileIndexLoading = explorerState.quickOpenLoading,
+                    fileIndexFailed = explorerState.quickOpenFailed,
+                    onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
+                )
 
-            Screen.Files -> ExplorerScreen(
-                state = explorerState,
-                onBack = { screen = Screen.Chat },
-                onOpenDirectory = { row -> explorerViewModel.open(row.path) },
-                onOpenFile = { row -> screen = Screen.FileView(row.path) },
-                onBreadcrumb = { path -> explorerViewModel.open(path) },
-                onUp = { explorerViewModel.up() },
-                onRefresh = { explorerViewModel.load() },
-                onDiff = { screen = Screen.DiffList },
-                // Files list-detail (Phase 3, W-C): at expanded widths a
-                // file opens into the detail pane beside the list instead
-                // of navigating to the full-screen viewer. The detail
-                // opener must stay gated on width: the list routes files
-                // to it whenever it is non-null, so passing it on a phone
-                // would swallow the tap — the file would load invisibly
-                // and never navigate anywhere.
-                selectedFilePath = if (isExpanded) selectedFilePath else null,
-                fileState = if (isExpanded) fileState else null,
-                onOpenFileDetail = if (isExpanded) {
-                    { row ->
-                        if (fileViewModel.requestLoad(row.path)) selectedFilePath = row.path
+                Screen.Files -> ExplorerScreen(
+                    state = explorerState,
+                    onBack = { screen = Screen.Chat },
+                    onOpenDirectory = { row -> explorerViewModel.open(row.path) },
+                    onOpenFile = { row -> screen = Screen.FileView(row.path) },
+                    onBreadcrumb = { path -> explorerViewModel.open(path) },
+                    onUp = { explorerViewModel.up() },
+                    onRefresh = { explorerViewModel.load() },
+                    onDiff = { screen = Screen.DiffList },
+                    // Files list-detail (Phase 3, W-C): at expanded widths a
+                    // file opens into the detail pane beside the list instead
+                    // of navigating to the full-screen viewer. The detail
+                    // opener must stay gated on width: the list routes files
+                    // to it whenever it is non-null, so passing it on a phone
+                    // would swallow the tap — the file would load invisibly
+                    // and never navigate anywhere.
+                    selectedFilePath = if (isExpanded) selectedFilePath else null,
+                    fileState = if (isExpanded) fileState else null,
+                    onOpenFileDetail = if (isExpanded) {
+                        { row ->
+                            if (fileViewModel.requestLoad(row.path)) selectedFilePath = row.path
+                        }
+                    } else {
+                        null
+                    },
+                    onCloseFileDetail = { selectedFilePath = null },
+                    onFileStartEdit = fileViewModel::startEditing,
+                    onFileDraftChange = fileViewModel::editDraft,
+                    onFileSave = { fileViewModel.save() },
+                    onFileCancelEdit = fileViewModel::stopEditing,
+                    onFileOverwrite = { fileViewModel.save(overwrite = true) },
+                    onFileReloadFromDisk = fileViewModel::reloadFromDisk,
+                    onFileDismissConflict = fileViewModel::dismissConflict,
+                    onFileLoadFull = fileViewModel::loadFull,
+                    onFileConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
+                    onFileCancelSwitch = fileViewModel::cancelSwitch,
+                    onEnsureQuickOpenIndex = explorerViewModel::ensureQuickOpenIndex,
+                )
+
+                is Screen.FileView -> FileViewScreen(
+                    state = fileState,
+                    onBack = { screen = Screen.Files },
+                    onStartEdit = fileViewModel::startEditing,
+                    onDraftChange = fileViewModel::editDraft,
+                    onSave = { fileViewModel.save() },
+                    onCancelEdit = fileViewModel::stopEditing,
+                    onOverwrite = { fileViewModel.save(overwrite = true) },
+                    onReloadFromDisk = fileViewModel::reloadFromDisk,
+                    onDismissConflict = fileViewModel::dismissConflict,
+                    onConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
+                    onCancelSwitch = fileViewModel::cancelSwitch,
+                )
+
+                Screen.DiffList -> DiffListScreen(
+                    changed = explorerState.changed,
+                    onBack = { screen = Screen.Files },
+                    onOpen = { file -> screen = Screen.Diff(file) },
+                )
+
+                is Screen.Diff -> DiffScreen(
+                    state = diffState,
+                    onBack = { screen = Screen.DiffList },
+                )
+
+                Screen.SessionDiff -> SessionDiffScreen(
+                    state = sessionDiffState,
+                    onBack = { screen = Screen.Chat },
+                    onOpen = sessionDiffViewModel::openFile,
+                    onCloseFile = sessionDiffViewModel::closeFile,
+                )
+
+                Screen.Sessions -> if (isExpanded) {
+                    // List-detail: the session list stays visible beside the
+                    // conversation. Selecting a row opens it in the detail pane
+                    // without leaving this screen, and a new session opens
+                    // there too; the detail chat has no sidebar of its own
+                    // because the list is already here. Back still returns to
+                    // Chat (see the BackHandler above).
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(OpenCodeTheme.colors.background),
+                    ) {
+                        SessionListPane(
+                            state = sessionsState,
+                            onOpen = { row -> chatViewModel.openSession(row.id) },
+                            onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
+                            onRename = { row, newTitle ->
+                                sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
+                            },
+                            onDelete = { row ->
+                                if (chatState.sessionID == row.id) {
+                                    chatViewModel.newSession()
+                                }
+                                sessionViewModel.delete(row.id, sessionScopeToProject)
+                            },
+                            onTogglePin = { row ->
+                                sessionViewModel.togglePin(row.id)
+                            },
+                            details = sessionsState.details,
+                            selectedSessionId = chatState.sessionID,
+                            // Shared-element pilot: NO flight here. This pane
+                            // and the detail chat beside it are composed at
+                            // the same time, so the same session title would
+                            // exist twice under one key — a shared key may
+                            // only exist once per transition. A row tap here
+                            // only updates content (no screen change), so no
+                            // flight is expected either. Null scopes disable
+                            // the shared modifier on both sides.
+                            sharedTransitionScope = null,
+                            animatedVisibilityScope = null,
+                            modifier = Modifier
+                                .width(ListPaneWidth)
+                                .fillMaxHeight()
+                                // The pane sits in a bare Row, not a scaffold,
+                                // so it pads for the system bars itself; the
+                                // detail chat does the same in its own column.
+                                .statusBarsPadding()
+                                .navigationBarsPadding(),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(OpenCodeTheme.tokens.dimensions.hairline)
+                                .background(OpenCodeTheme.colors.hairline),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                        ) {
+                            ChatDestination(
+                                chatState = chatState,
+                                sessionsState = sessionsState,
+                                chatViewModel = chatViewModel,
+                                sessionViewModel = sessionViewModel,
+                                app = app,
+                                sessionScopeToProject = sessionScopeToProject,
+                                onNavigate = { screen = it },
+                                isExpanded = true,
+                                showSidebar = false,
+                                // Shared-element pilot: null, like the list
+                                // pane beside it — the same title is on
+                                // screen twice here (see the pane above).
+                                sharedTransitionScope = null,
+                                animatedVisibilityScope = null,
+                                fileIndex = explorerState.quickOpenIndex,
+                                fileIndexLoading = explorerState.quickOpenLoading,
+                                fileIndexFailed = explorerState.quickOpenFailed,
+                                onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
+                            )
+                        }
                     }
                 } else {
-                    null
-                },
-                onCloseFileDetail = { selectedFilePath = null },
-                onFileStartEdit = fileViewModel::startEditing,
-                onFileDraftChange = fileViewModel::editDraft,
-                onFileSave = { fileViewModel.save() },
-                onFileCancelEdit = fileViewModel::stopEditing,
-                onFileOverwrite = { fileViewModel.save(overwrite = true) },
-                onFileReloadFromDisk = fileViewModel::reloadFromDisk,
-                onFileDismissConflict = fileViewModel::dismissConflict,
-                onFileLoadFull = fileViewModel::loadFull,
-                onFileConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
-                onFileCancelSwitch = fileViewModel::cancelSwitch,
-                onEnsureQuickOpenIndex = explorerViewModel::ensureQuickOpenIndex,
-            )
-
-            is Screen.FileView -> FileViewScreen(
-                state = fileState,
-                onBack = { screen = Screen.Files },
-                onStartEdit = fileViewModel::startEditing,
-                onDraftChange = fileViewModel::editDraft,
-                onSave = { fileViewModel.save() },
-                onCancelEdit = fileViewModel::stopEditing,
-                onOverwrite = { fileViewModel.save(overwrite = true) },
-                onReloadFromDisk = fileViewModel::reloadFromDisk,
-                onDismissConflict = fileViewModel::dismissConflict,
-                onConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
-                onCancelSwitch = fileViewModel::cancelSwitch,
-            )
-
-            Screen.DiffList -> DiffListScreen(
-                changed = explorerState.changed,
-                onBack = { screen = Screen.Files },
-                onOpen = { file -> screen = Screen.Diff(file) },
-            )
-
-            is Screen.Diff -> DiffScreen(
-                state = diffState,
-                onBack = { screen = Screen.DiffList },
-            )
-
-            Screen.SessionDiff -> SessionDiffScreen(
-                state = sessionDiffState,
-                onBack = { screen = Screen.Chat },
-                onOpen = sessionDiffViewModel::openFile,
-                onCloseFile = sessionDiffViewModel::closeFile,
-            )
-
-            Screen.Sessions -> if (isExpanded) {
-                // List-detail: the session list stays visible beside the
-                // conversation. Selecting a row opens it in the detail pane
-                // without leaving this screen, and a new session opens
-                // there too; the detail chat has no sidebar of its own
-                // because the list is already here. Back still returns to
-                // Chat (see the BackHandler above).
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(OpenCodeTheme.colors.background),
-                ) {
-                    SessionListPane(
+                    SessionListScreen(
                         state = sessionsState,
-                        onOpen = { row -> chatViewModel.openSession(row.id) },
+                        onBack = { screen = Screen.Chat },
+                        onOpen = { row: SessionRow ->
+                            chatViewModel.openSession(row.id)
+                            screen = Screen.Chat
+                        },
+                        details = sessionsState.details,
                         onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
+                        onNewSession = {
+                            chatViewModel.newSession()
+                            screen = Screen.Chat
+                        },
                         onRename = { row, newTitle ->
                             sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
                         },
@@ -418,155 +605,96 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onTogglePin = { row ->
                             sessionViewModel.togglePin(row.id)
                         },
-                        details = sessionsState.details,
-                        selectedSessionId = chatState.sessionID,
-                        modifier = Modifier
-                            .width(ListPaneWidth)
-                            .fillMaxHeight()
-                            // The pane sits in a bare Row, not a scaffold,
-                            // so it pads for the system bars itself; the
-                            // detail chat does the same in its own column.
-                            .statusBarsPadding()
-                            .navigationBarsPadding(),
+                        // Shared-element pilot: the full-screen list is the
+                        // origin side of the session-title flight.
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
                     )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .width(OpenCodeTheme.tokens.dimensions.hairline)
-                            .background(OpenCodeTheme.colors.hairline),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                    ) {
-                        ChatDestination(
-                            chatState = chatState,
-                            sessionsState = sessionsState,
-                            chatViewModel = chatViewModel,
-                            sessionViewModel = sessionViewModel,
-                            app = app,
-                            sessionScopeToProject = sessionScopeToProject,
-                            onNavigate = { screen = it },
-                            isExpanded = true,
-                            showSidebar = false,
-                            fileIndex = explorerState.quickOpenIndex,
-                            fileIndexLoading = explorerState.quickOpenLoading,
-                            fileIndexFailed = explorerState.quickOpenFailed,
-                            onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
-                        )
-                    }
                 }
-            } else {
-                SessionListScreen(
-                    state = sessionsState,
+
+                Screen.Projects -> {
+                    val current = app.workspaceStore.resolve().absolutePath
+                    ProjectPickerScreen(
+                        currentPath = current,
+                        internalPath = app.workspaceStore.internalPath(),
+                        hasAllFilesAccess = app.workspaceStore.hasAllFilesAccess(),
+                        options = buildProjectOptions(app, current),
+                        onBack = { screen = Screen.Chat },
+                        onSelect = { option ->
+                            // A refused switch stays on this screen (item 30):
+                            // starting a new session and navigating away would
+                            // pretend the switch happened.
+                            if (app.switchWorkspace(File(option.path))) {
+                                // A different project means a different session: the engine
+                                // binds a session to the directory it was created in.
+                                chatViewModel.newSession()
+                                // ... and a different file index: the cached one lists
+                                // the old project's files (item 27).
+                                explorerViewModel.invalidateQuickOpenIndex()
+                                screen = Screen.Chat
+                            } else {
+                                Toast.makeText(
+                                    hostContext,
+                                    R.string.workspace_too_broad,
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        },
+                        onChooseFolder = { app.requestWorkspaceFolder() },
+                        onGrantAccess = { app.requestAllFilesAccess() },
+                    )
+                }
+
+                Screen.Settings -> SettingsScreen(
+                    app = app,
+                    language = language,
+                    onLanguageChange = { chosen ->
+                        LanguageStore.set(hostContext, chosen)
+                        language = chosen
+                    },
+                    themeMode = themeMode,
+                    onThemeModeChange = { chosen ->
+                        ThemeStore.set(hostContext, chosen)
+                        themeMode = chosen
+                    },
                     onBack = { screen = Screen.Chat },
-                    onOpen = { row: SessionRow ->
-                        chatViewModel.openSession(row.id)
-                        screen = Screen.Chat
-                    },
-                    details = sessionsState.details,
-                    onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
-                    onNewSession = {
-                        chatViewModel.newSession()
-                        screen = Screen.Chat
-                    },
-                    onRename = { row, newTitle ->
-                        sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
-                    },
-                    onDelete = { row ->
-                        if (chatState.sessionID == row.id) {
-                            chatViewModel.newSession()
-                        }
-                        sessionViewModel.delete(row.id, sessionScopeToProject)
-                    },
-                    onTogglePin = { row ->
-                        sessionViewModel.togglePin(row.id)
-                    },
+                    onDiagnostics = { screen = Screen.Diagnostics },
+                    onProjects = { screen = Screen.Projects },
+                    onProviders = { screen = Screen.Providers },
+                    onMcpServers = { screen = Screen.McpServers },
+                    onAbout = { screen = Screen.About },
                 )
-            }
 
-            Screen.Projects -> {
-                val current = app.workspaceStore.resolve().absolutePath
-                ProjectPickerScreen(
-                    currentPath = current,
-                    internalPath = app.workspaceStore.internalPath(),
-                    hasAllFilesAccess = app.workspaceStore.hasAllFilesAccess(),
-                    options = buildProjectOptions(app, current),
+                Screen.About -> AboutScreen(
+                    versionName = remember {
+                        runCatching { hostContext.packageManager.getPackageInfo(hostContext.packageName, 0).versionName }
+                            .getOrNull().orEmpty()
+                    },
+                    onBack = { screen = Screen.Settings },
+                )
+
+                Screen.Providers -> ProvidersScreen(
+                    state = providersState,
+                    onBack = { screen = Screen.Settings },
+                    onRefresh = providersViewModel::refresh,
+                    onSaveKey = providersViewModel::saveKey,
+                    onSaveCustom = providersViewModel::saveCustomProvider,
+                    onDeleteCredential = providersViewModel::deleteCredential,
+                    onReplaceCredential = providersViewModel::replaceCredential,
+                )
+
+                Screen.Diagnostics -> DiagnosticsScreen(
+                    app = app,
                     onBack = { screen = Screen.Chat },
-                    onSelect = { option ->
-                        // A refused switch stays on this screen (item 30):
-                        // starting a new session and navigating away would
-                        // pretend the switch happened.
-                        if (app.switchWorkspace(File(option.path))) {
-                            // A different project means a different session: the engine
-                            // binds a session to the directory it was created in.
-                            chatViewModel.newSession()
-                            // ... and a different file index: the cached one lists
-                            // the old project's files (item 27).
-                            explorerViewModel.invalidateQuickOpenIndex()
-                            screen = Screen.Chat
-                        } else {
-                            Toast.makeText(
-                                hostContext,
-                                R.string.workspace_too_broad,
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
-                    },
-                    onChooseFolder = { app.requestWorkspaceFolder() },
-                    onGrantAccess = { app.requestAllFilesAccess() },
                 )
+
+                Screen.McpServers -> McpServersScreen(
+                    state = mcpServersState,
+                    onBack = { screen = Screen.Settings },
+                    onRefresh = mcpServersViewModel::refresh,
+                )
+                }
             }
-
-            Screen.Settings -> SettingsScreen(
-                app = app,
-                language = language,
-                onLanguageChange = { chosen ->
-                    LanguageStore.set(hostContext, chosen)
-                    language = chosen
-                },
-                themeMode = themeMode,
-                onThemeModeChange = { chosen ->
-                    ThemeStore.set(hostContext, chosen)
-                    themeMode = chosen
-                },
-                onBack = { screen = Screen.Chat },
-                onDiagnostics = { screen = Screen.Diagnostics },
-                onProjects = { screen = Screen.Projects },
-                onProviders = { screen = Screen.Providers },
-                onMcpServers = { screen = Screen.McpServers },
-                onAbout = { screen = Screen.About },
-            )
-
-            Screen.About -> AboutScreen(
-                versionName = remember {
-                    runCatching { hostContext.packageManager.getPackageInfo(hostContext.packageName, 0).versionName }
-                        .getOrNull().orEmpty()
-                },
-                onBack = { screen = Screen.Settings },
-            )
-
-            Screen.Providers -> ProvidersScreen(
-                state = providersState,
-                onBack = { screen = Screen.Settings },
-                onRefresh = providersViewModel::refresh,
-                onSaveKey = providersViewModel::saveKey,
-                onSaveCustom = providersViewModel::saveCustomProvider,
-                onDeleteCredential = providersViewModel::deleteCredential,
-                onReplaceCredential = providersViewModel::replaceCredential,
-            )
-
-            Screen.Diagnostics -> DiagnosticsScreen(
-                app = app,
-                onBack = { screen = Screen.Chat },
-            )
-
-            Screen.McpServers -> McpServersScreen(
-                state = mcpServersState,
-                onBack = { screen = Screen.Settings },
-                onRefresh = mcpServersViewModel::refresh,
-            )
         }
     }
     }
@@ -580,6 +708,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
  * (modal drawer, persistent sidebar, or bare detail — see ChatScreen).
  */
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 private fun ChatDestination(
     chatState: ChatUiState,
     sessionsState: SessionListUiState,
@@ -590,6 +719,13 @@ private fun ChatDestination(
     onNavigate: (Screen) -> Unit,
     isExpanded: Boolean,
     showSidebar: Boolean,
+    /**
+     * Animation C shared-element pilot: the scopes the chat header needs
+     * for the session-title flight. Null (the expanded sessions detail
+     * pane) disables the flight — see the call sites in [OpenCodeApp].
+     */
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     /** Workspace file index for the @-mention / attach picker. */
     fileIndex: List<dev.bidzz.opencode.ui.files.FileRow> = emptyList(),
     fileIndexLoading: Boolean = false,
@@ -665,6 +801,8 @@ private fun ChatDestination(
         busy = chatState.busy,
         isExpanded = isExpanded,
         showSidebar = showSidebar,
+        sharedTransitionScope = sharedTransitionScope,
+        animatedVisibilityScope = animatedVisibilityScope,
     )
 }
 

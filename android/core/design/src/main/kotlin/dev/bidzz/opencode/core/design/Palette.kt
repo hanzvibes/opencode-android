@@ -9,22 +9,31 @@ import androidx.compose.ui.graphics.Color
  *
  * Phase 1 ("The quiet terminal") rules, enforced here:
  * - THREE OPAQUE SURFACES per theme, no alpha: background, raised, sunken.
- *   Dark: #000000 / #1C1C1E / #0E0E10. Light: #FFFFFF / #E5E5EA / #EBEBED.
+ *   Dark: #000000 / #1C1C1E / #0E0E10. Light (White B): #F9F9FA / #FFFFFF /
+ *   #F7F7F8 (code blocks). `surface` aliases the raised value; `surfaceVariant`
+ *   is a separate chips-only neutral #F5F5F7, NOT an alias of raised — White B
+ *   needs chips to read against white cards.
  *   The old near-blacks #141416 and #1E1E21 (dark) and #F5F5F7 / #F0F0F2
- *   (light) were folded into the raised value — on OLED they were visually
- *   indistinguishable from it. `surface` and `surfaceVariant` are aliases
- *   of the raised value, kept so call sites need no rename.
+ *   (light) were folded into the raised value in Phase 1 — on OLED they were
+ *   visually indistinguishable from it. White B un-folds the light side:
+ *   the page is #F9F9FA, cards are pure #FFFFFF, so the ladder reads again.
  * - NO GLASS, NO HALOS: the glass/halo colour blocks were deleted with the
  *   Glassmorphism / ElevationHalos tokens (zero consumers). Depth comes
- *   from the three surfaces plus a hairline, never from translucency.
+ *   from the three surfaces plus a hairline in dark; in light, from the
+ *   white-card shadow tokens (`ShadowTokens` in Tokens.kt) plus a 1dp
+ *   #EBEBEB border — never from translucency.
  * - ONE BLUE: accent is the only live/activity colour (see Theme.kt).
  * - USER BUBBLE IS NEUTRAL, not blue: it is the raised surface in both
- *   themes, with [OpenCodeColors.onUserBubble] = onSurface.
+ *   themes, with [OpenCodeColors.onUserBubble] = onSurface. In White B
+ *   that means a white bubble on the #F9F9FA page — distinguished by
+ *   position and shape only (see the contrast note in the final report).
  * - LIGHT-THEME TEXT IS AA: bright semantic colours (#34C759, #FF9500,
  *   #FF3B30, #007AFF) are 2.2–4.0:1 on light backgrounds and must NEVER be
  *   used as text. Text uses the `*Text` variants below (all ≥ 4.5:1 on
- *   white, on raised #E5E5EA, and on sunken #EBEBED); bright values live
- *   on as dots/fills via the `*Bright` roles in [OpenCodeColors].
+ *   white, on background #F9F9FA, on sunken #F7F7F8, and on variant
+ *   #F5F5F7 — White B lightened every light background, so every ratio
+ *   improved over Phase 1); bright values live on as dots/fills via the
+ *   `*Bright` roles in [OpenCodeColors].
  */
 object Palette {
 
@@ -67,31 +76,46 @@ object Palette {
     val darkUserBubble = darkSurfaceRaised
     val darkOnUserBubble = darkOnSurface
 
-    // ---- Light ----
-    // Three canonical opaque surfaces: background #FFFFFF, raised #E5E5EA,
-    // sunken #EBEBED. surface / surfaceVariant alias the raised value.
-    // (The old light surface #F5F5F7 folded into raised #E5E5EA, mirroring
-    // the dark collapse; one constant to tune if light cards feel heavy.)
-    val lightBackground = Color(0xFFFFFFFF)
-    val lightSurfaceRaised = Color(0xFFE5E5EA)
-    val lightSurfaceSunken = Color(0xFFEBEBED)
+    // ---- Light (White B) ----
+    // Three canonical opaque surfaces: background #F9F9FA, raised #FFFFFF,
+    // sunken #F7F7F8 (code blocks). `surface` aliases the raised value;
+    // `surfaceVariant` is its own chips-only neutral #F5F5F7 (see below).
+    // White B replaces the Phase 1 light ladder (#FFFFFF / #E5E5EA /
+    // #EBEBED): the page drops to #F9F9FA so pure-white cards lift off it
+    // with the shadow tokens instead of sitting grey on white.
+    val lightBackground = Color(0xFFF9F9FA)
+    val lightSurfaceRaised = Color(0xFFFFFFFF)
+    val lightSurfaceSunken = Color(0xFFF7F7F8)
     val lightSurface = lightSurfaceRaised
-    val lightSurfaceVariant = lightSurfaceRaised
+    // Chips only — deliberately NOT an alias of raised any more: on a white
+    // card a chip filled with raised (#FFFFFF) would be invisible, so chips
+    // keep their own neutral #F5F5F7. Call sites that want "the card
+    // surface" use `surface` / `surfaceRaised`, never this.
+    val lightSurfaceVariant = Color(0xFFF5F5F7)
 
     val lightOnSurface = Color(0xFF0B0B0C)
-    // Darkened in Phase 1: the old #6E6E73 was 5.07:1 on white but only
-    // 4.04:1 on the (new) raised surface #E5E5EA, where muted text
-    // actually sits (drawer, cards, chips). #5F5F66 is 6.33 / 5.05 / 5.32
-    // on white / raised / sunken.
+    // White B lightened every light background, so the Phase 1 ratios all
+    // improved: #5F5F66 is now 6.33 / 6.02 / 5.92 / 5.82 on white /
+    // background #F9F9FA / sunken #F7F7F8 / variant #F5F5F7 (was 6.33 /
+    // 5.05 / 5.32 on white / raised #E5E5EA / sunken #EBEBED).
     val lightOnSurfaceMuted = Color(0xFF5F5F66)
-    // Same story: old #6B6B70 was 5.30:1 on white but 4.22:1 on raised.
-    // #64646C is 5.86 / 4.67 / 4.93 — still lighter than muted, still AA.
+    // Same story: #64646C is now 5.86 / 5.57 / 5.48 / 5.39 — still lighter
+    // than muted, still AA on every light surface.
     val lightOnSurfaceFaint = Color(0xFF64646C)
 
-    val lightOutline = Color(0x26000000)      // 15% black
-    val lightHairline = Color(0x1F000000)     // 12% black (subtle hairline separator)
+    // Opaque hairline/outline (White B): the old 15% / 12% black alphas
+    // are replaced by fixed greys so a border reads the same on #F9F9FA
+    // and on a white card. Both are decoration only (1.26:1 / 1.32:1
+    // against white) — never text.
+    val lightOutline = Color(0xFFE0E0E0)
+    val lightHairline = Color(0xFFE5E5EA)
     val lightFill = Color(0x0D000000)         // 5% black
-    val lightSurfacePressed = lightSurfaceRaised
+    // Pressed must stay visible in White B: raised is now pure white, so a
+    // pressed alias would be invisible. #F5F5F7 = surfaceVariant.
+    val lightSurfacePressed = Color(0xFFF5F5F7)
+    // White-card edge: 1dp #EBEBEB border on every floating white card
+    // (see Tokens.ShadowTokens / Modifier.whiteCard). Dark uses hairline.
+    val lightCardBorder = Color(0xFFEBEBEB)
 
     val lightAccent = systemBlue
     val lightOnAccent = Color(0xFFFFFFFF)
@@ -117,20 +141,21 @@ object Palette {
     val neutralLight = Color(0xFF007AFF)      // Vivid neutral, dots/fills only (3.20:1 on raised — never as text)
 
     // ---- Light-theme text-safe semantic colours (WCAG AA ≥ 4.5:1) ----
-    // Ratios verified by computation on the three light backgrounds
-    // (white / raised #E5E5EA / sunken #EBEBED). The brief's first guesses
-    // (#1F7A33 = 4.30:1, #9A6200 = 4.06:1 on raised) FAILED on the raised
-    // surface, so both were darkened one step in the same hue family.
+    // Ratios verified by computation on the four White B light backgrounds
+    // (white #FFFFFF / page #F9F9FA / sunken #F7F7F8 / variant #F5F5F7).
+    // White B lightened every background, so every ratio improved over the
+    // Phase 1 values on raised #E5E5EA / sunken #EBEBED.
     // Bright values above stay ONLY for dots/fills (see *Bright roles).
-    // success text: 6.58 / 5.25 / 5.53
+    // success text: 6.58 / 6.26 / 6.15 / 6.05 (was 6.58 / 5.25 / 5.53)
     val lightSuccessText = Color(0xFF1B6B2E)
-    // warning text: 5.93 / 4.72 / 4.98
+    // warning text: 5.93 / 5.63 / 5.54 / 5.44 (was 5.93 / 4.72 / 4.98)
     val lightWarningText = Color(0xFF8A5A00)
-    // danger text (Material error red): 6.54 / 5.21 / 5.49.
+    // danger text (Material error red): 6.54 / 6.21 / 6.11 / 6.00.
     // The old #FF3B30 was 3.55:1 on white — same failure as success/warning.
     val lightDangerText = Color(0xFFB3261E)
-    // accent-as-text: 5.98 / 4.77 / 5.03. The accent itself (#007AFF,
-    // 4.02:1 on white) stays for dots/fills/backgrounds only.
+    // accent-as-text: 5.98 / 5.69 / 5.59 / 5.50 (was 5.98 / 4.77 / 5.03).
+    // The accent itself (#007AFF, 4.02:1 on white) stays for dots/fills/
+    // backgrounds only.
     val lightAccentText = Color(0xFF005FCC)
 
     // ---- Syntax roles for code blocks ----
@@ -151,10 +176,11 @@ object Palette {
     val darkSyntaxFunction = Color(0xFF7DD3FC)
     val darkSyntaxType = Color(0xFFA78BFA)
 
-    // Light roles on sunken #EBEBED (code-block background): keyword 5.03:1,
-    // string 5.47:1, number 5.39:1, comment 5.66:1, function 4.75:1,
-    // type 4.98:1. All ≥ 4.5:1 — the old light roles (#007AFF 3.37:1,
-    // #34C759 1.86:1, #FF9500 1.85:1 on sunken) failed outright.
+    // Light roles on sunken #F7F7F8 (code-block background): keyword 5.59:1,
+    // string 6.09:1, number 5.99:1, comment 6.30:1, function 5.28:1,
+    // type 5.54:1. All ≥ 4.5:1 — and all higher than on the old sunken
+    // #EBEBED, since White B lightened it. The old light roles (#007AFF
+    // 3.37:1, #34C759 1.86:1, #FF9500 1.85:1 on sunken) failed outright.
     // Keyword reuses accent-as-text; string/number are darkened versions of
     // MarkdownText's local greens/oranges; comment is a darkened slate.
     val lightSyntaxKeyword = lightAccentText
@@ -178,9 +204,9 @@ object Palette {
     val darkToolPending = Color(0xFF8E8E93)
     val darkToolPendingBg = Color(0x1F8E8E93)
 
-    // Light tool TEXT roles are the AA text variants (running 5.03:1,
-    // success 5.53:1, warning 4.98:1, error 5.49:1 on sunken). The *Bg
-    // tints stay bright-based: they are fills, never text.
+    // Light tool TEXT roles are the AA text variants (running 5.59:1,
+    // success 6.15:1, warning 5.54:1, error 6.11:1 on sunken #F7F7F8). The
+    // *Bg tints stay bright-based: they are fills, never text.
     val lightToolRunning = lightAccentText
     val lightToolRunningBg = Color(0x1F007AFF)
     val lightToolSuccess = lightSuccessText

@@ -576,7 +576,9 @@ private fun EngineStatusCard(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    CardGroup {
+    // Floating white card (White B): the status card lifts off the #F9F9FA
+    // page with the shadow tokens instead of sitting as a flat grey fill.
+    CardGroup(whiteCard = true) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -657,7 +659,9 @@ private fun Section(titleRes: Int, content: @Composable ColumnScope.() -> Unit) 
         color = colors.onSurfaceFaint,
         modifier = Modifier.padding(start = spacing.sm, top = spacing.xl, bottom = spacing.xs),
     )
-    CardGroup(content = content)
+    // Floating white card (White B): grouped rows sit on #FFFFFF with the
+    // shadow tokens, not on a grey fill, against the #F9F9FA page.
+    CardGroup(whiteCard = true, content = content)
 }
 
 /**

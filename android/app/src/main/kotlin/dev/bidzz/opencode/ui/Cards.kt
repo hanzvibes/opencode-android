@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
@@ -27,17 +28,72 @@ import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 
+/**
+ * Floating white card treatment (White B, light theme only).
+ *
+ * Light: 16dp radius (`tokens.radius.lg`) + 1dp #EBEBEB border
+ * (`colors.cardBorder`) + the card shadow from `tokens.shadow.card`
+ * (8dp elevation, ambient `rgba(0,0,0,0.06)`, spot `rgba(0,0,0,0.05)`)
+ * on the white card surface, so the card lifts off the #F9F9FA page.
+ * Dark: the flat grouped treatment instead — raised surface, hairline
+ * edge, no shadow — so the same call site renders correctly in both
+ * themes without branching on `colors.isDark` itself.
+ *
+ * Later phases apply this by name to the composer, session rows and
+ * other surfaces; [CardGroup] already wires it through its `whiteCard`
+ * parameter for grouped settings-style cards.
+ */
+@Composable
+fun Modifier.whiteCard(): Modifier {
+    val colors = OpenCodeTheme.colors
+    val tokens = OpenCodeTheme.tokens
+    val shape = RoundedCornerShape(tokens.radius.lg)
+    return if (colors.isDark) {
+        clip(shape)
+            .background(colors.surface)
+            .border(tokens.dimensions.hairline, colors.hairline, shape)
+    } else {
+        val shadow = tokens.shadow.card
+        shadow(
+            elevation = shadow.elevation,
+            shape = shape,
+            ambientColor = shadow.ambientColor,
+            spotColor = shadow.spotColor,
+        )
+            .clip(shape)
+            .background(colors.surface)
+            .border(tokens.shadow.cardBorderWidth, colors.cardBorder, shape)
+    }
+}
+
 /** Rows grouped on one rounded surface with a hairline edge (matching AppGroup in cross-platform-llm-client). */
 @Composable
-fun CardGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun CardGroup(
+    modifier: Modifier = Modifier,
+    /**
+     * When true, the group renders as a floating white card ([whiteCard]):
+     * 16dp radius, 1dp #EBEBEB border, shadow tokens — instead of the
+     * flat surface + hairline. Light theme only; in dark the treatment
+     * falls back to the flat surface, so the parameter is safe to set
+     * unconditionally. Settings uses this; other grouped screens keep
+     * the flat treatment until their own phase opts in.
+     */
+    whiteCard: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val colors = OpenCodeTheme.colors
     val shape = RoundedCornerShape(OpenCodeTheme.tokens.radius.lg)
-    Column(
-        modifier = modifier
+    val baseModifier = if (whiteCard) {
+        modifier.fillMaxWidth().whiteCard()
+    } else {
+        modifier
             .fillMaxWidth()
             .clip(shape)
             .background(colors.surface)
-            .border(0.5.dp, colors.hairline, shape),
+            .border(0.5.dp, colors.hairline, shape)
+    }
+    Column(
+        modifier = baseModifier,
         content = content,
     )
 }

@@ -10,6 +10,7 @@ import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -184,6 +185,54 @@ data class Elevation(
     /** Send button while a run is in progress (stop state). */
     val sendButtonBusy: Dp = 4.dp,
 )
+
+/**
+ * One shadow layer for a floating surface (White B light theme).
+ *
+ * Compose draws a shadow from a single elevation plus an ambient and a
+ * spot colour; the two CSS layers in the spec collapse into that one
+ * elevation. The dominant CSS layer sets the elevation:
+ * `0 8dp 24dp rgba(0,0,0,0.05)` → 8.dp; the small ambient layer
+ * `0 1dp 2dp rgba(0,0,0,0.06)` is the ambient colour. The spot colour
+ * carries the 0.05 layer. In the dark theme shadows are invisible on
+ * black, so `Modifier.whiteCard` (ui/Cards.kt) skips the shadow there entirely.
+ */
+@Immutable
+data class ShadowSpec(
+    /** Elevation the shadow is drawn from (see above for the CSS mapping). */
+    val elevation: Dp,
+    /** Small ambient layer: 6% black (`rgba(0,0,0,0.06)`). */
+    val ambientColor: Color,
+    /** Key layer: 5% black (`rgba(0,0,0,0.05)`). */
+    val spotColor: Color,
+)
+
+/**
+ * Shadow tokens for floating surfaces (White B).
+ *
+ * `card` is the white-card shadow: 16dp radius ([Radius.lg]) with the
+ * 1dp #EBEBEB border from [OpenCodeColors.cardBorder]. `raised` is one
+ * step up, for elements floating above cards (menus, dialogs) — same
+ * colours, higher elevation. Both are light-theme only; dark keeps the
+ * flat hairline treatment.
+ */
+@Immutable
+data class ShadowTokens(
+    /** Floating white card: `0 1dp 2dp rgba(0,0,0,0.06)` + `0 8dp 24dp rgba(0,0,0,0.05)`. */
+    val card: ShadowSpec = ShadowSpec(
+        elevation = 8.dp,
+        ambientColor = Color(0x0F000000),
+        spotColor = Color(0x0D000000),
+    ),
+    /** One step above [card]: menus, dialogs, anything floating over a card. */
+    val raised: ShadowSpec = ShadowSpec(
+        elevation = 16.dp,
+        ambientColor = Color(0x14000000),
+        spotColor = Color(0x0D000000),
+    ),
+    /** White-card edge width: 1dp (colour is [OpenCodeColors.cardBorder]). */
+    val cardBorderWidth: Dp = 1.dp,
+)
 @Immutable
 data class Dimensions(
     /** Minimum touch target. Below this, Android accessibility guidance is violated. */
@@ -220,4 +269,5 @@ data class OpenCodeTokens(
     val motion: Motion = Motion(),
     val dimensions: Dimensions = Dimensions(),
     val elevation: Elevation = Elevation(),
+    val shadow: ShadowTokens = ShadowTokens(),
 )
