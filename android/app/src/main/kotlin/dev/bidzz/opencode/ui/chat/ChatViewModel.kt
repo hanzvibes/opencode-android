@@ -325,6 +325,10 @@ class ChatViewModel(
         val previous = _state.value
         val wasBusy = previous.busy
 
+        // A load that succeeds resets the reload budget (item 24): the
+        // session-gone guidance only fires after consecutive failed reloads.
+        if (chat.lastFailure == null) sessionReloadAttempts = 0
+
         // A new session restarts the tool clock: ids must never be reused
         // across sessions, or a new tool would inherit an old tool's stamps.
         if (chat.sessionID != lastCollectorSessionID) {
@@ -374,12 +378,22 @@ class ChatViewModel(
             messages = chat.toUiMessages(toolDurations),
             busy = chat.busy,
             failure = chat.lastFailure,
+            // A stale guidance key outlives its failure (item 24): the
+            // banner shows while failureKey != null, so the 429 guidance
+            // stayed up after a later send succeeded. It clears with the
+            // failure — except for the session-gone case below, which is
+            // guidance in place of a failure, not after one.
+            failureKey = when {
+                chat.lastFailure == null -> null
+                sessionGone(chat.lastFailure) -> R.string.chat_session_gone_guidance
+                else -> previous.failureKey
+            },
             pendingPermission = effectivePending,
             deferredPermission = effectiveDeferred,
             // While a permission prompt is outstanding the prompt is the
             // action, not the banner: Retry must not offer to re-send a
             // prompt into a run that is blocked waiting for an answer.
-            retryKind = if (effectivePending != null) {
+            retryKind = if (effectivePending != null || sessionGone(chat.lastFailure)) {
                 RetryKind.NONE
             } else {
                 retryKindFor(chat.lastFailure)
@@ -425,14 +439,40 @@ class ChatViewModel(
     private fun retryKindFor(failure: ApiResult.Failure?): RetryKind {
         if (failure == null) return RetryKind.NONE
         return when {
+            // A stream rejected mid-session is a lost connection, not a
+            // stale password (item 24): the banner already says "Reopen
+            // the session", so Retry must reopen it — REAUTH restarts the
+            // engine and throws the session away. Checked first because
+            // the same 401 also matches isUnauthorized below. If the
+            // credentials are truly dead, the reload's REST calls fail
+            // with UnauthorizedError and escalate to REAUTH there.
+            failure.isLostConnection -> RetryKind.RELOAD_SESSION
             failure.isUnauthorized -> RetryKind.REAUTH
             failure.code == 429 -> RetryKind.RATE_LIMITED
             failure.isSessionMissing -> RetryKind.RELOAD_SESSION
             failure.isLocationMissing || failure.isNoSession ||
                 failure.isBinaryFile || failure.isNoPendingPermission -> RetryKind.NONE
-            else -> if (_state.value.lastSentText != null) RetryKind.RESEND else RetryKind.NONE
+            // RESEND only re-sends into a live session: a network error, a
+            // 5xx, or a timeout may pass on retry, but a 403 or any other
+            // 4xx fails the same way against a dead stream.
+            else -> if (isTransient(failure) && _state.value.lastSentText != null) RetryKind.RESEND else RetryKind.NONE
         }
     }
+
+    /** Retryable by re-sending: the failure is in the transport, not the request. */
+    private fun isTransient(failure: ApiResult.Failure): Boolean =
+        failure.isNetwork || failure.code in 500..599
+
+    /**
+     * True when the session is gone server-side and reloads keep failing.
+     *
+     * [reloadSession] re-opens the same id; a session the engine no longer
+     * has answers 404 every time, so after [SESSION_RELOAD_LIMIT] attempts
+     * the banner stops offering another reload and points at starting a
+     * new session instead (item 24).
+     */
+    private fun sessionGone(failure: ApiResult.Failure?): Boolean =
+        failure?.isSessionMissing == true && sessionReloadAttempts >= SESSION_RELOAD_LIMIT
 
     /**
      * Fetches the control lists for a freshly attached engine.
@@ -451,13 +491,13 @@ class ChatViewModel(
                     )
                     // A control-list failure is not a send failure: Retry
                     // must not offer to re-send the last prompt for it.
-                    is ApiResult.Failure -> _state.value = _state.value.copy(failure = r, retryKind = RetryKind.NONE)
+                    is ApiResult.Failure -> reportFailure(r, RetryKind.NONE)
                 }
             }
             h.models.list().let { r ->
                 when (r) {
                     is ApiResult.Success -> _state.value = _state.value.copy(models = r.value)
-                    is ApiResult.Failure -> _state.value = _state.value.copy(failure = r, retryKind = RetryKind.NONE)
+                    is ApiResult.Failure -> reportFailure(r, RetryKind.NONE)
                 }
             }
             h.commands.list().let { r ->
@@ -486,11 +526,10 @@ class ChatViewModel(
             when (val result = h.agents.set(sessionID, agentID)) {
                 is ApiResult.Failure -> {
                     val current = _state.value
-                    _state.value = if (current.sessionID == sessionID && current.activeAgent == agentID) {
-                        current.copy(activeAgent = previous, failure = result)
-                    } else {
-                        current.copy(failure = result)
+                    if (current.sessionID == sessionID && current.activeAgent == agentID) {
+                        _state.value = current.copy(activeAgent = previous)
                     }
+                    reportFailure(result, RetryKind.NONE)
                 }
                 is ApiResult.Success -> Unit
             }
@@ -508,11 +547,10 @@ class ChatViewModel(
             when (val result = h.sessions.setModel(sessionID, model)) {
                 is ApiResult.Failure -> {
                     val current = _state.value
-                    _state.value = if (current.sessionID == sessionID && current.activeModel == model) {
-                        current.copy(activeModel = previous, failure = result)
-                    } else {
-                        current.copy(failure = result)
+                    if (current.sessionID == sessionID && current.activeModel == model) {
+                        _state.value = current.copy(activeModel = previous)
                     }
+                    reportFailure(result, RetryKind.NONE)
                 }
                 is ApiResult.Success -> Unit
             }
@@ -579,6 +617,9 @@ class ChatViewModel(
     }
 
     private var sendInFlight = false
+
+    /** Consecutive reloadSession() attempts since the last successful load (item 24). */
+    private var sessionReloadAttempts = 0
 
     /**
      * Sends [fullText] as a new prompt, recording it as the retry target and
@@ -817,6 +858,7 @@ class ChatViewModel(
     fun reloadSession() {
         val id = _state.value.sessionID ?: return
         val attachedHandle = handle ?: return
+        sessionReloadAttempts++
         repository?.close()
         val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope)
         repository = repo
@@ -860,7 +902,7 @@ class ChatViewModel(
             repo.send(text)
         }
         when (result) {
-            is ApiResult.Failure -> _state.value = _state.value.copy(failure = result)
+            is ApiResult.Failure -> reportFailure(result)
             is ApiResult.Success -> {
                 clearSentDraft(typedText)
                 clearSentAttachments(attachments)
@@ -894,10 +936,22 @@ class ChatViewModel(
         )
     }
 
-    /** Surfaces a control-API failure instead of swallowing it. */
-    private fun reportFailure(result: ApiResult<*>) {
+    /**
+     * The single place that records a failure (item 24): every failure
+     * assignment pairs the failure with its retry kind and drops any stale
+     * guidance key — the banner shows the failure's own message while one
+     * is set, and a leftover key would resurface as a stale banner once
+     * the failure clears. A success is a no-op. Callers that must not
+     * offer a retry pass [RetryKind.NONE] explicitly (a control-list or
+     * switch failure is not a send failure).
+     */
+    private fun reportFailure(result: ApiResult<*>, retryKind: RetryKind? = null) {
         if (result is ApiResult.Failure) {
-            _state.value = _state.value.copy(failure = result)
+            _state.value = _state.value.copy(
+                failure = result,
+                failureKey = null,
+                retryKind = retryKind ?: retryKindFor(result),
+            )
         }
     }
 
@@ -933,7 +987,7 @@ class ChatViewModel(
                 result.value.id
             }
             is ApiResult.Failure -> {
-                _state.value = _state.value.copy(failure = result)
+                reportFailure(result)
                 null
             }
         }
@@ -947,7 +1001,12 @@ class ChatViewModel(
         _state.value = _state.value.copy(stopping = true)
         viewModelScope.launch {
             when (val result = repo.interrupt()) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(failure = result, stopping = false)
+                is ApiResult.Failure -> {
+                    // Stopping the run failed; re-sending the prompt would
+                    // not stop anything, so no Retry is offered for it.
+                    reportFailure(result, RetryKind.NONE)
+                    _state.value = _state.value.copy(stopping = false)
+                }
                 is ApiResult.Success -> _state.value = _state.value.copy(busy = false, stopping = false)
             }
         }
@@ -968,13 +1027,14 @@ class ChatViewModel(
         _state.value = _state.value.copy(permissionReplyFailed = false)
         viewModelScope.launch {
             when (val result = repo.replyPermission(decision)) {
-                is ApiResult.Failure -> _state.value = _state.value.copy(
-                    failure = result,
-                    // The prompt is still outstanding, so the banner offers
-                    // no Retry for this failure (see onRepoState).
-                    retryKind = RetryKind.NONE,
-                    permissionReplyFailed = true,
-                )
+                is ApiResult.Failure -> {
+                    reportFailure(result, RetryKind.NONE)
+                    _state.value = _state.value.copy(
+                        // The prompt is still outstanding, so the banner offers
+                        // no Retry for this failure (see onRepoState).
+                        permissionReplyFailed = true,
+                    )
+                }
                 is ApiResult.Success -> _state.value = _state.value.copy(
                     deferredPermission = null,
                     permissionReplyFailed = false,
@@ -1008,6 +1068,7 @@ class ChatViewModel(
 
     /** Starts a fresh conversation. */
     fun newSession() {
+        sessionReloadAttempts = 0
         repository?.close()
         val attached = handle
         if (attached != null) {
@@ -1054,6 +1115,7 @@ class ChatViewModel(
 
     private fun openSessionById(sessionID: String, fetchMeta: Boolean = false) {
         val repo = repository ?: return
+        sessionReloadAttempts = 0
         // A draft belongs to the session it was typed in; opening another
         // session starts with an empty composer — and no retry target from
         // the previous session. Pending attachments belong to the old
@@ -1153,6 +1215,8 @@ class ChatViewModel(
 
     companion object {
         private const val DRAFT_KEY = "chat_draft"
+        /** Failed reloads before the banner points at a new session (item 24). */
+        private const val SESSION_RELOAD_LIMIT = 2
     }
 }
 

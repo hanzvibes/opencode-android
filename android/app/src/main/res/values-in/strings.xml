@@ -99,6 +99,7 @@
     <string name="chat_new_messages">Pesan baru</string>
     <string name="chat_retry">Coba lagi</string>
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
     <string name="a11y_run_finished">Proses selesai</string>
