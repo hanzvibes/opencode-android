@@ -88,8 +88,7 @@ class MainActivity : ComponentActivity() {
     private fun observeDialogRequests() {
         val app = application as OpenCodeApplication
         lifecycleScope.launch {
-            app.workspaceFolderRequest.collect { token ->
-                if (token == 0L) return@collect
+            app.workspaceFolderRequest.collect {
                 // hasAllFilesAccess() already answers for both API bands, so this must not
                 // add its own SDK gate: doing so skipped the legacy runtime request on
                 // Android 10 and left the picker with only `Downloads` to show.
@@ -105,14 +104,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch {
-            app.allFilesAccessRequest.collect { token ->
-                if (token == 0L) return@collect
+            app.allFilesAccessRequest.collect {
                 requestStorageIfNeeded()
             }
         }
         lifecycleScope.launch {
-            app.safFileRequest.collect { token ->
-                if (token == 0L) return@collect
+            app.safFileRequest.collect {
                 // Best-effort: a missing DocumentsUI or a finishing
                 // activity must not crash the app; the chat screen simply
                 // never receives a file.
