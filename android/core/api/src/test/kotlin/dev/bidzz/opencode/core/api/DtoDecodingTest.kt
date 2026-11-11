@@ -9,8 +9,11 @@ import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
 import dev.bidzz.opencode.core.api.dto.SkillsResponse
+import dev.bidzz.opencode.core.api.dto.VcsBranchesResponse
+import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,6 +83,83 @@ class DtoDecodingTest {
         assertTrue(idle.isIdle)
         assertEquals("succeeded", idle.outcome)
         assertEquals("", idle.plainText)
+    }
+
+    @Test
+    fun `decodes a session context listing`() {
+        // GET /api/session/{id}/context answers the same {data: SessionMessage[]}
+        // envelope as /message, without a cursor — and after a compaction the
+        // listing starts with the compaction summary instead of the old turns.
+        val raw = """
+            {"data":[
+              {"id":"msg_compact","time":{"created":1793447932000},"type":"compaction",
+               "status":"completed","summary":"Summarized 12 turns",
+               "cost":0,"tokens":{"input":900,"output":120,"reasoning":0}},
+              {"id":"msg_b","time":{"created":1793447932100},
+               "type":"assistant","agent":"build","model":{"id":"big-pickle","providerID":"opencode"},
+               "content":[{"type":"text","text":"PONG"}],"finish":"stop",
+               "tokens":{"input":1020,"output":5,"reasoning":0,"cache":{"read":800,"write":0}}}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<MessagesResponse>(raw)
+        assertEquals(2, parsed.data.size)
+        val summary = parsed.data[0]
+        assertEquals("compaction", summary.type)
+        assertEquals(900L, summary.tokens?.input)
+        val assistant = parsed.data[1]
+        assertTrue(assistant.isAssistant)
+        assertEquals(1020L, assistant.tokens?.input)
+        assertEquals(800L, assistant.tokens?.cache?.read)
+    }
+
+    @Test
+    fun `decodes a session turn diff`() {
+        // GET /api/session/{id}/diff answers the same {data: FileDiff.Info[]}
+        // envelope as the VCS diff — file, patch, counts, status, and the
+        // truncation flag — so the same DTO decodes both.
+        val raw = """
+            {"data":[
+              {"file":"src/main.kt","patch":"@@ -1,2 +1,3 @@\n context\n-old\n+new\n+extra\n","additions":2,"deletions":1,"status":"modified","more":false},
+              {"file":"README.md","patch":"","additions":0,"deletions":0,"status":"added"}
+            ]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<VcsDiffResponse>(raw)
+        assertEquals(2, parsed.data.size)
+        val first = parsed.data[0]
+        assertEquals("src/main.kt", first.file)
+        assertEquals(2, first.additions)
+        assertEquals(1, first.deletions)
+        assertEquals("modified", first.status)
+        assertEquals(false, first.more)
+        assertTrue(first.patch.contains("+new"))
+        val second = parsed.data[1]
+        assertEquals("added", second.status)
+        assertNull(second.more)
+    }
+
+    @Test
+    fun `decodes a VCS branch list`() {
+        // GET /api/vcs/branch answers {location, data: string[]} — the
+        // engine's Vcs.BranchList is a plain string array, not the
+        // current/default struct Vcs.Info.branch carries.
+        val raw = """
+            {"location":{"directory":"/storage/emulated/0/Projects/demo"},
+             "data":["fix/tier2-engine-ui","fix/chat-scroll-jump","main"]}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<VcsBranchesResponse>(raw)
+        assertEquals("/storage/emulated/0/Projects/demo", parsed.location?.directory)
+        assertEquals(listOf("fix/tier2-engine-ui", "fix/chat-scroll-jump", "main"), parsed.data)
+    }
+
+    @Test
+    fun `decodes an empty VCS branch list`() {
+        // No repository, or no branch matched: 200 with an empty array, the
+        // same as status/diff.
+        val parsed = ApiJson.decodeFromString<VcsBranchesResponse>("""{"data":[]}""")
+        assertEquals(emptyList<String>(), parsed.data)
     }
 
     @Test

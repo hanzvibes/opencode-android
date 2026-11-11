@@ -9,6 +9,7 @@ import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.ChatState
 import dev.bidzz.opencode.core.api.LiveTool
+import dev.bidzz.opencode.core.api.VcsApi
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
@@ -103,6 +104,16 @@ data class ChatUiState(
     val skills: List<dev.bidzz.opencode.core.api.dto.SkillInfo> = emptyList(),
     /** Active git branch when inside a version-controlled workspace. */
     val branch: String? = null,
+    /** Branch names for the workspace (`GET /api/vcs/branch`); null until loaded. */
+    val branches: List<String>? = null,
+    val branchesLoading: Boolean = false,
+    val branchesFailed: Boolean = false,
+    /**
+     * Tokens currently in the session's context window (`GET /api/session/{id}/context`),
+     * summed over its assistant messages with the turn footer's rule. Null while
+     * unknown — the meter hides rather than showing a stale number.
+     */
+    val contextUsedTokens: Long? = null,
 )
 
 /** One follow-up waiting for the run to end (see [ChatUiState.queuedPrompts]). */
@@ -208,6 +219,8 @@ class ChatViewModel(
 
     private var repository: ChatRepository? = null
     private var collector: Job? = null
+    /** In-flight context-usage load, cancelled when a newer one starts. */
+    private var contextUsageJob: Job? = null
     private var attached: dev.bidzz.opencode.core.engine.EngineCredentials? = null
 
     /** The attached handle, or null until the engine reports credentials. */
@@ -382,7 +395,8 @@ class ChatViewModel(
 
         // A new session restarts the tool clock: ids must never be reused
         // across sessions, or a new tool would inherit an old tool's stamps.
-        if (chat.sessionID != lastCollectorSessionID) {
+        val sessionChanged = chat.sessionID != lastCollectorSessionID
+        if (sessionChanged) {
             toolStartedAt.clear()
             toolCompletedAt.clear()
             lastCollectorSessionID = chat.sessionID
@@ -477,6 +491,76 @@ class ChatViewModel(
                     queuedPrompts = _state.value.queuedPrompts.drop(1),
                 )
                 sendText(next.fullText, next.typedText, emptyList())
+            }
+        }
+
+        // Context meter (Tier 2): a new session starts unknown, and a
+        // finished run changed the context — refresh both times. A failure
+        // leaves the previous value (or null); the meter hides rather than
+        // erroring. A run that ends into a queued follow-up still refreshes:
+        // the new send will end later and refresh again.
+        if (sessionChanged) {
+            _state.value = _state.value.copy(contextUsedTokens = null)
+            refreshContextUsage()
+        } else if (wasBusy && !chat.busy) {
+            refreshContextUsage()
+        }
+    }
+
+    /**
+     * Loads the session's context usage (Tier 2).
+     *
+     * An in-flight load is cancelled when a newer one starts — a slow load
+     * for the previous session must not overwrite the current one. Failures
+     * are silent: the meter hides instead of showing an error for a
+     * best-effort number.
+     */
+    private fun refreshContextUsage() {
+        val sessionID = _state.value.sessionID ?: return
+        val h = handle ?: return
+        contextUsageJob?.cancel()
+        contextUsageJob = viewModelScope.launch {
+            when (val result = h.sessions.context(sessionID)) {
+                is ApiResult.Success -> {
+                    if (_state.value.sessionID != sessionID) return@launch
+                    _state.value = _state.value.copy(contextUsedTokens = contextUsageTokens(result.value))
+                }
+                is ApiResult.Failure -> Unit
+            }
+        }
+    }
+
+    /**
+     * Loads the workspace's branch list (Tier 2), lazily from the status
+     * dialog.
+     *
+     * A loaded list is reused until the workspace changes. A failure sets the
+     * failed flag so the dialog can say so instead of spinning forever; the
+     * next expand retries. Read-only: switching branches is a different
+     * endpoint and not part of this list.
+     */
+    private var branchesJob: Job? = null
+    private var branchesWorkspace: String? = null
+
+    fun loadBranches() {
+        val path = workspace()
+        val h = handle ?: return
+        if (_state.value.branches != null && branchesWorkspace == path) return
+        branchesJob?.cancel()
+        _state.value = _state.value.copy(branchesLoading = true, branchesFailed = false)
+        branchesJob = viewModelScope.launch {
+            when (val result = VcsApi(h.client).branches(path)) {
+                is ApiResult.Success -> {
+                    branchesWorkspace = path
+                    _state.value = _state.value.copy(
+                        branches = result.value,
+                        branchesLoading = false,
+                        branchesFailed = false,
+                    )
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(branchesLoading = false, branchesFailed = true)
+                }
             }
         }
     }
@@ -1552,4 +1636,19 @@ internal fun turnUsageTokens(tokens: TokenUsage?): Long? {
     if (tokens == null) return null
     return listOfNotNull(tokens.input, tokens.output, tokens.reasoning).sum()
         .takeIf { tokens.input != null || tokens.output != null || tokens.reasoning != null }
+}
+
+/**
+ * Context-meter total (Tier 2): sums [turnUsageTokens] over a context
+ * listing's assistant messages. User, system and idle markers carry no
+ * usage, so they contribute nothing; null when no assistant message reported
+ * usage at all, and a reported zero stays zero.
+ */
+internal fun contextUsageTokens(messages: List<SessionMessage>): Long? {
+    var total: Long? = null
+    for (message in messages) {
+        if (!message.isAssistant) continue
+        total = sumOrNull(total, turnUsageTokens(message.tokens))
+    }
+    return total
 }

@@ -3,6 +3,7 @@ package dev.bidzz.opencode.core.api
 import dev.bidzz.opencode.core.api.dto.FileDiffInfo
 import dev.bidzz.opencode.core.api.dto.FsEntry
 import dev.bidzz.opencode.core.api.dto.FsListResponse
+import dev.bidzz.opencode.core.api.dto.VcsBranchesResponse
 import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import dev.bidzz.opencode.core.api.dto.VcsFileStatus
 import dev.bidzz.opencode.core.api.dto.VcsStatusResponse
@@ -185,6 +186,28 @@ class VcsApi(private val client: EngineClient) {
         val request = client.request(query).get().build()
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<VcsDiffResponse>(raw).data
+        }
+    }
+
+    /**
+     * Branch names for a project.
+     *
+     * `search` filters server-side, `limit` caps the list (engine default 50,
+     * max 100). An empty list means no branches matched — or no repository;
+     * like status/diff the engine answers 200 with an empty array, so this
+     * alone cannot tell those apart.
+     */
+    suspend fun branches(directory: String, search: String? = null, limit: Int? = null): ApiResult<List<String>> {
+        val query = buildString {
+            append("/api/vcs/branch?").append(FileApi(client).locationParam(directory))
+            if (!search.isNullOrBlank()) {
+                append("&search=").append(java.net.URLEncoder.encode(search, "UTF-8"))
+            }
+            if (limit != null) append("&limit=").append(limit)
+        }
+        val request = client.request(query).get().build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<VcsBranchesResponse>(raw).data
         }
     }
 

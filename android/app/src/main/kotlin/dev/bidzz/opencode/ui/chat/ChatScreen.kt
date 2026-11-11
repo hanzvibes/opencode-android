@@ -164,6 +164,11 @@ fun ChatScreen(
     onModel: (dev.bidzz.opencode.core.api.dto.ModelRef) -> Unit,
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
+    /** Turn diff (Tier 2): opens the latest turn's file diffs. Null while no
+     * session is open — the status dialog then hides the entry. */
+    onTurnDiff: (() -> Unit)? = null,
+    /** Branch list (Tier 2): loads the workspace's branches for the status dialog. */
+    onLoadBranches: () -> Unit = {},
     onOpenSession: (String) -> Unit,
     onDrawerOpen: () -> Unit,
     onSessionsClick: () -> Unit,
@@ -599,6 +604,13 @@ fun ChatScreen(
                 models = state.models,
                 activeModel = state.activeModel,
                 onModel = onModel,
+                // Context meter (Tier 2): tokens in the session's context
+                // over the active model's window. The limit is the model's
+                // own `limit.context` — never the name-based fallback the
+                // selector badge uses, so a guessed denominator can never
+                // paint a wrong percentage.
+                contextUsedTokens = state.contextUsedTokens,
+                contextLimit = state.models.firstOrNull { it.ref() == state.activeModel }?.limit?.context,
                 // No menu button at expanded widths: the sidebar is already
                 // visible, so there is no drawer to open.
                 showMenuButton = !isExpanded,
@@ -608,6 +620,11 @@ fun ChatScreen(
                 },
                 onStatusClick = onStatusClick,
                 onNewSession = onNewSession,
+                onTurnDiff = onTurnDiff,
+                branches = state.branches,
+                branchesLoading = state.branchesLoading,
+                branchesFailed = state.branchesFailed,
+                onLoadBranches = onLoadBranches,
             )
 
             // Pinned status banners: the error and the reconnecting state
@@ -1617,6 +1634,18 @@ fun ChatHeader(
     models: List<dev.bidzz.opencode.core.api.dto.ModelInfo> = emptyList(),
     activeModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null,
     onModel: (dev.bidzz.opencode.core.api.dto.ModelRef) -> Unit = {},
+    /** Context meter (Tier 2): tokens in the session's context, and the
+     * active model's context-window limit. Both null while unknown — the
+     * bar and the dialog row hide instead of guessing. */
+    contextUsedTokens: Long? = null,
+    contextLimit: Long? = null,
+    /** Turn diff (Tier 2); null while no session is open. */
+    onTurnDiff: (() -> Unit)? = null,
+    /** Branch list (Tier 2); null until loaded, and the list hides. */
+    branches: List<String>? = null,
+    branchesLoading: Boolean = false,
+    branchesFailed: Boolean = false,
+    onLoadBranches: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -1770,6 +1799,27 @@ fun ChatHeader(
             }
         }
 
+        // Context meter (Tier 2): a 2dp bar along the header's bottom edge —
+        // the fraction of the active model's context window the session
+        // currently uses. Accent until 80%, warning to 95%, danger after;
+        // over the limit it pins at full width rather than overflowing.
+        // Unknown usage or limit: no bar, just the hairline below.
+        if (contextUsedTokens != null && contextLimit != null && contextLimit > 0) {
+            val fraction = (contextUsedTokens.toFloat() / contextLimit).coerceIn(0f, 1f)
+            val barColor = when {
+                fraction >= 0.95f -> colors.danger
+                fraction >= 0.8f -> colors.warning
+                else -> colors.accent
+            }
+            Box(
+                modifier = Modifier.fillMaxWidth().height(2.dp).background(colors.hairline),
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(fraction).fillMaxHeight().background(barColor),
+                )
+            }
+        }
+
         HairlineSeparator(alpha = separatorAlpha)
     }
 
@@ -1780,6 +1830,13 @@ fun ChatHeader(
             projectTitle = title,
             workspacePath = workspacePath,
             branch = branch,
+            contextUsedTokens = contextUsedTokens,
+            contextLimit = contextLimit,
+            onTurnDiff = onTurnDiff,
+            branches = branches,
+            branchesLoading = branchesLoading,
+            branchesFailed = branchesFailed,
+            onLoadBranches = onLoadBranches,
             onOpenDiagnostics = {
                 showStatusDialog = false
                 onStatusClick()
@@ -1802,6 +1859,16 @@ private fun EngineStatusDialog(
     onOpenDiagnostics: () -> Unit,
     onDismiss: () -> Unit,
     workspacePath: String? = null,
+    /** Context meter (Tier 2); both null while unknown, and the row hides. */
+    contextUsedTokens: Long? = null,
+    contextLimit: Long? = null,
+    /** Turn diff (Tier 2); null while no session is open, and the entry hides. */
+    onTurnDiff: (() -> Unit)? = null,
+    /** Branch list (Tier 2); null until loaded, and the list hides. */
+    branches: List<String>? = null,
+    branchesLoading: Boolean = false,
+    branchesFailed: Boolean = false,
+    onLoadBranches: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -1814,6 +1881,14 @@ private fun EngineStatusDialog(
         animationSpec = tween(durationMillis = motion.quick, easing = FastOutSlowInEasing),
         label = "dialog_status_color",
     )
+
+    // Branch list (Tier 2): expanded from the branch row below. Hoisted
+    // here, not in the row: the row only exists while a branch is known,
+    // and a conditional remember would reset on a branch change.
+    var showBranches by remember { mutableStateOf(false) }
+    LaunchedEffect(showBranches) {
+        if (showBranches) onLoadBranches()
+    }
     val statusLabel = engineState.statusLabel(busy)
 
     val descRes = when (engineState) {
@@ -1901,15 +1976,140 @@ private fun EngineStatusDialog(
                         onCopy = { clipboardManager.setText(AnnotatedString(fullPath)) },
                     )
                     if (!branch.isNullOrBlank()) {
+                        // Branch list (Tier 2): the row expands into the
+                        // workspace's branches, current one checked. The
+                        // load starts on first expand; the ViewModel reuses
+                        // a loaded list until the workspace changes.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(radius.sm))
+                                .clickable(role = SemanticsRole.Button, onClick = { showBranches = !showBranches })
+                                .padding(vertical = spacing.xs),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_status_dialog_branch),
+                                style = OpenCodeTypography.caption,
+                                color = colors.onSurfaceFaint,
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.weight(1f, fill = false),
+                            ) {
+                                Text(
+                                    text = branch,
+                                    style = OpenCodeTypography.label,
+                                    color = colors.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                )
+                                GlyphIcon(
+                                    glyph = if (showBranches) Glyph.ChevronDown else Glyph.ChevronRight,
+                                    tint = colors.onSurfaceMuted,
+                                    size = 14.dp,
+                                )
+                            }
+                        }
+                        if (showBranches) {
+                            when {
+                                branchesLoading -> Text(
+                                    text = stringResource(R.string.chat_status_dialog_branches_loading),
+                                    style = OpenCodeTypography.caption,
+                                    color = colors.onSurfaceMuted,
+                                    modifier = Modifier.padding(start = spacing.xs, top = spacing.xs),
+                                )
+                                branchesFailed -> Text(
+                                    text = stringResource(R.string.chat_status_dialog_branches_failed),
+                                    style = OpenCodeTypography.caption,
+                                    color = colors.danger,
+                                    modifier = Modifier.padding(start = spacing.xs, top = spacing.xs),
+                                )
+                                branches.isNullOrEmpty() -> Text(
+                                    text = stringResource(R.string.chat_status_dialog_branches_empty),
+                                    style = OpenCodeTypography.caption,
+                                    color = colors.onSurfaceMuted,
+                                    modifier = Modifier.padding(start = spacing.xs, top = spacing.xs),
+                                )
+                                else -> Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 240.dp)
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(start = spacing.xs, top = spacing.xs),
+                                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                                ) {
+                                    branches.forEach { name ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                text = name,
+                                                style = OpenCodeTypography.body,
+                                                color = colors.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false),
+                                            )
+                                            if (name == branch) {
+                                                GlyphIcon(
+                                                    glyph = Glyph.Check,
+                                                    tint = colors.accent,
+                                                    size = 16.dp,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Context meter (Tier 2): used tokens over the model's
+                    // window, in the footer's compact form. Without a known
+                    // limit only the used figure shows — a percentage off a
+                    // guessed denominator would be a lie.
+                    if (contextUsedTokens != null) {
                         DialogDetailRow(
-                            label = stringResource(R.string.chat_status_dialog_branch),
-                            value = branch,
+                            label = stringResource(R.string.chat_status_dialog_context),
+                            value = if (contextLimit != null && contextLimit > 0) {
+                                val percent = (contextUsedTokens * 100L / contextLimit).coerceIn(0L, 100L)
+                                "${formatCompactTokens(contextUsedTokens)} / ${formatCompactTokens(contextLimit)} · $percent%"
+                            } else {
+                                formatCompactTokens(contextUsedTokens)
+                            },
                         )
                     }
                     DialogDetailRow(
                         label = stringResource(R.string.chat_status_dialog_state),
                         value = if (busy) stringResource(R.string.chat_status_working) else statusLabel,
                     )
+                }
+
+                // Turn diff (Tier 2): what the latest turn changed, in the
+                // same diff viewer as the working tree. Closes the dialog
+                // first, like the Diagnostics button does.
+                if (onTurnDiff != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                    ) {
+                        TextButton(
+                            onClick = {
+                                onDismiss()
+                                onTurnDiff()
+                            },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_status_dialog_turn_diff),
+                                color = colors.accentText,
+                            )
+                        }
+                    }
                 }
             }
         },

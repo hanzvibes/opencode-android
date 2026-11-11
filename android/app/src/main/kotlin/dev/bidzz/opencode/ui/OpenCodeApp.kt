@@ -40,6 +40,8 @@ import dev.bidzz.opencode.ui.chat.ChatViewModel
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
 import dev.bidzz.opencode.ui.diff.DiffListScreen
 import dev.bidzz.opencode.ui.diff.DiffScreen
+import dev.bidzz.opencode.ui.diff.SessionDiffScreen
+import dev.bidzz.opencode.ui.diff.SessionDiffViewModel
 import dev.bidzz.opencode.ui.files.DiffViewModel
 import dev.bidzz.opencode.ui.files.ExplorerScreen
 import dev.bidzz.opencode.ui.files.ExplorerViewModel
@@ -78,6 +80,7 @@ internal sealed interface Screen {
     data class FileView(val path: String) : Screen
     data object DiffList : Screen
     data class Diff(val file: String) : Screen
+    data object SessionDiff : Screen
     data object Settings : Screen
     data object Providers : Screen
     data object Diagnostics : Screen
@@ -144,6 +147,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory { _ ->
         DiffViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
+    val sessionDiffViewModel: SessionDiffViewModel = viewModel(factory = viewModelFactory { _ ->
+        SessionDiffViewModel(app.engineApi)
+    })
     val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory { _ ->
         ProvidersViewModel(
             api = app.engineApi,
@@ -159,6 +165,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val explorerState by explorerViewModel.state.collectAsState()
     val fileState by fileViewModel.state.collectAsState()
     val diffState by diffViewModel.state.collectAsState()
+    val sessionDiffState by sessionDiffViewModel.state.collectAsState()
     val providersState by providersViewModel.state.collectAsState()
     val mcpServersState by mcpServersViewModel.state.collectAsState()
 
@@ -230,6 +237,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         when (val target = screen) {
             is Screen.FileView -> fileViewModel.requestLoad(target.path)
             is Screen.Diff -> diffViewModel.load(target.file)
+            is Screen.SessionDiff -> {
+                // The active session's latest turn; no session, no diff —
+                // the entry point only exists while a session is open.
+                chatState.sessionID?.let { sessionDiffViewModel.load(it) }
+            }
             else -> Unit
         }
     }
@@ -368,6 +380,13 @@ fun OpenCodeApp(app: OpenCodeApplication) {
             is Screen.Diff -> DiffScreen(
                 state = diffState,
                 onBack = { screen = Screen.DiffList },
+            )
+
+            Screen.SessionDiff -> SessionDiffScreen(
+                state = sessionDiffState,
+                onBack = { screen = Screen.Chat },
+                onOpen = sessionDiffViewModel::openFile,
+                onCloseFile = sessionDiffViewModel::closeFile,
             )
 
             Screen.Sessions -> if (isExpanded) {
@@ -589,6 +608,10 @@ private fun ChatDestination(
         onModel = chatViewModel::selectModel,
         onStatusClick = { onNavigate(Screen.Diagnostics) },
         onNewSession = chatViewModel::newSession,
+        onLoadBranches = chatViewModel::loadBranches,
+        // Turn diff (Tier 2): only while a session is open — without one
+        // there is no latest turn to diff, and the dialog hides the entry.
+        onTurnDiff = if (chatState.sessionID != null) { { onNavigate(Screen.SessionDiff) } } else null,
         onDismissError = chatViewModel::dismissError,
         onRetryError = chatViewModel::retryError,
         onLoadEarlier = chatViewModel::loadEarlier,

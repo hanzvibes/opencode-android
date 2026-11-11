@@ -71,3 +71,18 @@ data class VcsDiffResponse(
     val location: LocationRef? = null,
     val data: List<FileDiffInfo> = emptyList(),
 )
+
+/**
+ * Branch names for a project (`GET /api/vcs/branch`).
+ *
+ * The engine's `Vcs.BranchList` is a plain array of strings
+ * (packages/schema/src/vcs.ts) — the `current`/`default` struct is
+ * `Vcs.Info.branch`, not this list. The current branch is therefore matched
+ * client-side against the branch the header already shows; no entry carries
+ * a flag of its own.
+ */
+@Serializable
+data class VcsBranchesResponse(
+    val location: LocationRef? = null,
+    val data: List<String> = emptyList(),
+)
