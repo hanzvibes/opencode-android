@@ -583,7 +583,7 @@ fun DiagnosticsScreen(
                                 Text(
                                     text = stringResource(if (isRestarting) R.string.diag_restarting else R.string.diag_restart_engine),
                                     style = OpenCodeTypography.bodyStrong.copy(fontSize = 14.sp),
-                                    color = colors.accent,
+                                    color = colors.accentText,
                                 )
                             }
                         }
@@ -1058,7 +1058,7 @@ private fun LogViewerControls(
                             Text(
                                 text = stringResource(R.string.diag_log_jump_latest),
                                 style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
-                                color = colors.accent,
+                                color = colors.accentText,
                             )
                         }
                     }

@@ -168,7 +168,7 @@ fun StreamingTypingRow(
         Text(
             text = stringResource(R.string.streaming_typing),
             style = OpenCodeTypography.caption,
-            color = colors.accent,
+            color = colors.accentText,
             modifier = Modifier.padding(start = spacing.xxs),
         )
     }

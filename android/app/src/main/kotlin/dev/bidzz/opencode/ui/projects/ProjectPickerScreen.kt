@@ -176,7 +176,7 @@ private fun PermissionNotice(onGrantAccess: () -> Unit, modifier: Modifier = Mod
         Text(
             text = stringResource(R.string.project_grant_button),
             style = OpenCodeTypography.label,
-            color = colors.accent,
+            color = colors.accentText,
             modifier = Modifier
                 .padding(top = spacing.xs)
                 .heightIn(min = 44.dp)

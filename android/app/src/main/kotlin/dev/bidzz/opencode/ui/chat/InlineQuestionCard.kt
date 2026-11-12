@@ -233,7 +233,7 @@ private fun SingleQuestionSection(
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
             ),
-            color = colors.accent,
+            color = colors.accentText,
             // A long header used to push the "1/3" counter and the badge
             // out of the row; it now ellipsises instead.
             maxLines = 1,
@@ -357,7 +357,7 @@ private fun SingleQuestionSection(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                             ),
-                            color = colors.accent,
+                            color = colors.accentText,
                             maxLines = 1,
                         )
                     }

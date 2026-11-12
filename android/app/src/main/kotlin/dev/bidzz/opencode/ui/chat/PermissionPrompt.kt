@@ -362,7 +362,7 @@ fun PermissionPrompt(
             Text(
                 text = stringResource(R.string.permission_answer_later),
                 style = OpenCodeTypography.label,
-                color = if (replied) colors.onSurfaceFaint else colors.accent,
+                color = if (replied) colors.onSurfaceFaint else colors.accentText,
                 textAlign = TextAlign.Center,
             )
         }

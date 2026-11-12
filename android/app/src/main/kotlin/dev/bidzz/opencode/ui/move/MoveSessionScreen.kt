@@ -88,7 +88,7 @@ fun MoveSessionScreen(
                             Text(
                                 text = stringResource(R.string.common_done),
                                 style = OpenCodeTypography.label,
-                                color = colors.accent,
+                                color = colors.accentText,
                             )
                         }
                     }

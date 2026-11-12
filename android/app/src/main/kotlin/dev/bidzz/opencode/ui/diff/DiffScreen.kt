@@ -197,7 +197,7 @@ private fun HunkHeaderRow(header: String) {
             style = OpenCodeTypography.code.copy(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = colors.accent,
+                color = colors.accentText,
             ),
             maxLines = 1,
         )

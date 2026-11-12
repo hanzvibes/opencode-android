@@ -1013,7 +1013,7 @@ private fun List<MdSpan>.toAnnotated(textColor: Color, onBubble: Boolean = false
                 is MdSpan.Link -> withLink(LinkAnnotation.Url(span.url)) {
                     withStyle(
                         SpanStyle(
-                            color = if (onBubble) textColor else colors.accent,
+                            color = if (onBubble) textColor else colors.accentText,
                             textDecoration = TextDecoration.Underline,
                         ),
                     ) {
