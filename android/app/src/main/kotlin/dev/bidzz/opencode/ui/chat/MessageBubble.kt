@@ -825,7 +825,7 @@ fun ThinkingDisclosure(
                         ?: stringResource(R.string.bubble_thinking).removeSuffix("…").trim() + timeSuffix
                 } else {
                     val duration = maxOf(1, elapsedSeconds)
-                    "Thought for ${duration}s"
+                    stringResource(R.string.bubble_thought_for, duration)
                 }
 
                 Text(

@@ -78,7 +78,10 @@ enum class ProviderStatus {
 private data class FeaturedProviderDef(
     val id: String,
     val name: String,
-    val subtitle: String,
+    /** A model list (proper nouns) — identical in every language. */
+    val subtitle: String? = null,
+    /** A description sentence — resolved at the render site. */
+    val subtitleRes: Int? = null,
     val brandColor: Color,
     val isFreeTier: Boolean = false,
 )
@@ -99,14 +102,14 @@ private val FEATURED_PROVIDERS = listOf(
     FeaturedProviderDef(
         id = "opencode",
         name = "OpenCode",
-        subtitle = "Built-in free tier models",
+        subtitleRes = R.string.providers_subtitle_free_tier,
         brandColor = Color(0xFF6366F1),
         isFreeTier = true,
     ),
     FeaturedProviderDef(
         id = "ollama",
         name = "Ollama",
-        subtitle = "Local models & OpenAI-compatible",
+        subtitleRes = R.string.providers_subtitle_local,
         brandColor = Color(0xFF475569),
     ),
     FeaturedProviderDef(
@@ -260,15 +263,17 @@ fun ProvidersScreen(
                     }
 
                     val detail = when {
-                        isAntigravityConnected -> state.activeAntigravityEmail?.let { "Antigravity OAuth ($it)" } ?: "Antigravity Connected"
+                        isAntigravityConnected -> state.activeAntigravityEmail?.let {
+                            stringResource(R.string.providers_antigravity_oauth_account, it)
+                        } ?: stringResource(R.string.providers_antigravity_connected_plain)
                         isConnected && stored.isNotEmpty() ->
                             stringResource(
                                 if (stored.size == 1) R.string.providers_keys_one else R.string.providers_keys_other,
                                 stored.size,
                             )
                         isConnected -> stringResource(R.string.providers_state_connected)
-                        def.isFreeTier -> def.subtitle
-                        else -> def.subtitle
+                        def.subtitleRes != null -> stringResource(def.subtitleRes)
+                        else -> def.subtitle.orEmpty()
                     }
 
                     ProviderCard(
@@ -511,7 +516,7 @@ fun ProvidersScreen(
             initialStop = SheetStop.PEEK,
             title = {
                 Text(
-                    text = "Google (Gemini & Antigravity)",
+                    text = stringResource(R.string.providers_antigravity_title),
                     style = OpenCodeTypography.title,
                     color = colors.onSurface,
                 )
@@ -530,26 +535,29 @@ fun ProvidersScreen(
                                     .background(colors.accent),
                             )
                             Text(
-                                text = "Antigravity OAuth: Connected",
+                                text = stringResource(R.string.providers_antigravity_connected),
                                 style = OpenCodeTypography.bodyStrong,
                                 color = colors.accentText,
                             )
                         }
                         state.activeAntigravityEmail?.let { email ->
                             Text(
-                                text = "Active Account: $email",
+                                text = stringResource(R.string.providers_antigravity_active_account, email),
                                 style = OpenCodeTypography.caption,
                                 color = colors.onSurface,
                             )
                         }
                         Text(
-                            text = "Models like Gemini 3.8 Flash, Gemini 3.1 Pro, and Claude Opus 4.6 Thinking authenticate via Google Antigravity OAuth tokens automatically. No API key is required.",
+                            text = stringResource(
+                                R.string.providers_antigravity_models_note,
+                                "Gemini 3.8 Flash, Gemini 3.1 Pro, and Claude Opus 4.6 Thinking",
+                            ),
                             style = OpenCodeTypography.bodySmall,
                             color = colors.onSurfaceMuted,
                         )
                     } else {
                         Text(
-                            text = "Use Gemini with your Google API Key, or configure Antigravity OAuth in the engine config.",
+                            text = stringResource(R.string.providers_antigravity_use_key),
                             style = OpenCodeTypography.bodySmall,
                             color = colors.onSurfaceMuted,
                         )
@@ -557,7 +565,10 @@ fun ProvidersScreen(
 
                     if (storedKeys.isNotEmpty()) {
                         Text(
-                            text = "${storedKeys.size} Gemini API key(s) configured.",
+                            text = stringResource(
+                                R.string.providers_gemini_keys_configured,
+                                storedKeys.size,
+                            ),
                             style = OpenCodeTypography.caption,
                             color = colors.onSurfaceMuted,
                         )
@@ -896,8 +907,13 @@ private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third:
 private sealed class KeyValidation {
     object Empty : KeyValidation()
     data class Invalid(val messageRes: Int) : KeyValidation()
-    data class Warning(val message: String) : KeyValidation()
-    data class Valid(val message: String) : KeyValidation()
+    /**
+     * A format string plus its args: the provider name and its key prefix
+     * are data, not part of the sentence, so the word order stays
+     * translatable. Resolved at the render site with stringResource.
+     */
+    data class Warning(val messageRes: Int, val args: List<Any> = emptyList()) : KeyValidation()
+    data class Valid(val messageRes: Int, val args: List<Any> = emptyList()) : KeyValidation()
 }
 
 private fun validateKey(providerId: String, key: String): KeyValidation {
@@ -910,33 +926,33 @@ private fun validateKey(providerId: String, key: String): KeyValidation {
     return when {
         lower.contains("anthropic") -> {
             if (trimmed.startsWith("sk-ant-")) {
-                KeyValidation.Valid("Anthropic key format verified (sk-ant-…)")
+                KeyValidation.Valid(R.string.providers_key_valid, listOf("Anthropic", "sk-ant-"))
             } else {
-                KeyValidation.Warning("Anthropic keys usually begin with sk-ant-")
+                KeyValidation.Warning(R.string.providers_key_warning, listOf("Anthropic", "sk-ant-"))
             }
         }
         lower == "openai" -> {
             if (trimmed.startsWith("sk-")) {
-                KeyValidation.Valid("OpenAI key format verified (sk-…)")
+                KeyValidation.Valid(R.string.providers_key_valid, listOf("OpenAI", "sk-"))
             } else {
-                KeyValidation.Warning("OpenAI keys usually begin with sk-")
+                KeyValidation.Warning(R.string.providers_key_warning, listOf("OpenAI", "sk-"))
             }
         }
         lower.contains("google") || lower.contains("gemini") -> {
             if (trimmed.startsWith("AIza")) {
-                KeyValidation.Valid("Google Gemini key format verified (AIza…)")
+                KeyValidation.Valid(R.string.providers_key_valid, listOf("Google Gemini", "AIza"))
             } else {
-                KeyValidation.Warning("Google AI keys usually begin with AIza")
+                KeyValidation.Warning(R.string.providers_key_warning, listOf("Google AI", "AIza"))
             }
         }
         lower.contains("deepseek") -> {
             if (trimmed.startsWith("sk-")) {
-                KeyValidation.Valid("DeepSeek key format verified (sk-…)")
+                KeyValidation.Valid(R.string.providers_key_valid, listOf("DeepSeek", "sk-"))
             } else {
-                KeyValidation.Warning("DeepSeek keys usually begin with sk-")
+                KeyValidation.Warning(R.string.providers_key_warning, listOf("DeepSeek", "sk-"))
             }
         }
-        else -> KeyValidation.Valid("Key format appears valid (${trimmed.length} chars)")
+        else -> KeyValidation.Valid(R.string.providers_key_valid_generic, listOf(trimmed.length))
     }
 }
 
@@ -1119,13 +1135,19 @@ private fun KeyPrompt(
                     }
                     is KeyValidation.Warning -> {
                         NoticeRow(
-                            message = validation.message,
+                            message = stringResource(
+                                validation.messageRes,
+                                *validation.args.toTypedArray(),
+                            ),
                             kind = NoticeKind.Warning,
                         )
                     }
                     is KeyValidation.Valid -> {
                         NoticeRow(
-                            message = validation.message,
+                            message = stringResource(
+                                validation.messageRes,
+                                *validation.args.toTypedArray(),
+                            ),
                             kind = NoticeKind.Success,
                         )
                     }

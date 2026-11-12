@@ -149,7 +149,7 @@ private fun DiffSummaryHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "$fileCount files changed",
+            text = stringResource(R.string.diff_files_changed, fileCount),
             style = OpenCodeTypography.caption,
             color = colors.onSurfaceMuted,
         )
