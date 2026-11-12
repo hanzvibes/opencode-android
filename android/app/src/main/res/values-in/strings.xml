@@ -136,6 +136,7 @@
     <string name="chat_question_waiting_one">1 pertanyaan menunggu</string>
     <string name="chat_question_waiting_other">%1$d pertanyaan menunggu</string>
     <string name="chat_status_working">Bekerja</string>
+    <string name="chat_status_waiting_permission">Menunggu izin…</string>
     <string name="chat_status_ready">Siap</string>
     <string name="chat_status_preparing">Bersiap</string>
     <string name="chat_status_starting">Memulai</string>

@@ -587,7 +587,11 @@ fun MessageBubble(
                     .joinToString("\n\n")
                     .ifEmpty { markdown }
 
-                if (!streaming && allProse.isNotBlank()) {
+                // #6c: Copy/Reply appear as soon as the turn has prose to
+                // copy — not only when it ends. A turn that is all tools so
+                // far has no prose, so the pills stay hidden until the first
+                // text part lands.
+                if (allProse.isNotBlank()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
@@ -614,6 +618,9 @@ fun MessageBubble(
                 // reason. Hidden entirely while every field is null, so a turn
                 // renders exactly as before until the integration agent fills
                 // the fields from the engine.
+                // #6c: the usage line still waits for the turn to end — its
+                // values only exist then. Share joins Copy/Reply above: it
+                // needs prose, not a finished turn.
                 if (!streaming) {
                     TurnFooter(
                         usageTokens = usageTokens,
@@ -622,6 +629,8 @@ fun MessageBubble(
                         stopReason = stopReason,
                         modifier = Modifier.padding(top = spacing.xs),
                     )
+                }
+                if (allProse.isNotBlank()) {
                     TurnActionPill(
                         label = stringResource(R.string.message_share),
                         glyph = Glyph.Share,
@@ -706,6 +715,12 @@ fun ThinkingDisclosure(
     isThinkingActive: Boolean,
     reasoningText: String?,
     elapsedSeconds: Int,
+    /**
+     * #6b: a label that replaces the "Thinking…" pill while the run is
+     * blocked on something else (a permission answer). Used as-is, with
+     * no elapsed-time suffix — the wait is not thinking time.
+     */
+    activeLabel: String? = null,
     modifier: Modifier = Modifier,
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
@@ -806,7 +821,8 @@ fun ThinkingDisclosure(
                 val timeSuffix = if (elapsedSeconds > 0) " (${elapsedSeconds}s)" else "…"
 
                 val labelText = if (isThinkingActive) {
-                    stringResource(R.string.bubble_thinking).removeSuffix("…").trim() + timeSuffix
+                    activeLabel
+                        ?: stringResource(R.string.bubble_thinking).removeSuffix("…").trim() + timeSuffix
                 } else {
                     val duration = maxOf(1, elapsedSeconds)
                     "Thought for ${duration}s"

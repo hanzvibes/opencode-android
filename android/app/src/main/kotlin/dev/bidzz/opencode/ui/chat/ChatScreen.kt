@@ -666,7 +666,11 @@ fun ChatScreen(
 
     val targetLastIndex by remember {
         derivedStateOf {
-            val hasWorking = state.busy && state.messages.lastOrNull()?.role == Role.USER
+            // While the optimistic bubble is pending (#6a) the bubble itself
+            // is the sign something is happening — the placeholder would be
+            // a second, premature "Thinking" under a prompt the engine has
+            // not even echoed yet. It takes over once the echo lands.
+            val hasWorking = state.busy && state.messages.lastOrNull()?.role == Role.USER && !state.sending
             // One extra head item while older messages are windowed out
             // ("load earlier"), so message indices are shifted by one in
             // list space; without the shift the follow scroll targets the
@@ -1266,6 +1270,10 @@ fun ChatScreen(
                                             model = state.activeModel,
                                             agents = state.agents,
                                             models = state.models,
+                                            // #6b: the engine is idle waiting on
+                                            // the operator, not thinking — the
+                                            // pill says so instead of "Thinking".
+                                            waitingPermission = state.pendingPermission != null,
                                             // Same screen-owned timer as the real
                                             // turn, so the clock does not restart
                                             // when the placeholder is replaced.
@@ -3505,6 +3513,8 @@ private fun AssistantWorkingPlaceholder(
     model: dev.bidzz.opencode.core.api.dto.ModelRef?,
     agents: List<dev.bidzz.opencode.core.api.dto.AgentInfo>,
     models: List<dev.bidzz.opencode.core.api.dto.ModelInfo>,
+    /** #6b: the run is blocked on a permission answer, not thinking. */
+    waitingPermission: Boolean = false,
     modifier: Modifier = Modifier,
     /** Seconds since this run started, owned by the screen (see A-19). */
     elapsedSeconds: Int = 0,
@@ -3555,6 +3565,13 @@ private fun AssistantWorkingPlaceholder(
                         isThinkingActive = true,
                         reasoningText = null,
                         elapsedSeconds = elapsedSeconds,
+                        // #6b: same spinner and pulse — the run is alive —
+                        // only the label changes to the wait.
+                        activeLabel = if (waitingPermission) {
+                            stringResource(R.string.chat_status_waiting_permission)
+                        } else {
+                            null
+                        },
                         modifier = Modifier.padding(bottom = spacing.sm),
                     )
                 }

@@ -137,6 +137,7 @@
     <string name="chat_question_waiting_one">1 question waiting</string>
     <string name="chat_question_waiting_other">%1$d questions waiting</string>
     <string name="chat_status_working">Working</string>
+    <string name="chat_status_waiting_permission">Waiting for permission…</string>
     <string name="chat_status_ready">Ready</string>
     <string name="chat_status_preparing">Preparing</string>
     <string name="chat_status_starting">Starting</string>

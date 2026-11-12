@@ -23,6 +23,7 @@ import dev.bidzz.opencode.core.api.dto.toToolCall
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /** What the chat screen renders. */
 data class ChatUiState(
@@ -34,6 +35,14 @@ data class ChatUiState(
     /** True while an explicit "load earlier" fetch is in flight. */
     val loadingEarlier: Boolean = false,
     val busy: Boolean = false,
+    /**
+     * True from [ChatViewModel.sendText] until the engine echoes the prompt
+     * back as a user message — or the send fails. While true the transcript
+     * ends in the optimistic bubble (see [ChatViewModel.stageOptimistic])
+     * and the working placeholder stays hidden: the bubble itself is the
+     * sign something is happening.
+     */
+    val sending: Boolean = false,
     val connecting: Boolean = false,
     /** What went wrong, as a value; the screen words it in the app’s language. */
     val failure: ApiResult.Failure? = null,
@@ -556,7 +565,12 @@ class ChatViewModel(
         repository?.loadEarlier()
     }
 
-    private fun onRepoState(chat: ChatState) {
+    /**
+     * Folds one repository emission into [_state]. Internal so
+     * [ChatViewModelTest] can drive the optimistic-bubble dedup with
+     * synthetic [ChatState]s: the repository itself needs a live engine.
+     */
+    internal fun onRepoState(chat: ChatState) {
         val previous = _state.value
         val wasBusy = previous.busy
 
@@ -609,9 +623,39 @@ class ChatViewModel(
             else -> deferred
         }
 
+        // The optimistic bubble (#6a) hands over to the engine's echo —
+        // or stays, until it does. The echo is a user message with the same
+        // text under an id the transcript did not have when the bubble was
+        // staged: matching on the text alone would let an older message with
+        // the same text stand in for the echo and drop the bubble early.
+        // A run that ends without an echo (a command the engine does not
+        // record as a user message) drops the bubble too — its job is done.
+        // And a bubble staged for another session never lands in this one.
+        val repoMessages = buildUiMessages(chat, toolDurations, toolStartedAt.toMap())
+        val optimistic = pendingOptimistic
+        val (finalMessages, optimisticAlive) = when {
+            optimistic == null -> repoMessages to false
+            optimisticSessionID != null && chat.sessionID != optimisticSessionID -> {
+                pendingOptimistic = null
+                repoMessages to false
+            }
+            repoMessages.any {
+                it.role == Role.USER && it.text == optimistic.text && it.id !in optimisticKnownIds
+            } -> {
+                pendingOptimistic = null
+                repoMessages to false
+            }
+            wasBusy && !chat.busy -> {
+                pendingOptimistic = null
+                repoMessages to false
+            }
+            else -> (repoMessages + optimistic) to true
+        }
+
         _state.value = previous.copy(
             sessionID = chat.sessionID,
-            messages = buildUiMessages(chat, toolDurations, toolStartedAt.toMap()),
+            messages = finalMessages,
+            sending = optimisticAlive,
             hasMoreOlder = chat.hasMoreOlder,
             loadingEarlier = chat.loadingEarlier,
             busy = chat.busy,
@@ -970,6 +1014,59 @@ class ChatViewModel(
 
     private var sendInFlight = false
 
+    /**
+     * The optimistic user bubble (#6a): appended to [ChatUiState.messages]
+     * the moment [sendText] runs, so the transcript answers a send at once
+     * instead of staying silent until the engine echoes the prompt. The
+     * echo is a user message with the same text under an engine id; the
+     * bubble hands over to it in [onRepoState]. [optimisticKnownIds] is the
+     * set of message ids the transcript already had when the bubble was
+     * staged — an older message with the same text never counts as the
+     * echo. [optimisticSessionID] is the session the bubble belongs to
+     * (null while the session is still being created).
+     */
+    private var pendingOptimistic: ChatMessage? = null
+    private var optimisticKnownIds: Set<String> = emptySet()
+    private var optimisticSessionID: String? = null
+
+    /**
+     * Stages the optimistic bubble for [fullText] (#6a). Internal so
+     * [ChatViewModelTest] can drive the dedup without an engine: the
+     * repository is the only thing a unit test cannot fake cheaply.
+     */
+    internal fun stageOptimistic(fullText: String) {
+        // A bubble left over from an abandoned send must not linger under
+        // the new one: a send is serialised by sendInFlight, so at most
+        // one optimistic bubble can be alive at a time.
+        val previous = pendingOptimistic
+        val optimistic = ChatMessage(
+            id = "local:${UUID.randomUUID()}",
+            role = Role.USER,
+            text = fullText,
+            createdAtMillis = System.currentTimeMillis(),
+        )
+        pendingOptimistic = optimistic
+        optimisticKnownIds = _state.value.messages.map { it.id }.toSet()
+        optimisticSessionID = _state.value.sessionID
+        _state.value = _state.value.copy(
+            messages = _state.value.messages
+                .filter { it.id != previous?.id } + optimistic,
+            sending = true,
+        )
+    }
+
+    /** Drops the optimistic bubble: the send failed or never happened. */
+    private fun clearOptimistic() {
+        val optimistic = pendingOptimistic ?: return
+        pendingOptimistic = null
+        optimisticKnownIds = emptySet()
+        optimisticSessionID = null
+        _state.value = _state.value.copy(
+            messages = _state.value.messages.filter { it.id != optimistic.id },
+            sending = false,
+        )
+    }
+
     /** Consecutive reloadSession() attempts since the last successful load (item 24). */
     private var sessionReloadAttempts = 0
 
@@ -1001,6 +1098,9 @@ class ChatViewModel(
                 (_state.value.sentPrompts + typedText).takeLast(50)
             },
         )
+        // The bubble goes up now, before the coroutine runs: the user
+        // sees their message at once, and the echo hands over to it later.
+        stageOptimistic(fullText)
         sendInFlight = true
         // The session and the repository are captured here, before the
         // coroutine runs: reading them inside sendNow — after a suspension —
@@ -1320,10 +1420,20 @@ class ChatViewModel(
         typedText: String,
         attachments: List<AttachedFile>,
     ) {
-        val sessionID = capturedSessionID ?: createSession(repo) ?: return
+        val sessionID = capturedSessionID ?: createSession(repo)
+        if (sessionID == null) {
+            clearOptimistic()
+            return
+        }
         // The session changed under us while the send was in flight.
-        if (repository !== repo) return
-        if (repo.state.value.sessionID != sessionID) return
+        if (repository !== repo) {
+            clearOptimistic()
+            return
+        }
+        if (repo.state.value.sessionID != sessionID) {
+            clearOptimistic()
+            return
+        }
         // A leading slash is a command, not a prompt. The engine runs it and answers
         // 204; the output arrives over the event stream exactly like a normal turn.
         val result = if (text.startsWith("/")) {
@@ -1335,7 +1445,10 @@ class ChatViewModel(
             repo.send(text)
         }
         when (result) {
-            is ApiResult.Failure -> reportFailure(result)
+            is ApiResult.Failure -> {
+                clearOptimistic()
+                reportFailure(result)
+            }
             is ApiResult.Success -> {
                 clearSentDraft(typedText)
                 clearSentAttachments(attachments)
