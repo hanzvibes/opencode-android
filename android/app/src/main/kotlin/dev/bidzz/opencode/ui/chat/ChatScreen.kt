@@ -386,6 +386,26 @@ fun ChatScreen(
         }
     }
 
+    // Expand/collapse compensation (#6f): a ToolRow height toggle
+    // (trace header, step console, show-full output/diff) grows or
+    // shrinks its message item, and the list jumps. Capture the same
+    // ScrollAnchor as #6d before the toggle (via
+    // onBeforeToolTraceHeightChange, threaded through MessageBubble →
+    // ToolTrace → ToolStep) and restore it once after recomposition.
+    // No prepend here, so the anchor index is restored as-is. Skipped
+    // while the reader is mid-gesture — the next toggle re-captures.
+    var pendingExpandAnchor by remember { mutableStateOf<ScrollAnchor?>(null) }
+    fun captureExpandAnchor() {
+        pendingExpandAnchor = listState.captureAnchor()
+    }
+    LaunchedEffect(pendingExpandAnchor) {
+        val anchor = pendingExpandAnchor ?: return@LaunchedEffect
+        pendingExpandAnchor = null
+        if (listState.isScrollInProgress) return@LaunchedEffect
+        withFrameNanos { }
+        listState.scrollToItem(anchor.index, anchor.offset)
+    }
+
     LaunchedEffect(nearBottom, state.messages.size) {
         if (nearBottom) {
             lastReadMessageCount = state.messages.size
@@ -1206,6 +1226,9 @@ fun ChatScreen(
                                             workspacePath = state.workspacePath,
                                             onOpenToolFile = onOpenToolFile,
                                             onRequestDiffRevert = onRequestDiffRevert,
+                                            // #6f: anchor the scroll position
+                                            // before a ToolTrace height toggle.
+                                            onBeforeToolTraceHeightChange = { captureExpandAnchor() },
                                             onSaveCode = onSaveCode,
                                         )
                                     }
