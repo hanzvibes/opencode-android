@@ -56,6 +56,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
+import dev.bidzz.opencode.ui.PrimaryButton
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
@@ -315,9 +316,10 @@ fun ProvidersScreen(
                     )
                 }
 
-                PrimaryButton(stringResource(R.string.providers_add_custom)) {
-                    customFormPrefill = CustomFormInitial()
-                }
+                PrimaryButton(
+                    label = stringResource(R.string.providers_add_custom),
+                    onClick = { customFormPrefill = CustomFormInitial() },
+                )
             }
 
             // 3. Full Provider Catalog Section
@@ -929,23 +931,6 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
                 GlyphIcon(Glyph.Close, tint = colors.onSurfaceFaint, size = 16.dp)
             }
         }
-    }
-}
-
-@Composable
-private fun PrimaryButton(text: String, onClick: () -> Unit) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(radius.md))
-            .background(colors.accentFill)
-            .clickable(onClick = onClick)
-            .padding(horizontal = spacing.lg, vertical = spacing.sm),
-    ) {
-        Text(text, style = OpenCodeTypography.label, color = colors.onAccent)
     }
 }
 

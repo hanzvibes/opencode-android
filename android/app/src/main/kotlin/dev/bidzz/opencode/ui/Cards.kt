@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -164,6 +166,64 @@ fun RowDivider(inset: Dp = 0.dp) {
             .height(0.5.dp)
             .background(OpenCodeTheme.colors.hairline),
     )
+}
+
+/**
+ * The one primary action button (Opsi B #42): an accent-fill button
+ * with white label (+ optional glyph), 48dp minimum height, 12dp
+ * radius — the same radius as [TonalButton], so the two button styles
+ * align. Replaces the drifted private primary buttons:
+ * SidebarPrimaryButton (ChatScreen), PrimaryButton (ProvidersScreen),
+ * ChooseFolderButton (ProjectPickerScreen), and the inline accent-fill
+ * boxes in ToolRow (Accept) and the status dialog (Diagnostics).
+ * Drift it fixes: Providers had no 48dp minimum and no Button role;
+ * ChooseFolder was 52dp with a 16dp radius; Accept was an 8dp radius;
+ * the sidebar label was 15sp while the other four were 13sp.
+ *
+ * [enabled] dims the fill instead of hiding the action: a disabled
+ * primary button keeps its place in the layout. None of the migrated
+ * call sites passes disabled yet — the parameter exists so the next
+ * form that needs it does not invent another button.
+ */
+@Composable
+fun PrimaryButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    glyph: Glyph? = null,
+    enabled: Boolean = true,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = dims.minTouchTarget)
+            .clip(RoundedCornerShape(radius.md))
+            .background(if (enabled) colors.accentFill else colors.fill)
+            .clickable(role = Role.Button, enabled = enabled, onClick = onClick)
+            .padding(horizontal = spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (glyph != null) {
+            GlyphIcon(
+                glyph,
+                tint = if (enabled) colors.onAccent else colors.onSurfaceFaint,
+                size = dims.iconMedium,
+            )
+        }
+        Text(
+            text = label,
+            style = OpenCodeTypography.label,
+            color = if (enabled) colors.onAccent else colors.onSurfaceFaint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = if (glyph != null) Modifier.padding(start = spacing.sm) else Modifier,
+        )
+    }
 }
 
 /** Tonal button: clean modern touch button matching cross-platform-llm-client. */

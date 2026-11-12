@@ -70,6 +70,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.PrimaryButton
 import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.diff.DiffHunk
 import dev.bidzz.opencode.ui.diff.DiffLine
@@ -1887,23 +1888,11 @@ private fun DiffDecisionRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .defaultMinSize(minHeight = 48.dp)
-                        .clip(RoundedCornerShape(radius.sm))
-                        .background(colors.accentFill)
-                        .clickable(role = Role.Button, onClick = onAccept)
-                        .padding(horizontal = spacing.xs, vertical = spacing.sm),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.tool_diff_accept),
-                        style = OpenCodeTypography.label,
-                        color = colors.onAccent,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                PrimaryButton(
+                    label = stringResource(R.string.tool_diff_accept),
+                    onClick = onAccept,
+                    modifier = Modifier.weight(1f),
+                )
                 if (showReject) {
                     Box(
                         modifier = Modifier

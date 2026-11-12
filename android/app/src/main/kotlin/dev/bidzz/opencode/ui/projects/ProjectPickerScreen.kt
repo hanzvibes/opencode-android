@@ -29,6 +29,7 @@ import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconBadge
+import dev.bidzz.opencode.ui.PrimaryButton
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 
@@ -91,7 +92,12 @@ fun ProjectPickerScreen(
                 }
             }
 
-            ChooseFolderButton(onChooseFolder, Modifier.padding(top = spacing.xl))
+            PrimaryButton(
+                label = stringResource(R.string.project_choose),
+                glyph = Glyph.Folder,
+                onClick = onChooseFolder,
+                modifier = Modifier.padding(top = spacing.xl),
+            )
 
             Text(
                 text = stringResource(R.string.project_internal_note, internalPath),
@@ -234,28 +240,3 @@ private fun ProjectRow(option: ProjectOption, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun ChooseFolderButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.lg))
-            .background(colors.accentFill)
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = spacing.lg),
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlyphIcon(Glyph.Folder, tint = colors.onAccent, size = 20.dp)
-        Text(
-            text = stringResource(R.string.project_choose),
-            style = OpenCodeTypography.label,
-            color = colors.onAccent,
-            modifier = Modifier.padding(start = spacing.sm),
-        )
-    }
-}
