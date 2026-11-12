@@ -932,7 +932,6 @@ private fun SearchField(query: String, onChange: (String) -> Unit) {
     }
 }
 
-@Composable
 /** Real-time API key validation outcome. */
 private sealed class KeyValidation {
     object Empty : KeyValidation()
