@@ -12,7 +12,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Toast
+import dev.bidzz.opencode.OpenCodeApplication
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -183,14 +183,12 @@ fun InAppBrowserScreen(
                     val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                     manager.enqueue(request)
                 }.isSuccess
-                Toast.makeText(
-                    context,
+                (context.applicationContext as OpenCodeApplication).showSnackbar(
                     context.getString(
                         if (downloaded) R.string.browser_download_started
                         else R.string.browser_download_failed,
                     ),
-                    Toast.LENGTH_SHORT,
-                ).show()
+                )
             }
             loadUrl(url)
         }
@@ -251,11 +249,9 @@ fun InAppBrowserScreen(
                 .clickable {
                     val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     manager.setPrimaryClip(ClipData.newPlainText("url", currentUrl))
-                    Toast.makeText(
-                        context,
+                    (context.applicationContext as OpenCodeApplication).showSnackbar(
                         context.getString(R.string.browser_copied),
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    )
                 }
                 .padding(horizontal = spacing.md, vertical = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,

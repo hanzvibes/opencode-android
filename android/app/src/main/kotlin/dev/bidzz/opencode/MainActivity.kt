@@ -12,7 +12,6 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -65,11 +64,10 @@ class MainActivity : ComponentActivity() {
                 // picker happily offers the whole storage, and the guard
                 // below it must say why that is not a project.
                 if (!(application as OpenCodeApplication).switchWorkspace(path)) {
-                    Toast.makeText(
-                        this,
-                        R.string.workspace_too_broad,
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    (application as OpenCodeApplication).showSnackbar(
+                        getString(R.string.workspace_too_broad),
+                        long = true,
+                    )
                 }
             }
         }
@@ -93,7 +91,7 @@ class MainActivity : ComponentActivity() {
      * Same reason as [pickSafFile] for living here. The pending request —
      * filename plus the code verbatim — is taken here, so a cancelled pick
      * writes nothing and a pick that arrives with no request is ignored.
-     * The write runs on IO; the result is a Toast, using the same
+     * The write runs on IO; the result is a snackbar, using the same
      * `code_saved` string the file viewer already uses.
      */
     private val saveCodeDocument =
@@ -106,11 +104,16 @@ class MainActivity : ComponentActivity() {
                     contentResolver.openOutputStream(uri)?.use { it.write(pending.text.toByteArray()) } != null
                 }.getOrDefault(false)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        if (saved) R.string.code_saved else R.string.code_save_failed,
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    // A failed save offers one retry: re-open the picker
+                    // with the same filename and text, so the user can
+                    // pick a different location instead of losing the code.
+                    (application as OpenCodeApplication).showSnackbar(
+                        getString(if (saved) R.string.code_saved else R.string.code_save_failed),
+                        actionLabel = if (saved) null else getString(R.string.chat_retry),
+                        onAction = if (saved) null else {
+                            { (application as OpenCodeApplication).requestCodeSave(pending.filename, pending.text) }
+                        },
+                    )
                 }
             }
         }

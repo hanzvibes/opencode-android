@@ -7,7 +7,6 @@ import android.content.Context
 import android.os.Build
 import android.os.Process
 import android.os.StatFs
-import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -333,14 +332,14 @@ fun DiagnosticsScreen(
 
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         clipboard?.setPrimaryClip(ClipData.newPlainText("OpenCode Diagnostics", report))
-        Toast.makeText(context, context.getString(R.string.diag_copied_toast), Toast.LENGTH_SHORT).show()
+        (context.applicationContext as OpenCodeApplication).showSnackbar(context.getString(R.string.diag_copied_toast))
     }
 
     val copyLogs = { lines: List<String> ->
         val text = lines.joinToString("\n")
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         clipboard?.setPrimaryClip(ClipData.newPlainText("OpenCode Logs", text))
-        Toast.makeText(context, context.getString(R.string.diag_copied_toast), Toast.LENGTH_SHORT).show()
+        (context.applicationContext as OpenCodeApplication).showSnackbar(context.getString(R.string.diag_copied_toast))
     }
 
     val stateColor = when (status.state) {
@@ -549,22 +548,17 @@ fun DiagnosticsScreen(
                                                 }
                                             }
                                             if (settled == null) {
-                                                Toast.makeText(
-                                                    context,
+                                                (context.applicationContext as OpenCodeApplication).showSnackbar(
                                                     context.getString(R.string.diag_restart_timeout),
-                                                    Toast.LENGTH_LONG,
-                                                ).show()
+                                                    long = true,
+                                                )
                                             }
                                             refresh()
                                             isRestarting = false
                                         }
-                                        Toast
-                                            .makeText(
-                                                context,
-                                                context.getString(R.string.diag_restarting),
-                                                Toast.LENGTH_SHORT,
-                                            )
-                                            .show()
+                                        (context.applicationContext as OpenCodeApplication).showSnackbar(
+                                            context.getString(R.string.diag_restarting),
+                                        )
                                     },
                                 )
                                 .padding(horizontal = spacing.md),
