@@ -10,6 +10,7 @@ import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.ChatState
 import dev.bidzz.opencode.core.api.LiveTool
 import dev.bidzz.opencode.core.api.VcsApi
+import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
@@ -132,10 +133,16 @@ data class ChatUiState(
     val vcsDetailsFailed: Boolean = false,
     /**
      * Tokens currently in the session's context window (`GET /api/session/{id}/context`),
-     * summed over its assistant messages with the turn footer's rule. Null while
-     * unknown — the meter hides rather than showing a stale number.
+     * from the LAST assistant message that reported usage — its `input` is
+     * the whole prompt the next turn builds on, so summing every message
+     * would count the same history once per turn (audit-100 Fase 6a, 23-F1).
+     * Null while unknown — the meter hides rather than showing a stale number.
+     * [contextModel] is the model that produced that last usage: the
+     * denominator must come from it, not from the model selected now, or a
+     * mid-session model switch mixes two windows in one percentage (77-F3).
      */
     val contextUsedTokens: Long? = null,
+    val contextModel: ModelRef? = null,
 )
 
 /** One follow-up waiting for the run to end (see [ChatUiState.queuedPrompts]). */
@@ -391,6 +398,8 @@ class ChatViewModel(
     private var collector: Job? = null
     /** In-flight context-usage load, cancelled when a newer one starts. */
     private var contextUsageJob: Job? = null
+    /** Last wall-clock refresh of the context meter, for the 30s busy throttle (23-F3). */
+    private var lastContextRefreshMillis: Long = 0L
     private var attached: dev.bidzz.opencode.core.engine.EngineCredentials? = null
 
     /** The attached handle, or null until the engine reports credentials. */
@@ -878,13 +887,19 @@ class ChatViewModel(
 
         // Context meter (Tier 2): a new session starts unknown, and a
         // finished run changed the context — refresh both times. A failure
-        // leaves the previous value (or null); the meter hides rather than
-        // erroring. A run that ends into a queued follow-up still refreshes:
-        // the new send will end later and refresh again.
+        // clears the value (23-F2): keeping the old number would show a
+        // stale, too-small figure, the same lie the session-switch path
+        // avoids by clearing first. While a run is still going the meter
+        // refreshes at most every 30s (23-F3) — throttled, so a long run's
+        // streaming state does not hammer the endpoint. A run that ends
+        // into a queued follow-up still refreshes: the new send will end
+        // later and refresh again.
         if (sessionChanged) {
-            _state.value = _state.value.copy(contextUsedTokens = null)
+            _state.value = _state.value.copy(contextUsedTokens = null, contextModel = null)
             refreshContextUsage()
         } else if (wasBusy && !chat.busy) {
+            refreshContextUsage()
+        } else if (chat.busy && contextRefreshDue(System.currentTimeMillis(), lastContextRefreshMillis)) {
             refreshContextUsage()
         }
     }
@@ -894,20 +909,28 @@ class ChatViewModel(
      *
      * An in-flight load is cancelled when a newer one starts — a slow load
      * for the previous session must not overwrite the current one. Failures
-     * are silent: the meter hides instead of showing an error for a
-     * best-effort number.
+     * clear the value: the meter hides instead of showing a stale number
+     * for a best-effort figure.
      */
     private fun refreshContextUsage() {
         val sessionID = _state.value.sessionID ?: return
         val h = handle ?: return
+        lastContextRefreshMillis = System.currentTimeMillis()
         contextUsageJob?.cancel()
         contextUsageJob = viewModelScope.launch {
             when (val result = h.sessions.context(sessionID)) {
                 is ApiResult.Success -> {
                     if (_state.value.sessionID != sessionID) return@launch
-                    _state.value = _state.value.copy(contextUsedTokens = contextUsageTokens(result.value))
+                    val usage = contextUsage(result.value)
+                    _state.value = _state.value.copy(
+                        contextUsedTokens = usage.tokens,
+                        contextModel = usage.model,
+                    )
                 }
-                is ApiResult.Failure -> Unit
+                is ApiResult.Failure -> {
+                    if (_state.value.sessionID != sessionID) return@launch
+                    _state.value = _state.value.copy(contextUsedTokens = null, contextModel = null)
+                }
             }
         }
     }
@@ -2115,7 +2138,10 @@ private fun ChatState.buildUnmergedMessages(
                             created != null && streamed != null &&
                             streamed >= created
                         ) {
-                            ((streamed - created) / 1000).toInt()
+                            // Rounded to the nearest second (66-F8): the old
+                            // integer division understated thinking time by
+                            // up to a second on every turn.
+                            (((streamed - created) + 500) / 1000).toInt()
                         } else {
                             null
                         }
@@ -2276,16 +2302,41 @@ internal fun turnUsageTokens(tokens: TokenUsage?): Long? {
 }
 
 /**
- * Context-meter total (Tier 2): sums [turnUsageTokens] over a context
- * listing's assistant messages. User, system and idle markers carry no
- * usage, so they contribute nothing; null when no assistant message reported
- * usage at all, and a reported zero stays zero.
+ * Context-meter usage (Tier 2): the LAST assistant message in a context
+ * listing that reported usage, and the model that produced it.
+ *
+ * Each assistant message's `input` is the whole prompt that call sent, so
+ * summing over all messages counts the same history once per turn — the
+ * meter would hit 100% on a healthy session (audit-100 Fase 6a, 23-F1).
+ * The next turn builds on the last call's prompt, so the last reported
+ * usage is the honest occupancy. Messages without usage are skipped
+ * backwards; `compaction` summaries are not assistant messages and are
+ * skipped too (their tokens' meaning is unproven — 77-F4 — so they are
+ * neither counted nor treated as the last turn).
  */
-internal fun contextUsageTokens(messages: List<SessionMessage>): Long? {
-    var total: Long? = null
-    for (message in messages) {
+internal data class ContextUsage(val tokens: Long?, val model: ModelRef?)
+
+internal fun contextUsage(messages: List<SessionMessage>): ContextUsage {
+    for (message in messages.asReversed()) {
         if (!message.isAssistant) continue
-        total = sumOrNull(total, turnUsageTokens(message.tokens))
+        val tokens = turnUsageTokens(message.tokens) ?: continue
+        return ContextUsage(tokens, message.model)
     }
-    return total
+    return ContextUsage(null, null)
 }
+
+/**
+ * Context-meter total (Tier 2): [contextUsage] for callers that only need
+ * the number. User, system and idle markers carry no usage, so they
+ * contribute nothing; null when no assistant message reported usage at
+ * all, and a reported zero stays zero.
+ */
+internal fun contextUsageTokens(messages: List<SessionMessage>): Long? =
+    contextUsage(messages).tokens
+
+/** Minimum gap between context-meter refreshes while a run is in progress (23-F3). */
+private const val CONTEXT_REFRESH_BUSY_INTERVAL_MS = 30_000L
+
+/** Pure throttle decision for the busy-run meter refresh: due once the gap has passed. */
+internal fun contextRefreshDue(nowMs: Long, lastMs: Long, intervalMs: Long = CONTEXT_REFRESH_BUSY_INTERVAL_MS): Boolean =
+    nowMs - lastMs >= intervalMs

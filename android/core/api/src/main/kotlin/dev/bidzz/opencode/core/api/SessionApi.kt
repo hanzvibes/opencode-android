@@ -105,9 +105,13 @@ class SessionApi(private val client: EngineClient) {
      * verified against the pinned engine source (`SessionStore.context` in
      * packages/core/src/session/store.ts loads the latest history). Unlike
      * [messages] this is the *active* context — after a compaction the
-     * pre-compaction turns are replaced by the summary — so summing assistant
-     * [TokenUsage] over it is what the next turn actually costs, not the
-     * session's lifetime total.
+     * pre-compaction turns are replaced by the summary. Each assistant
+     * message's `input` is the whole prompt that call sent, so summing
+     * assistant [TokenUsage] over the listing counts the shared history
+     * once per turn; the meter instead takes the LAST assistant message's
+     * usage, which is the prompt the next turn builds on (audit-100
+     * Fase 6a, 23-F1). Summing is still the right rule for a session's
+     * lifetime total — just not for what is in the window right now.
      */
     suspend fun context(sessionID: String): ApiResult<List<SessionMessage>> {
         val request = client.request("/api/session/$sessionID/context").get().build()

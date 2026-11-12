@@ -1643,9 +1643,22 @@ fun computeDiffHunks(oldText: String, newText: String): List<DiffHunk> {
     return hunks
 }
 
-/** "350ms" under a second, "1.2s" above it — the same shape as the turn footer. */
-internal fun formatStepDuration(millis: Long): String =
-    if (millis < 1000) "${millis}ms" else "${millis / 1000}.${(millis % 1000) / 100}s"
+/**
+ * "350ms" under a second, "1.3s" above it, "1m 30s" past a minute — the
+ * same shape as the turn footer (audit-100 Fase 6a, 66-F6). Seconds round
+ * to one decimal instead of truncating (1999ms → "2.0s", not "1.9s"), and
+ * a value that rounds up to 60 seconds promotes to minutes ("59.9s" can
+ * never become the confusing "60.0s").
+ */
+internal fun formatStepDuration(millis: Long): String {
+    if (millis < 1000) return "${millis}ms"
+    val seconds = millis / 1000.0
+    if (seconds < 59.95) {
+        return "${String.format(java.util.Locale.US, "%.1f", seconds)}s"
+    }
+    val totalSeconds = (millis + 500) / 1000
+    return "${totalSeconds / 60}m ${totalSeconds % 60}s"
+}
 
 /** Elapsed time of a running step, never negative — a clock that jumped backwards must not show "-3ms". */
 internal fun liveElapsedMillis(startedAtMillis: Long, nowMillis: Long): Long =

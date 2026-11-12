@@ -22,7 +22,9 @@ class StatsLabelTest {
     }
 
     @Test
-    fun `total tokens tolerate nulls`() {
+    fun `total tokens tolerate nulls, absence is null`() {
+        val absent: TokenUsage? = null
+        assertNull(absent.totalTokens())
         assertEquals(0L, TokenUsage().totalTokens())
         assertEquals(5L, TokenUsage(output = 5L).totalTokens())
     }

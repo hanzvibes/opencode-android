@@ -18,10 +18,17 @@ class ToolStepDurationTest {
     }
 
     @Test
-    fun `a second or more shows one decimal of seconds`() {
+    fun `a second or more shows one rounded decimal of seconds`() {
         assertEquals("1.0s", formatStepDuration(1000))
-        assertEquals("1.2s", formatStepDuration(1250))
-        assertEquals("59.9s", formatStepDuration(59_999))
+        assertEquals("1.3s", formatStepDuration(1250))
+        assertEquals("2.0s", formatStepDuration(1999))
+    }
+
+    @Test
+    fun `a minute or more shows minutes and seconds`() {
+        assertEquals("1m 0s", formatStepDuration(59_999))
+        assertEquals("1m 30s", formatStepDuration(90_000))
+        assertEquals("60m 0s", formatStepDuration(3_600_000))
     }
 
     @Test

@@ -81,6 +81,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.TurnActionPill
+import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.announceForAccessibility
 import dev.bidzz.opencode.ui.browser.shareText
 import kotlinx.coroutines.delay
@@ -427,7 +428,10 @@ fun MessageBubble(
                     if (isThinkingActive) {
                         val start = System.currentTimeMillis()
                         while (isActive) {
-                            val current = ((System.currentTimeMillis() - start) / 1000).toInt()
+                            // Rounded to the nearest second (66-F8), like the
+                            // recorded thinking time: truncation understated
+                            // every live timer by up to a second.
+                            val current = ((System.currentTimeMillis() - start + 500) / 1000).toInt()
                             elapsedSeconds = maxOf(1, current)
                             delay(500)
                         }
@@ -1091,16 +1095,9 @@ private fun TurnFooter(
     )
 }
 
-/** 842 → "842", 12_400 → "12.4k", 1_250_000 → "1.2M". */
-private fun formatCompactTokens(tokens: Long): String = when {
-    tokens < 1_000 -> tokens.toString()
-    tokens < 1_000_000 -> "${tokens / 1000}.${(tokens % 1000) / 100}k"
-    else -> "${tokens / 1_000_000}.${(tokens % 1_000_000) / 100_000}M"
-}
-
-/** "$0.02" — two decimals, US formatting so the "$" amount never renders with a comma decimal. */
-private fun formatTurnCost(costUsd: Double): String =
-    "$" + String.format(java.util.Locale.US, "%.2f", costUsd)
+/** "$0.02" — two decimals, US formatting so the "$" amount never renders with a comma decimal. Under a cent reads "<$0.01", never "$0.00": a sub-cent turn is cheap, not free (66-F4), matching the session list. */
+internal fun formatTurnCost(costUsd: Double): String =
+    if (costUsd < 0.01) "<$0.01" else "$" + String.format(java.util.Locale.US, "%.2f", costUsd)
 
 /**
  * Whether an assistant error bubble reports the free-tier rate limit.

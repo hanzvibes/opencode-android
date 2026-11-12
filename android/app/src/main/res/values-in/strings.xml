@@ -301,8 +301,16 @@
     <string name="stats_field_tool_failed">Panggilan tool gagal</string>
     <string name="stats_section_models">Model</string>
     <string name="stats_section_tools">Tool</string>
-    <string name="stats_model_detail">%1$d langkah · %2$d token · %3$s</string>
-    <string name="stats_tool_detail">%1$d panggilan · %2$d gagal</string>
+    <string name="stats_model_detail">%1$d langkah · %2$s · %3$s</string>
+    <string name="stats_tool_detail">%1$d panggilan · %2$d berhasil · %3$d gagal · %4$d belum selesai</string>
+    <string name="stats_range_label">Rentang</string>
+    <string name="stats_range_default">Rentang default engine</string>
+    <string name="stats_model_unknown">Model tidak diketahui</string>
+    <string name="stats_tools_more">%1$d tool lagi</string>
+    <string name="stats_field_tool_succeeded">Panggilan tool berhasil</string>
+    <string name="stats_field_tool_unfinished">Panggilan tool belum selesai</string>
+    <string name="stats_section_activity">Aktivitas</string>
+    <string name="stats_activity_steps">%1$d langkah</string>
 
     <!-- Ekspor sesi -->
     <string name="export_title">Ekspor sesi</string>
