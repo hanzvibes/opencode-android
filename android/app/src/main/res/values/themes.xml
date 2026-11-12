@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- #12: the launch window follows the light theme (Putih B) so the app
+         no longer flashes dark #08090D before the white content appears.
+         The bars are transparent — edge-to-edge is on (MainActivity) — and
+         the light-bar flags match the light background; the runtime
+         SideEffect in OpenCodeTheme re-asserts them whenever the app theme
+         changes. -->
     <style name="Theme.OpenCode" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">#08090D</item>
-        <item name="android:navigationBarColor">#08090D</item>
-        <item name="android:windowBackground">#08090D</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">#F9F9FA</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

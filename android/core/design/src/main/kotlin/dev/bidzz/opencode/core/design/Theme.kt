@@ -1,6 +1,10 @@
 package dev.bidzz.opencode.core.design
 
+import android.app.Activity
 import android.content.Context
+import android.os.Build
+import android.view.View
+import android.view.WindowInsetsController
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.tween
@@ -12,8 +16,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * Semantic colours based on the cross-platform-llm-client design system.
@@ -668,6 +674,36 @@ fun OpenCodeTheme(
     )
 
     val material = materialColorScheme(colors, darkTheme)
+
+    // #12: the system bars follow the APP theme, not the system theme — a
+    // user who forces Light in Settings must get dark status icons on the
+    // white bars even when the system is in dark mode (and vice versa).
+    // No new dependency: framework WindowInsetsController on API 30+,
+    // legacy SYSTEM_UI_FLAG_* bits on API 29, touching only the light bits
+    // so the edge-to-edge layout flags from enableEdgeToEdge() survive.
+    // A non-Activity context (e.g. a @Preview) simply skips this.
+    val context = LocalContext.current
+    SideEffect {
+        val window = (context as? Activity)?.window ?: return@SideEffect
+        val lightBars = !darkTheme
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val controller = window.insetsController ?: return@SideEffect
+            val appearance = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            controller.setSystemBarsAppearance(if (lightBars) appearance else 0, appearance)
+        } else {
+            @Suppress("DEPRECATION")
+            val flags = window.decorView.systemUiVisibility
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = if (lightBars) {
+                flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+                    View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            } else {
+                flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv() and
+                    View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+            }
+        }
+    }
 
     CompositionLocalProvider(
         LocalColors provides colors,
