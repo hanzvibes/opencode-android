@@ -20,7 +20,7 @@ import org.junit.Test
 class SessionDeleteFailureTest {
 
     private fun row(id: String, title: String = "Sesi", pinned: Boolean = false) =
-        SessionRow(id = id, title = title, directory = "/tmp", age = null, isPinned = pinned)
+        SessionRow(id = id, title = title, directory = "/tmp", age = null, cost = null, isPinned = pinned)
 
     private fun failure() = ApiResult.Failure(code = 500, message = "engine error")
 
