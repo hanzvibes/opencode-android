@@ -1,10 +1,12 @@
 package dev.bidzz.opencode.engine
 
 import java.io.File
+import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -155,10 +157,13 @@ class EngineConfigStoreJsoncTest {
         // Truncated JSON: no amount of JSONC stripping repairs an unterminated
         // object. (A lone "{,}" would be repaired by the trailing-comma strip,
         // so it is not a malformed fixture.)
+        // readRoot() throws a descriptive IOException; the ViewModel turns that
+        // into an empty list via runCatching and shows lastConfigReadProblem.
         val (store, _) = storeWith(
             "opencode.json" to """{"providers": {"probe": {"name": "Probe", "settings": {"baseURL": "https://x"""",
         )
-        assertEquals(emptyList<EngineConfigStore.CustomProvider>(), store.customProviders())
+        val thrown = assertThrows(IOException::class.java) { store.customProviders() }
+        assertTrue(thrown.message?.contains("opencode.json") == true)
         val problem = store.lastConfigReadProblem
         assertNotNull(problem)
         assertEquals("opencode.json", problem?.fileName)
