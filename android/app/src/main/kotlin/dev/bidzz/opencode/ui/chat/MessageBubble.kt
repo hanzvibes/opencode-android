@@ -321,10 +321,19 @@ fun MessageBubble(
                 // the integration agent wires their callbacks — the pills
                 // call back out, they do not implement editing or re-running.
                 if (markdown.isNotBlank()) {
+                    // Right-aligned under the bubble: the scrollable Row
+                    // used to size to its content and sit at the START of
+                    // the column, so on a wide tablet "20:28 ✓✓ Copy Edit
+                    // Resend" floated at the left edge, detached from the
+                    // right-aligned bubble. fillMaxWidth + End arrangement
+                    // pins the group flush with the bubble's right edge
+                    // when it fits; when it overflows, the scroll-to-end
+                    // effect above still shows the Resend pill first.
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.sm, Alignment.End),
                         modifier = Modifier
+                            .fillMaxWidth()
                             .padding(top = spacing.xs)
                             .horizontalScroll(userPillScrollState),
                     ) {
@@ -590,7 +599,10 @@ fun MessageBubble(
                 // #6c: Copy/Reply appear as soon as the turn has prose to
                 // copy — not only when it ends. A turn that is all tools so
                 // far has no prose, so the pills stay hidden until the first
-                // text part lands.
+                // text part lands. Share sits in this row now, not below
+                // the footer: as a standalone pill it wrapped onto its own
+                // line with a gap (screenshot: Copy/Reply on one row,
+                // Share alone on the next).
                 if (allProse.isNotBlank()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -610,6 +622,11 @@ fun MessageBubble(
                                 onQuote("> $snippet")
                             },
                         )
+                        TurnActionPill(
+                            label = stringResource(R.string.message_share),
+                            glyph = Glyph.Share,
+                            onClick = { shareText(context, allProse) },
+                        )
                     }
                 }
 
@@ -628,13 +645,6 @@ fun MessageBubble(
                         turnDurationMs = turnDurationMs,
                         stopReason = stopReason,
                         modifier = Modifier.padding(top = spacing.xs),
-                    )
-                }
-                if (allProse.isNotBlank()) {
-                    TurnActionPill(
-                        label = stringResource(R.string.message_share),
-                        glyph = Glyph.Share,
-                        onClick = { shareText(context, allProse) },
                     )
                 }
             }
