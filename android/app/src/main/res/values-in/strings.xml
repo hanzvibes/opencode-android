@@ -792,6 +792,7 @@
     <string name="composer_take_photo">Ambil foto</string>
     <string name="photo_saved">Foto disimpan ke %1$s</string>
     <string name="photo_failed">Foto gagal disimpan</string>
+    <string name="photo_saved_to_gallery">Foto tersimpan di galeri — app sempat restart sebelum sempat dilampirkan. Lampirkan lagi dari galeri.</string>
     <string name="widget_open">Buka</string>
     <string name="widget_open_session_hint">Ketuk Buka untuk melanjutkan sesi</string>
     <string name="widget_no_session">Belum ada sesi</string>

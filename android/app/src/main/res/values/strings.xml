@@ -788,6 +788,7 @@
     <string name="composer_take_photo">Take photo</string>
     <string name="photo_saved">Photo saved to %1$s</string>
     <string name="photo_failed">Couldn\'t save photo</string>
+    <string name="photo_saved_to_gallery">Photo is in the gallery — the app restarted before it could be attached. Attach it again from the gallery.</string>
     <string name="widget_open">Open</string>
     <string name="widget_open_session_hint">Tap Open to continue the session</string>
     <string name="widget_no_session">No recent session</string>

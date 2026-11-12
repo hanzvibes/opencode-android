@@ -30,6 +30,7 @@ import dev.bidzz.opencode.ui.ACTION_OPEN_SESSION
 import dev.bidzz.opencode.ui.EXTRA_OPENCODE_ACTION
 import dev.bidzz.opencode.ui.EXTRA_SESSION_ID
 import dev.bidzz.opencode.ui.OpenCodeApp
+import dev.bidzz.opencode.ui.chat.PendingPhotoStore
 import dev.bidzz.opencode.ui.security.AppLockPrefs
 import dev.bidzz.opencode.ui.security.LockScreen
 import kotlinx.coroutines.Dispatchers
@@ -118,19 +119,35 @@ class MainActivity : FragmentActivity() {
         }
 
     /**
+     * Whether the system save picker is currently open. A second Save
+     * while one is open must not launch a second picker on top of it:
+     * the results would arrive out of order and the first callback
+     * would take the wrong request. The queued requests open one by
+     * one, each after the previous picker returns (05-F2).
+     */
+    private var codeSavePickerOpen = false
+
+    /**
      * System save picker for a code block (SAF `CreateDocument`).
      *
      * Same reason as [pickSafFile] for living here. The pending request —
      * filename plus the code verbatim — is taken here, so a cancelled pick
      * writes nothing and a pick that arrives with no request is ignored.
      * The write runs on IO; the result is a snackbar, using the same
-     * `code_saved` string the file viewer already uses.
+     * `code_saved` string the file viewer already uses. After the picker
+     * returns, the next queued request (if any) opens its picker.
      */
     private val saveCodeDocument =
         registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-            val pending = (application as OpenCodeApplication).takePendingCodeSave()
-                ?: return@registerForActivityResult
-            if (uri == null) return@registerForActivityResult
+            codeSavePickerOpen = false
+            val app = application as OpenCodeApplication
+            val pending = app.takePendingCodeSave()
+                ?: run { app.emitCodeSaveRequestIfPending(); return@registerForActivityResult }
+            if (uri == null) {
+                app.emitCodeSaveRequestIfPending()
+                return@registerForActivityResult
+            }
+            app.emitCodeSaveRequestIfPending()
             lifecycleScope.launch(Dispatchers.IO) {
                 val saved = runCatching {
                     contentResolver.openOutputStream(uri)?.use { it.write(pending.text.toByteArray()) } != null
@@ -139,11 +156,11 @@ class MainActivity : FragmentActivity() {
                     // A failed save offers one retry: re-open the picker
                     // with the same filename and text, so the user can
                     // pick a different location instead of losing the code.
-                    (application as OpenCodeApplication).showSnackbar(
+                    app.showSnackbar(
                         getString(if (saved) R.string.code_saved else R.string.code_save_failed),
                         actionLabel = if (saved) null else getString(R.string.chat_retry),
                         onAction = if (saved) null else {
-                            { (application as OpenCodeApplication).requestCodeSave(pending.filename, pending.text) }
+                            { app.requestCodeSave(pending.filename, pending.text) }
                         },
                     )
                 }
@@ -155,19 +172,52 @@ class MainActivity : FragmentActivity() {
      * through MediaStore, so no CAMERA permission and no FileProvider
      * are needed — the camera app owns the capture. The URI is handed
      * to the application; the chat screen copies it into the workspace.
+     *
+     * The pending URI is persisted ([PendingPhotoStore]) as well as held
+     * in this field (15-F6): a rotation or process death while the
+     * camera is open used to lose it, so the callback came back with
+     * success and nowhere to deliver the photo. It is restored in
+     * [onCreate], before the result can arrive.
      */
+    private val pendingPhotoStore by lazy { PendingPhotoStore(this) }
     private var pendingPhotoUri: Uri? = null
+
+    /** Whether the system camera is currently open (see [launchCamera]). */
+    private var cameraOpen = false
 
     private val takePhoto =
         registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+            cameraOpen = false
             val uri = pendingPhotoUri
             pendingPhotoUri = null
-            if (success && uri != null) {
-                (application as OpenCodeApplication).deliverCameraPhoto(uri)
+            pendingPhotoStore.clear()
+            when {
+                success && uri != null -> {
+                    (application as OpenCodeApplication).deliverCameraPhoto(uri)
+                }
+                success -> {
+                    // The camera wrote the photo to the gallery, but the
+                    // pending URI is gone (15-F6): say so, instead of
+                    // silence — the user can attach it again from the
+                    // gallery, and the photo itself is not lost.
+                    (application as OpenCodeApplication).showSnackbar(
+                        getString(R.string.photo_saved_to_gallery),
+                    )
+                }
+                uri != null -> {
+                    // Cancelled or failed: the MediaStore row the camera
+                    // never wrote to must not linger in the gallery as
+                    // an empty entry (73-F6).
+                    runCatching { contentResolver.delete(uri, null, null) }
+                }
             }
         }
 
     private fun launchCamera() {
+        // A second tap while the camera is already open would create a
+        // second MediaStore row and overwrite the pending URI, orphaning
+        // the first row (same single-slot root as 05-F2).
+        if (cameraOpen) return
         val name = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, name)
@@ -177,13 +227,29 @@ class MainActivity : FragmentActivity() {
         val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
             ?: return
         pendingPhotoUri = uri
+        pendingPhotoStore.put(uri)
+        cameraOpen = true
         runCatching { takePhoto.launch(uri) }
-            .onFailure { Log.w("MainActivity", "Camera launch failed", it) }
+            .onFailure {
+                // The camera never opened: the row just created would sit
+                // in the gallery empty (73-F6), and the pending URI would
+                // point at it forever.
+                cameraOpen = false
+                pendingPhotoUri = null
+                pendingPhotoStore.clear()
+                runCatching { contentResolver.delete(uri, null, null) }
+                Log.w("MainActivity", "Camera launch failed", it)
+            }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // A photo the camera was writing when the process died or the
+        // screen rotated (15-F6): the TakePicture result is re-delivered
+        // to this recreated activity, and the callback reads this field.
+        pendingPhotoUri = pendingPhotoStore.get()
 
         requestNotificationPermission()
         (application as OpenCodeApplication).startEngine()
@@ -303,10 +369,17 @@ class MainActivity : FragmentActivity() {
             app.codeSaveRequest.collect {
                 // Peek, do not take: the result callback takes the request
                 // when the picker returns, so a cancelled pick loses
-                // nothing and a second tap replaces the pending one.
+                // nothing. Queued requests open one at a time — launching
+                // while one is open would deliver the results out of
+                // order (05-F2).
+                if (codeSavePickerOpen) return@collect
                 val pending = app.peekPendingCodeSave() ?: return@collect
+                codeSavePickerOpen = true
                 runCatching { saveCodeDocument.launch(pending.filename) }
-                    .onFailure { Log.w("MainActivity", "Code save picker launch failed", it) }
+                    .onFailure {
+                        codeSavePickerOpen = false
+                        Log.w("MainActivity", "Code save picker launch failed", it)
+                    }
             }
         }
         lifecycleScope.launch {
