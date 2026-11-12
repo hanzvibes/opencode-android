@@ -71,6 +71,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.PrimaryButton
+import dev.bidzz.opencode.ui.SelectorChip
 import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.diff.DiffHunk
 import dev.bidzz.opencode.ui.diff.DiffLine
@@ -385,27 +386,11 @@ fun ToolTrace(
             ) {
                 ToolFilter.entries.forEach { option ->
                     val selected = option == filter
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(radius.full))
-                            .background(if (selected) colors.accentFill else colors.fill)
-                            .border(
-                                0.5.dp,
-                                if (selected) colors.accentFill else colors.hairline,
-                                RoundedCornerShape(radius.full),
-                            )
-                            .clickable(role = Role.Button) { filter = option }
-                            .padding(horizontal = spacing.sm, vertical = 4.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(option.labelRes),
-                            style = OpenCodeTypography.caption.copy(
-                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            ),
-                            color = if (selected) colors.onAccent else colors.onSurfaceMuted,
-                        )
-                    }
+                    SelectorChip(
+                        label = stringResource(option.labelRes),
+                        selected = selected,
+                        onClick = { filter = option },
+                    )
                 }
             }
         }

@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.clickable
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +25,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.ProjectInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.AppRadioButton
 import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
@@ -176,14 +175,10 @@ private fun ProjectRow(
             .padding(horizontal = spacing.md, vertical = spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(
+        AppRadioButton(
             selected = selected,
             onClick = null,
             enabled = !isCurrent,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = colors.accent,
-                unselectedColor = colors.onSurfaceMuted,
-            ),
         )
         Column(
             modifier = Modifier.padding(start = spacing.md),

@@ -61,7 +61,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -91,7 +90,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -136,6 +134,9 @@ import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
 import dev.bidzz.opencode.ui.IconAction
+import dev.bidzz.opencode.ui.NoticeKind
+import dev.bidzz.opencode.ui.NoticeRow
+import dev.bidzz.opencode.ui.SearchField
 import dev.bidzz.opencode.ui.files.FileRow
 import dev.bidzz.opencode.ui.files.rankQuickOpen
 import dev.bidzz.opencode.ui.PersistentSidebarWidth
@@ -966,17 +967,19 @@ fun ChatScreen(
                             )
                         }
                         if (hasError) {
-                            PinnedErrorBanner(
+                            NoticeRow(
                                 message = state.failure?.message()
                                     ?: stringResource(state.failureKey!!),
+                                kind = NoticeKind.Error,
                                 // Typed retry (Phase 2, finding 18): Retry is
                                 // only offered when the view model classified
                                 // the failure as retryable. Auth routes out to
                                 // the engine restart (re-auth); the rest go
                                 // through the single onRetry callback.
-                                canRetry = state.retryKind != RetryKind.NONE,
-                                onRetry = {
-                                    if (state.retryKind == RetryKind.REAUTH) onReauth() else onRetryError()
+                                onRetry = if (state.retryKind != RetryKind.NONE) {
+                                    { if (state.retryKind == RetryKind.REAUTH) onReauth() else onRetryError() }
+                                } else {
+                                    null
                                 },
                                 onDismiss = onDismissError,
                                 modifier = Modifier.padding(
@@ -1964,101 +1967,6 @@ private fun AttachNoticeRow(
 }
 
 /**
- * Pinned error banner (audit 18): sits above the transcript, outside the
- * LazyColumn, so it stays visible while scrolled up. One callback only —
- * the typed retry decision lives in the view model ([RetryKind]): the
- * banner never invents retry behaviour for non-retryable errors, and
- * Retry is only offered when the kind is not NONE.
- */
-@Composable
-private fun PinnedErrorBanner(
-    message: String,
-    canRetry: Boolean,
-    onRetry: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val dims = OpenCodeTheme.tokens.dimensions
-    val retryLabel = stringResource(R.string.chat_retry)
-    val closeDescription = stringResource(R.string.chat_status_dialog_close)
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(radius.md))
-            .background(colors.danger.copy(alpha = 0.12f))
-            .border(0.5.dp, colors.danger.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
-            .padding(start = spacing.md, top = spacing.xs, bottom = spacing.xs, end = spacing.xxs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlyphIcon(
-            glyph = Glyph.Warning,
-            tint = colors.danger,
-            size = 16.dp,
-        )
-        Text(
-            text = message,
-            style = OpenCodeTypography.bodySmall,
-            color = colors.onSurface,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = spacing.sm),
-        )
-        if (canRetry) {
-            Box(
-                modifier = Modifier
-                    .defaultMinSize(minHeight = dims.minTouchTarget)
-                    .clip(RoundedCornerShape(radius.full))
-                    .background(colors.accentFill)
-                    .semantics {
-                        role = SemanticsRole.Button
-                        contentDescription = retryLabel
-                    }
-                    .clickable(role = SemanticsRole.Button, onClick = onRetry)
-                    .padding(horizontal = spacing.md),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                ) {
-                    GlyphIcon(
-                        glyph = Glyph.Refresh,
-                        tint = colors.onAccent,
-                        size = 16.dp,
-                    )
-                    Text(
-                        text = retryLabel,
-                        style = OpenCodeTypography.label,
-                        color = colors.onAccent,
-                    )
-                }
-            }
-            Spacer(Modifier.width(spacing.xs))
-        }
-        // Dismiss: a full 48dp hit area around the 12dp cross.
-        Box(
-            modifier = Modifier
-                .size(dims.minTouchTarget)
-                .clip(CircleShape)
-                .clickable(role = SemanticsRole.Button, onClick = onDismiss)
-                .semantics { contentDescription = closeDescription },
-            contentAlignment = Alignment.Center,
-        ) {
-            GlyphIcon(
-                glyph = Glyph.Close,
-                tint = colors.onSurfaceMuted,
-                size = 12.dp,
-            )
-        }
-    }
-}
-
-/**
  * Reconnecting indicator (audit 18): the existing [ChatUiState.connecting]
  * flag, rendered as a slim pinned row under the header while the engine
  * session is being (re)created. No new ViewModel state.
@@ -2963,9 +2871,10 @@ private fun ChatDrawerContent(
         // Session search: same pattern as the sessions list screen —
         // matches titles and, when supplied, transcript previews, model
         // names and outcomes (see filterSessionRows).
-        SidebarSearchField(
+        SearchField(
             query = sidebarQuery,
             onQueryChange = onSidebarQueryChange,
+            placeholder = stringResource(R.string.history_search_hint),
         )
 
         Spacer(Modifier.height(spacing.xs))
@@ -3363,68 +3272,6 @@ private fun CollapsedSidebarRail(
                 tint = colors.onSurfaceMuted,
                 size = 16.dp,
             )
-        }
-    }
-}
-
-/** Session search field, same pattern as the sessions list screen. */
-@Composable
-private fun SidebarSearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.sm)
-            .clip(RoundedCornerShape(radius.md))
-            .background(colors.surface)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
-            .padding(horizontal = spacing.md, vertical = spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-    ) {
-        GlyphIcon(
-            glyph = Glyph.Search,
-            tint = colors.onSurfaceMuted,
-            size = 16.dp,
-        )
-        Box(modifier = Modifier.weight(1f)) {
-            if (query.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.history_search_hint),
-                    style = OpenCodeTypography.body,
-                    color = colors.onSurfaceFaint,
-                )
-            }
-            BasicTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
-                cursorBrush = SolidColor(colors.accent),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        if (query.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(radius.sm))
-                    .clickable(role = SemanticsRole.Button) { onQueryChange("") },
-                contentAlignment = Alignment.Center,
-            ) {
-                GlyphIcon(
-                    glyph = Glyph.Close,
-                    tint = colors.onSurfaceMuted,
-                    size = 16.dp,
-                )
-            }
         }
     }
 }

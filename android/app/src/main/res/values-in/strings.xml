@@ -59,7 +59,7 @@
     <string name="settings_saved_permissions_revoke">Cabut</string>
     <string name="settings_search_hint">Cari pengaturan</string>
     <string name="settings_search_no_results">Tidak ada pengaturan yang cocok dengan pencarian</string>
-    <string name="settings_search_clear">Hapus pencarian</string>
+    <string name="search_clear">Hapus pencarian</string>
     <string name="mcp_title">Server MCP</string>
     <string name="mcp_body">Server yang dikonfigurasi di engine, beserta status koneksinya. Menyambung, memutuskan, menambah, dan menghapus belum tersedia.</string>
     <string name="mcp_empty">Belum ada server MCP yang dikonfigurasi di engine.</string>

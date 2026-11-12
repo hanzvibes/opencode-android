@@ -16,12 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -55,12 +50,14 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.engine.EngineState
+import dev.bidzz.opencode.ui.AppRadioButton
 import dev.bidzz.opencode.ui.AppTag
 import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconBadge
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
+import dev.bidzz.opencode.ui.SearchField
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SheetStop
@@ -273,9 +270,11 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = spacing.lg, vertical = spacing.sm),
         ) {
-            SettingsSearchBar(
+            SearchField(
                 query = searchQuery,
                 onQueryChange = { searchQuery = it },
+                placeholder = stringResource(R.string.settings_search_hint),
+                imeAction = ImeAction.Search,
             )
             Spacer(Modifier.height(spacing.sm))
 
@@ -560,64 +559,6 @@ fun SettingsScreen(
 }
 
 /**
- * Search field above the settings list, same pill treatment as the file
- * explorer search: neutral fill, hairline edge, accent cursor.
- * 48dp minimum height so it stays a full touch target.
- */
-@Composable
-private fun SettingsSearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val clearLabel = stringResource(R.string.settings_search_clear)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(radius.full))
-            .background(colors.fill)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
-            .padding(horizontal = spacing.md, vertical = spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 15.dp)
-        BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            textStyle = OpenCodeTypography.bodySmall.copy(color = colors.onSurface),
-            cursorBrush = SolidColor(colors.accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            singleLine = true,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = spacing.sm),
-            decorationBox = { inner ->
-                if (query.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.settings_search_hint),
-                        style = OpenCodeTypography.bodySmall,
-                        color = colors.onSurfaceFaint,
-                    )
-                }
-                inner()
-            },
-        )
-        if (query.isNotEmpty()) {
-            IconButton(
-                onClick = { onQueryChange("") },
-                modifier = Modifier.semantics { contentDescription = clearLabel },
-            ) {
-                GlyphIcon(Glyph.Close, tint = colors.onSurfaceMuted, size = 14.dp)
-            }
-        }
-    }
-}
-
-/**
  * Engine status at a glance: state + port, server URL, workspace path and
  * all-files access. Tap opens Diagnostics, the same destination as the
  * Engine Port and Diagnostics rows below.
@@ -880,13 +821,9 @@ private fun ThemeModeRow(
             .padding(horizontal = spacing.md, vertical = spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(
+        AppRadioButton(
             selected = selected,
             onClick = null,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = colors.accent,
-                unselectedColor = colors.onSurfaceMuted,
-            ),
         )
         Column(
             modifier = Modifier.padding(start = spacing.md),
@@ -986,13 +923,9 @@ private fun LanguageDialog(
                             .clickable(role = Role.RadioButton) { onSelect(option) },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        RadioButton(
+                        AppRadioButton(
                             selected = option == selected,
                             onClick = null,
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = colors.accent,
-                                unselectedColor = colors.onSurfaceMuted,
-                            ),
                         )
                         Text(
                             text = languageLabel(option),

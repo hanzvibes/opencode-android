@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -51,6 +49,8 @@ import dev.bidzz.opencode.ui.sessionTitleSharedKey
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.RowDivider
+import dev.bidzz.opencode.ui.SearchField
+import dev.bidzz.opencode.ui.groupedCardShape
 import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
@@ -191,57 +191,15 @@ fun SessionListPane(
         modifier = modifier.fillMaxSize(),
     ) {
         // Search field
-        Row(
+        SearchField(
+            query = query,
+            onQueryChange = { query = it },
+            placeholder = stringResource(R.string.history_search_hint),
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 720.dp)
                 .align(Alignment.CenterHorizontally)
-                .padding(horizontal = spacing.lg, vertical = spacing.sm)
-                .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
-                .background(colors.surface)
-                .border(0.5.dp, colors.hairline, RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
-                .padding(horizontal = spacing.md, vertical = spacing.sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-        ) {
-            GlyphIcon(
-                glyph = Glyph.Search,
-                tint = colors.onSurfaceMuted,
-                size = 16.dp,
-            )
-            Box(modifier = Modifier.weight(1f)) {
-                if (query.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.history_search_hint),
-                        style = OpenCodeTypography.body,
-                        color = colors.onSurfaceFaint,
-                    )
-                }
-                BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
-                    cursorBrush = SolidColor(colors.accent),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            if (query.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.sm))
-                        .clickable(role = Role.Button) { query = "" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    GlyphIcon(
-                        glyph = Glyph.Close,
-                        tint = colors.onSurfaceMuted,
-                        size = 14.dp,
-                    )
-                }
-            }
-        }
+                .padding(horizontal = spacing.lg, vertical = spacing.sm),
+        )
 
         // Scope toggle: "this project" and "everything".
         Row(
@@ -400,13 +358,7 @@ private fun SessionRowItem(
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
-    val r = OpenCodeTheme.tokens.radius.lg
-    val shape = RoundedCornerShape(
-        topStart = if (isFirst) r else 0.dp,
-        topEnd = if (isFirst) r else 0.dp,
-        bottomStart = if (isLast) r else 0.dp,
-        bottomEnd = if (isLast) r else 0.dp,
-    )
+    val shape = groupedCardShape(isFirst, isLast, OpenCodeTheme.tokens.radius.lg)
 
     var menuExpanded by remember { mutableStateOf(false) }
 

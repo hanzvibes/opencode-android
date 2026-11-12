@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -38,7 +37,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -82,6 +80,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.TurnActionPill
 import dev.bidzz.opencode.ui.announceForAccessibility
 import dev.bidzz.opencode.ui.browser.shareText
 import kotlinx.coroutines.delay
@@ -221,6 +220,7 @@ fun MessageBubble(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
+    val context = LocalContext.current
 
     when (role) {
         Role.USER -> BoxWithConstraints(
@@ -344,16 +344,16 @@ fun MessageBubble(
                         DeliveryCheckmark(delivered = delivered)
                         CopyButton(text = markdown)
                         if (onEdit != null) {
-                            UserActionPill(
+                            TurnActionPill(
+                                label = stringResource(R.string.message_edit),
                                 glyph = Glyph.Pencil,
-                                labelRes = R.string.message_edit,
                                 onClick = onEdit,
                             )
                         }
                         if (onResend != null) {
-                            UserActionPill(
+                            TurnActionPill(
+                                label = stringResource(R.string.message_resend),
                                 glyph = Glyph.Refresh,
-                                labelRes = R.string.message_resend,
                                 onClick = onResend,
                             )
                         }
@@ -596,7 +596,9 @@ fun MessageBubble(
                             .horizontalScroll(assistantPillScrollState),
                     ) {
                         CopyButton(text = allProse)
-                        ReplyButton(
+                        TurnActionPill(
+                            label = stringResource(R.string.message_reply),
+                            glyph = Glyph.ArrowLeft,
                             onClick = {
                                 val flat = allProse.replace("\n", " ").trim()
                                 val snippet = flat.take(120)
@@ -620,7 +622,11 @@ fun MessageBubble(
                         stopReason = stopReason,
                         modifier = Modifier.padding(top = spacing.xs),
                     )
-                    ShareButton(text = allProse)
+                    TurnActionPill(
+                        label = stringResource(R.string.message_share),
+                        glyph = Glyph.Share,
+                        onClick = { shareText(context, allProse) },
+                    )
                 }
             }
         }
@@ -961,111 +967,10 @@ private fun DeliveryCheckmark(
 }
 
 /**
- * Reply pill next to Copy on a finished assistant turn (C-E): quotes the
- * first 120 characters of the turn into the composer as "> …".
- */
-@Composable
-private fun ReplyButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val pillShape = RoundedCornerShape(radius.full)
-    // 48dp minimum hit area (Phase 2, finding 14): the pill keeps its
-    // visual size, centred in a touch target that is at least 48dp tall
-    // and grows to fit its label — a fixed 48dp box squeezed the label
-    // and wrapped it ("Co py", "Re ply") on tablet.
-    Box(
-        modifier = modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(pillShape)
-                .background(colors.surfaceVariant)
-                .border(0.5.dp, colors.hairline, pillShape)
-                .padding(horizontal = spacing.sm, vertical = spacing.xs),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-            ) {
-                GlyphIcon(
-                    glyph = Glyph.ArrowLeft,
-                    tint = colors.onSurfaceMuted,
-                    size = 12.dp,
-                )
-                Text(
-                    text = stringResource(R.string.message_reply),
-                    style = OpenCodeTypography.labelSmall,
-                    color = colors.onSurfaceMuted,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-/**
- * Shares the turn's prose through the system chooser (Native C). Same
- * pill shape as Reply, same 48dp hit area; no feedback state — the
- * chooser itself is the confirmation.
- */
-@Composable
-private fun ShareButton(
-    text: String,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val pillShape = RoundedCornerShape(radius.full)
-    Box(
-        modifier = modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable { shareText(context, text) },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(pillShape)
-                .background(colors.surfaceVariant)
-                .border(0.5.dp, colors.hairline, pillShape)
-                .padding(horizontal = spacing.sm, vertical = spacing.xs),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-            ) {
-                GlyphIcon(
-                    glyph = Glyph.Share,
-                    tint = colors.onSurfaceMuted,
-                    size = 12.dp,
-                )
-                Text(
-                    text = stringResource(R.string.message_share),
-                    style = OpenCodeTypography.label.copy(fontSize = 11.sp),
-                    color = colors.onSurfaceMuted,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-/**
  * Subtle tonal pill with tap ripple, icon, and ephemeral "Copied" feedback.
+ * The shell is the shared [TurnActionPill] (animated pill colours passed
+ * in); the label crossfade is gone — the label swaps instantly — the
+ * animated colours and the TalkBack announcement survive.
  */
 @Composable
 private fun CopyButton(
@@ -1075,8 +980,6 @@ private fun CopyButton(
     val context = LocalContext.current
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
     var copied by remember { mutableStateOf(false) }
 
     LaunchedEffect(copied) {
@@ -1086,7 +989,6 @@ private fun CopyButton(
         }
     }
 
-    val pillShape = RoundedCornerShape(radius.full)
     val pillBg by animateColorAsState(
         targetValue = if (copied) colors.success.copy(alpha = 0.12f) else colors.surfaceVariant,
         animationSpec = motion.tweenQuick(),
@@ -1104,119 +1006,24 @@ private fun CopyButton(
     )
     val copiedLabel = stringResource(R.string.code_copied)
 
-    // 48dp minimum hit area (Phase 2, finding 14): the pill keeps its
-    // visual size, centred in a touch target that is at least 48dp tall
-    // and grows to fit its label — a fixed 48dp box squeezed the label
-    // and wrapped it ("Co py") on tablet. Copying announces "Copied"
-    // once, on the tap — never on recomposition.
-    Box(
-        modifier = modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable {
-                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                cm?.setPrimaryClip(ClipData.newPlainText("OpenCode", text))
-                copied = true
-                announceForAccessibility(context, copiedLabel)
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(pillShape)
-                .background(pillBg)
-                .border(
-                    0.5.dp,
-                    pillBorder,
-                    pillShape,
-                )
-                .padding(horizontal = spacing.sm, vertical = spacing.xs),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-            ) {
-                GlyphIcon(
-                    glyph = Glyph.Copy,
-                    tint = contentColor,
-                    size = 12.dp,
-                )
-                Crossfade(
-                    targetState = copied,
-                    animationSpec = motion.tweenQuick(),
-                    label = "copy_label",
-                ) { isCopied ->
-                    Text(
-                        text = stringResource(if (isCopied) R.string.code_copied else R.string.code_copy),
-                        style = OpenCodeTypography.labelSmall,
-                        color = contentColor,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
-    }
+    // Copying announces "Copied" once, on the tap — never on recomposition.
+    TurnActionPill(
+        label = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
+        glyph = Glyph.Copy,
+        onClick = {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            cm?.setPrimaryClip(ClipData.newPlainText("OpenCode", text))
+            copied = true
+            announceForAccessibility(context, copiedLabel)
+        },
+        modifier = modifier,
+        background = pillBg,
+        border = pillBorder,
+        contentColor = contentColor,
+    )
 }
 
 enum class Role { USER, ASSISTANT, ERROR }
-
-/**
- * Quiet pill under a user bubble for Edit / Resend (Phase 2, finding 3, UI
- * half): the same surfaceVariant + hairline + 11sp pill as Copy/Reply, so
- * the affordance reads as part of the row rather than a new control. It
- * only calls [onClick] — editing and re-running live in the ViewModel.
- */
-@Composable
-private fun UserActionPill(
-    glyph: Glyph,
-    labelRes: Int,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val pillShape = RoundedCornerShape(radius.full)
-    // 48dp minimum hit area (Phase 2, finding 14), same pattern as
-    // Copy/Reply: at least 48dp tall, growing to fit the label — a fixed
-    // 48dp box squeezed it and wrapped it ("Edi t", "Re se nd") on tablet.
-    Box(
-        modifier = modifier
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(pillShape)
-                .background(colors.surfaceVariant)
-                .border(0.5.dp, colors.hairline, pillShape)
-                .padding(horizontal = spacing.sm, vertical = spacing.xs),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-            ) {
-                GlyphIcon(
-                    glyph = glyph,
-                    tint = colors.onSurfaceMuted,
-                    size = 12.dp,
-                )
-                Text(
-                    text = stringResource(labelRes),
-                    style = OpenCodeTypography.labelSmall,
-                    color = colors.onSurfaceMuted,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
 
 /**
  * Mono usage footer under a finished assistant turn (Phase 2, finding 6):
