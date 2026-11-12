@@ -104,6 +104,22 @@ object Markdown {
     }
 
     /**
+     * True when [line] closes a fenced code block opened with [marker]
+     * (04-F3). CommonMark: the closing fence is a run of the same fence
+     * character, at least as long as the opening fence, with no info
+     * string — so a ``` line must NOT close a ```` block, and a
+     * ```kotlin line must not close anything. The old check,
+     * `startsWith(marker.take(3))`, closed on both: a nested example
+     * (````markdown containing ```kotlin … ```) was cut off mid-block,
+     * and Copy/Save only copied the truncated part.
+     */
+    internal fun isClosingFence(line: String, marker: String): Boolean {
+        val trimmed = line.trim()
+        val fenceChar = marker.first()
+        return trimmed.length >= marker.length && trimmed.all { it == fenceChar }
+    }
+
+    /**
      * Parses [text] into blocks.
      *
      * Never throws: malformed markup degrades to literal text, because a chat
@@ -144,7 +160,7 @@ object Markdown {
                 val lang = fenceMatch.groupValues[2].trim().ifEmpty { null }
                 val body = StringBuilder()
                 i++
-                while (i < lines.size && !lines[i].trimStart().startsWith(marker.take(3))) {
+                while (i < lines.size && !isClosingFence(lines[i], marker)) {
                     if (body.isNotEmpty()) body.append('\n')
                     body.append(lines[i])
                     i++
