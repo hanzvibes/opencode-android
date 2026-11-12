@@ -523,7 +523,7 @@ fun ProvidersScreen(
                             Text(
                                 text = "Antigravity OAuth: Connected",
                                 style = OpenCodeTypography.bodyStrong,
-                                color = colors.accent,
+                                color = colors.accentText,
                             )
                         }
                         state.activeAntigravityEmail?.let { email ->
@@ -572,7 +572,7 @@ fun ProvidersScreen(
                 ) {
                     Text(
                         text = if (storedKeys.isNotEmpty()) "Manage API Keys" else "Add API Key",
-                        color = colors.accent,
+                        color = colors.accentText,
                     )
                 }
             },
@@ -843,7 +843,7 @@ fun ProviderStatusBadge(
         ProviderStatus.FREE_TIER -> Quadruple(
             colors.accent.copy(alpha = 0.12f),
             colors.accent.copy(alpha = 0.28f),
-            colors.accent,
+            colors.accentText,
             R.string.providers_status_free_tier,
         )
         ProviderStatus.MISSING_KEY -> Quadruple(
@@ -1113,7 +1113,7 @@ private fun KeyPrompt(
                             Text(
                                 text = stringResource(R.string.providers_paste_action),
                                 style = OpenCodeTypography.caption,
-                                color = colors.accent,
+                                color = colors.accentText,
                             )
                         }
                     }
@@ -1230,7 +1230,7 @@ private fun KeyPrompt(
                                 Text(
                                     text = stringResource(R.string.providers_testing),
                                     style = OpenCodeTypography.caption,
-                                    color = colors.accent,
+                                    color = colors.accentText,
                                 )
                             } else {
                                 GlyphIcon(Glyph.Sliders, tint = if (value.isBlank()) colors.onSurfaceFaint else colors.accent, size = 14.dp)
@@ -1363,7 +1363,7 @@ private fun ManageCredentialsDialog(
                             Text(
                                 text = stringResource(R.string.providers_replace),
                                 style = OpenCodeTypography.label,
-                                color = colors.accent,
+                                color = colors.accentText,
                                 modifier = Modifier
                                     .clickable { onReplace(row) }
                                     .padding(vertical = spacing.xxs),
@@ -1391,13 +1391,13 @@ private fun ManageCredentialsDialog(
                     Text(
                         text = stringResource(R.string.providers_add_another),
                         style = OpenCodeTypography.label,
-                        color = colors.accent,
+                        color = colors.accentText,
                     )
                 }
             }
         },
         actions = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done), color = colors.accent) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done), color = colors.accentText) }
         },
     )
 }
@@ -1474,7 +1474,7 @@ private fun CustomProviderDialog(
         actions = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted) }
             TextButton(onClick = { onSubmit(name, baseURL, apiKey, models) }, enabled = ready) {
-                Text(stringResource(R.string.providers_save_restart), color = colors.accent)
+                Text(stringResource(R.string.providers_save_restart), color = colors.accentText)
             }
         },
     )

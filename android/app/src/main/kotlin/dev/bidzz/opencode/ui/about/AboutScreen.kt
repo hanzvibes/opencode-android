@@ -114,7 +114,7 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                     Text(
                         text = stringResource(R.string.about_role),
                         style = OpenCodeTypography.label,
-                        color = colors.accent,
+                        color = colors.accentText,
                         modifier = Modifier
                             .padding(top = spacing.sm)
                             .clip(CircleShape)

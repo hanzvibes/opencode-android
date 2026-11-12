@@ -253,7 +253,7 @@ fun ToolTrace(
                     fontSize = 12.sp,
                     fontWeight = if (running.isNotEmpty()) FontWeight.SemiBold else FontWeight.Medium,
                 ),
-                color = if (running.isNotEmpty()) colors.activity else colors.onSurfaceMuted,
+                color = if (running.isNotEmpty()) colors.toolRunning else colors.onSurfaceMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -769,20 +769,20 @@ fun ToolStep(
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                 ),
-                                color = colors.accent,
+                                color = colors.accentText,
                             )
                             Text(
                                 text = firstLine,
                                 style = OpenCodeTypography.codeInline.copy(
                                     fontSize = 11.5.sp,
                                 ),
-                                color = if (active) colors.activity else colors.onSurface,
+                                color = if (active) colors.toolRunning else colors.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                             if (active) {
                                 BlinkingCursor(
-                                    color = colors.activity,
+                                    color = colors.toolRunning,
                                     modifier = Modifier.padding(start = spacing.xxs),
                                 )
                             }
@@ -798,7 +798,7 @@ fun ToolStep(
                                 Text(
                                     text = verbText,
                                     style = OpenCodeTypography.label.copy(fontSize = 11.sp),
-                                    color = if (active) colors.activity else if (isError) colors.danger else colors.onSurfaceMuted,
+                                    color = if (active) colors.toolRunning else if (isError) colors.danger else colors.onSurfaceMuted,
                                 )
                             }
                             if (label.target.isNotEmpty()) {
@@ -836,8 +836,8 @@ fun ToolStep(
                                         text = label.target,
                                         style = OpenCodeTypography.codeInline.copy(fontSize = 11.5.sp),
                                         color = if (pathCopied) colors.success
-                                        else if (openablePath != null) colors.accent
-                                        else if (active) colors.activity else colors.onSurface,
+                                        else if (openablePath != null) colors.accentText
+                                        else if (active) colors.toolRunning else colors.onSurface,
                                         textDecoration = if (openablePath != null) TextDecoration.Underline else null,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -887,7 +887,7 @@ fun ToolStep(
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Medium,
                                         ),
-                                        color = colors.activity,
+                                        color = colors.toolRunning,
                                     )
                                 }
                             }
@@ -967,7 +967,7 @@ fun ToolStep(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Normal,
                                 ),
-                                color = colors.activity,
+                                color = colors.toolRunning,
                                 maxLines = 1,
                             )
                         } else if (durationMillis != null && !active) {
@@ -1315,7 +1315,7 @@ private fun rememberSyntaxHighlightedText(
             if (promptPrefix != null) {
                 withStyle(
                     SpanStyle(
-                        color = colors.accent,
+                        color = colors.accentText,
                         fontWeight = FontWeight.Bold,
                     ),
                 ) {
@@ -1373,13 +1373,13 @@ private fun toolKindFor(name: String): ToolKind = when (name.lowercase()) {
 }
 
 private fun badgeColorForKind(kind: ToolKind, colors: OpenCodeColors): Color = when (kind) {
-    ToolKind.SHELL -> colors.accent
+    ToolKind.SHELL -> colors.accentText
     ToolKind.READ -> colors.success
     ToolKind.WRITE -> colors.warning
     ToolKind.EDIT -> colors.warning
     ToolKind.SEARCH -> colors.syntaxKeyword
     ToolKind.LIST -> colors.syntaxNumber
-    ToolKind.FETCH -> colors.accent
+    ToolKind.FETCH -> colors.accentText
     ToolKind.OTHER -> colors.onSurfaceMuted
 }
 

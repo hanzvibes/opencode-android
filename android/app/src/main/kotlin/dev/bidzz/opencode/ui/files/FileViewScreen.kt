@@ -348,7 +348,7 @@ fun FileViewScreen(
             },
             actions = {
                 TextButton(onClick = { showDiscardDialog = false }) {
-                    Text(stringResource(R.string.fileview_discard_dismiss), color = colors.accent)
+                    Text(stringResource(R.string.fileview_discard_dismiss), color = colors.accentText)
                 }
                 TextButton(
                     onClick = {
@@ -392,11 +392,11 @@ fun FileViewScreen(
                         Text(stringResource(R.string.fileview_discard_confirm), color = colors.danger)
                     }
                     TextButton(onClick = onCancelSwitch) {
-                        Text(stringResource(R.string.common_cancel), color = colors.accent)
+                        Text(stringResource(R.string.common_cancel), color = colors.accentText)
                     }
                 }
                 TextButton(onClick = onSave) {
-                    Text(stringResource(R.string.common_save), color = colors.accent)
+                    Text(stringResource(R.string.common_save), color = colors.accentText)
                 }
             },
         )
@@ -427,7 +427,7 @@ fun FileViewScreen(
                         Text(stringResource(R.string.conflict_reload), color = colors.onSurfaceMuted)
                     }
                     TextButton(onClick = onDismissConflict) {
-                        Text(stringResource(R.string.conflict_keep), color = colors.accent)
+                        Text(stringResource(R.string.conflict_keep), color = colors.accentText)
                     }
                 }
                 TextButton(onClick = onOverwrite) { Text(stringResource(R.string.conflict_overwrite), color = colors.danger) }

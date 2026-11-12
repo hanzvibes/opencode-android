@@ -678,7 +678,7 @@ private fun CommandPaletteHeader(
                         style = OpenCodeTypography.code,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = colors.accent,
+                        color = colors.accentText,
                     )
                 }
                 Text(
@@ -795,7 +795,7 @@ private fun CommandSuggestionRow(
                     text = buildHighlightedCommandName(
                         name = command.name,
                         query = query,
-                        accentColor = colors.accent,
+                        accentColor = colors.accentText,
                         onSurfaceColor = colors.onSurface,
                     ),
                     style = OpenCodeTypography.codeInline,
@@ -844,7 +844,7 @@ private fun CommandSuggestionRow(
                     text = "↵",
                     style = OpenCodeTypography.caption,
                     fontWeight = FontWeight.Bold,
-                    color = colors.accent,
+                    color = colors.accentText,
                 )
             }
         } else {

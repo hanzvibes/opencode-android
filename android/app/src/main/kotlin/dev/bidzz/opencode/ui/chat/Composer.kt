@@ -267,7 +267,7 @@ fun Composer(
                     Text(
                         text = stringResource(R.string.composer_editing),
                         style = OpenCodeTypography.label,
-                        color = colors.accent,
+                        color = colors.accentText,
                         modifier = Modifier.weight(1f),
                     )
                     Box(
@@ -821,7 +821,7 @@ private fun QuickActionChip(
 
     val contentColor = when {
         !enabled -> colors.onSurfaceFaint
-        isActive -> colors.accent
+        isActive -> colors.accentText
         else -> colors.onSurfaceMuted
     }
 

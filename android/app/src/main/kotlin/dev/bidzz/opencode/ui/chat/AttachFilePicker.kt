@@ -295,7 +295,7 @@ fun AttachFilePicker(
                         style = OpenCodeTypography.code,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = colors.accent,
+                        color = colors.accentText,
                     )
                 }
                 Text(
@@ -336,7 +336,7 @@ fun AttachFilePicker(
                 Text(
                     text = stringResource(R.string.chat_retry),
                     style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
-                    color = colors.accent,
+                    color = colors.accentText,
                     modifier = Modifier
                         .clickable(role = Role.Button, onClick = onRetry)
                         .padding(start = spacing.sm),
@@ -410,7 +410,7 @@ fun AttachFilePicker(
                             Text(
                                 text = "↵",
                                 style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.Bold),
-                                color = colors.accent,
+                                color = colors.accentText,
                             )
                         } else {
                             GlyphIcon(

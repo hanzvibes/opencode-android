@@ -323,7 +323,7 @@ fun SessionListPane(
                                 Text(
                                     text = stringResource(group.titleRes()).uppercase(),
                                     style = OpenCodeTypography.label,
-                                    color = if (group == SessionDateGroup.PINNED) colors.accent else colors.onSurfaceFaint,
+                                    color = if (group == SessionDateGroup.PINNED) colors.accentText else colors.onSurfaceFaint,
                                 )
                             }
                         }
@@ -582,7 +582,7 @@ private fun ScopeChip(label: String, selected: Boolean, onClick: () -> Unit) {
         Text(
             text = label,
             style = OpenCodeTypography.label,
-            color = if (selected) colors.accent else colors.onSurfaceMuted,
+            color = if (selected) colors.accentText else colors.onSurfaceMuted,
         )
     }
 }

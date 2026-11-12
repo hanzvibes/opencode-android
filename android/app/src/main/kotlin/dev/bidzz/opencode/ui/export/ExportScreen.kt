@@ -124,7 +124,7 @@ fun ExportScreen(
                                     if (copied) R.string.export_copied else R.string.export_copy,
                                 ),
                                 style = OpenCodeTypography.label,
-                                color = colors.accent,
+                                color = colors.accentText,
                             )
                         }
                     }

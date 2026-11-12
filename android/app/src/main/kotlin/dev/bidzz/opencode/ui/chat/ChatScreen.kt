@@ -924,7 +924,7 @@ fun ChatScreen(
                                             style = OpenCodeTypography.caption.copy(
                                                 fontWeight = FontWeight.SemiBold,
                                             ),
-                                            color = colors.accent,
+                                            color = colors.accentText,
                                             modifier = Modifier
                                                 .clickable(
                                                     role = SemanticsRole.Button,
@@ -1713,7 +1713,7 @@ private fun NewMessagesDivider(
         Text(
             text = stringResource(R.string.chat_new_messages),
             style = OpenCodeTypography.caption,
-            color = colors.accent,
+            color = colors.accentText,
             modifier = Modifier.padding(horizontal = spacing.sm),
         )
         HairlineSeparator(modifier = Modifier.weight(1f))
@@ -1760,7 +1760,7 @@ private fun DeferredPermissionRow(
         Text(
             text = stringResource(R.string.permission_deferred_action),
             style = OpenCodeTypography.label,
-            color = colors.accent,
+            color = colors.accentText,
         )
     }
 }
