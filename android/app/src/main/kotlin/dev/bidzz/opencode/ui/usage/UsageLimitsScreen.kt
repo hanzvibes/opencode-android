@@ -33,6 +33,7 @@ import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.stats.formatStatsCost
+import kotlin.math.roundToInt
 
 /**
  * Usage limits for the Console workspace the engine is signed in to.
@@ -143,7 +144,9 @@ private fun MeterRow(labelRes: Int, meter: UsageMeter) {
                 )
             }
             Text(
-                text = "${meter.percent.toInt()}%",
+                // Rounded, like the bar below it (77-F6): truncation
+                // showed a 99.9% meter as "99%".
+                text = "${meter.percent.roundToInt()}%",
                 style = OpenCodeTypography.body,
                 color = if (meter.limited) colors.danger else colors.onSurfaceMuted,
             )
@@ -196,6 +199,22 @@ private fun BudgetRow(budget: UsageBudget) {
             danger = budget.spent >= budget.limit && budget.limit > 0,
             modifier = Modifier.padding(top = spacing.xs),
         )
+        // Per-model spend inside one budget (77-F6): the engine sends it
+        // (`budget.models`) and the screen never rendered it, so a combined
+        // budget never said which model ate it.
+        budget.models.forEach { model ->
+            val label = model.name.takeIf { it.isNotBlank() } ?: model.modelID
+            if (label.isBlank()) return@forEach
+            val amount = model.spent?.let { formatStatsCost(it) }
+            Text(
+                text = if (amount != null) "$label · $amount" else label,
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = spacing.xxs),
+            )
+        }
         val words = buildList {
             add(usageScopeWord(budget.scope))
             add(usagePerWord(budget.per))

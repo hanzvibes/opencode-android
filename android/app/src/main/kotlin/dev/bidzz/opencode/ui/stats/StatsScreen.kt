@@ -27,15 +27,19 @@ import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.message
+import dev.bidzz.opencode.ui.usage.formatResetDate
 
 /**
- * Aggregate session statistics, for the engine's default range.
+ * Aggregate session statistics, for the range the engine reports.
  *
  * Read-only: the totals come from `GET /api/experimental/session/stats`.
  * The endpoint is experimental, so a failure shows the empty state
  * instead of an error — the shape may change without notice, and an
- * empty stats page is information, not a broken screen.
+ * empty stats page is information, not a broken screen. The range row
+ * shows the engine's reported `from`–`to`; when the engine reports no
+ * range the row says so instead of pretending a period (77-F1).
  */
 @Composable
 fun StatsScreen(
@@ -81,13 +85,22 @@ fun StatsScreen(
 private fun StatsContent(stats: SessionStatsInfo) {
     val spacing = OpenCodeTheme.tokens.spacing
 
+    // The range the totals cover (77-F1): without it the aggregates cannot
+    // be checked against any other surface. Both dates known → the span;
+    // otherwise an honest "default range" instead of a guessed period.
+    StatRow(
+        labelRes = R.string.stats_range_label,
+        value = statsRangeText(stats.range),
+    )
     StatRow(labelRes = R.string.stats_field_sessions, value = stats.sessions.toString())
     StatRow(labelRes = R.string.stats_field_prompts, value = stats.prompts.toString())
     StatRow(labelRes = R.string.stats_field_steps, value = stats.steps.toString())
     StatRow(labelRes = R.string.stats_field_subagents, value = stats.subagents.toString())
     StatRow(
         labelRes = R.string.stats_field_tokens,
-        value = stats.tokens?.totalTokens()?.toString() ?: "0",
+        // Compact like every other token surface (77-F5); a dash when the
+        // engine reported no usage at all, not a "0" that claims zero use.
+        value = stats.tokens.totalTokens()?.let { formatCompactTokens(it) } ?: "—",
     )
     StatRow(labelRes = R.string.stats_field_cost, value = formatStatsCost(stats.cost))
     StatRow(labelRes = R.string.stats_field_active_days, value = stats.activeDays.toString())
@@ -103,13 +116,22 @@ private fun StatsContent(stats: SessionStatsInfo) {
 
     if (stats.tools.mode == "detail" && stats.tools.usage.isNotEmpty()) {
         SectionHeader(textRes = R.string.stats_section_tools)
-        stats.tools.usage
-            .sortedByDescending { it.calls }
-            .take(10)
-            .forEachIndexed { index, tool ->
-                if (index > 0) RowDivider(inset = spacing.md)
-                ToolRow(tool = tool)
-            }
+        val ranked = stats.tools.usage.sortedByDescending { it.calls }
+        ranked.take(10).forEachIndexed { index, tool ->
+            if (index > 0) RowDivider(inset = spacing.md)
+            ToolRow(tool = tool)
+        }
+        // The list is capped at 10 (77-F7): say how many more hide below
+        // instead of silently dropping them.
+        val extra = ranked.size - 10
+        if (extra > 0) {
+            Text(
+                text = stringResource(R.string.stats_tools_more, extra),
+                style = OpenCodeTypography.bodySmall,
+                color = OpenCodeTheme.colors.onSurfaceFaint,
+                modifier = Modifier.padding(top = spacing.xs),
+            )
+        }
     } else {
         stats.tools.totals?.let { totals ->
             SectionHeader(textRes = R.string.stats_section_tools)
@@ -118,16 +140,56 @@ private fun StatsContent(stats: SessionStatsInfo) {
                 value = totals.calls.toString(),
             )
             StatRow(
+                labelRes = R.string.stats_field_tool_succeeded,
+                value = totals.succeeded.toString(),
+            )
+            StatRow(
                 labelRes = R.string.stats_field_tool_failed,
                 value = totals.failed.toString(),
             )
+            StatRow(
+                labelRes = R.string.stats_field_tool_unfinished,
+                value = totals.unfinished.toString(),
+            )
         }
+    }
+
+    // Daily activity the engine already fetched (77-F7): the trend was
+    // dropped on the floor while the screen claimed "tool reliability"
+    // it could not show. One row per day, newest first as reported.
+    if (stats.activity.isNotEmpty()) {
+        SectionHeader(textRes = R.string.stats_section_activity)
+        stats.activity.forEachIndexed { index, day ->
+            if (index > 0) RowDivider(inset = spacing.md)
+            StatRow(
+                label = day.date,
+                value = stringResource(R.string.stats_activity_steps, day.steps),
+            )
+        }
+    }
+}
+
+/** The stats range as "2026-11-01 – 2026-11-13", or the honest default label. */
+@Composable
+private fun statsRangeText(range: dev.bidzz.opencode.core.api.dto.StatsRange?): String {
+    val from = range?.from?.let { formatResetDate(it) }
+    val to = range?.to?.let { formatResetDate(it) }
+    return if (from != null && to != null) {
+        "$from – $to"
+    } else {
+        stringResource(R.string.stats_range_default)
     }
 }
 
 /** One totals row: label on the left, value on the right. */
 @Composable
 private fun StatRow(labelRes: Int, value: String) {
+    StatRow(label = stringResource(labelRes), value = value)
+}
+
+/** The same row with a dynamic label (dates, model names). */
+@Composable
+private fun StatRow(label: String, value: String) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     Row(
@@ -137,7 +199,7 @@ private fun StatRow(labelRes: Int, value: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = stringResource(labelRes),
+            text = label,
             style = OpenCodeTypography.body,
             color = colors.onSurface,
             modifier = Modifier.weight(1f),
@@ -166,7 +228,10 @@ private fun SectionHeader(textRes: Int) {
 private fun ModelRow(model: StatsModelUsage) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val label = statsModelLabel(model.model) ?: return
+    // A row the breakdown cannot label must not vanish while the header
+    // total still counts it (77-F2): fall back to an honest "unknown"
+    // label so the breakdown always reconciles to the total.
+    val label = statsModelLabel(model.model) ?: stringResource(R.string.stats_model_unknown)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -183,7 +248,7 @@ private fun ModelRow(model: StatsModelUsage) {
             text = stringResource(
                 R.string.stats_model_detail,
                 model.steps,
-                model.tokens?.totalTokens() ?: 0L,
+                model.tokens.totalTokens()?.let { formatCompactTokens(it) } ?: "—",
                 formatStatsCost(model.cost),
             ),
             style = OpenCodeTypography.bodySmall,
@@ -213,7 +278,9 @@ private fun ToolRow(tool: StatsToolUsage) {
             text = stringResource(
                 R.string.stats_tool_detail,
                 tool.calls,
+                tool.succeeded,
                 tool.failed,
+                tool.unfinished,
             ),
             style = OpenCodeTypography.bodySmall,
             color = colors.onSurfaceMuted,

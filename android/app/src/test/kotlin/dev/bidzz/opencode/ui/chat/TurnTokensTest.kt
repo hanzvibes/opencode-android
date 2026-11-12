@@ -50,7 +50,11 @@ class TurnTokensTest {
     }
 
     @Test
-    fun `context usage sums assistant messages only`() {
+    fun `context usage takes the last assistant message that reported usage`() {
+        // 23-F1: each assistant message's input is the whole prompt that
+        // call sent, so summing them counts the same history once per
+        // turn. The meter takes the last call's usage: 100 + 50, not
+        // 4124 + 150.
         val messages = listOf(
             SessionMessage(id = "msg_a", type = "user", text = "hi"),
             SessionMessage(
@@ -65,7 +69,42 @@ class TurnTokensTest {
             ),
             SessionMessage(id = "msg_d", type = "idle", outcome = "succeeded"),
         )
-        assertEquals(4274L, contextUsageTokens(messages))
+        assertEquals(150L, contextUsageTokens(messages))
+    }
+
+    @Test
+    fun `context usage falls back to an earlier message when the last has none`() {
+        val messages = listOf(
+            SessionMessage(
+                id = "msg_b",
+                type = "assistant",
+                tokens = TokenUsage(input = 4032, output = 9, reasoning = 83),
+            ),
+            SessionMessage(id = "msg_c", type = "assistant"),
+        )
+        assertEquals(4124L, contextUsageTokens(messages))
+    }
+
+    @Test
+    fun `context usage carries the model that produced the last usage`() {
+        val ref = dev.bidzz.opencode.core.api.dto.ModelRef(id = "big-pickle", providerID = "opencode")
+        val messages = listOf(
+            SessionMessage(
+                id = "msg_b",
+                type = "assistant",
+                model = dev.bidzz.opencode.core.api.dto.ModelRef(id = "old", providerID = "opencode"),
+                tokens = TokenUsage(input = 4032),
+            ),
+            SessionMessage(
+                id = "msg_c",
+                type = "assistant",
+                model = ref,
+                tokens = TokenUsage(input = 100, output = 50),
+            ),
+        )
+        val usage = contextUsage(messages)
+        assertEquals(150L, usage.tokens)
+        assertEquals(ref, usage.model)
     }
 
     @Test
@@ -88,5 +127,13 @@ class TurnTokensTest {
             ),
         )
         assertEquals(0L, contextUsageTokens(messages))
+    }
+
+    @Test
+    fun `busy-run meter refresh is due only after the throttle gap`() {
+        assertEquals(false, contextRefreshDue(nowMs = 10_000L, lastMs = 0L))
+        assertEquals(false, contextRefreshDue(nowMs = 29_999L, lastMs = 0L))
+        assertEquals(true, contextRefreshDue(nowMs = 30_000L, lastMs = 0L))
+        assertEquals(true, contextRefreshDue(nowMs = 45_000L, lastMs = 10_000L))
     }
 }

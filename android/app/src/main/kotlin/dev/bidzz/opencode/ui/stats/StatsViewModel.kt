@@ -28,9 +28,16 @@ data class StatsUiState(
  * footer and the session list: input + output + reasoning. Cache
  * read/write is not added — it would double-count tokens the model
  * already saw.
+ *
+ * Null when the engine reported no usage at all; a reported zero stays
+ * zero (audit-100 Fase 6a, 67-F5) — the old non-null `Long` forced the
+ * screen to print "0" for missing data, a third zero convention next to
+ * the list (hide) and the footer (show 0).
  */
-internal fun TokenUsage.totalTokens(): Long =
-    (input ?: 0L) + (output ?: 0L) + (reasoning ?: 0L)
+internal fun TokenUsage?.totalTokens(): Long? {
+    if (this == null) return null
+    return (input ?: 0L) + (output ?: 0L) + (reasoning ?: 0L)
+}
 
 /** Cost as a short dollar amount; zero reads as $0.00, not as under a cent. */
 internal fun formatStatsCost(value: Double): String = when {

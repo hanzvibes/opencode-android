@@ -1182,23 +1182,20 @@ internal fun cleanModelName(rawName: String, rawId: String): String {
     }
 }
 
-private fun formatContextWindow(limitContext: Long?, rawText: String): String? {
-    if (limitContext != null && limitContext > 0) {
-        return when {
-            limitContext >= 1_000_000L -> "${limitContext / 1_000_000L}M"
-            limitContext >= 1_000L -> "${limitContext / 1_000L}k"
-            else -> "$limitContext"
-        }
-    }
-    val lower = rawText.lowercase()
+/**
+ * The context window badge in the model picker, from the engine-reported
+ * limit only (audit-100 Fase 6a, 23-F5). There is no name-based fallback:
+ * guessing "128k" from a substring was already stale — DeepSeek V4 ships
+ * a 1M window — and a guessed badge contradicts the meter on the same
+ * screen, which hides rather than guessing when the limit is unknown.
+ * Unknown limit means no badge, not a wrong one.
+ */
+private fun formatContextWindow(limitContext: Long?): String? {
+    if (limitContext == null || limitContext <= 0) return null
     return when {
-        "antigravity" in lower || "gemini-1.5-pro" in lower || "gemini-2.0" in lower || "gemini-1.5" in lower -> "1M"
-        "gpt-5" in lower -> "400k"
-        "3-7-sonnet" in lower || "3-5-sonnet" in lower || "haiku" in lower || "claude" in lower -> "200k"
-        "gpt-4o" in lower || "4o" in lower || "o1" in lower || "o3" in lower -> "128k"
-        "deepseek-r1" in lower || "deepseek" in lower -> "128k"
-        "llama-3" in lower -> "128k"
-        else -> null
+        limitContext >= 1_000_000L -> "${limitContext / 1_000_000L}M"
+        limitContext >= 1_000L -> "${limitContext / 1_000L}k"
+        else -> "$limitContext"
     }
 }
 
@@ -1257,7 +1254,7 @@ private fun resolveModelPresentation(model: ModelInfo, colors: OpenCodeColors): 
     val cleanName = cleanModelName(rawName, rawId)
     val combinedText = "$brandName $cleanName $rawName $rawId"
     val tier = resolveTierBadge(combinedText)
-    val context = formatContextWindow(model.limit?.context, combinedText)
+    val context = formatContextWindow(model.limit?.context)
     val description = resolveModelDescription(combinedText, model.family)
 
     return ModelPresentation(

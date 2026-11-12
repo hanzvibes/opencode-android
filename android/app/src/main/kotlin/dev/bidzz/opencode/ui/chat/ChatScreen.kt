@@ -160,7 +160,7 @@ import dev.bidzz.opencode.ui.sessions.SessionActionMenu
 import dev.bidzz.opencode.ui.sessions.SessionDateGroup
 import dev.bidzz.opencode.ui.sessions.SessionDetail
 import dev.bidzz.opencode.ui.sessions.filterSessionRows
-import dev.bidzz.opencode.ui.sessions.formatCompactTokens
+import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.sessions.groupSessions
 import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
@@ -170,6 +170,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.isActive
+import kotlin.math.roundToLong
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -1017,12 +1018,20 @@ fun ChatScreen(
                 activeModel = state.activeModel,
                 onModel = onModel,
                 // Context meter (Tier 2): tokens in the session's context
-                // over the active model's window. The limit is the model's
-                // own `limit.context` — never the name-based fallback the
-                // selector badge uses, so a guessed denominator can never
-                // paint a wrong percentage.
+                // over the window of the model that PRODUCED the last usage
+                // (77-F3) — not the model selected now. A mid-session model
+                // switch would otherwise divide old turns by a new window.
+                // The limit is the model's own `limit.context` — never the
+                // name-based fallback the selector badge uses, so a guessed
+                // denominator can never paint a wrong percentage. When the
+                // usage model is unknown to the model list, the limit stays
+                // unknown and only the used figure shows.
                 contextUsedTokens = state.contextUsedTokens,
-                contextLimit = state.models.firstOrNull { it.ref() == state.activeModel }?.limit?.context,
+                contextLimit = state.contextModel?.let { used ->
+                    state.models.firstOrNull {
+                        it.ref().providerID == used.providerID && it.ref().id == used.id
+                    }?.limit?.context
+                },
                 // No menu button at expanded widths: the sidebar is already
                 // visible, so there is no drawer to open.
                 showMenuButton = !isExpanded,
@@ -2679,7 +2688,10 @@ private fun EngineStatusDialog(
                         DialogDetailRow(
                             label = stringResource(R.string.chat_status_dialog_context),
                             value = if (contextLimit != null && contextLimit > 0) {
-                                val percent = (contextUsedTokens * 100L / contextLimit).coerceIn(0L, 100L)
+                                // Rounded, like the bar's float fraction (66-F9):
+                                // integer division showed 99.9% as "99%".
+                                val percent = (contextUsedTokens * 100.0 / contextLimit)
+                                    .roundToLong().coerceIn(0L, 100L)
                                 "${formatCompactTokens(contextUsedTokens)} / ${formatCompactTokens(contextLimit)} · $percent%"
                             } else {
                                 formatCompactTokens(contextUsedTokens)

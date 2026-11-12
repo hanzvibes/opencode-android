@@ -297,8 +297,16 @@
     <string name="stats_field_tool_failed">Tool calls failed</string>
     <string name="stats_section_models">Models</string>
     <string name="stats_section_tools">Tools</string>
-    <string name="stats_model_detail">%1$d steps · %2$d tokens · %3$s</string>
-    <string name="stats_tool_detail">%1$d calls · %2$d failed</string>
+    <string name="stats_model_detail">%1$d steps · %2$s · %3$s</string>
+    <string name="stats_tool_detail">%1$d calls · %2$d succeeded · %3$d failed · %4$d unfinished</string>
+    <string name="stats_range_label">Range</string>
+    <string name="stats_range_default">Engine default range</string>
+    <string name="stats_model_unknown">Unknown model</string>
+    <string name="stats_tools_more">%1$d more tools</string>
+    <string name="stats_field_tool_succeeded">Tool calls succeeded</string>
+    <string name="stats_field_tool_unfinished">Tool calls unfinished</string>
+    <string name="stats_section_activity">Activity</string>
+    <string name="stats_activity_steps">%1$d steps</string>
 
     <!-- Session export -->
     <string name="export_title">Export session</string>

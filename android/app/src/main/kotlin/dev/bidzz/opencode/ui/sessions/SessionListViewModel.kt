@@ -7,6 +7,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.TokenUsage
+import dev.bidzz.opencode.ui.formatCompactTokens
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -299,20 +300,13 @@ private fun SessionInfo.toRow(isPinned: Boolean = false): SessionRow {
  * Total tokens a session used: input + output + reasoning.
  *
  * Cache read/write are subsets of input, not additions — adding them would
- * double-count. Null when the engine reported no usage at all, or a total
- * of zero (a session that never ran a model has nothing to show).
+ * double-count. Null only when the engine reported no usage at all; a
+ * reported zero stays zero (audit-100 Fase 6a, 67-F5) — the list, the turn
+ * footer and Stats now share one rule: absence hides, zero shows.
  */
 internal fun totalTokens(tokens: TokenUsage?): Long? {
     if (tokens == null) return null
-    val total = (tokens.input ?: 0) + (tokens.output ?: 0) + (tokens.reasoning ?: 0)
-    return total.takeIf { it > 0 }
-}
-
-/** 842 → "842", 12_400 → "12.4k", 1_250_000 → "1.2M". Same compact form as the turn footer. */
-internal fun formatCompactTokens(tokens: Long): String = when {
-    tokens < 1_000 -> tokens.toString()
-    tokens < 1_000_000 -> "${tokens / 1000}.${(tokens % 1000) / 100}k"
-    else -> "${tokens / 1_000_000}.${(tokens % 1_000_000) / 100_000}M"
+    return (tokens.input ?: 0) + (tokens.output ?: 0) + (tokens.reasoning ?: 0)
 }
 
 /** Relative age from an epoch-millis timestamp. Coarse on purpose: exact seconds do not help. */

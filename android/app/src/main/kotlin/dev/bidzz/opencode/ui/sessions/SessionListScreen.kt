@@ -46,6 +46,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
+import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.NoticeKind
 import dev.bidzz.opencode.ui.NoticeRow
 import dev.bidzz.opencode.ui.sessionTitleSharedKey
