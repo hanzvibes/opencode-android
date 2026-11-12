@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -19,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
@@ -167,7 +169,14 @@ private fun ProjectRow(
             .heightIn(min = 54.dp)
             .then(
                 if (!isCurrent && enabled) {
-                    Modifier.clickable(role = Role.RadioButton, onClick = onSelect)
+                    // A11y (#8c): the row is the single selectable node —
+                    // the inner AppRadioButton is only the visual and must
+                    // not appear as a second radio button to TalkBack.
+                    Modifier.selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                        onClick = onSelect,
+                    )
                 } else {
                     Modifier
                 },
@@ -178,6 +187,7 @@ private fun ProjectRow(
         AppRadioButton(
             selected = selected,
             onClick = null,
+            modifier = Modifier.clearAndSetSemantics { },
             enabled = !isCurrent,
         )
         Column(

@@ -105,12 +105,15 @@ import androidx.compose.ui.platform.LocalContext
 import dev.bidzz.opencode.ui.announceForAccessibility
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role as SemanticsRole
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -1332,6 +1335,11 @@ fun ChatScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(Color.Black.copy(alpha = 0.35f))
+                                // A11y (#8b): a dismiss scrim must not appear
+                                // in TalkBack traversal — it has no name and
+                                // is not an action; dismissal stays available
+                                // through the palette's own close control.
+                                .clearAndSetSemantics { }
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -2633,6 +2641,9 @@ private fun DialogDetailRow(
     // visible. The state dies with the dialog, so a reopened dialog
     // starts un-copied again.
     var copied by remember { mutableStateOf(false) }
+    // Hoisted: stringResource() is @Composable and cannot be called
+    // inside a .semantics {} block.
+    val copyDescription = stringResource(R.string.dialog_copy_value, label)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -2662,7 +2673,10 @@ private fun DialogDetailRow(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .clickable(role = SemanticsRole.Button, onClick = { copied = true; onCopy() }),
+                        .clickable(role = SemanticsRole.Button, onClick = { copied = true; onCopy() })
+                        // A11y (#8a, report #16): the copy button had a role
+                        // but no name — TalkBack announced just "Button".
+                        .semantics { contentDescription = copyDescription },
                     contentAlignment = Alignment.Center,
                 ) {
                     GlyphIcon(
@@ -2883,6 +2897,7 @@ private fun ChatDrawerContent(
             query = sidebarQuery,
             onQueryChange = onSidebarQueryChange,
             placeholder = stringResource(R.string.history_search_hint),
+            imeAction = ImeAction.Search,
         )
 
         Spacer(Modifier.height(spacing.xs))
@@ -3325,6 +3340,8 @@ private fun DrawerItem(
                     Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
                 } else Modifier
             )
+            // A11y (#8c): the current destination announces as selected.
+            .semantics { selected = active }
             .clickable(role = SemanticsRole.Button, onClick = onClick)
             .padding(horizontal = spacing.sm, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
@@ -3390,6 +3407,8 @@ private fun SessionDrawerItem(
     val meta = listOfNotNull(age, row.cost, tokenLabel).joinToString(" · ")
     val preview = detail?.preview?.trim()?.takeIf { it.isNotEmpty() }
 
+    val rowSelected = selected
+
     // The selected background animates instead of snapping when the
     // selection moves between rows.
     val rowBg by animateColorAsState(
@@ -3409,6 +3428,11 @@ private fun SessionDrawerItem(
                     Modifier.border(0.5.dp, colors.accent.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
                 } else Modifier
             )
+            // A11y (#8c): the open session announces as selected.
+            // `this.` is required: without it the name resolves to this
+            // function's `selected` parameter (a val), not the semantics
+            // receiver's property.
+            .semantics { this.selected = rowSelected }
             .clickable(role = SemanticsRole.Button, onClick = onClick)
             .padding(start = spacing.sm, end = spacing.xs, top = spacing.xs, bottom = spacing.xs),
         verticalAlignment = Alignment.CenterVertically,

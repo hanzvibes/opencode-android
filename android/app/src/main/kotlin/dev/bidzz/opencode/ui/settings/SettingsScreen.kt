@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -34,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
@@ -817,13 +819,15 @@ private fun ThemeModeRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clickable(role = Role.RadioButton, onClick = onSelect)
+            // A11y (#8c): the row is the single selectable node (see Move).
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
             .padding(horizontal = spacing.md, vertical = spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AppRadioButton(
             selected = selected,
             onClick = null,
+            modifier = Modifier.clearAndSetSemantics { },
         )
         Column(
             modifier = Modifier.padding(start = spacing.md),
@@ -920,12 +924,14 @@ private fun LanguageDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
-                            .clickable(role = Role.RadioButton) { onSelect(option) },
+                            // A11y (#8c): the row is the single selectable node (see Move).
+                            .selectable(selected = option == selected, role = Role.RadioButton) { onSelect(option) },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         AppRadioButton(
                             selected = option == selected,
                             onClick = null,
+                            modifier = Modifier.clearAndSetSemantics { },
                         )
                         Text(
                             text = languageLabel(option),

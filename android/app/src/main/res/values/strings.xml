@@ -173,6 +173,7 @@
     <string name="chat_status_dialog_state">State</string>
     <string name="chat_status_dialog_diagnostics">Diagnostics</string>
     <string name="chat_status_dialog_close">Close</string>
+    <string name="dialog_copy_value">Copy %1$s</string>
     <string name="chat_status_dialog_turn_diff">Turn diff</string>
     <string name="chat_status_desc_ready">Engine is online and ready for prompts.</string>
     <string name="chat_status_desc_working">Engine is actively running tasks or generating responses.</string>
@@ -421,6 +422,12 @@
     <string name="tool_command">Command</string>
     <string name="tool_input">Input</string>
     <string name="tool_todos_title">Todo list</string>
+    <string name="tool_step_collapsed">Collapsed</string>
+    <string name="tool_step_expanded">Expanded</string>
+    <string name="todo_status_cancelled">Cancelled</string>
+    <string name="todo_status_pending">Pending</string>
+    <string name="todo_status_in_progress">In progress</string>
+    <string name="todo_status_completed">Completed</string>
     <string name="tool_todos_cleared">Todos cleared</string>
     <string name="tool_show_full">Show full output</string>
     <string name="tool_show_less">Show less</string>

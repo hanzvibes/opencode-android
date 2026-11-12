@@ -9,6 +9,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,8 +107,21 @@ fun TodoChecklist(todos: List<TodoItem>) {
             )
         } else {
             todos.forEach { item ->
+                // A11y (#8c): the checklist is read-only — the engine owns
+                // the state — so the status is announced as the row's state
+                // description, not as a toggle. The glyph is only visual.
+                val statusDescription = stringResource(
+                    when (item.status) {
+                        TodoStatus.COMPLETED -> R.string.todo_status_completed
+                        TodoStatus.IN_PROGRESS -> R.string.todo_status_in_progress
+                        TodoStatus.CANCELLED -> R.string.todo_status_cancelled
+                        TodoStatus.PENDING -> R.string.todo_status_pending
+                    },
+                )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics(mergeDescendants = true) { stateDescription = statusDescription },
                     horizontalArrangement = Arrangement.spacedBy(spacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

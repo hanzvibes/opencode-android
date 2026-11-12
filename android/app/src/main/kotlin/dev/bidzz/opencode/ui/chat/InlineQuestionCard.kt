@@ -9,6 +9,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -484,7 +486,25 @@ private fun SelectableOptionRow(
             .clip(shape)
             .background(bgColor)
             .border(if (isSelected) 1.dp else 0.5.dp, borderColor, shape)
-            .clickable(role = Role.RadioButton, onClick = onToggle)
+            // A11y (#8b/#8c): the row is the selectable node — single-select
+            // rows announce as radio buttons, multi-select as checkboxes,
+            // each with its selected state. The hand-drawn circle/square
+            // is only the visual; it carries no semantics of its own.
+            .then(
+                if (isMultiple) {
+                    Modifier.toggleable(
+                        value = isSelected,
+                        role = Role.Checkbox,
+                        onValueChange = { onToggle() },
+                    )
+                } else {
+                    Modifier.selectable(
+                        selected = isSelected,
+                        role = Role.RadioButton,
+                        onClick = onToggle,
+                    )
+                },
+            )
             .padding(horizontal = spacing.sm, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
@@ -584,7 +604,24 @@ private fun WriteInOptionRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onActiveChange(!isActive) },
+                // A11y (#8b/#8c): same as the option rows — the "Other"
+                // toggle announces its state instead of reading as a
+                // nameless tap target.
+                .then(
+                    if (isMultiple) {
+                        Modifier.toggleable(
+                            value = isActive,
+                            role = Role.Checkbox,
+                            onValueChange = { onActiveChange(it) },
+                        )
+                    } else {
+                        Modifier.selectable(
+                            selected = isActive,
+                            role = Role.RadioButton,
+                            onClick = { onActiveChange(!isActive) },
+                        )
+                    },
+                ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(spacing.sm),
         ) {
