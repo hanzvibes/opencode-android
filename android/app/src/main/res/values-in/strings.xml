@@ -704,4 +704,25 @@
     <string name="agent_badge_read_only">Hanya Baca</string>
     <string name="agent_badge_discussion">Diskusi</string>
     <string name="agent_badge_review">Tinjauan</string>
+    <string name="browser_back">Kembali</string>
+    <string name="browser_forward">Maju</string>
+    <string name="browser_reload">Muat ulang</string>
+    <string name="browser_share">Bagikan tautan</string>
+    <string name="browser_open_external">Buka di browser</string>
+    <string name="browser_copy_link">Salin tautan</string>
+    <string name="browser_copied">Tautan disalin</string>
+    <string name="browser_download_started">Unduhan dimulai</string>
+    <string name="browser_download_failed">Unduhan gagal</string>
+    <string name="message_share">Bagikan</string>
+    <string name="shortcut_new_session">Sesi baru</string>
+    <string name="shortcut_last_session">Lanjut sesi terakhir</string>
+    <string name="notification_agent_done_channel">Balasan agent</string>
+    <string name="notification_agent_done_title">Agent selesai menjawab</string>
+    <string name="notification_agent_done_body">Ketuk untuk membuka sesi</string>
+    <string name="composer_take_photo">Ambil foto</string>
+    <string name="photo_saved">Foto disimpan ke %1$s</string>
+    <string name="photo_failed">Foto gagal disimpan</string>
+    <string name="widget_open">Buka</string>
+    <string name="widget_open_session_hint">Ketuk Buka untuk melanjutkan sesi</string>
+    <string name="widget_no_session">Belum ada sesi</string>
 </resources>

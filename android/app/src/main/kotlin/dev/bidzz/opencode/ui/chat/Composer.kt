@@ -105,6 +105,8 @@ fun Composer(
     onAttachFile: (() -> Unit)? = null,
     /** Opens the system file picker for a file outside the workspace (SAF). */
     onAttachDeviceFile: (() -> Unit)? = null,
+    /** Takes a photo with the system camera (Native C). */
+    onTakePhoto: (() -> Unit)? = null,
     /** Files picked from outside the workspace, waiting to be inlined on send. */
     attachments: List<AttachedFile> = emptyList(),
     /** Removes one pending attachment by id. */
@@ -476,6 +478,17 @@ fun Composer(
                         enabled = enabled && !busy,
                         contentDescription = stringResource(R.string.composer_attach),
                         onClick = { onAttachDeviceFile() },
+                    )
+                }
+
+                if (onTakePhoto != null) {
+                    QuickActionChip(
+                        label = "",
+                        glyph = Glyph.Camera,
+                        isActive = false,
+                        enabled = enabled && !busy,
+                        contentDescription = stringResource(R.string.composer_take_photo),
+                        onClick = { onTakePhoto() },
                     )
                 }
 

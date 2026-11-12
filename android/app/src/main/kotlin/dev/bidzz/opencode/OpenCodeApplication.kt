@@ -27,8 +27,10 @@ import kotlinx.coroutines.flow.StateFlow
 class OpenCodeApplication : Application() {
     companion object {
         private const val TAG = "OpenCodeApp"
-        private const val PREFS = "app"
-        private const val KEY_LAST_SESSION = "last_session_id"
+        /** SharedPreferences file the app restores from (also read by the widget). */
+        const val PREFS_NAME = "app"
+        /** Last opened session id (also read by the widget). */
+        const val KEY_LAST_SESSION = "last_session_id"
     }
 
     /** Null until [onCreate] finishes, or when the engine binary is unavailable. */
@@ -69,9 +71,9 @@ class OpenCodeApplication : Application() {
      * longer has — so a reboot never resurrects a dead session.
      */
     var lastSessionID: String?
-        get() = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LAST_SESSION, null)
+        get() = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_LAST_SESSION, null)
         set(value) {
-            getSharedPreferences(PREFS, MODE_PRIVATE).edit().apply {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
                 if (value == null) remove(KEY_LAST_SESSION) else putString(KEY_LAST_SESSION, value)
             }.apply()
         }
@@ -270,6 +272,59 @@ class OpenCodeApplication : Application() {
     fun peekPendingCodeSave(): CodeSaveRequest? = pendingCodeSave
 
     val codeSaveRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+
+    /**
+     * Text shared into the app from another app (ACTION_SEND, Native C).
+     * Same bridge shape as the SAF attach flow above: the activity owns
+     * the intent, the UI owns what happens with the text. One-shot, so a
+     * recreated activity never re-shares the same text.
+     */
+    fun deliverSharedText(text: String) {
+        sharedTextReceived.tryEmit(text)
+    }
+
+    /** Text shared from another app; the chat screen drafts it. */
+    val sharedTextReceived = MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    /**
+     * Session id from an opencode://session/{id} deep link (Native C).
+     * Same bridge shape as the share above.
+     */
+    fun deliverSessionOpen(sessionID: String) {
+        sessionOpenRequested.tryEmit(sessionID)
+    }
+
+    /** Session ids from deep links; the chat screen opens them. */
+    val sessionOpenRequested = MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    /**
+     * A launcher shortcut asked for a fresh session (Native C). Same
+     * bridge shape as the share above.
+     */
+    fun requestNewSession() {
+        newSessionRequested.tryEmit(System.currentTimeMillis())
+    }
+
+    /** Fresh-session requests from launcher shortcuts. */
+    val newSessionRequested = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+
+    /**
+     * Camera photo (Native C): asks MainActivity to open the system
+     * camera, and the URI of the photo it took. Same bridge shape as
+     * the SAF attach flow above.
+     */
+    fun requestCameraPhoto() {
+        cameraPhotoRequest.tryEmit(System.currentTimeMillis())
+    }
+
+    /** Delivers the URI of a photo just taken. */
+    fun deliverCameraPhoto(uri: Uri) {
+        cameraPhotoPicked.tryEmit(uri)
+    }
+
+    val cameraPhotoRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+    /** URIs of photos just taken; the chat screen copies them in. */
+    val cameraPhotoPicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
 
     /**
      * Delivers a command to [EngineService].

@@ -1,6 +1,7 @@
 package dev.bidzz.opencode
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -8,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
@@ -17,6 +19,13 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import dev.bidzz.opencode.ui.ACTION_NEW_SESSION
+import dev.bidzz.opencode.ui.ACTION_OPEN_SESSION
+import dev.bidzz.opencode.ui.EXTRA_OPENCODE_ACTION
+import dev.bidzz.opencode.ui.EXTRA_SESSION_ID
 import dev.bidzz.opencode.ui.OpenCodeApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -106,6 +115,37 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    /**
+     * System camera (Native C): the photo is written to the gallery
+     * through MediaStore, so no CAMERA permission and no FileProvider
+     * are needed — the camera app owns the capture. The URI is handed
+     * to the application; the chat screen copies it into the workspace.
+     */
+    private var pendingPhotoUri: Uri? = null
+
+    private val takePhoto =
+        registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+            val uri = pendingPhotoUri
+            pendingPhotoUri = null
+            if (success && uri != null) {
+                (application as OpenCodeApplication).deliverCameraPhoto(uri)
+            }
+        }
+
+    private fun launchCamera() {
+        val name = "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, name)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OpenCode")
+        }
+        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: return
+        pendingPhotoUri = uri
+        runCatching { takePhoto.launch(uri) }
+            .onFailure { Log.w("MainActivity", "Camera launch failed", it) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -116,6 +156,55 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             OpenCodeApp(app = application as OpenCodeApplication)
+        }
+
+        handleExternalIntent(intent)
+    }
+
+    /**
+     * A share or deep link arriving while the app is already open.
+     * singleTop in the manifest routes it here instead of recreating
+     * the activity (and the engine survives either way).
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleExternalIntent(intent)
+    }
+
+    /**
+     * External entries (Native C): a text share becomes a fresh draft,
+     * an opencode://session/{id} link opens that session. Both travel
+     * through the application flows, so the UI picks them up whenever
+     * it is composed. Anything unrecognised is ignored, never crashed on.
+     */
+    private fun handleExternalIntent(intent: Intent) {
+        val app = application as OpenCodeApplication
+        when (intent.action) {
+            Intent.ACTION_MAIN -> {
+                // Launcher shortcut (Native C): a home-screen tap has no
+                // extras, so this only fires for the shortcut intents.
+                when (intent.getStringExtra(EXTRA_OPENCODE_ACTION)) {
+                    ACTION_NEW_SESSION -> app.requestNewSession()
+                    ACTION_OPEN_SESSION -> {
+                        val id = intent.getStringExtra(EXTRA_SESSION_ID)
+                            ?.takeIf { it.isNotBlank() } ?: return
+                        app.deliverSessionOpen(id)
+                    }
+                }
+            }
+            Intent.ACTION_SEND -> {
+                if (intent.type?.startsWith("text/") != true) return
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                    ?.takeIf { it.isNotBlank() } ?: return
+                app.deliverSharedText(text)
+            }
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data ?: return
+                if (uri.scheme != "opencode" || uri.host != "session") return
+                val sessionID = uri.lastPathSegment?.takeIf { it.isNotBlank() } ?: return
+                app.deliverSessionOpen(sessionID)
+            }
         }
     }
 
@@ -175,6 +264,15 @@ class MainActivity : ComponentActivity() {
                 val pending = app.peekPendingCodeSave() ?: return@collect
                 runCatching { saveCodeDocument.launch(pending.filename) }
                     .onFailure { Log.w("MainActivity", "Code save picker launch failed", it) }
+            }
+        }
+        lifecycleScope.launch {
+            app.cameraPhotoRequest.collect {
+                // Best-effort like the SAF launch above: a missing camera
+                // app or a finishing activity must not crash the app; the
+                // composer simply never receives a photo.
+                runCatching { launchCamera() }
+                    .onFailure { Log.w("MainActivity", "Camera launch failed", it) }
             }
         }
     }

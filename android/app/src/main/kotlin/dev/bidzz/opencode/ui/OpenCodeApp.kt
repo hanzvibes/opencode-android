@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -31,6 +33,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.LanguageStore
 import dev.bidzz.opencode.R
@@ -39,8 +43,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -51,6 +57,8 @@ import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.design.ThemeStore
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.about.AboutScreen
+import dev.bidzz.opencode.ui.browser.InAppBrowserScreen
+import dev.bidzz.opencode.ui.browser.isBrowsableUrl
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
@@ -97,8 +105,11 @@ import dev.bidzz.opencode.ui.sessions.SessionListScreen
 import dev.bidzz.opencode.ui.sessions.SessionListUiState
 import dev.bidzz.opencode.ui.sessions.SessionListViewModel
 import dev.bidzz.opencode.ui.sessions.SessionRow
+import dev.bidzz.opencode.ui.updateLastSessionShortcut
+import dev.bidzz.opencode.ui.widget.updateSessionWidget
 import dev.bidzz.opencode.ui.settings.SettingsScreen
 import java.io.File
+import kotlinx.coroutines.launch
 
 /**
  * Top-level navigation.
@@ -130,6 +141,7 @@ internal sealed interface Screen {
     data object Worktrees : Screen
     data object EngineConfig : Screen
     data object About : Screen
+    data class InAppBrowser(val url: String) : Screen
 }
 
 /**
@@ -169,7 +181,7 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Projects, Screen.Files, Screen.Settings, Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Worktrees,
-    Screen.EngineConfig, Screen.About -> 3
+    Screen.EngineConfig, Screen.About, is Screen.InAppBrowser,
     is Screen.Inbox, is Screen.MoveSession, is Screen.SessionExport,
     is Screen.Instructions, Screen.SessionStats, Screen.UsageLimits -> 3
     is Screen.Diff -> 4
@@ -357,6 +369,33 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         chatState.sessionID?.let { app.lastSessionID = it }
     }
 
+    // External entries (Native C): shared text and deep links arrive via
+    // the application flows, not navigation arguments — the activity can
+    // be re-created for them while the UI is already composed. A share
+    // starts a fresh session with the text as the draft (editable before
+    // sending); a deep link opens its session.
+    LaunchedEffect(Unit) {
+        launch {
+            app.sharedTextReceived.collect { text ->
+                chatViewModel.newSession()
+                chatViewModel.onDraftChange(text)
+                screen = Screen.Chat
+            }
+        }
+        launch {
+            app.sessionOpenRequested.collect { sessionID ->
+                chatViewModel.openSession(sessionID)
+                screen = Screen.Chat
+            }
+        }
+        launch {
+            app.newSessionRequested.collect {
+                chatViewModel.newSession()
+                screen = Screen.Chat
+            }
+        }
+    }
+
     // Load history whenever the screen is shown, and reload when the scope flips.
     // At expanded widths the chat sidebar shows the same list persistently,
     // so Chat loads it too — otherwise the sidebar would stay empty.
@@ -426,10 +465,59 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         mutableStateOf(OnboardingStore.shouldShow(hostContext, app.workspaceStore))
     }
 
+    // The launcher shortcut follows the last opened session (Native C):
+    // its label is the session title when the list knows it. Placed
+    // after hostContext on purpose — the effect reads it.
+    LaunchedEffect(chatState.sessionID, sessionsState.rows) {
+        val id = chatState.sessionID ?: return@LaunchedEffect
+        val title = sessionsState.rows.find { it.id == id }?.title
+        updateLastSessionShortcut(hostContext, id, title)
+        updateSessionWidget(hostContext, id, title)
+    }
+
+    // Agent-done notification (Native C): when a run ends while the app
+    // is not in the foreground, say so in the drawer; tapping it opens
+    // the session. A run that ends while the user is watching needs no
+    // notification — the answer is already on screen.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var wasBusy by remember { mutableStateOf(false) }
+    LaunchedEffect(chatState.busy) {
+        val busy = chatState.busy
+        if (wasBusy && !busy) {
+            val id = chatState.sessionID
+            if (id != null) {
+                val resumed = lifecycleOwner.lifecycle.currentState
+                    .isAtLeast(Lifecycle.State.RESUMED)
+                if (!resumed) {
+                    val title = sessionsState.rows.find { it.id == id }?.title
+                    notifyAgentDone(hostContext, id, title)
+                }
+            }
+        }
+        wasBusy = busy
+    }
+
+    // Links in chat open in the in-app browser (Native C): http/https
+    // stay inside the app; mailto:/tel: and the rest go to the system,
+    // guarded like the chat link guard. MarkdownText's safe handler
+    // delegates to this ambient handler, so no call site needs threading.
+    val browserUriHandler = object : UriHandler {
+        override fun openUri(uri: String) {
+            if (isBrowsableUrl(uri)) {
+                screen = Screen.InAppBrowser(uri)
+            } else {
+                runCatching {
+                    hostContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
+                }
+            }
+        }
+    }
+
     CompositionLocalProvider(
         LocalContext provides localized,
         LocalConfiguration provides localized.resources.configuration,
         LocalAppContext provides localized,
+        LocalUriHandler provides browserUriHandler,
     ) {
     OpenCodeTheme(themeMode = themeMode) {
         // Animation C: screen transitions slide 24dp with a 320ms
@@ -579,6 +667,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     onBack = { screen = Screen.Chat },
                     onOpen = sessionDiffViewModel::openFile,
                     onCloseFile = sessionDiffViewModel::closeFile,
+                )
+
+                is Screen.InAppBrowser -> InAppBrowserScreen(
+                    url = target.url,
+                    onBack = { screen = Screen.Chat },
                 )
 
                 Screen.Sessions -> if (isExpanded) {
@@ -959,6 +1052,8 @@ private fun ChatDestination(
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
         onRequestSafFile = app::requestSafFile,
         safFilePicked = app.safFilePicked,
+        onRequestCameraPhoto = app::requestCameraPhoto,
+        cameraPhotoPicked = app.cameraPhotoPicked,
         onRequestVoicePermission = app::requestVoicePermission,
         voicePermissionResult = app.voicePermissionResult,
         onSessionsClick = { onNavigate(Screen.Sessions) },

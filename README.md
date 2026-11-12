@@ -66,6 +66,10 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 | **Survives the swipe** | A foreground service keeps the engine alive when you leave the app or swipe it from recents. |
 | **Two languages, three themes** | English and Indonesian, switchable at runtime without leaving the screen. System, dark and light themes, with bundled Inter and JetBrains Mono type. |
 | **Built-in diagnostics** | Engine state, a searchable log viewer with follow mode, runtime paths, and `git`/`rg` self-checks, so release builds can be debugged without `adb`. Restart the engine from here. |
+| **In-app browser** | Links from chat open in a browser inside the app (system WebView, no bundled Chromium): back/forward, reload, share, open outside, downloads to the Downloads folder. `mailto:`/`tel:` still go to the system. |
+| **Share in and out** | Share an answer to any app, or share text/a link from any app into a fresh draft. Sessions open from `opencode://session/<id>` links, launcher shortcuts (new session + last session) and a home-screen widget. |
+| **Done notifications** | When an agent run finishes while the app is in the background, a notification says so; tapping it opens the session. |
+| **Camera photos** | Take a photo from the composer: it is saved into the project (`.opencode-photos/`) and mentioned in the draft by path, so the agent can reference it. |
 
 ### Not yet
 

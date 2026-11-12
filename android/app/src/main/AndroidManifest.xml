@@ -58,12 +58,34 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Receive shared text (Native C): a link or text shared from
+              any app opens here and becomes the draft of a fresh session.
+              singleTop above keeps an already-open app from restarting:
+              the share arrives through onNewIntent instead. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Deep link (Native C): opencode://session/{id} opens that
+              session. Handled by the same intent path as the share above. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="opencode" android:host="session" />
+            </intent-filter>
+            <!-- Launcher shortcuts (Native C): long-press the app icon. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!--
@@ -80,5 +102,17 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="long_running_local_coding_agent_server" />
         </service>
+
+        <!-- Home-screen widget (Native C): last session + New / Open. -->
+        <receiver
+            android:name=".ui.widget.SessionWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_session_info" />
+        </receiver>
     </application>
 </manifest>

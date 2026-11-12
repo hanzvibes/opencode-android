@@ -28,7 +28,7 @@ enum class Glyph {
     Eye, EyeOff, Key, Sparkle, Refresh,
     GitBranch, Sparkles, CheckCircle, Warning, Play, Stop,
     FileCode, Lightning, Pin, Trash, Dots, Pulse, User,
-    Question, Square, CheckSquare, History,
+    Question, Square, CheckSquare, History, Share,
 }
 
 @Composable
@@ -326,6 +326,12 @@ fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp
                 line(10f, 7f, 20f, 7f)
                 line(10f, 12f, 20f, 12f)
                 line(10f, 17f, 20f, 17f)
+            }
+            // Arrow up out of a tray (iOS-style share).
+            Glyph.Share -> {
+                line(12f, 3f, 12f, 15f)
+                shape(8f to 7f, 12f to 3f, 16f to 7f)
+                shape(5f to 12f, 5f to 20f, 19f to 20f, 19f to 12f)
             }
         }
     }
