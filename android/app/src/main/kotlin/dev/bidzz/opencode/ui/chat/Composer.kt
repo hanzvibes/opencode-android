@@ -4,13 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -391,15 +386,20 @@ fun Composer(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.TopStart,
                     ) {
-                        if (value.isEmpty()) {
-                            // Crossfade between the not-ready / busy / hint
-                            // states so the placeholder swaps instead of popping.
+                        if (value.isEmpty() && !busy) {
+                            // No placeholder while busy: WorkingProgressRow
+                            // above already states the live step + clock.
+                            // Rendering composer_busy here duplicated it —
+                            // screenshot showed "Running · 124s" over
+                            // "Agent is working…" — and hid the field the
+                            // user types a queued follow-up into.
+                            // Crossfade between the not-ready / hint states
+                            // so the placeholder swaps instead of popping.
                             // The idle hint names the model (or the agent when
                             // no model is known) so the composer says who will
                             // answer, not just "ask anything".
                             val placeholderText = when {
                                 !enabled -> stringResource(R.string.composer_not_ready)
-                                busy -> stringResource(R.string.composer_busy)
                                 modelLabel != null -> stringResource(R.string.composer_hint_named, modelLabel)
                                 agentLabel != null -> stringResource(R.string.composer_hint_named, agentLabel)
                                 else -> stringResource(R.string.composer_hint)
@@ -431,10 +431,15 @@ fun Composer(
                     .padding(start = spacing.md, end = spacing.sm),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Omnibar shortcuts: the / and @ pills are pinned outside the
-                // scrolling row, so the agent/model selectors can scroll on a
-                // narrow phone without ever pushing the primary command trigger
-                // off-screen. Only the mode/model controls scroll.
+                // Omnibar shortcuts, grouped with an 8dp gap between them:
+                // the row used to lay the chips out with no spacing at all
+                // (0dp between pills), so `/` `@` file camera read as four
+                // cramped grey circles in screenshots. Only the mode/model
+                // controls scroll.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                 QuickActionChip(
                     label = "/",
                     glyph = null,
@@ -491,8 +496,9 @@ fun Composer(
                         onClick = { onTakePhoto() },
                     )
                 }
+                }
 
-                Spacer(modifier = Modifier.width(spacing.xs))
+                Spacer(modifier = Modifier.width(spacing.sm))
 
                 Row(
                     modifier = Modifier
@@ -504,7 +510,7 @@ fun Composer(
                     controls()
                 }
 
-                Spacer(modifier = Modifier.width(spacing.xs))
+                Spacer(modifier = Modifier.width(spacing.sm))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -513,29 +519,28 @@ fun Composer(
                     // Prompt history (C-F): Up/Down step through prompts sent
                     // in this session. Up only starts from an empty draft, so
                     // it never overwrites text being typed; Down past the
-                    // newest prompt restores an empty draft.
+                    // newest prompt restores an empty draft. The two arrows
+                    // share one segmented 36dp pill now: as two bare 40dp
+                    // buttons they floated ungrouped with a gap to Stop
+                    // that read as random arrows, not one control.
                     if (promptHistory.isNotEmpty() && enabled) {
-                        HistoryNavButton(
-                            glyph = Glyph.ArrowUp,
-                            contentDescription = stringResource(R.string.prompt_history_previous),
-                            enabled = historyIndex != 0 && (historyIndex >= 0 || value.isEmpty()),
-                            onClick = {
+                        HistoryNavSegmented(
+                            prevDescription = stringResource(R.string.prompt_history_previous),
+                            nextDescription = stringResource(R.string.prompt_history_next),
+                            prevEnabled = historyIndex != 0 && (historyIndex >= 0 || value.isEmpty()),
+                            nextEnabled = historyIndex >= 0,
+                            onPrev = {
                                 if (historyIndex < 0) {
-                                    if (value.isNotBlank()) return@HistoryNavButton
+                                    if (value.isNotBlank()) return@HistoryNavSegmented
                                     historyIndex = promptHistory.lastIndex
                                 } else if (historyIndex > 0) {
                                     historyIndex--
                                 } else {
-                                    return@HistoryNavButton
+                                    return@HistoryNavSegmented
                                 }
                                 onValueChange(promptHistory[historyIndex])
                             },
-                        )
-                        HistoryNavButton(
-                            glyph = Glyph.ArrowDown,
-                            contentDescription = stringResource(R.string.prompt_history_next),
-                            enabled = historyIndex >= 0,
-                            onClick = {
+                            onNext = {
                                 if (historyIndex < promptHistory.lastIndex) {
                                     historyIndex++
                                     onValueChange(promptHistory[historyIndex])
@@ -838,8 +843,10 @@ private fun QuickActionChip(
         else -> colors.onSurfaceMuted
     }
 
-    // Hit area is 40dp; the pill itself stays 28dp, centred inside it, so
+    // Hit area is 40dp; the pill itself is 36dp, centred inside it, so
     // the chip is easier to tap without the composer controls growing taller.
+    // 36dp (was 28dp) + 8dp between chips: at 28dp with a 0dp gap the four
+    // shortcuts read as cramped grey circles in screenshots.
     Box(
         modifier = modifier
             .height(dims.composerChipTouchTarget)
@@ -858,7 +865,7 @@ private fun QuickActionChip(
     ) {
         Row(
             modifier = Modifier
-                .height(28.dp)
+                .height(36.dp)
                 .graphicsLayer {
                     scaleX = scale
                     scaleY = scale
@@ -874,7 +881,7 @@ private fun QuickActionChip(
                 GlyphIcon(
                     glyph = glyph,
                     tint = contentColor,
-                    size = 13.dp,
+                    size = dims.iconSmall,
                 )
             }
             // A glyph-only chip (the file-attach chip) renders no label
@@ -883,7 +890,7 @@ private fun QuickActionChip(
             if (label.isNotEmpty()) {
                 Text(
                     text = label,
-                    style = OpenCodeTypography.caption.copy(fontFamily = OpenCodeTypography.mono),
+                    style = OpenCodeTypography.label.copy(fontFamily = OpenCodeTypography.mono),
                     color = contentColor,
                 )
             }
@@ -892,11 +899,64 @@ private fun QuickActionChip(
 }
 
 /**
- * Small Up/Down button for prompt-history navigation (C-F): a 40dp touch
- * target with a 14dp arrow, dimmed when there is nowhere to go.
+ * Prompt-history navigation (C-F) as one segmented pill: Up/Down share a
+ * 36dp-tall fill pill with a hairline divider between them, centred in a
+ * 40dp touch target so it lines up with the 36dp quick-action chips.
+ * Two bare buttons used to float ungrouped; the pill reads as one control
+ * and its disabled half (Down with no history position) reads as such.
  */
 @Composable
-private fun HistoryNavButton(
+private fun HistoryNavSegmented(
+    prevDescription: String,
+    nextDescription: String,
+    prevEnabled: Boolean,
+    nextEnabled: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+    val pillShape = RoundedCornerShape(radius.full)
+
+    Box(
+        modifier = modifier.height(dims.composerChipTouchTarget),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .height(36.dp)
+                .clip(pillShape)
+                .background(colors.fill)
+                .border(0.5.dp, colors.hairline, pillShape),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            HistoryNavSegment(
+                glyph = Glyph.ArrowUp,
+                contentDescription = prevDescription,
+                enabled = prevEnabled,
+                onClick = onPrev,
+            )
+            Box(
+                modifier = Modifier
+                    .width(dims.hairline)
+                    .height(dims.iconSmall)
+                    .background(colors.hairline),
+            )
+            HistoryNavSegment(
+                glyph = Glyph.ArrowDown,
+                contentDescription = nextDescription,
+                enabled = nextEnabled,
+                onClick = onNext,
+            )
+        }
+    }
+}
+
+/** One half of [HistoryNavSegmented]: a 36dp square with a 14dp arrow. */
+@Composable
+private fun HistoryNavSegment(
     glyph: Glyph,
     contentDescription: String,
     enabled: Boolean,
@@ -906,7 +966,7 @@ private fun HistoryNavButton(
     val colors = OpenCodeTheme.colors
     Box(
         modifier = modifier
-            .size(40.dp)
+            .size(36.dp)
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
@@ -1030,35 +1090,12 @@ private fun ActionButton(
         label = "composer_action_press_scale",
     )
 
-    // Breathing pulse during agent execution (Abort / Stop mode), at the
-    // single live pulse period (motion.pulsePeriodMs). The infinite
-    // transition only exists while busy — nothing ticks while idle.
-    val pulseScale: Float
-    val pulseGlow: Float
-    if (busy) {
-        val infiniteTransition = rememberInfiniteTransition(label = "busy_pulse_transition")
-        pulseScale = infiniteTransition.animateFloat(
-            initialValue = 0.97f,
-            targetValue = 1.04f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = motion.pulsePeriodMs, easing = motion.easingStandard),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "busy_pulse_scale",
-        ).value
-        pulseGlow = infiniteTransition.animateFloat(
-            initialValue = 0.30f,
-            targetValue = 0.65f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = motion.pulsePeriodMs, easing = motion.easingStandard),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "busy_pulse_glow",
-        ).value
-    } else {
-        pulseScale = 1f
-        pulseGlow = 0.40f
-    }
+    // No breathing pulse on the button itself any more (visual polish):
+    // the scale pulse (0.97–1.04) made the red Stop read ~56dp in
+    // screenshots and dominate the whole toolbar. The live dot in
+    // WorkingProgressRow is the only pulse while busy; the button keeps
+    // its press spring and a steady danger shadow.
+    val pulseGlow = 0.40f
 
     val targetBg = when {
         busy -> colors.danger
@@ -1106,12 +1143,14 @@ private fun ActionButton(
         label = "composer_action_shadow_color",
     )
 
-    val finalScale = pressScale * (if (busy) pulseScale else 1.0f)
+    val finalScale = pressScale
     // Disabled state gets a hairline ring so it still reads as a button,
     // just an unavailable one, instead of a flat grey dot.
     val isDisabled = !busy && !canSend && !hasVoice && !voiceListening
 
-    // Hit area is 44dp; the 36dp circle stays the visual, centred inside it.
+    // Hit area is 44dp; the 32dp circle stays the visual, centred inside it.
+    // 32dp (was 36dp): with the pulse gone the Stop stops shouting, and it
+    // sits one step below the 36dp chips instead of above them.
     Box(
         modifier = modifier
             .size(dims.composerActionTouchTarget)
@@ -1130,7 +1169,7 @@ private fun ActionButton(
     ) {
         Box(
             modifier = Modifier
-                .size(36.dp)
+                .size(32.dp)
                 .graphicsLayer {
                     scaleX = finalScale
                     scaleY = finalScale
@@ -1174,14 +1213,15 @@ private fun ActionButton(
             ) {
             when (state) {
                 ActionState.BUSY -> {
-                    // 14dp, up from 11dp: the stop square was the
-                    // smallest glyph in the composer and read as a speck
-                    // next to the 20dp send arrow. (The button keeps its
-                    // "Stop" contentDescription for screen readers; the
-                    // 36dp circle has no room for a visible label.)
+                    // 12dp: the stop square was the smallest glyph in the
+                    // composer at 11dp, then overshot to 14dp; 12dp reads
+                    // as a stop glyph inside the 32dp circle without
+                    // becoming a red block. (The button keeps its "Stop"
+                    // contentDescription for screen readers; the 32dp
+                    // circle has no room for a visible label.)
                     Box(
                         modifier = Modifier
-                            .size(14.dp)
+                            .size(12.dp)
                             .background(iconTint, RoundedCornerShape(2.5.dp)),
                     )
                 }
