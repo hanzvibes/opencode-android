@@ -627,10 +627,12 @@ private fun ProviderCard(
             .whiteCard(
                 // The connected edge survives the white-card treatment:
                 // a green edge reads "connected" where the card itself
-                // is white in both themes. The alpha is the shared
-                // border token (0.25), not a literal.
+                // is white in both themes. 0.25 is the shared border
+                // token's value (AlphaTokens.border, PR #39) — written
+                // as a literal here so this PR stays independent of #39;
+                // switch it to tokens.alpha.border once #39 lands.
                 borderColor = if (status == ProviderStatus.CONNECTED) {
-                    colors.success.copy(alpha = OpenCodeTheme.tokens.alpha.border)
+                    colors.success.copy(alpha = 0.25f)
                 } else {
                     null
                 },
