@@ -152,8 +152,11 @@ class EngineConfigStoreJsoncTest {
 
     @Test
     fun `a malformed config reports which file failed instead of an empty list`() {
+        // Truncated JSON: no amount of JSONC stripping repairs an unterminated
+        // object. (A lone "{,}" would be repaired by the trailing-comma strip,
+        // so it is not a malformed fixture.)
         val (store, _) = storeWith(
-            "opencode.json" to """{"providers": {"probe": {"name": "Probe", "settings": {,}}}}""",
+            "opencode.json" to """{"providers": {"probe": {"name": "Probe", "settings": {"baseURL": "https://x"""",
         )
         assertEquals(emptyList<EngineConfigStore.CustomProvider>(), store.customProviders())
         val problem = store.lastConfigReadProblem

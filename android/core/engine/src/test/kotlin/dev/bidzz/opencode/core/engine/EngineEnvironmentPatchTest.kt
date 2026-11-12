@@ -103,7 +103,7 @@ class EngineEnvironmentPatchTest {
     }
 
     @Test
-    fun `decidePluginPatch is pure: unpatched, patched and unknown texts`() {
+    fun `decidePluginPatch is pure for unpatched, patched and unknown texts`() {
         val patch = decidePluginPatch("request.js", requestUnpatched)
         assertTrue(patch is PluginPatchDecision.Patch)
         val patchedText = (patch as PluginPatchDecision.Patch).patchedText
