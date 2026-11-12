@@ -22,7 +22,7 @@ object NodeAssets {
     private const val TAG = "NodeAssets"
 
     /** Bump when the bundled Node/npm versions change. */
-    const val VERSION = "node-24.22.2-npm-12.2.2"
+    const val VERSION = "node-24.22.3-npm-12.2.2"
 
     private const val ASSET_ROOT = "node"
     private const val MARKER_NAME = ".node-assets-version"

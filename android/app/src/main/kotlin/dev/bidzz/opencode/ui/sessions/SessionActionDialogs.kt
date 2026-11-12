@@ -50,6 +50,11 @@ fun SessionActionMenu(
     onPinToggle: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    /** Null hides the entry: only callers that can open the screen pass one. */
+    onInboxClick: (() -> Unit)? = null,
+    onMoveClick: (() -> Unit)? = null,
+    onExportClick: (() -> Unit)? = null,
+    onInstructionsClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -110,6 +115,98 @@ fun SessionActionMenu(
                 onRenameClick()
             },
         )
+
+        if (onInboxClick != null) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(R.string.session_action_inbox),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    GlyphIcon(
+                        glyph = Glyph.Mail,
+                        tint = colors.onSurfaceMuted,
+                        size = dims.iconSmall,
+                    )
+                },
+                onClick = {
+                    onDismissRequest()
+                    onInboxClick()
+                },
+            )
+        }
+
+        if (onMoveClick != null) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(R.string.session_action_move),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    GlyphIcon(
+                        glyph = Glyph.Folder,
+                        tint = colors.onSurfaceMuted,
+                        size = dims.iconSmall,
+                    )
+                },
+                onClick = {
+                    onDismissRequest()
+                    onMoveClick()
+                },
+            )
+        }
+
+        if (onExportClick != null) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(R.string.session_action_export),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    GlyphIcon(
+                        glyph = Glyph.Copy,
+                        tint = colors.onSurfaceMuted,
+                        size = dims.iconSmall,
+                    )
+                },
+                onClick = {
+                    onDismissRequest()
+                    onExportClick()
+                },
+            )
+        }
+
+        if (onInstructionsClick != null) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(R.string.session_action_instructions),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurface,
+                    )
+                },
+                leadingIcon = {
+                    GlyphIcon(
+                        glyph = Glyph.Pencil,
+                        tint = colors.onSurfaceMuted,
+                        size = dims.iconSmall,
+                    )
+                },
+                onClick = {
+                    onDismissRequest()
+                    onInstructionsClick()
+                },
+            )
+        }
 
         Box(
             modifier = Modifier

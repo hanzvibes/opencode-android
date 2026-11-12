@@ -15,7 +15,7 @@
 
 | Tool | Version | How to run |
 | --- | --- | --- |
-| Node.js | 24.22.2 | `node --version` |
+| Node.js | 24.22.3 | `node --version` |
 | npm | 12.2.2 | `node $HOME/../node/lib/node_modules/npm/bin/npm-cli.js <args>` — there is NO bare `npm` or `npx` command |
 | xz | 5.8.4 | `xz --version` |
 | tar | 1.35 | `tar --version` |

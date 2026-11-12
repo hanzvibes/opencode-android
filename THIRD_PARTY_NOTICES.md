@@ -56,7 +56,7 @@ The GPL-2.0 licence text is in `licenses/GPL-2.0.txt`.
 ripgrep is dual-licensed MIT/Unlicense, so redistribution only requires keeping
 the copyright notice and permission notice. Both are reproduced below.
 
-### Node.js 24.22.2 — `libnode.so` (+ npm 12.2.2, ICU, OpenSSL)
+### Node.js 24.22.3 — `libnode.so` (+ npm 12.2.2, ICU, OpenSSL)
 
 The in-app agent needs a JavaScript runtime. Node.js comes from Termux apt
 (bionic-native, PIE, 16 KB aligned) — not from nodejs.org, whose linux-arm64
@@ -66,7 +66,7 @@ the versioned `.so` names to `lib<name>.so`).
 
 | Component | Version | Licence | Upstream |
 |---|---|---|---|
-| Node.js (`node`) | 24.22.2 (nodejs-lts) | MIT | https://nodejs.org/ |
+| Node.js (`node`) | 24.22.3 (nodejs-lts) | MIT | https://nodejs.org/ |
 | npm | 12.2.2 | Artistic License 2.0 | https://www.npmjs.com/ |
 | corepack | (bundled with Node) | MIT | https://nodejs.org/ |
 | ICU | 79.1 | Unicode License v3 | https://icu.unicode.org/ |

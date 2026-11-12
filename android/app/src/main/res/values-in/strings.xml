@@ -218,6 +218,10 @@
     <string name="session_action_unpin">Lepas sematan</string>
     <string name="session_action_rename">Ganti nama</string>
     <string name="session_action_delete">Hapus</string>
+    <string name="session_action_inbox">Kotak masuk</string>
+    <string name="session_action_move">Pindahkan</string>
+    <string name="session_action_export">Ekspor</string>
+    <string name="session_action_instructions">Instruksi</string>
     <string name="session_rename_title">Ganti nama obrolan</string>
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
@@ -225,6 +229,86 @@
     <string name="session_actions">Tindakan sesi</string>
     <string name="session_action_cancel">Batal</string>
     <string name="session_action_save">Simpan</string>
+
+    <!-- Kotak masuk sesi -->
+    <string name="inbox_title">Kotak masuk</string>
+    <string name="inbox_body">Pekerjaan antrean sesi ini yang belum terkirim.</string>
+    <string name="inbox_empty">Tidak ada antrean untuk sesi ini.</string>
+    <string name="inbox_type_user">Pesan</string>
+    <string name="inbox_type_synthetic">Catatan</string>
+    <string name="inbox_type_compaction">Compaction</string>
+    <string name="inbox_type_move">Pindah</string>
+    <string name="inbox_type_unknown">Item antrean</string>
+    <string name="inbox_delivery_steer">Steer</string>
+    <string name="inbox_delivery_queue">Antre</string>
+    <string name="inbox_files">%1$d berkas</string>
+
+    <!-- Pindahkan sesi -->
+    <string name="move_title">Pindahkan sesi</string>
+    <string name="move_body">Pindahkan sesi ini ke project lain. Riwayat sesi tetap tersimpan.</string>
+    <string name="move_empty">Tidak ada project lain di engine.</string>
+    <string name="move_confirm">Pindahkan</string>
+    <string name="move_moving">Memindahkan…</string>
+    <string name="move_done">Sesi sudah dipindahkan.</string>
+    <string name="move_current">Project saat ini</string>
+
+    <!-- Statistik sesi -->
+    <string name="stats_title">Statistik sesi</string>
+    <string name="stats_body">Ringkasan aktivitas, pemakaian, dan keandalan tool sesi.</string>
+    <string name="stats_empty">Belum ada aktivitas sesi yang tercatat.</string>
+    <string name="stats_field_sessions">Sesi</string>
+    <string name="stats_field_prompts">Prompt</string>
+    <string name="stats_field_steps">Langkah</string>
+    <string name="stats_field_subagents">Subagen</string>
+    <string name="stats_field_tokens">Token</string>
+    <string name="stats_field_cost">Biaya</string>
+    <string name="stats_field_active_days">Hari aktif</string>
+    <string name="stats_field_streak">Beruntun (hari)</string>
+    <string name="stats_field_tool_calls">Panggilan tool</string>
+    <string name="stats_field_tool_failed">Panggilan tool gagal</string>
+    <string name="stats_section_models">Model</string>
+    <string name="stats_section_tools">Tool</string>
+    <string name="stats_model_detail">%1$d langkah · %2$d token · %3$s</string>
+    <string name="stats_tool_detail">%1$d panggilan · %2$d gagal</string>
+
+    <!-- Ekspor sesi -->
+    <string name="export_title">Ekspor sesi</string>
+    <string name="export_body">Transkrip lengkap sesi ini, sebagai JSON. Salin untuk dibagikan atau disimpan di tempat lain.</string>
+    <string name="export_empty">Sesi ini tidak punya apa pun untuk diekspor.</string>
+    <string name="export_messages">%1$d pesan</string>
+    <string name="export_size">%1$d karakter</string>
+    <string name="export_copy">Salin JSON</string>
+    <string name="export_copied">Disalin</string>
+
+    <!-- Instruksi sesi -->
+    <string name="instructions_title">Instruksi sesi</string>
+    <string name="instructions_body">Instruksi tambahan untuk sesi ini. Instruksi diumumkan ke model pada batas langkah berikutnya.</string>
+    <string name="instructions_empty">Tidak ada instruksi untuk sesi ini.</string>
+    <string name="instructions_key_hint">Kunci, contohnya notes</string>
+    <string name="instructions_value_hint">Nilai</string>
+    <string name="instructions_save">Simpan</string>
+    <string name="instructions_key_invalid">Kunci diawali huruf kecil atau angka, lalu huruf kecil, angka, titik, garis bawah, atau strip.</string>
+    <string name="instructions_too_large">Nilai itu terlalu besar. Maksimum 256 KB.</string>
+
+    <!-- Batas pemakaian -->
+    <string name="usage_title">Batas pemakaian</string>
+    <string name="usage_body">Jatah OpenCode Go dan budget Console untuk workspace tempat lokasi ini masuk.</string>
+    <string name="usage_empty">Tidak ada batas pemakaian untuk ditampilkan. Workspace mungkin belum masuk ke OpenCode Console.</string>
+    <string name="usage_section_go">OpenCode Go</string>
+    <string name="usage_meter_rolling">Bergulir</string>
+    <string name="usage_meter_weekly">Mingguan</string>
+    <string name="usage_meter_monthly">Bulanan</string>
+    <string name="usage_limited">Dibatasi</string>
+    <string name="usage_resets">Reset %1$s</string>
+    <string name="usage_section_budgets">Budget</string>
+    <string name="usage_budget_spent">%1$s dari %2$s</string>
+    <string name="usage_scope_each">Per anggota</string>
+    <string name="usage_scope_combined">Gabungan</string>
+    <string name="usage_per_set">Lintas model</string>
+    <string name="usage_per_model">Per model</string>
+    <string name="usage_coverage_all">Semua model dan layanan</string>
+    <string name="usage_coverage_models">Model terpilih</string>
+    <string name="usage_budget_shared">Bersama</string>
     <string name="composer_not_ready">Mesin belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <!-- Redesign C working progress: %1$s kalimat langkah live ("Membaca ChatScreen.kt")

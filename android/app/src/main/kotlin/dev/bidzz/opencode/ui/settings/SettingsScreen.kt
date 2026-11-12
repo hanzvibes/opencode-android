@@ -103,6 +103,8 @@ fun SettingsScreen(
     onPlugins: () -> Unit,
     onWorktrees: () -> Unit,
     onEngineConfig: () -> Unit,
+    onSessionStats: () -> Unit,
+    onUsageLimits: () -> Unit,
     onAbout: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -198,6 +200,10 @@ fun SettingsScreen(
     val worktreeSubtitle = stringResource(R.string.worktree_body)
     val configTitle = stringResource(R.string.config_title)
     val configSubtitle = stringResource(R.string.config_body)
+    val statsTitle = stringResource(R.string.stats_title)
+    val statsSubtitle = stringResource(R.string.stats_body)
+    val usageTitle = stringResource(R.string.usage_title)
+    val usageSubtitle = stringResource(R.string.usage_body)
     val languageTitle = stringResource(R.string.settings_language)
     val languageValue = languageLabel(language)
     val providerTitle = stringResource(R.string.settings_provider_title)
@@ -236,7 +242,9 @@ fun SettingsScreen(
     val pluginVisible = matchesSettingsQuery(query, pluginTitle, pluginSubtitle)
     val worktreeVisible = matchesSettingsQuery(query, worktreeTitle, worktreeSubtitle)
     val configVisible = matchesSettingsQuery(query, configTitle, configSubtitle)
-    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible || configVisible
+    val statsVisible = matchesSettingsQuery(query, statsTitle, statsSubtitle)
+    val usageVisible = matchesSettingsQuery(query, usageTitle, usageSubtitle)
+    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible || configVisible || statsVisible || usageVisible
     val languageVisible = matchesSettingsQuery(query, languageTitle, languageValue)
     val visibleThemeModes = ThemeMode.entries.filter { mode ->
         matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
@@ -440,6 +448,22 @@ fun SettingsScreen(
                             title = configTitle,
                             subtitle = configSubtitle,
                             onClick = onEngineConfig,
+                        )
+                    }
+                    if (statsVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Pulse,
+                            title = statsTitle,
+                            subtitle = statsSubtitle,
+                            onClick = onSessionStats,
+                        )
+                    }
+                    if (usageVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Sliders,
+                            title = usageTitle,
+                            subtitle = usageSubtitle,
+                            onClick = onUsageLimits,
                         )
                     }
                 }

@@ -219,6 +219,10 @@
     <string name="session_action_unpin">Unpin</string>
     <string name="session_action_rename">Rename</string>
     <string name="session_action_delete">Delete</string>
+    <string name="session_action_inbox">Inbox</string>
+    <string name="session_action_move">Move</string>
+    <string name="session_action_export">Export</string>
+    <string name="session_action_instructions">Instructions</string>
     <string name="session_rename_title">Rename chat</string>
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
@@ -226,6 +230,86 @@
     <string name="session_actions">Session actions</string>
     <string name="session_action_cancel">Cancel</string>
     <string name="session_action_save">Save</string>
+
+    <!-- Session inbox -->
+    <string name="inbox_title">Inbox</string>
+    <string name="inbox_body">Queued work for this session that has not been delivered yet.</string>
+    <string name="inbox_empty">Nothing queued for this session.</string>
+    <string name="inbox_type_user">Message</string>
+    <string name="inbox_type_synthetic">Note</string>
+    <string name="inbox_type_compaction">Compaction</string>
+    <string name="inbox_type_move">Move</string>
+    <string name="inbox_type_unknown">Queued item</string>
+    <string name="inbox_delivery_steer">Steer</string>
+    <string name="inbox_delivery_queue">Queue</string>
+    <string name="inbox_files">%1$d files</string>
+
+    <!-- Move session -->
+    <string name="move_title">Move session</string>
+    <string name="move_body">Move this session to another project. The session keeps its history.</string>
+    <string name="move_empty">No other projects found on the engine.</string>
+    <string name="move_confirm">Move</string>
+    <string name="move_moving">Moving…</string>
+    <string name="move_done">Session moved.</string>
+    <string name="move_current">Current project</string>
+
+    <!-- Session stats -->
+    <string name="stats_title">Session stats</string>
+    <string name="stats_body">Aggregate session activity, usage, and tool reliability.</string>
+    <string name="stats_empty">No session activity recorded yet.</string>
+    <string name="stats_field_sessions">Sessions</string>
+    <string name="stats_field_prompts">Prompts</string>
+    <string name="stats_field_steps">Steps</string>
+    <string name="stats_field_subagents">Subagents</string>
+    <string name="stats_field_tokens">Tokens</string>
+    <string name="stats_field_cost">Cost</string>
+    <string name="stats_field_active_days">Active days</string>
+    <string name="stats_field_streak">Streak (days)</string>
+    <string name="stats_field_tool_calls">Tool calls</string>
+    <string name="stats_field_tool_failed">Tool calls failed</string>
+    <string name="stats_section_models">Models</string>
+    <string name="stats_section_tools">Tools</string>
+    <string name="stats_model_detail">%1$d steps · %2$d tokens · %3$s</string>
+    <string name="stats_tool_detail">%1$d calls · %2$d failed</string>
+
+    <!-- Session export -->
+    <string name="export_title">Export session</string>
+    <string name="export_body">A complete transcript of this session, as JSON. Copy it to share or save it elsewhere.</string>
+    <string name="export_empty">This session has nothing to export.</string>
+    <string name="export_messages">%1$d messages</string>
+    <string name="export_size">%1$d characters</string>
+    <string name="export_copy">Copy JSON</string>
+    <string name="export_copied">Copied</string>
+
+    <!-- Session instructions -->
+    <string name="instructions_title">Session instructions</string>
+    <string name="instructions_body">Extra instructions attached to this session. They are announced to the model at the next step boundary.</string>
+    <string name="instructions_empty">No instructions attached to this session.</string>
+    <string name="instructions_key_hint">Key, for example notes</string>
+    <string name="instructions_value_hint">Value</string>
+    <string name="instructions_save">Save</string>
+    <string name="instructions_key_invalid">Keys start with a lowercase letter or digit, then lowercase letters, digits, dots, underscores, or hyphens.</string>
+    <string name="instructions_too_large">That value is too large. The maximum is 256 KB.</string>
+
+    <!-- Usage limits -->
+    <string name="usage_title">Usage limits</string>
+    <string name="usage_body">OpenCode Go allowance and Console budgets for the workspace this location is signed in to.</string>
+    <string name="usage_empty">No usage limits to show. The workspace may not be signed in to OpenCode Console.</string>
+    <string name="usage_section_go">OpenCode Go</string>
+    <string name="usage_meter_rolling">Rolling</string>
+    <string name="usage_meter_weekly">Weekly</string>
+    <string name="usage_meter_monthly">Monthly</string>
+    <string name="usage_limited">Limited</string>
+    <string name="usage_resets">Resets %1$s</string>
+    <string name="usage_section_budgets">Budgets</string>
+    <string name="usage_budget_spent">%1$s of %2$s</string>
+    <string name="usage_scope_each">Per member</string>
+    <string name="usage_scope_combined">Combined</string>
+    <string name="usage_per_set">Across models</string>
+    <string name="usage_per_model">Per model</string>
+    <string name="usage_coverage_all">All models and services</string>
+    <string name="usage_coverage_models">Selected models</string>
+    <string name="usage_budget_shared">Shared</string>
     <string name="composer_not_ready">Engine is not ready</string>
     <string name="composer_busy">Agent is working…</string>
     <!-- Redesign C working progress: %1$s is the live step sentence ("Reading ChatScreen.kt")
