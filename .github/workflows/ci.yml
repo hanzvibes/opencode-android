@@ -194,6 +194,62 @@ jobs:
           echo "arm64-v8a staged: $(ls -1 android/app/src/main/jniLibs/arm64-v8a | tr '\n' ' ')"
           echo "x86_64 staged: $(ls -1 android/app/src/main/jniLibs/x86_64 | tr '\n' ' ')"
 
+      # python3 + pip ship as Termux native libraries, staged from .deb
+      # files by script/android/stage-python.sh (same pattern as Node/xz/curl
+      # above). It also stages the stdlib tree (+ pip) into assets/python/
+      # (extracted to files/engine/python/ at first launch) and rewrites the
+      # lib-dynload modules' versioned DT_NEEDED entries, which the ELF gate
+      # over jniLibs cannot see. `pip` has no binary: it runs as
+      # `python3 -m pip`.
+      - name: Stage python3 + pip from Termux
+        run: |
+          set -euo pipefail
+          bash script/android/stage-python.sh --abi arm64-v8a \
+            --jni-out android/app/src/main/jniLibs/arm64-v8a \
+            --assets-out android/app/src/main/assets/python
+          bash script/android/stage-python.sh --abi x86_64 \
+            --jni-out android/app/src/main/jniLibs/x86_64 \
+            --no-assets
+          echo "arm64-v8a staged: $(ls -1 android/app/src/main/jniLibs/arm64-v8a | tr '\n' ' ')"
+          echo "x86_64 staged: $(ls -1 android/app/src/main/jniLibs/x86_64 | tr '\n' ' ')"
+
+      # jq ships as a Termux native library, staged from .deb files by
+      # script/android/stage-jq.sh (same pattern as curl above).
+      - name: Stage jq from Termux
+        run: |
+          set -euo pipefail
+          bash script/android/stage-jq.sh --abi arm64-v8a \
+            --jni-out android/app/src/main/jniLibs/arm64-v8a
+          bash script/android/stage-jq.sh --abi x86_64 \
+            --jni-out android/app/src/main/jniLibs/x86_64
+          echo "arm64-v8a staged: $(ls -1 android/app/src/main/jniLibs/arm64-v8a | tr '\n' ' ')"
+          echo "x86_64 staged: $(ls -1 android/app/src/main/jniLibs/x86_64 | tr '\n' ' ')"
+
+      # ffmpeg + ffprobe ship as Termux native libraries, staged from .deb
+      # files by script/android/stage-ffmpeg.sh (same pattern as curl above).
+      # The closure is large by construction (~89 MiB of libs: Termux's
+      # ffmpeg links the full codec set, and every DT_NEEDED lib must be
+      # present or even `ffmpeg -version` fails to load).
+      - name: Stage ffmpeg + ffprobe from Termux
+        run: |
+          set -euo pipefail
+          bash script/android/stage-ffmpeg.sh --abi arm64-v8a \
+            --jni-out android/app/src/main/jniLibs/arm64-v8a
+          bash script/android/stage-ffmpeg.sh --abi x86_64 \
+            --jni-out android/app/src/main/jniLibs/x86_64
+          echo "arm64-v8a staged: $(ls -1 android/app/src/main/jniLibs/arm64-v8a | tr '\n' ' ')"
+          echo "x86_64 staged: $(ls -1 android/app/src/main/jniLibs/x86_64 | tr '\n' ' ')"
+
+      # Language servers (TypeScript + Python) ship as pure-JS npm packages,
+      # staged by script/android/stage-lsp.sh (pinned tarballs, SHA512, no
+      # ABI). They run under the bundled Node; see engine/README.md for the
+      # opencode.json snippet that points the engine at them.
+      - name: Stage language servers from npm
+        run: |
+          set -euo pipefail
+          bash script/android/stage-lsp.sh \
+            --assets-out android/app/src/main/assets/lsp
+
       - name: Compile and package
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon

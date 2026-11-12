@@ -110,6 +110,14 @@ class OpenCodeApplication : Application() {
             // and the node binary, just without npm (NodeAssets logs it).
             runCatching { NodeAssets.sync(assets, filesDir) }
                 .onFailure { Log.w(TAG, "node assets sync failed: ${it.message}") }
+            // Same pattern for the Python stdlib tree (PYTHONHOME) and the
+            // bundled language servers: extracted before the engine first
+            // spawns a child that calls python3 or an LSP server. Non-fatal
+            // by design, like NodeAssets above.
+            runCatching { PythonAssets.sync(assets, filesDir) }
+                .onFailure { Log.w(TAG, "python assets sync failed: ${it.message}") }
+            runCatching { LspAssets.sync(assets, filesDir) }
+                .onFailure { Log.w(TAG, "lsp assets sync failed: ${it.message}") }
             processManager = ProcessManager(binary, environment)
             Log.i(TAG, "engine resolved at ${binary.executable.absolutePath}")
             Log.i(TAG, "workspace: ${environment.workspace.absolutePath}")

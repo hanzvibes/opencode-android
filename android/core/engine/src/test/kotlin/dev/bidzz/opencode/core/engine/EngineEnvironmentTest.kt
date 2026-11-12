@@ -14,6 +14,10 @@ import org.junit.Test
  * Also covers the xz/tar/ar tools (Tier 2 item 22): the tool map must list
  * `xz`, `tar`, and `ar`. And the curl tool (Tier 2 item 23, staging part):
  * the tool map must list `curl` (staged as `libcurl-cli.so`).
+ * And the Batch 6 runtime tools (Tier 2 items 24-27): the tool map must
+ * list `python3` (staged as `libpython3.so`), `jq` (staged as
+ * `libjq-cli.so`), `ffmpeg` and `ffprobe`; and the child-process
+ * environment must point PYTHONHOME at the extracted Python assets.
  */
 class EngineEnvironmentTest {
 
@@ -51,6 +55,31 @@ class EngineEnvironmentTest {
     @Test
     fun toolLibrariesContainCurl() {
         assertEquals("curl", EngineBinary.TOOL_LIBRARIES["libcurl-cli.so"])
+    }
+
+    @Test
+    fun toolLibrariesContainPythonJqFfmpeg() {
+        assertEquals("python3", EngineBinary.TOOL_LIBRARIES["libpython3.so"])
+        assertEquals("jq", EngineBinary.TOOL_LIBRARIES["libjq-cli.so"])
+        assertEquals("ffmpeg", EngineBinary.TOOL_LIBRARIES["libffmpeg.so"])
+        assertEquals("ffprobe", EngineBinary.TOOL_LIBRARIES["libffprobe.so"])
+    }
+
+    @Test
+    fun variablesSetsPythonHome() {
+        val fixture = fixture()
+        val vars = fixture.environment.variables(fixture.toolBinDir, fixture.nativeLibDir)
+
+        assertEquals(fixture.environment.pythonDir.absolutePath, vars["PYTHONHOME"])
+    }
+
+    @Test
+    fun pythonAndLspPathsLiveUnderEngineRoot() {
+        val fixture = fixture()
+        val environment = fixture.environment
+
+        assertEquals(File(environment.root, "python"), environment.pythonDir)
+        assertEquals(File(environment.root, "lsp"), environment.lspDir)
     }
 
     @Test
