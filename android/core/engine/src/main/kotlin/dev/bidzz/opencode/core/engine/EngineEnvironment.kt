@@ -1,6 +1,87 @@
 package dev.bidzz.opencode.core.engine
 
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+
+/** Outcome of one Antigravity plugin patch run (audit-100 31-F2). */
+enum class AntigravityPatchOutcome {
+    /** The plugin cache directory — or no plugin file in it — does not exist yet. */
+    NOT_FOUND,
+    /** At least one plugin file was rewritten on disk by this run. */
+    APPLIED,
+    /** Every plugin file found already contains the patched code. */
+    ALREADY_PATCHED,
+    /** A plugin file exists but matches neither the old nor the new code (plugin version changed). */
+    VERSION_MISMATCH,
+    /** Patching was attempted but the write/verify step failed; the original file was kept. */
+    FAILED,
+}
+
+/**
+ * Result of [EngineEnvironment.patchAntigravityPlugin], for diagnostics.
+ *
+ * [restartRequired] is true only when the patch landed while the engine was already
+ * running: Node loads the plugin once at startup, so the running engine still has the
+ * old code in memory and a restart is needed before Antigravity auth works.
+ */
+data class AntigravityPatchReport(
+    val outcome: AntigravityPatchOutcome,
+    /** Plugin files actually rewritten by this run (empty unless [outcome] is APPLIED). */
+    val patchedFiles: List<String> = emptyList(),
+    val restartRequired: Boolean = false,
+    val detail: String? = null,
+)
+
+/** Decision for one plugin file's text, decided without touching the disk. */
+internal sealed interface PluginPatchDecision {
+    data object AlreadyPatched : PluginPatchDecision
+    data object VersionMismatch : PluginPatchDecision
+    data class Patch(val patchedText: String) : PluginPatchDecision
+}
+
+/**
+ * Decides what to do with one plugin file's text, pure and unit-testable.
+ *
+ * `request.js` carries two replacements (the generativelanguage guard and the
+ * `.match` line); `v2.js` carries one (the fetch input normalisation). A file
+ * is ALREADY_PATCHED only when every new string is present and no old string
+ * remains; VERSION_MISMATCH when a file has neither the old nor the new code
+ * for a replacement it should carry (the plugin changed version under us).
+ */
+internal fun decidePluginPatch(fileName: String, text: String): PluginPatchDecision {
+    val replacements = when (fileName) {
+        "request.js" -> listOf(REQUEST_GUARD_OLD to REQUEST_GUARD_NEW, REQUEST_MATCH_OLD to REQUEST_MATCH_NEW)
+        "v2.js" -> listOf(FETCH_INPUT_OLD to FETCH_INPUT_NEW)
+        else -> return PluginPatchDecision.VersionMismatch
+    }
+    var patched = text
+    var needsPatch = false
+    for ((old, new) in replacements) {
+        when {
+            patched.contains(old) -> {
+                patched = patched.replace(old, new)
+                needsPatch = true
+            }
+            patched.contains(new) -> Unit // this replacement already applied
+            else -> return PluginPatchDecision.VersionMismatch
+        }
+    }
+    return if (needsPatch) PluginPatchDecision.Patch(patched) else PluginPatchDecision.AlreadyPatched
+}
+
+private const val REQUEST_GUARD_OLD =
+    "typeof input === \"string\" && input.includes(\"generativelanguage.googleapis.com\")"
+private const val REQUEST_GUARD_NEW =
+    "((typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : \"\"))).includes(\"generativelanguage.googleapis.com\"))"
+private const val REQUEST_MATCH_OLD = "const match = input.match(/\\/models\\/([^:]+):(\\w+)/);"
+private const val REQUEST_MATCH_NEW =
+    "const _inUrl = typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : \"\")); const match = _inUrl.match(/\\/models\\/([^:]+):(\\w+)/);"
+private const val FETCH_INPUT_OLD = "input instanceof URL ? input.toString() : input"
+private const val FETCH_INPUT_NEW =
+    "typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : input))"
 
 /**
  * Directories the engine needs, kept separate from the app's own storage.
@@ -94,6 +175,15 @@ class EngineEnvironment(
     val workspace: File get() = workspaceProvider()
 
     /**
+     * Result of the most recent [patchAntigravityPlugin] run, or null before any
+     * run. Read by diagnostics; updated by [prepare] and by the post-start
+     * re-patch loop in [ProcessManager].
+     */
+    @Volatile
+    var lastPatchReport: AntigravityPatchReport? = null
+        private set
+
+    /**
      * Creates every directory and fails loudly if one cannot be created.
      *
      * Silently continuing here produces a confusing failure much later, inside the
@@ -116,49 +206,104 @@ class EngineEnvironment(
             throw EngineStartupException("Workspace is not writable: ${projectDir.absolutePath}")
         }
         writeGitConfig()
-        patchAntigravityPlugin()
+        lastPatchReport = patchAntigravityPlugin()
     }
 
     /**
      * Patches `opencode-antigravity-auth` plugin files if present in the cache,
      * resolving the leaked Generative Language API call bug where non-string Request/URL
      * objects bypass request interception and cause "API key not valid" errors.
+     *
+     * Idempotent and reporting (audit-100 31-F2/31-F11): a fresh install has no
+     * plugin yet, so the run reports NOT_FOUND instead of silently doing nothing
+     * — the caller re-runs it after the engine downloads the plugin. A patched
+     * file is written to a temp file and atomically renamed over the original,
+     * with a `.bak` copy of the pre-patch bytes kept beside it; after the rename
+     * the file is re-read and the patched code must be present, or the backup is
+     * restored and the run reports FAILED. A half-written plugin can no longer
+     * strand Antigravity auth with no diagnosis.
+     *
+     * @param restartRequired set by the post-start re-patch loop: the patch landed
+     * while the engine was already running, so the running engine still has the
+     * old code loaded.
      */
-    fun patchAntigravityPlugin() {
+    fun patchAntigravityPlugin(restartRequired: Boolean = false): AntigravityPatchReport {
         val npmDir = File(cacheHome, "opencode/npm")
-        if (!npmDir.exists()) return
+        if (!npmDir.exists()) return AntigravityPatchReport(AntigravityPatchOutcome.NOT_FOUND)
+        val patched = mutableListOf<String>()
+        var sawPatched = false
+        var sawMismatch: String? = null
+        var sawFailure: String? = null
         npmDir.walkTopDown().forEach { file ->
-            if (file.name == "request.js" && file.path.contains("opencode-antigravity-auth")) {
-                runCatching {
-                    var text = file.readText()
-                    var changed = false
-                    val oldFn = "typeof input === \"string\" && input.includes(\"generativelanguage.googleapis.com\")"
-                    val newFn = "((typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : \"\"))).includes(\"generativelanguage.googleapis.com\"))"
-                    if (text.contains(oldFn)) {
-                        text = text.replace(oldFn, newFn)
-                        changed = true
-                    }
-                    val oldMatch = "const match = input.match(/\\/models\\/([^:]+):(\\w+)/);"
-                    val newMatch = "const _inUrl = typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : \"\")); const match = _inUrl.match(/\\/models\\/([^:]+):(\\w+)/);"
-                    if (text.contains(oldMatch)) {
-                        text = text.replace(oldMatch, newMatch)
-                        changed = true
-                    }
-                    if (changed) {
-                        file.writeText(text)
-                    }
-                }
-            } else if (file.name == "v2.js" && file.path.contains("opencode-antigravity-auth")) {
-                runCatching {
-                    var text = file.readText()
-                    val oldFetch = "input instanceof URL ? input.toString() : input"
-                    val newFetch = "typeof input === \"string\" ? input : (input && typeof input === \"object\" && \"url\" in input ? input.url : (input ? String(input) : input))"
-                    if (text.contains(oldFetch)) {
-                        text = text.replace(oldFetch, newFetch)
-                        file.writeText(text)
+            if ((file.name != "request.js" && file.name != "v2.js") ||
+                !file.path.contains("opencode-antigravity-auth")
+            ) return@forEach
+            val text = runCatching { file.readText() }.getOrNull()
+            if (text == null) {
+                sawFailure = file.name
+                return@forEach
+            }
+            when (val decision = decidePluginPatch(file.name, text)) {
+                is PluginPatchDecision.AlreadyPatched -> sawPatched = true
+                is PluginPatchDecision.VersionMismatch -> sawMismatch = file.name
+                is PluginPatchDecision.Patch -> {
+                    if (writePatchedPluginFile(file, decision.patchedText)) {
+                        patched += file.name
+                    } else {
+                        sawFailure = file.name
                     }
                 }
             }
+        }
+        val report = when {
+            sawFailure != null -> AntigravityPatchReport(
+                AntigravityPatchOutcome.FAILED,
+                patchedFiles = patched,
+                restartRequired = restartRequired && patched.isNotEmpty(),
+                detail = "could not patch $sawFailure",
+            )
+            patched.isNotEmpty() -> AntigravityPatchReport(
+                AntigravityPatchOutcome.APPLIED,
+                patchedFiles = patched,
+                restartRequired = restartRequired,
+            )
+            sawMismatch != null -> AntigravityPatchReport(
+                AntigravityPatchOutcome.VERSION_MISMATCH,
+                detail = "$sawMismatch matches neither the old nor the patched code (plugin version changed?)",
+            )
+            sawPatched -> AntigravityPatchReport(AntigravityPatchOutcome.ALREADY_PATCHED)
+            else -> AntigravityPatchReport(AntigravityPatchOutcome.NOT_FOUND)
+        }
+        lastPatchReport = report
+        return report
+    }
+
+    /**
+     * Writes patched plugin bytes without ever leaving a half-written file behind
+     * (audit-100 31-F11): backup first (no backup, no patch), temp file + atomic
+     * rename, then re-read and verify the patched code landed. Any failure
+     * restores the backup and returns false.
+     */
+    private fun writePatchedPluginFile(file: File, patchedText: String): Boolean {
+        val backup = File(file.parentFile, "${file.name}.bak")
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        if (runCatching { file.copyTo(backup, overwrite = true) }.isFailure) return false
+        return try {
+            tmp.writeText(patchedText)
+            try {
+                Files.move(tmp.toPath(), file.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+            } catch (e: AtomicMoveNotSupportedException) {
+                Files.move(tmp.toPath(), file.toPath(), REPLACE_EXISTING)
+            }
+            if (runCatching { file.readText() }.getOrNull() == patchedText) {
+                true
+            } else {
+                runCatching { backup.copyTo(file, overwrite = true) }
+                false
+            }
+        } catch (e: Exception) {
+            tmp.delete()
+            false
         }
     }
 

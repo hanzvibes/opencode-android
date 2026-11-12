@@ -923,6 +923,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onSaveCustom = providersViewModel::saveCustomProvider,
                         onDeleteCredential = providersViewModel::deleteCredential,
                         onReplaceCredential = providersViewModel::replaceCredential,
+                        patchReport = engineStatus.antigravityPatch,
+                        onSelectAntigravityAccount = providersViewModel::selectAntigravityAccount,
+                        onSetAntigravityAccountEnabled = providersViewModel::setAntigravityAccountEnabled,
+                        onDeleteJsoncConfig = providersViewModel::deleteJsoncConfig,
                     )
 
                     Screen.Diagnostics -> DiagnosticsScreen(

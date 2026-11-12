@@ -31,7 +31,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
 import dev.bidzz.opencode.core.api.dto.IntegrationMethod
+import dev.bidzz.opencode.core.engine.AntigravityPatchOutcome
+import dev.bidzz.opencode.core.engine.AntigravityPatchReport
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
@@ -69,8 +70,6 @@ import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.whiteCard
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /** Status badge state for an AI provider. */
 enum class ProviderStatus {
@@ -153,6 +152,11 @@ fun ProvidersScreen(
     onDeleteCredential: (String, String) -> Unit,
     onReplaceCredential: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Last Antigravity plugin patch report from the engine supervisor, if any (31-F2). */
+    patchReport: AntigravityPatchReport? = null,
+    onSelectAntigravityAccount: (String) -> Unit = {},
+    onSetAntigravityAccountEnabled: (String, Boolean) -> Unit = { _, _ -> },
+    onDeleteJsoncConfig: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -211,6 +215,31 @@ fun ProvidersScreen(
                     style = OpenCodeTypography.bodySmall,
                     color = colors.danger,
                 )
+                // The effective config lives in opencode.jsonc, which the app reads
+                // but never writes (30-F5): offer to delete it so the app can manage
+                // providers in opencode.json again.
+                if (it == R.string.providers_config_jsonc_blocks_write) {
+                    TextButton(onClick = onDeleteJsoncConfig) {
+                        Text(
+                            text = stringResource(R.string.providers_delete_jsonc),
+                            color = colors.accentText,
+                        )
+                    }
+                }
+            }
+
+            // The config file could not be read at all (30-F3): say which file and
+            // why, instead of silently showing an empty provider list.
+            state.configProblem?.let { problem ->
+                Text(
+                    text = stringResource(
+                        R.string.providers_config_unreadable,
+                        problem.fileName,
+                        problem.reason,
+                    ),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.warning,
+                )
             }
 
             if (state.staleKeyRemains) {
@@ -258,7 +287,15 @@ fun ProvidersScreen(
                         it.id.contains(def.id, ignoreCase = true) || it.name.contains(def.name, ignoreCase = true)
                     }
                     val isGoogle = def.id == "google"
-                    val isAntigravityConnected = isGoogle && (state.activeAntigravityEmail != null || state.antigravityAccounts.isNotEmpty())
+                    // Honest badge (31-F1): only an account that is enabled AND has
+                    // a refresh token counts as connected. A disabled account, or one
+                    // without a token, must never badge the card Connected — that was
+                    // exactly the "OAuth Connected but chat says API key not valid" lie.
+                    val isAntigravityConnected = isGoogle && state.activeAntigravityEmail != null
+                    // Accounts exist but none is usable: show it as needing attention
+                    // rather than Connected or silently missing.
+                    val hasUnusableAntigravity = isGoogle &&
+                        state.activeAntigravityEmail == null && state.antigravityAccounts.isNotEmpty()
 
                     val isConnected = (integration?.connected == true && stored.isNotEmpty()) || isCustomConfigured || (integration?.connected == true) || isAntigravityConnected
                     val status = when {
@@ -271,6 +308,7 @@ fun ProvidersScreen(
                         isAntigravityConnected -> state.activeAntigravityEmail?.let {
                             stringResource(R.string.providers_antigravity_oauth_account, it)
                         } ?: stringResource(R.string.providers_antigravity_connected_plain)
+                        hasUnusableAntigravity -> stringResource(R.string.providers_antigravity_needs_attention)
                         isConnected && stored.isNotEmpty() ->
                             stringResource(
                                 if (stored.size == 1) R.string.providers_keys_one else R.string.providers_keys_other,
@@ -515,7 +553,12 @@ fun ProvidersScreen(
 
     googleDetailsFor?.let { integration ->
         val storedKeys = rowsFor(state.credentials, integration.id)
-        val hasAntigravity = state.antigravityAccounts.isNotEmpty()
+        // Strict status only (31-F1): an account counts as connected only when it
+        // is enabled and has a refresh token — the ViewModel already computes that
+        // as activeAntigravityEmail. Accounts that exist but are unusable, and a
+        // corrupt accounts file, get their own rows instead of a Connected badge.
+        val hasActiveAntigravity = state.activeAntigravityEmail != null
+        val hasUnusableAntigravity = !hasActiveAntigravity && state.antigravityAccounts.isNotEmpty()
 
         LocalizedDraggableBottomSheet(
             onDismiss = { googleDetailsFor = null },
@@ -529,7 +572,7 @@ fun ProvidersScreen(
             },
             content = {
                 Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                    if (hasAntigravity) {
+                    if (hasActiveAntigravity) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
@@ -561,12 +604,108 @@ fun ProvidersScreen(
                             style = OpenCodeTypography.bodySmall,
                             color = colors.onSurfaceMuted,
                         )
+                    } else if (hasUnusableAntigravity) {
+                        Text(
+                            text = stringResource(R.string.providers_antigravity_needs_attention),
+                            style = OpenCodeTypography.bodyStrong,
+                            color = colors.warning,
+                        )
+                        Text(
+                            text = stringResource(R.string.providers_antigravity_needs_attention_hint),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                        )
+                    } else if (state.antigravityAccountsCorrupt) {
+                        Text(
+                            text = stringResource(R.string.providers_antigravity_corrupt),
+                            style = OpenCodeTypography.bodyStrong,
+                            color = colors.warning,
+                        )
                     } else {
                         Text(
                             text = stringResource(R.string.providers_antigravity_use_key),
                             style = OpenCodeTypography.bodySmall,
                             color = colors.onSurfaceMuted,
                         )
+                    }
+
+                    // Every OAuth account, with the file's active one marked (31-F5):
+                    // tap another usable account to make it active, or disable one.
+                    // Switching restarts the engine so the plugin picks the account up.
+                    if (state.antigravityAccounts.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                            state.antigravityAccounts.forEach { account ->
+                                val isActive = account.email == state.activeAntigravityEmail
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isActive) colors.accent else colors.onSurfaceFaint),
+                                    )
+                                    Text(
+                                        text = account.email,
+                                        style = OpenCodeTypography.bodySmall,
+                                        color = if (account.enabled) colors.onSurface else colors.onSurfaceFaint,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (!isActive && account.enabled && account.hasRefreshToken) {
+                                        TextButton(onClick = { onSelectAntigravityAccount(account.id) }) {
+                                            Text(
+                                                text = stringResource(R.string.providers_antigravity_use_account),
+                                                color = colors.accentText,
+                                            )
+                                        }
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            onSetAntigravityAccountEnabled(account.id, !account.enabled)
+                                        },
+                                    ) {
+                                        Text(
+                                            text = stringResource(
+                                                if (account.enabled) R.string.providers_antigravity_disable
+                                                else R.string.providers_antigravity_enable,
+                                            ),
+                                            color = colors.onSurfaceMuted,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Patch status (31-F2): only worth a line when something is off or
+                    // a restart is pending — a healthy already-patched plugin stays quiet.
+                    patchReport?.let { report ->
+                        val patchText = when (report.outcome) {
+                            AntigravityPatchOutcome.APPLIED ->
+                                if (report.restartRequired) {
+                                    stringResource(R.string.providers_patch_applied_restart)
+                                } else {
+                                    null
+                                }
+                            AntigravityPatchOutcome.VERSION_MISMATCH ->
+                                stringResource(R.string.providers_patch_version_mismatch)
+                            AntigravityPatchOutcome.FAILED ->
+                                stringResource(R.string.providers_patch_failed)
+                            AntigravityPatchOutcome.NOT_FOUND ->
+                                stringResource(R.string.providers_patch_not_found)
+                            AntigravityPatchOutcome.ALREADY_PATCHED -> null
+                        }
+                        patchText?.let {
+                            Text(
+                                text = it,
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.warning,
+                            )
+                        }
                     }
 
                     if (storedKeys.isNotEmpty()) {
@@ -980,16 +1119,12 @@ private fun KeyPrompt(
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
     val clipboard = LocalClipboardManager.current
-    val coroutineScope = rememberCoroutineScope()
 
     // A11y (#8d): Done on the single key field dismisses the keyboard.
     val focusManager = LocalFocusManager.current
 
     var value by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
-    var isTesting by remember { mutableStateOf(false) }
-    var testResult by remember { mutableStateOf<Boolean?>(null) }
-    var testMessage by remember { mutableStateOf<String?>(null) }
 
     val validation = remember(value, integration.id) { validateKey(integration.id, value) }
     val canSubmit = value.isNotBlank() && validation !is KeyValidation.Invalid
@@ -1043,11 +1178,7 @@ private fun KeyPrompt(
 
                     BasicTextField(
                         value = value,
-                        onValueChange = {
-                            value = it
-                            testResult = null
-                            testMessage = null
-                        },
+                        onValueChange = { value = it },
                         singleLine = true,
                         textStyle = OpenCodeTypography.codeInline.copy(color = colors.onSurface),
                         cursorBrush = SolidColor(colors.accent),
@@ -1081,7 +1212,6 @@ private fun KeyPrompt(
                                     val text = clipboard.getText()?.text.orEmpty().trim()
                                     if (text.isNotEmpty()) {
                                         value = text
-                                        testResult = null
                                     }
                                 }
                                 .padding(horizontal = spacing.xs, vertical = spacing.xxs),
@@ -1104,8 +1234,6 @@ private fun KeyPrompt(
                                     onClickLabel = stringResource(R.string.providers_clear_action),
                                 ) {
                                     value = ""
-                                    testResult = null
-                                    testMessage = null
                                 }
                                 .padding(spacing.xxs),
                         ) {
@@ -1168,72 +1296,10 @@ private fun KeyPrompt(
                     }
                 }
 
-                // Quick Test Section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(radius.sm))
-                            .background(colors.surfaceRaised)
-                            .border(OpenCodeTheme.tokens.dimensions.hairline, colors.hairline, RoundedCornerShape(radius.sm))
-                            // A11y (#8b): the "Quick test" text inside is the name.
-                            .clickable(role = Role.Button, enabled = value.isNotBlank() && !isTesting) {
-                                coroutineScope.launch {
-                                    isTesting = true
-                                    testResult = null
-                                    delay(400) // Responsive simulated syntax/connectivity test
-                                    val trimmed = value.trim()
-                                    if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() } || trimmed.length < 8) {
-                                        testResult = false
-                                        testMessage = "Validation check failed"
-                                    } else {
-                                        testResult = true
-                                        testMessage = "Key verified & ready to save"
-                                    }
-                                    isTesting = false
-                                }
-                            }
-                            .padding(horizontal = spacing.sm, vertical = spacing.xs),
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (isTesting) {
-                                Text(
-                                    text = stringResource(R.string.providers_testing),
-                                    style = OpenCodeTypography.caption,
-                                    color = colors.accentText,
-                                )
-                            } else {
-                                GlyphIcon(Glyph.Sliders, tint = if (value.isBlank()) colors.onSurfaceFaint else colors.accent, size = 14.dp)
-                                Text(
-                                    text = stringResource(R.string.providers_quick_test),
-                                    style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.Medium),
-                                    color = if (value.isBlank()) colors.onSurfaceFaint else colors.onSurface,
-                                )
-                            }
-                        }
-                    }
-
-                    // Test result feedback
-                    testMessage?.let { msg ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (testResult == true) {
-                                GlyphIcon(Glyph.Check, tint = colors.success, size = 14.dp)
-                                Text(msg, style = OpenCodeTypography.caption, color = colors.success)
-                            } else {
-                                Text(msg, style = OpenCodeTypography.caption, color = colors.danger)
-                            }
-                        }
-                    }
-                }
+                // No "Quick Test" here any more (audit-100 31-F4): the old button
+                // only waited 400ms and checked the key's length, then claimed
+                // "Key verified & ready to save" without contacting anyone. The
+                // format validation above (validateKey) is the honest check.
             }
         },
         actions = {
@@ -1241,7 +1307,8 @@ private fun KeyPrompt(
                 Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
             }
             TextButton(onClick = { onSubmit(value.trim()) }, enabled = canSubmit) {
-                Text(submitLabel, color = if (canSubmit) colors.accent else colors.onSurfaceFaint)
+                // 31-F17: accent as text failed WCAG AA; accentText is the text-safe tone.
+                Text(submitLabel, color = if (canSubmit) colors.accentText else colors.onSurfaceFaint)
             }
         },
     )
