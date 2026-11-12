@@ -51,18 +51,33 @@ import dev.bidzz.opencode.ui.ScreenScaffold
  * with a host. Everything else (mailto:, tel:, javascript:, intent:,
  * file:, relative) stays outside — the same allowlist the chat link
  * guard already enforces — and is offered to the system instead.
+ *
+ * Pure string parsing on purpose: android.net.Uri is a framework stub
+ * in local unit tests (it returns null there), so these helpers must
+ * not depend on it — that is what made InAppBrowserTest fail in CI.
  */
 fun isBrowsableUrl(url: String): Boolean {
-    val parsed = runCatching { Uri.parse(url) }.getOrNull() ?: return false
-    val scheme = parsed.scheme?.lowercase() ?: return false
+    val host = urlHostAfterScheme(url) ?: return false
+    val scheme = url.substringBefore("://").lowercase()
     if (scheme != "http" && scheme != "https") return false
-    return !parsed.host.isNullOrBlank()
+    return host.isNotBlank()
 }
 
 /** The host for the toolbar title, or the raw URL when it has none. */
 fun browserDisplayHost(url: String): String {
-    val host = runCatching { Uri.parse(url).host }.getOrNull()
+    val host = urlHostAfterScheme(url)
     return host?.takeIf { it.isNotBlank() } ?: url
+}
+
+/**
+ * The authority part after "<scheme>://", up to the first '/', '?' or
+ * '#'. Null when there is no "://". Pure Kotlin, no android.net.Uri.
+ */
+private fun urlHostAfterScheme(url: String): String? {
+    val schemeEnd = url.indexOf("://")
+    if (schemeEnd <= 0) return null
+    val rest = url.substring(schemeEnd + 3)
+    return rest.substringBefore('/').substringBefore('?').substringBefore('#')
 }
 
 /**
