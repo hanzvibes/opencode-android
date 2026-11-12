@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- #12: night twin of values/themes.xml — OLED black launch window,
+         dark bars (light-bar flags off). The runtime SideEffect in
+         OpenCodeTheme keeps the bars in sync with the app theme. -->
+    <style name="Theme.OpenCode" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
