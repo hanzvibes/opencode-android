@@ -66,6 +66,7 @@ import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.LoadingState
+import dev.bidzz.opencode.ui.SearchField
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.ScreenScaffold
@@ -265,10 +266,13 @@ private fun ExplorerListContent(
 
     // Search bar when there are multiple items
     if (state.rows.size > 5) {
-        ExplorerSearchBar(
+        SearchField(
             query = searchFilter,
             onQueryChange = onSearchFilterChange,
-            colors = colors,
+            // Batch 3 (i18n) owns this literal: "Search files…" is the
+            // one hardcoded search placeholder left in the app.
+            placeholder = "Search files…",
+            imeAction = ImeAction.Search,
         )
     }
 
@@ -635,50 +639,6 @@ private fun Crumb(label: String, current: Boolean, glyph: Glyph? = null, onClick
                 modifier = Modifier.padding(start = if (glyph != null) spacing.xs else 0.dp),
             )
         }
-    }
-}
-
-@Composable
-private fun ExplorerSearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    colors: OpenCodeColors,
-) {
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius.full
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.lg, vertical = spacing.xxs)
-            .clip(RoundedCornerShape(radius))
-            .background(colors.fill)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius))
-            .padding(horizontal = spacing.md, vertical = spacing.xs + 1.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 15.dp)
-        BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            textStyle = OpenCodeTypography.bodySmall.copy(color = colors.onSurface),
-            cursorBrush = SolidColor(colors.accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            singleLine = true,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = spacing.sm),
-            decorationBox = { inner ->
-                if (query.isEmpty()) {
-                    Text(
-                        text = "Search files…",
-                        style = OpenCodeTypography.bodySmall,
-                        color = colors.onSurfaceFaint,
-                    )
-                }
-                inner()
-            },
-        )
     }
 }
 

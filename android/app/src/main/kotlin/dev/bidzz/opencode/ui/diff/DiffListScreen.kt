@@ -49,6 +49,8 @@ import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.SearchField
+import dev.bidzz.opencode.ui.groupedCardShape
 import dev.bidzz.opencode.ui.files.FileTypeBadge
 import dev.bidzz.opencode.ui.files.FileTypes
 
@@ -96,9 +98,11 @@ fun DiffListScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Filter search bar when there are several files
                 if (changed.size > 2) {
-                    DiffFilterBar(
+                    SearchField(
                         query = filterQuery,
                         onQueryChange = { filterQuery = it },
+                        placeholder = stringResource(R.string.diff_filter_hint),
+                        imeAction = ImeAction.Search,
                     )
                 }
 
@@ -125,50 +129,6 @@ fun DiffListScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun DiffFilterBar(
-    query: String,
-    onQueryChange: (String) -> Unit,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius.full
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.lg, vertical = spacing.xs)
-            .clip(RoundedCornerShape(radius))
-            .background(colors.fill)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius))
-            .padding(horizontal = spacing.md, vertical = spacing.xs + 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 16.dp)
-        BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            textStyle = OpenCodeTypography.bodySmall.copy(color = colors.onSurface),
-            cursorBrush = SolidColor(colors.accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            singleLine = true,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = spacing.sm),
-            decorationBox = { innerTextField ->
-                if (query.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.diff_filter_hint),
-                        style = OpenCodeTypography.bodySmall,
-                        color = colors.onSurfaceFaint,
-                    )
-                }
-                innerTextField()
-            },
-        )
     }
 }
 
@@ -237,14 +197,7 @@ private fun ChangedFileCardItem(
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
-    val r = OpenCodeTheme.tokens.radius.md
-
-    val shape = RoundedCornerShape(
-        topStart = if (isFirst) r else 0.dp,
-        topEnd = if (isFirst) r else 0.dp,
-        bottomStart = if (isLast) r else 0.dp,
-        bottomEnd = if (isLast) r else 0.dp,
-    )
+    val shape = groupedCardShape(isFirst, isLast, OpenCodeTheme.tokens.radius.md)
 
     val dir = entry.file.substringBeforeLast('/', "")
     val name = entry.file.substringAfterLast('/')

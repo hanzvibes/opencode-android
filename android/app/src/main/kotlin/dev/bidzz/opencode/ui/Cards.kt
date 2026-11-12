@@ -8,16 +8,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,9 +38,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -385,11 +399,12 @@ fun AppTag(
     glyph: Glyph? = null,
 ) {
     val colors = OpenCodeTheme.colors
+    val radius = OpenCodeTheme.tokens.radius
     val fg = color ?: colors.onSurfaceMuted
     val bg = if (color == null) colors.fill else color.copy(alpha = 0.12f)
     Row(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(radius.sm))
             .background(bg)
             .padding(horizontal = 7.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -405,3 +420,334 @@ fun AppTag(
         )
     }
 }
+
+/** Inline notice row (Opsi B #4e): the shared form of the chat error banner. */
+enum class NoticeKind { Error, Warning, Info, Success }
+
+/**
+ * Notice row (Opsi B #4e): glyph + message + optional retry / dismiss, in
+ * the kind's colour. Generalises the chat's private PinnedErrorBanner
+ * (danger 12% bg, 0.5dp danger 35% border, Warning glyph, bodySmall text,
+ * accentFill retry pill, 48dp dismiss) — the banner's call site and the
+ * Providers key-validation messages are the same component now. Dismiss
+ * and retry behaviour live at the call site, not here.
+ */
+@Composable
+fun NoticeRow(
+    message: String,
+    kind: NoticeKind,
+    modifier: Modifier = Modifier,
+    onRetry: (() -> Unit)? = null,
+    onDismiss: (() -> Unit)? = null,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+    val kindColor = when (kind) {
+        NoticeKind.Error -> colors.danger
+        NoticeKind.Warning -> colors.warning
+        NoticeKind.Info -> colors.accent
+        NoticeKind.Success -> colors.success
+    }
+    val glyph = when (kind) {
+        NoticeKind.Error, NoticeKind.Warning -> Glyph.Warning
+        NoticeKind.Info -> Glyph.Info
+        NoticeKind.Success -> Glyph.Check
+    }
+    val retryLabel = stringResource(R.string.chat_retry)
+    val closeDescription = stringResource(R.string.chat_status_dialog_close)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(radius.md))
+            .background(kindColor.copy(alpha = 0.12f))
+            .border(0.5.dp, kindColor.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
+            .padding(start = spacing.md, top = spacing.xs, bottom = spacing.xs, end = spacing.xxs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GlyphIcon(
+            glyph = glyph,
+            tint = kindColor,
+            size = 16.dp,
+        )
+        Text(
+            text = message,
+            style = OpenCodeTypography.bodySmall,
+            color = colors.onSurface,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.sm),
+        )
+        if (onRetry != null) {
+            Box(
+                modifier = Modifier
+                    .defaultMinSize(minHeight = dims.minTouchTarget)
+                    .clip(RoundedCornerShape(radius.full))
+                    .background(colors.accentFill)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = retryLabel
+                    }
+                    .clickable(role = Role.Button, onClick = onRetry)
+                    .padding(horizontal = spacing.md),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    GlyphIcon(
+                        glyph = Glyph.Refresh,
+                        tint = colors.onAccent,
+                        size = 16.dp,
+                    )
+                    Text(
+                        text = retryLabel,
+                        style = OpenCodeTypography.label,
+                        color = colors.onAccent,
+                    )
+                }
+            }
+            Spacer(Modifier.width(spacing.xs))
+        }
+        if (onDismiss != null) {
+            // Dismiss: a full 48dp hit area around the 12dp cross.
+            Box(
+                modifier = Modifier
+                    .size(dims.minTouchTarget)
+                    .clip(CircleShape)
+                    .clickable(role = Role.Button, onClick = onDismiss)
+                    .semantics { contentDescription = closeDescription },
+                contentAlignment = Alignment.Center,
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Close,
+                    tint = colors.onSurfaceMuted,
+                    size = 12.dp,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Shared search field (Opsi B #5): one shape for the six search bars that
+ * were each hand-rolled — sidebar, explorer, providers, settings, session
+ * list, diff filter. Radius.md + fill bg + hairline border + 48dp minimum
+ * height + 16dp Search glyph + clear button while text is present. The
+ * capsule (explorer / settings / diff) and whiteCard (providers) shapes
+ * are the documented deltas; the AttachFilePicker field is NOT migrated
+ * (its field owns focus + key handling for the picker).
+ */
+@Composable
+fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    imeAction: ImeAction = ImeAction.Default,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val clearDescription = stringResource(R.string.search_clear)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.fill)
+            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+            .padding(horizontal = spacing.md, vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 16.dp)
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
+            cursorBrush = SolidColor(colors.accent),
+            keyboardOptions = KeyboardOptions(imeAction = imeAction),
+            singleLine = true,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.sm),
+            decorationBox = { inner ->
+                if (query.isEmpty()) {
+                    Text(
+                        text = placeholder,
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurfaceFaint,
+                    )
+                }
+                inner()
+            },
+        )
+        if (query.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(radius.sm))
+                    .clickable(role = Role.Button) { onQueryChange("") }
+                    .semantics { contentDescription = clearDescription },
+                contentAlignment = Alignment.Center,
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.Close,
+                    tint = colors.onSurfaceMuted,
+                    size = 14.dp,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Shared turn-action pill (Opsi B #5): the one shell for Reply / Share /
+ * Copy / Edit / Resend — capsule, 48dp minimum hit area, surfaceVariant +
+ * hairline, 12dp glyph + 11sp semibold label. Copy keeps its own
+ * clipboard / "Copied" state and passes its animated colours in; the
+ * label crossfade is gone (instant swap), the animated pill colours and
+ * the TalkBack announcement survive.
+ */
+@Composable
+fun TurnActionPill(
+    label: String,
+    glyph: Glyph,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    background: Color? = null,
+    border: Color? = null,
+    contentColor: Color? = null,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val pillShape = RoundedCornerShape(radius.full)
+    // 48dp minimum hit area (Phase 2, finding 14): the pill keeps its
+    // visual size, centred in a touch target that is at least 48dp tall
+    // and grows to fit its label — a fixed 48dp box squeezed the label
+    // and wrapped it ("Co py", "Re ply") on tablet.
+    Box(
+        modifier = modifier
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(pillShape)
+                .background(background ?: colors.surfaceVariant)
+                .border(0.5.dp, border ?: colors.hairline, pillShape)
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = glyph,
+                    tint = contentColor ?: colors.onSurfaceMuted,
+                    size = 12.dp,
+                )
+                Text(
+                    text = label,
+                    style = OpenCodeTypography.labelSmall,
+                    color = contentColor ?: colors.onSurfaceMuted,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Shared radio button (Opsi B #5): the M3 RadioButton in the app's colours
+ * (selected = accent, unselected = muted) — the three call sites (move
+ * session, theme, language) all set the same colours by hand, which is how
+ * the drift would have started. The rows keep owning their click handling
+ * (onClick is null at two sites); the hand-drawn circle in
+ * InlineQuestionCard is a different control (radio-or-checkbox by
+ * isMultiple) and stays as-is.
+ */
+@Composable
+fun AppRadioButton(
+    selected: Boolean,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = OpenCodeTheme.colors
+    RadioButton(
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        colors = RadioButtonDefaults.colors(
+            selectedColor = colors.accent,
+            unselectedColor = colors.onSurfaceMuted,
+        ),
+    )
+}
+
+/**
+ * Shared filter chip (Opsi B #5): the ToolRow trace filter chip — capsule,
+ * selected = accentFill bg + border + white text, unselected = fill bg +
+ * hairline border + muted text. StatusChip is a different component
+ * (dot/pulse + mono 11sp status text) and is NOT merged into this one.
+ */
+@Composable
+fun SelectorChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(radius.full))
+            .background(if (selected) colors.accentFill else colors.fill)
+            .border(
+                0.5.dp,
+                if (selected) colors.accentFill else colors.hairline,
+                RoundedCornerShape(radius.full),
+            )
+            .clickable(role = Role.Button) { onClick() }
+            .padding(horizontal = spacing.sm, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = OpenCodeTypography.caption.copy(
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            ),
+            color = if (selected) colors.onAccent else colors.onSurfaceMuted,
+        )
+    }
+}
+
+/**
+ * Per-corner shape for a row in a grouped card (Opsi B #5, GroupedCard):
+ * only the group's first/last rows round their outer corners. A container
+ * that takes the rows cannot own LazyColumn items — the animateItem
+ * modifier and the shared-element scopes live on the items themselves —
+ * so the shared unit is the shape; the rows keep their own clip, surface
+ * and divider because the selected state, the light-mode card shadow and
+ * the divider insets differ between the two lists.
+ */
+fun groupedCardShape(isFirst: Boolean, isLast: Boolean, radius: Dp): RoundedCornerShape =
+    RoundedCornerShape(
+        topStart = if (isFirst) radius else 0.dp,
+        topEnd = if (isFirst) radius else 0.dp,
+        bottomStart = if (isLast) radius else 0.dp,
+        bottomEnd = if (isLast) radius else 0.dp,
+    )

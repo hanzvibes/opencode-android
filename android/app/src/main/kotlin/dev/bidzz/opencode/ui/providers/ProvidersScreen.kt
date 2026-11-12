@@ -56,7 +56,10 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
+import dev.bidzz.opencode.ui.NoticeKind
+import dev.bidzz.opencode.ui.NoticeRow
 import dev.bidzz.opencode.ui.PrimaryButton
+import dev.bidzz.opencode.ui.SearchField
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
@@ -352,7 +355,11 @@ fun ProvidersScreen(
                 }
 
                 if (state.integrations.isNotEmpty()) {
-                    SearchField(query = query, onChange = { query = it })
+                    SearchField(
+                        query = query,
+                        onQueryChange = { query = it },
+                        placeholder = stringResource(R.string.providers_search),
+                    )
                 }
 
                 val featuredIds = remember {
@@ -885,55 +892,6 @@ fun ProviderStatusBadge(
 
 private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-/** Filters the catalog as you type. */
-@Composable
-private fun SearchField(query: String, onChange: (String) -> Unit) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .whiteCard()
-            .padding(horizontal = spacing.md, vertical = spacing.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 18.dp)
-        BasicTextField(
-            value = query,
-            onValueChange = onChange,
-            singleLine = true,
-            textStyle = OpenCodeTypography.input.copy(color = colors.onSurface),
-            cursorBrush = SolidColor(colors.accent),
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = spacing.sm),
-            decorationBox = { inner ->
-                Box {
-                    if (query.isEmpty()) {
-                        Text(
-                            stringResource(R.string.providers_search),
-                            style = OpenCodeTypography.input,
-                            color = colors.onSurfaceFaint,
-                        )
-                    }
-                    inner()
-                }
-            },
-        )
-        if (query.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(role = Role.Button, onClick = { onChange("") })
-                    .padding(spacing.xxs),
-            ) {
-                GlyphIcon(Glyph.Close, tint = colors.onSurfaceFaint, size = 16.dp)
-            }
-        }
-    }
-}
-
 /** Real-time API key validation outcome. */
 private sealed class KeyValidation {
     object Empty : KeyValidation()
@@ -1142,7 +1100,9 @@ private fun KeyPrompt(
                     }
                 }
 
-                // Key Validation Status Pill
+                // Key validation status: a NoticeRow in the outcome's
+                // colour. Empty stays a plain hint — there is nothing to
+                // warn about yet.
                 when (validation) {
                     is KeyValidation.Empty -> {
                         Text(
@@ -1152,31 +1112,22 @@ private fun KeyPrompt(
                         )
                     }
                     is KeyValidation.Invalid -> {
-                        Text(
-                            text = stringResource(validation.messageRes),
-                            style = OpenCodeTypography.caption,
-                            color = colors.danger,
+                        NoticeRow(
+                            message = stringResource(validation.messageRes),
+                            kind = NoticeKind.Error,
                         )
                     }
                     is KeyValidation.Warning -> {
-                        Text(
-                            text = validation.message,
-                            style = OpenCodeTypography.caption,
-                            color = colors.warning,
+                        NoticeRow(
+                            message = validation.message,
+                            kind = NoticeKind.Warning,
                         )
                     }
                     is KeyValidation.Valid -> {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            GlyphIcon(Glyph.Check, tint = colors.success, size = 14.dp)
-                            Text(
-                                text = validation.message,
-                                style = OpenCodeTypography.caption,
-                                color = colors.success,
-                            )
-                        }
+                        NoticeRow(
+                            message = validation.message,
+                            kind = NoticeKind.Success,
+                        )
                     }
                 }
 

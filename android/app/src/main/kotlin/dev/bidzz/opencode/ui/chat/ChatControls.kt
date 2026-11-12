@@ -58,6 +58,7 @@ import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.AppTag
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 
@@ -920,19 +921,9 @@ internal fun ModelSelector(
                                     // 3.29:1, Nvidia 3.39:1 in light). The brand is
                                     // already carried by the dot in this row.
                                     if (presentation.tierBadgeRes != null) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(radius.xs))
-                                                .background(colors.surfaceSunken)
-                                                .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.xs))
-                                                .padding(horizontal = 4.dp, vertical = 1.dp),
-                                        ) {
-                                            Text(
-                                                text = stringResource(presentation.tierBadgeRes),
-                                                style = OpenCodeTypography.caption,
-                                                color = colors.onSurfaceMuted,
-                                            )
-                                        }
+                                        AppTag(
+                                            label = stringResource(presentation.tierBadgeRes),
+                                        )
                                     }
 
                                     Spacer(modifier = Modifier.weight(1f))
