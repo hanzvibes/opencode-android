@@ -1,7 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import android.net.Uri
-import android.widget.Toast
+import dev.bidzz.opencode.OpenCodeApplication
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -847,7 +847,7 @@ fun ChatScreen(
     // draft reader is the existing currentDraft above, not a second
     // declaration — two of them do not compile.
     val photoResolver = LocalContext.current.contentResolver
-    val photoToastContext = LocalContext.current
+    val photoSnackbarContext = LocalContext.current
     val currentWorkspacePath by rememberUpdatedState(state.workspacePath)
     LaunchedEffect(cameraPhotoPicked) {
         cameraPhotoPicked.collect { uri ->
@@ -856,17 +856,13 @@ fun ChatScreen(
             }
             if (saved != null) {
                 onDraftChange(insertMention(currentDraft, saved))
-                Toast.makeText(
-                    photoToastContext,
-                    photoToastContext.getString(R.string.photo_saved, saved),
-                    Toast.LENGTH_SHORT,
-                ).show()
+                (photoSnackbarContext.applicationContext as OpenCodeApplication).showSnackbar(
+                    photoSnackbarContext.getString(R.string.photo_saved, saved),
+                )
             } else {
-                Toast.makeText(
-                    photoToastContext,
-                    photoToastContext.getString(R.string.photo_failed),
-                    Toast.LENGTH_SHORT,
-                ).show()
+                (photoSnackbarContext.applicationContext as OpenCodeApplication).showSnackbar(
+                    photoSnackbarContext.getString(R.string.photo_failed),
+                )
             }
         }
     }

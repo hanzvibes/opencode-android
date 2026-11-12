@@ -327,6 +327,39 @@ class OpenCodeApplication : Application() {
     val cameraPhotoPicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
 
     /**
+     * In-app snackbar requests (Opsi B #4d): the one replacement for
+     * `Toast.makeText` across the app. Same bridge shape as the flows
+     * above — a SharedFlow with no replay, so each request shows once.
+     * The request carries the already-resolved string (like Toast did:
+     * `context.getString` / `stringResource` at the call site), so no
+     * @StringRes plumbing is needed.
+     *
+     * The buffer holds up to 8 pending requests: while one snackbar is
+     * on screen the collector is suspended in `showSnackbar`, and a
+     * burst (two quick copies, say) must not silently drop the second
+     * one the way a capacity-1 buffer would.
+     */
+    data class SnackbarRequest(
+        val message: String,
+        val actionLabel: String? = null,
+        val long: Boolean = false,
+        val onAction: (() -> Unit)? = null,
+    )
+
+    /** Snackbar requests; the root composable shows them one at a time. */
+    val snackbarRequests = MutableSharedFlow<SnackbarRequest>(replay = 0, extraBufferCapacity = 8)
+
+    /** Asks the UI to show a snackbar (dropped only if 8 are already queued). */
+    fun showSnackbar(
+        message: String,
+        actionLabel: String? = null,
+        long: Boolean = false,
+        onAction: (() -> Unit)? = null,
+    ) {
+        snackbarRequests.tryEmit(SnackbarRequest(message, actionLabel, long, onAction))
+    }
+
+    /**
      * Delivers a command to [EngineService].
      *
      * `startForegroundService` is used for both actions, not just start: the

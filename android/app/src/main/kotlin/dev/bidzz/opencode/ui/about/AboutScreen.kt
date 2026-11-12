@@ -1,6 +1,6 @@
 package dev.bidzz.opencode.ui.about
 
-import android.widget.Toast
+import dev.bidzz.opencode.OpenCodeApplication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -68,7 +68,7 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
             try {
                 uriHandler.openUri(url)
             } catch (_: Exception) {
-                Toast.makeText(context, failed, Toast.LENGTH_SHORT).show()
+                (context.applicationContext as OpenCodeApplication).showSnackbar(failed)
             }
         }
     }
