@@ -57,6 +57,39 @@ class EngineEnvironment(
     val nodeCertFile: File = File(nodeDir, "etc/tls/cert.pem")
     val npmCliJs: File = File(nodeDir, "lib/node_modules/npm/bin/npm-cli.js")
 
+    /**
+     * Python runtime assets, extracted from `assets/python/` at first launch
+     * (PythonAssets) into this directory:
+     *
+     * ```
+     * filesDir/engine/python/
+     *   lib/python3.14/os.py              (stdlib sentinel; PYTHONHOME root)
+     *   lib/python3.14/site-packages/pip/ (invoked as `python3 -m pip`)
+     *   lib/python3.14/lib-dynload/       (extension modules: _ssl, _sqlite3, ...)
+     * ```
+     *
+     * CPython computes its stdlib location from PYTHONHOME; without it the
+     * interpreter looks under the dead Termux prefix
+     * (`/data/data/com.termux/files/usr`) and fails to start.
+     */
+    val pythonDir: File = File(root, "python")
+
+    /**
+     * Language servers, extracted from `assets/lsp/` at first launch
+     * (LspAssets) into this directory:
+     *
+     * ```
+     * filesDir/engine/lsp/
+     *   lib/node_modules/typescript-language-server/lib/cli.mjs
+     *   lib/node_modules/typescript/lib/typescript.js
+     *   lib/node_modules/pyright/langserver.index.js
+     * ```
+     *
+     * The engine's `lsp` config points at these paths (see engine/README.md
+     * for the opencode.json snippet). The servers run under the bundled Node.
+     */
+    val lspDir: File = File(root, "lsp")
+
     /** Resolved on every read, so a workspace switch needs no new environment. */
     val workspace: File get() = workspaceProvider()
 
@@ -171,6 +204,12 @@ class EngineEnvironment(
      *
      * SHELL is `/system/bin/sh`: the Node binary contains hardcoded Termux
      * paths (`.../usr/bin/bash`), and there is no bash bundled.
+     *
+     * PYTHONHOME must point at the extracted Python assets: CPython
+     * computes its stdlib location from it, and the Termux prefix it was
+     * built with does not exist on the device. The interpreter library
+     * itself (libpython3.14.so) resolves via LD_LIBRARY_PATH, and the
+     * extension modules in lib-dynload resolve their own libs the same way.
      */
     fun variables(toolBinDir: File?, nativeLibraryDir: File? = null): Map<String, String> = buildMap {
         put("HOME", home.absolutePath)
@@ -185,6 +224,7 @@ class EngineEnvironment(
         put("OPENCODE_ANDROID", "1")
         put("SHELL", "/system/bin/sh")
         put("SSL_CERT_FILE", nodeCertFile.absolutePath)
+        put("PYTHONHOME", pythonDir.absolutePath)
         if (nativeLibraryDir != null) {
             put("LD_LIBRARY_PATH", nativeLibraryDir.absolutePath)
         }

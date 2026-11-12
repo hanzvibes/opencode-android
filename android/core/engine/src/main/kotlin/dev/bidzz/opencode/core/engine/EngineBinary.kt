@@ -54,6 +54,24 @@ class EngineBinary private constructor(
             // because the name libcurl.so is taken by the library itself;
             // libcurl and its support libs resolve via LD_LIBRARY_PATH.
             "libcurl-cli.so" to "curl",
+            // python3 + pip (Termux bionic build, staged by
+            // script/android/stage-python.sh). The binary is staged as
+            // libpython3.so because libpython3.14.so is the interpreter
+            // library; pip has no binary and runs as `python3 -m pip`.
+            // The stdlib tree ships as assets/python/ (PythonAssets) and
+            // PYTHONHOME points at it (EngineEnvironment).
+            "libpython3.so" to "python3",
+            // jq (Termux bionic build, staged by script/android/stage-jq.sh).
+            // Staged as libjq-cli.so because the name libjq.so is taken by
+            // the library itself; libjq and libonig resolve via
+            // LD_LIBRARY_PATH.
+            "libjq-cli.so" to "jq",
+            // ffmpeg + ffprobe (Termux bionic builds, staged by
+            // script/android/stage-ffmpeg.sh). No library claims the
+            // libffmpeg.so / libffprobe.so names, so no -cli suffix.
+            // The ~85 codec/support libs resolve via LD_LIBRARY_PATH.
+            "libffmpeg.so" to "ffmpeg",
+            "libffprobe.so" to "ffprobe",
         )
 
         fun resolve(nativeLibraryDir: File, filesDir: File): EngineBinary {
