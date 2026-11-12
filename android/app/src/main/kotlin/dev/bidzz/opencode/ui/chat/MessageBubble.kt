@@ -711,6 +711,18 @@ fun MessageBubble(
                                 modifier = Modifier.padding(top = spacing.xs),
                             )
                         }
+                        // Turn footer (66-F3): a failed turn still spent
+                        // tokens — the bubble shows them instead of hiding
+                        // the cost of the failure. TurnFooter hides itself
+                        // while every field is null, so an error with no
+                        // usage renders exactly as before.
+                        TurnFooter(
+                            usageTokens = usageTokens,
+                            usageCostUsd = usageCostUsd,
+                            turnDurationMs = turnDurationMs,
+                            stopReason = stopReason,
+                            modifier = Modifier.padding(top = spacing.xs),
+                        )
                     }
                 }
             }

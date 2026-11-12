@@ -354,10 +354,23 @@ class ChatRepository(
                 // A failed resync must not leave the streaming entry behind:
                 // the run is over, no more deltas are coming, and the entry
                 // would keep the message's spinner and hide its Copy/footer
-                // forever (item 25). The buffers stay — a failed resync on a
-                // reconnect mid-run must not lose the text accumulated so
-                // far; the next delta re-publishes it in full.
-                _state.value = _state.value.copy(lastFailure = result, streaming = emptyMap())
+                // forever (item 25). The live tools go with it (audit-100
+                // Fase 6b, 06-T1): a failed resync used to clear only the
+                // streaming entries, so a tool kept showing "Running" with
+                // its 1s tick until the next successful resync — the run
+                // was over and nothing would ever update it again. The
+                // buffers stay — a failed resync on a reconnect mid-run
+                // must not lose the text accumulated so far; the next
+                // delta re-publishes it in full. Live tools have no such
+                // buffer to lose: their status cannot be recovered from
+                // text, and the next successful resync refills them from
+                // history (or the stream re-delivers them while the run
+                // is still going).
+                _state.value = _state.value.copy(
+                    lastFailure = result,
+                    streaming = emptyMap(),
+                    liveTools = emptyMap(),
+                )
             }
         }
     }
@@ -509,7 +522,8 @@ class ChatRepository(
                 // lands — clearing them here would blink the just-finished
                 // answer out of the transcript on every turn; the resync
                 // replaces them atomically on success and drops them on
-                // failure, so the indicator can never stick either way.
+                // failure, and drops the live tools the same way (06-T1),
+                // so no indicator can stick either way.
                 buffers.clear()
                 publishFlushJob?.cancel()
                 publishFlushJob = null

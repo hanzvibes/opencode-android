@@ -121,4 +121,51 @@ class ChatTurnPartsTest {
         assertEquals(false, group.streaming)
         assertEquals(merged, mergedAgain)
     }
+
+    @Test
+    fun `explicit reasoning and reasoning blocks show the thinking once`() {
+        // 01-F1: explicitReasoning IS the reasoning blocks
+        // (SessionMessage.reasoningText joins them), so passing both
+        // used to render "Thinking…\n\nThinking…" in the disclosure.
+        val blocks = listOf(
+            MessageContent(type = "reasoning", text = "Thinking about steps"),
+            MessageContent(type = "text", text = "Done."),
+        )
+        val parts = buildTurnParts(content = blocks, explicitReasoning = "Thinking about steps")
+
+        val reasoning = parts.filterIsInstance<ChatTurnPart.Reasoning>()
+        assertEquals(1, reasoning.size)
+        assertEquals("Thinking about steps", reasoning[0].text)
+    }
+
+    @Test
+    fun `reasoning blocks alone still show the thinking once`() {
+        val blocks = listOf(
+            MessageContent(type = "reasoning", text = "Thinking about steps"),
+            MessageContent(type = "text", text = "Done."),
+        )
+        val parts = buildTurnParts(content = blocks)
+
+        val reasoning = parts.filterIsInstance<ChatTurnPart.Reasoning>()
+        assertEquals(1, reasoning.size)
+        assertEquals("Thinking about steps", reasoning[0].text)
+    }
+
+    @Test
+    fun `reasoning-only turn does not duplicate through the fallback`() {
+        // 01-F9: with no text or tool parts, the fallback parsed the
+        // plain text and appended the explicit reasoning a second time.
+        val blocks = listOf(
+            MessageContent(type = "reasoning", text = "Thinking about steps"),
+        )
+        val parts = buildTurnParts(
+            content = blocks,
+            explicitReasoning = "Thinking about steps",
+            fallbackText = "Thinking about steps",
+        )
+
+        val reasoning = parts.filterIsInstance<ChatTurnPart.Reasoning>()
+        assertEquals(1, reasoning.size)
+        assertEquals("Thinking about steps", reasoning[0].text)
+    }
 }

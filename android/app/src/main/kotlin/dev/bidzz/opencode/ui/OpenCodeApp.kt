@@ -1068,6 +1068,9 @@ private fun ChatDestination(
     ChatScreen(
         state = chatState,
         sessions = sessionsState.rows,
+        sessionsLoading = sessionsState.loading,
+        sessionsFailure = sessionsState.failure,
+        sessionsFailureKey = sessionsState.failureKey,
         onOpenSession = chatViewModel::openSession,
         onDrawerOpen = { sessionViewModel.load(sessionScopeToProject) },
         onDraftChange = chatViewModel::onDraftChange,

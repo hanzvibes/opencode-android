@@ -413,6 +413,7 @@
     <string name="question_write_in_hint">Type your answer here…</string>
     <string name="question_submit">Submit answer</string>
     <string name="question_answered">Answered</string>
+    <string name="question_expired">This question can no longer be answered.</string>
     <string name="question_answer_failed">The answer could not be sent — it is back in the composer so you can retry.</string>
     <string name="bubble_thinking">Thinking…</string>
     <string name="commands_no_match">Tidak ada perintah yang cocok dengan “%1$s”</string>

@@ -49,6 +49,19 @@ data class ChatUiState(
     val failure: ApiResult.Failure? = null,
     /** A message with no failure behind it, e.g. the engine never started. */
     val failureKey: Int? = null,
+    /**
+     * A model/agent selection the engine rejected (audit-100 Fase 6b,
+     * 43-F2), owned by the view model — NOT by the repository. `onRepoState`
+     * copies the repo's `lastFailure` into [failure] on every emission, and
+     * a successful send clears the repo's failure, so a selection failure
+     * stored only in [failure] blinked out as soon as the send landed and
+     * the chip kept showing the rejected model. This field survives the
+     * collector: [failure] shows it until it is dismissed, superseded by
+     * a new selection, or the session changes. A rejected pick reverts
+     * the chip to null (engine default) — the same rule `selectModel`
+     * already applies for an existing session.
+     */
+    val selectionFailure: ApiResult.Failure? = null,
     /** True while the engine answers requests — `DEGRADED` counts, it keeps its credentials. */
     val workspaceReady: Boolean = false,
     val workspacePath: String? = null,
@@ -271,6 +284,59 @@ internal fun resolveRunEndAction(
     if (!hasQueued || sendInFlight || flushing || !hasRepository) return RunEndAction.NONE
     return if (stopping) RunEndAction.RETURN_TO_DRAFT else RunEndAction.FLUSH
 }
+
+/**
+ * What the model/agent chip shows after a `set` call the engine rejected
+ * (audit-100 Fase 6b, 43-F2).
+ *
+ * A rejected pick reverts to null — the engine default — instead of
+ * keeping the chip on a model/agent the session never runs on. A pick
+ * whose `set` succeeded keeps its value. The caller applies the result
+ * and records the failure separately (see `selectionFailure`).
+ */
+/**
+ * Appends an undeliverable question answer to the draft (10-F2): the
+ * same answer is never appended twice. A line equal to the answer means
+ * it is already there — a re-tap on an expired card, or a second
+ * undeliverable attempt, must not duplicate the line.
+ */
+internal fun resolveDraftAppend(current: String, displayText: String): String {
+    if (current.lines().any { it == displayText }) return current
+    return if (current.isBlank()) displayText else "$current\n$displayText"
+}
+
+/** Which parts of the VCS status dialog [ChatViewModel.loadBranches] still needs to load (24-F5). */
+internal data class VcsLoadPlan(val loadBranches: Boolean, val loadDetails: Boolean)
+
+/**
+ * Decides what [ChatViewModel.loadBranches] loads for [path]: the branch
+ * list is ready when it was loaded for this workspace, the details when
+ * `info()` AND `base()` both succeeded for it. A failed details load is
+ * retried on the next expand even when the branch list is already loaded
+ * — the old early-return skipped it.
+ */
+internal fun planVcsLoad(
+    hasBranches: Boolean,
+    branchesWorkspace: String?,
+    detailsWorkspace: String?,
+    path: String,
+): VcsLoadPlan {
+    val branchesReady = hasBranches && branchesWorkspace == path
+    val detailsReady = detailsWorkspace == path
+    return VcsLoadPlan(loadBranches = !branchesReady, loadDetails = !detailsReady)
+}
+
+internal data class SelectionRevert(val agent: String?, val model: ModelRef?)
+
+internal fun resolveSelectionAfterSetFailure(
+    activeAgent: String?,
+    activeModel: ModelRef?,
+    agentSetFailed: Boolean,
+    modelSetFailed: Boolean,
+): SelectionRevert = SelectionRevert(
+    agent = if (agentSetFailed) null else activeAgent,
+    model = if (modelSetFailed) null else activeModel,
+)
 
 /**
  * Drives the chat screen.
@@ -806,13 +872,19 @@ class ChatViewModel(
             hasMoreOlder = chat.hasMoreOlder,
             loadingEarlier = chat.loadingEarlier,
             busy = chat.busy,
-            failure = chat.lastFailure,
+            // A rejected model/agent selection survives the collector
+            // (43-F2): the repo's lastFailure clears on a successful send,
+            // which used to wipe the banner while the chip still showed
+            // the rejected pick. The selection failure is the banner until
+            // it is dismissed, superseded, or the session changes.
+            failure = previous.selectionFailure ?: chat.lastFailure,
             // A stale guidance key outlives its failure (item 24): the
             // banner shows while failureKey != null, so the 429 guidance
             // stayed up after a later send succeeded. It clears with the
             // failure — except for the session-gone case below, which is
             // guidance in place of a failure, not after one.
             failureKey = when {
+                previous.selectionFailure != null -> null
                 chat.lastFailure == null -> null
                 sessionGone(chat.lastFailure) -> R.string.chat_session_gone_guidance
                 else -> previous.failureKey
@@ -822,7 +894,11 @@ class ChatViewModel(
             // While a permission prompt is outstanding the prompt is the
             // action, not the banner: Retry must not offer to re-send a
             // prompt into a run that is blocked waiting for an answer.
-            retryKind = if (effectivePending != null || sessionGone(chat.lastFailure)) {
+            retryKind = if (previous.selectionFailure != null) {
+                // A rejected selection offers no Retry: re-sending the
+                // prompt would not re-apply it (43-F2).
+                RetryKind.NONE
+            } else if (effectivePending != null || sessionGone(chat.lastFailure)) {
                 RetryKind.NONE
             } else {
                 retryKindFor(chat.lastFailure)
@@ -939,54 +1015,81 @@ class ChatViewModel(
      * Loads the workspace's branch list (Tier 2), lazily from the status
      * dialog.
      *
-     * A loaded list is reused until the workspace changes. A failure sets the
-     * failed flag so the dialog can say so instead of spinning forever; the
-     * next expand retries. Read-only: switching branches is a different
-     * endpoint and not part of this list.
+     * A loaded list is reused until the workspace changes. A failure sets
+     * the failed flag so the dialog can say so instead of spinning
+     * forever; the next expand retries — and so do the details (24-F5):
+     * the old code early-returned on a loaded branch list, so a transient
+     * `info()`/`base()` failure left the dialog's current-branch and base
+     * rows blank forever, with a KDoc that promised a retry that never
+     * happened.
      */
     private var branchesJob: Job? = null
     private var branchesWorkspace: String? = null
+    /** Workspace whose `info()` AND `base()` both succeeded; details for any other workspace are stale. */
+    private var vcsDetailsWorkspace: String? = null
 
     fun loadBranches() {
         val path = workspace()
         val h = handle ?: return
-        if (_state.value.branches != null && branchesWorkspace == path) return
+        val plan = planVcsLoad(
+            hasBranches = _state.value.branches != null,
+            branchesWorkspace = branchesWorkspace,
+            detailsWorkspace = vcsDetailsWorkspace,
+            path = path,
+        )
+        if (!plan.loadBranches && !plan.loadDetails) return
         branchesJob?.cancel()
         _state.value = _state.value.copy(
-            branchesLoading = true,
+            // No list spinner when only the details retry: the list is
+            // already on screen, only its detail rows are missing.
+            branchesLoading = plan.loadBranches,
             branchesFailed = false,
             vcsDetailsFailed = false,
         )
         branchesJob = viewModelScope.launch {
             val vcs = VcsApi(h.client)
-            when (val result = vcs.branches(path)) {
-                is ApiResult.Success -> {
-                    branchesWorkspace = path
-                    _state.value = _state.value.copy(
-                        branches = result.value,
-                        branchesLoading = false,
-                        branchesFailed = false,
-                    )
-                }
-                is ApiResult.Failure -> {
-                    _state.value = _state.value.copy(branchesLoading = false, branchesFailed = true)
+            if (plan.loadBranches) {
+                when (val result = vcs.branches(path)) {
+                    is ApiResult.Success -> {
+                        branchesWorkspace = path
+                        _state.value = _state.value.copy(
+                            branches = result.value,
+                            branchesLoading = false,
+                            branchesFailed = false,
+                        )
+                    }
+                    is ApiResult.Failure -> {
+                        _state.value = _state.value.copy(branchesLoading = false, branchesFailed = true)
+                    }
                 }
             }
             // Current/default branch and the review base ride the same load
             // as the branch list: they describe the same repository, and the
             // dialog shows them together. Each is independent — one failing
             // must not hide the others.
-            var detailsFailed = false
-            when (val result = vcs.info(path)) {
-                is ApiResult.Success -> _state.value = _state.value.copy(vcsInfo = result.value)
-                is ApiResult.Failure -> detailsFailed = true
-            }
-            when (val result = vcs.base(path)) {
-                is ApiResult.Success -> _state.value = _state.value.copy(vcsBase = result.value)
-                is ApiResult.Failure -> detailsFailed = true
-            }
-            if (detailsFailed) {
-                _state.value = _state.value.copy(vcsDetailsFailed = true)
+            if (plan.loadDetails) {
+                var detailsFailed = false
+                var infoOk = false
+                var baseOk = false
+                when (val result = vcs.info(path)) {
+                    is ApiResult.Success -> {
+                        _state.value = _state.value.copy(vcsInfo = result.value)
+                        infoOk = true
+                    }
+                    is ApiResult.Failure -> detailsFailed = true
+                }
+                when (val result = vcs.base(path)) {
+                    is ApiResult.Success -> {
+                        _state.value = _state.value.copy(vcsBase = result.value)
+                        baseOk = true
+                    }
+                    is ApiResult.Failure -> detailsFailed = true
+                }
+                if (detailsFailed) {
+                    _state.value = _state.value.copy(vcsDetailsFailed = true)
+                } else if (infoOk && baseOk) {
+                    vcsDetailsWorkspace = path
+                }
             }
         }
     }
@@ -1087,7 +1190,16 @@ class ChatViewModel(
         // agent the prompt never runs on. Only revert when the user is still
         // on this session showing the rejected agent; a newer pick wins.
         val previous = _state.value.activeAgent
-        _state.value = _state.value.copy(activeAgent = agentID)
+        // A new pick supersedes a rejected one (43-F2): the old selection
+        // failure described a pick that is no longer current, so it clears
+        // with the pick — but only the selection failure; an unrelated
+        // send failure underneath stays visible.
+        val picked = _state.value
+        _state.value = picked.copy(
+            activeAgent = agentID,
+            failure = if (picked.selectionFailure != null) null else picked.failure,
+            selectionFailure = null,
+        )
         // A mode chosen before the first message has no session to bind to yet;
         // createSession picks it up from activeAgent when the session is made.
         if (sessionID == null) return
@@ -1098,7 +1210,7 @@ class ChatViewModel(
                     if (current.sessionID == sessionID && current.activeAgent == agentID) {
                         _state.value = current.copy(activeAgent = previous)
                     }
-                    reportFailure(result, RetryKind.NONE)
+                    reportSelectionFailure(result)
                 }
                 is ApiResult.Success -> Unit
             }
@@ -1110,7 +1222,13 @@ class ChatViewModel(
         val sessionID = _state.value.sessionID
         val h = handle ?: return
         val previous = _state.value.activeModel
-        _state.value = _state.value.copy(activeModel = model)
+        // A new pick supersedes a rejected one (43-F2) — see selectAgent.
+        val picked = _state.value
+        _state.value = picked.copy(
+            activeModel = model,
+            failure = if (picked.selectionFailure != null) null else picked.failure,
+            selectionFailure = null,
+        )
         if (sessionID == null) return
         viewModelScope.launch {
             when (val result = h.sessions.setModel(sessionID, model)) {
@@ -1119,7 +1237,7 @@ class ChatViewModel(
                     if (current.sessionID == sessionID && current.activeModel == model) {
                         _state.value = current.copy(activeModel = previous)
                     }
-                    reportFailure(result, RetryKind.NONE)
+                    reportSelectionFailure(result)
                 }
                 is ApiResult.Success -> Unit
             }
@@ -1482,11 +1600,12 @@ class ChatViewModel(
      * (audit-70 44-F1): appended after what the user is typing, never
      * overwriting it, with a failure notice so the return is visible.
      * The pending attachments are left alone — they belong to the
-     * message being typed, not to the answer.
+     * message being typed, not to the answer. The same answer is never
+     * appended twice (10-F2): an expired card re-tapped after a reload
+     * used to duplicate the line on every tap.
      */
     private fun returnAnswerToDraft(displayText: String) {
-        val current = _state.value.draft
-        onDraftChange(if (current.isBlank()) displayText else "$current\n$displayText")
+        onDraftChange(resolveDraftAppend(_state.value.draft, displayText))
         _state.value = _state.value.copy(failureKey = R.string.question_answer_failed)
     }
 
@@ -1536,7 +1655,7 @@ class ChatViewModel(
             _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
             return
         }
-        _state.value = _state.value.copy(failure = null, failureKey = null)
+        _state.value = _state.value.copy(failure = null, failureKey = null, selectionFailure = null)
         sendInFlight = true
         viewModelScope.launch {
             try {
@@ -1571,6 +1690,7 @@ class ChatViewModel(
                 failure = null,
                 failureKey = R.string.chat_rate_limited_guidance,
                 retryKind = RetryKind.NONE,
+                selectionFailure = null,
             )
             RetryKind.REAUTH, RetryKind.NONE -> Unit
         }
@@ -1591,7 +1711,7 @@ class ChatViewModel(
         repository?.close()
         val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope)
         repository = repo
-        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE, selectionFailure = null)
         collectRepo(repo)
         repo.open(id)
     }
@@ -1702,6 +1822,26 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * Records a model/agent selection the engine rejected (43-F2).
+     *
+     * Unlike [reportFailure] this also stores the failure in
+     * [ChatUiState.selectionFailure], which `onRepoState` preserves: a
+     * plain failure is overwritten by the repo's `lastFailure` on the
+     * next emission, and a successful send clears the repo's failure —
+     * so without this the banner blinked out as soon as the prompt
+     * landed. No Retry is offered: re-sending the prompt would not
+     * re-apply the rejected selection.
+     */
+    private fun reportSelectionFailure(result: ApiResult.Failure) {
+        _state.value = _state.value.copy(
+            failure = result,
+            failureKey = null,
+            retryKind = RetryKind.NONE,
+            selectionFailure = result,
+        )
+    }
+
     private suspend fun createSession(repo: ChatRepository): String? {
         // The session was already attached while this send was queued:
         // the state just had not flowed into the UI yet. Reuse it instead
@@ -1711,7 +1851,12 @@ class ChatViewModel(
         // queued: do not create anything on the abandoned one.
         if (repository !== repo) return null
         val h = handle ?: return null
-        _state.value = _state.value.copy(connecting = true, failure = null, failureKey = null)
+        _state.value = _state.value.copy(
+            connecting = true,
+            failure = null,
+            failureKey = null,
+            selectionFailure = null,
+        )
         val result = h.sessions.create(workspace())
         _state.value = _state.value.copy(connecting = false)
         return when (result) {
@@ -1722,14 +1867,47 @@ class ChatViewModel(
                 if (repository !== repo || repo.state.value.sessionID != null) return null
                 repo.open(result.value.id)
                 // A mode or model picked before the first message has no session to bind
-                // to at the time it is chosen, so it is applied here instead. Failures are
-                // reported: a silently rejected selection would look like it worked while
-                // the agent ran on the engine default.
-                _state.value.activeAgent?.let {
-                    reportFailure(h.agents.set(result.value.id, it))
+                // to at the time it is chosen, so it is applied here instead. A rejected
+                // selection is reported AND reverted (43-F2): the old code only reported
+                // it, and the next repo emission wiped the banner while the chip kept
+                // showing the rejected model — the send below runs on the engine
+                // default, so the chip must say so (null = default). The prompt
+                // still sends: refusing the whole message over a rejected
+                // preference would lose the user's text for a setting they
+                // can re-pick after the send.
+                val pickedAgent = _state.value.activeAgent
+                val pickedModel = _state.value.activeModel
+                var agentFailed = false
+                var modelFailed = false
+                pickedAgent?.let {
+                    when (val setResult = h.agents.set(result.value.id, it)) {
+                        is ApiResult.Failure -> {
+                            agentFailed = true
+                            reportSelectionFailure(setResult)
+                        }
+                        is ApiResult.Success -> Unit
+                    }
                 }
-                _state.value.activeModel?.let {
-                    reportFailure(h.sessions.setModel(result.value.id, it))
+                pickedModel?.let {
+                    when (val setResult = h.sessions.setModel(result.value.id, it)) {
+                        is ApiResult.Failure -> {
+                            modelFailed = true
+                            reportSelectionFailure(setResult)
+                        }
+                        is ApiResult.Success -> Unit
+                    }
+                }
+                if (agentFailed || modelFailed) {
+                    val reverted = resolveSelectionAfterSetFailure(
+                        pickedAgent,
+                        pickedModel,
+                        agentFailed,
+                        modelFailed,
+                    )
+                    _state.value = _state.value.copy(
+                        activeAgent = reverted.agent,
+                        activeModel = reverted.model,
+                    )
                 }
                 result.value.id
             }
@@ -1861,7 +2039,7 @@ class ChatViewModel(
         // (95-F6): a fresh session is where it belongs, so it comes back
         // as this session's composer instead of starting empty.
         val restored = takeParkedComposer(UNSENT_SESSION_KEY)
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
         if (restored?.draft.isNullOrBlank()) {
             savedStateHandle?.remove<String>(DRAFT_KEY)
         } else {
@@ -1923,7 +2101,7 @@ class ChatViewModel(
         // target from the previous session: the refusal notice goes with it.
         parkComposer()
         val restored = takeParkedComposer(sessionID)
-        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null)
         if (restored?.draft.isNullOrBlank()) {
             savedStateHandle?.remove<String>(DRAFT_KEY)
         } else {
@@ -2015,7 +2193,7 @@ class ChatViewModel(
     fun currentSessionID(): String? = _state.value.sessionID
 
     fun dismissError() {
-        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE, selectionFailure = null)
     }
 
     override fun onCleared() {
@@ -2070,15 +2248,25 @@ private fun ChatState.buildUnmergedMessages(
             // A failed run with nothing to show would otherwise be an empty bubble.
             // The model that failed is named too: "which model errored" is the first
             // thing the transcript has to answer after a switch goes wrong.
+            // The turn keeps its footer (66-F3): a run that died after burning
+            // input still spent those tokens, so the error bubble shows them
+            // instead of hiding the cost of the failure.
             message.isAssistant && message.error != null && message.content.isEmpty() ->
-                result += ChatMessage(
-                    id = message.id,
-                    role = Role.ERROR,
-                    text = message.error?.message ?: message.error?.type ?: "The agent failed",
-                    agent = message.agent,
-                    model = message.model,
-                    createdAtMillis = message.time?.created,
-                )
+                turnFooterValues(message).let { footer ->
+                    result += ChatMessage(
+                        id = message.id,
+                        role = Role.ERROR,
+                        text = message.error?.message ?: message.error?.type ?: "The agent failed",
+                        agent = message.agent,
+                        model = message.model,
+                        createdAtMillis = message.time?.created,
+                        usageTokens = footer.usageTokens,
+                        usageCostUsd = footer.usageCostUsd,
+                        turnDurationMs = footer.turnDurationMs,
+                        stopReason = footer.stopReason,
+                        thinkingSeconds = footer.thinkingSeconds,
+                    )
+                }
             message.isAssistant -> {
                 val msgLiveTools = liveTools.values.filter { it.messageID == message.id }.map { it.call }
                 val msgStreamingText = streaming[message.id]
@@ -2095,6 +2283,7 @@ private fun ChatState.buildUnmergedMessages(
                     fallbackText = message.plainText,
                 )
 
+                val footer = turnFooterValues(message)
                 result += ChatMessage(
                     id = message.id,
                     role = Role.ASSISTANT,
@@ -2106,46 +2295,14 @@ private fun ChatState.buildUnmergedMessages(
                     agent = message.agent,
                     model = message.model,
                     createdAtMillis = message.time?.created,
-                    // Turn footer from the engine DTO (finding 6): tokens
-                    // are input + output + reasoning — reasoning is its own
-                    // bucket in this engine's accounting (a real payload
-                    // reports reasoning 83 against output 9), while cache
-                    // reads sit inside input and are never added on top.
-                    // Duration is completed − created; thinking time is
-                    // streamed − created while reasoning is present. Any
-                    // missing timestamp leaves its field null rather than a
-                    // guessed value.
-                    usageTokens = turnUsageTokens(message.tokens),
-                    usageCostUsd = message.cost,
-                    turnDurationMs = message.time?.let { time ->
-                        // Local copies: time.* are public API properties from
-                        // another module, so smart casts on them are impossible.
-                        val created = time.created
-                        val completed = time.completed
-                        if (created != null && completed != null &&
-                            completed >= created
-                        ) {
-                            completed - created
-                        } else {
-                            null
-                        }
-                    },
-                    stopReason = message.finish?.takeIf { it.isNotBlank() },
-                    thinkingSeconds = message.time?.let { time ->
-                        val created = time.created
-                        val streamed = time.streamed
-                        if (!message.reasoningText.isNullOrBlank() &&
-                            created != null && streamed != null &&
-                            streamed >= created
-                        ) {
-                            // Rounded to the nearest second (66-F8): the old
-                            // integer division understated thinking time by
-                            // up to a second on every turn.
-                            (((streamed - created) + 500) / 1000).toInt()
-                        } else {
-                            null
-                        }
-                    },
+                    // Turn footer from the engine DTO (finding 6): shared
+                    // with the failed-turn branch (66-F3) so both render
+                    // the same numbers.
+                    usageTokens = footer.usageTokens,
+                    usageCostUsd = footer.usageCostUsd,
+                    turnDurationMs = footer.turnDurationMs,
+                    stopReason = footer.stopReason,
+                    thinkingSeconds = footer.thinkingSeconds,
                     toolDurations = toolDurations,
                     toolStartedAtMillis = toolStartedAt,
                 )
@@ -2299,6 +2456,52 @@ internal fun turnUsageTokens(tokens: TokenUsage?): Long? {
     if (tokens == null) return null
     return listOfNotNull(tokens.input, tokens.output, tokens.reasoning).sum()
         .takeIf { tokens.input != null || tokens.output != null || tokens.reasoning != null }
+}
+
+/**
+ * Turn footer values (Phase 2, finding 6), from one engine message.
+ *
+ * One function for both the assistant branch and the failed-turn branch
+ * (audit-100 Fase 6b, 66-F3): the error branch used to build its bubble
+ * without any of these, so a turn that died after burning input showed
+ * no tokens, no cost, no duration and no stop reason — the numbers were
+ * in the DTO all along. Duration is `completed - created`; thinking time
+ * is `streamed - created` while reasoning is present, rounded to the
+ * nearest second (66-F8). Any missing timestamp leaves its field null
+ * rather than a guessed value.
+ */
+internal data class TurnFooterValues(
+    val usageTokens: Long?,
+    val usageCostUsd: Double?,
+    val turnDurationMs: Long?,
+    val stopReason: String?,
+    val thinkingSeconds: Int?,
+)
+
+internal fun turnFooterValues(message: SessionMessage): TurnFooterValues {
+    // Local copies: time.* are public API properties from another module,
+    // so smart casts on them are impossible.
+    val time = message.time
+    val created = time?.created
+    val completed = time?.completed
+    val streamed = time?.streamed
+    return TurnFooterValues(
+        usageTokens = turnUsageTokens(message.tokens),
+        usageCostUsd = message.cost,
+        turnDurationMs = if (created != null && completed != null && completed >= created) {
+            completed - created
+        } else {
+            null
+        },
+        stopReason = message.finish?.takeIf { it.isNotBlank() },
+        thinkingSeconds = if (!message.reasoningText.isNullOrBlank() &&
+            created != null && streamed != null && streamed >= created
+        ) {
+            (((streamed - created) + 500) / 1000).toInt()
+        } else {
+            null
+        },
+    )
 }
 
 /**

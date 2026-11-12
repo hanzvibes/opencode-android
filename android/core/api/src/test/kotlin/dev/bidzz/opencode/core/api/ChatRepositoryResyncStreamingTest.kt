@@ -35,6 +35,8 @@ class ChatRepositoryResyncStreamingTest {
     private class Stub(
         val histories: List<String>,
         val eventOut: LinkedBlockingQueue<OutputStream> = LinkedBlockingQueue(),
+        /** Answer this 0-based `/message` call with HTTP 500 (-1 = never). */
+        val errorOnMessageCall: Int = -1,
     ) : AutoCloseable {
         private val socket = ServerSocket(0, 5, InetAddress.getLoopbackAddress())
         val port: Int get() = socket.localPort
@@ -59,7 +61,17 @@ class ChatRepositoryResyncStreamingTest {
                                 while (!socket.isClosed) Thread.sleep(100)
                             }
                             "/api/session/s1/message" in requestLine -> {
-                                val body = histories.getOrNull(messageCalls.getAndIncrement()) ?: """{"data":[]}"""
+                                val callIndex = messageCalls.getAndIncrement()
+                                if (callIndex == errorOnMessageCall) {
+                                    val body = """{"error":{"code":500,"message":"boom"}}"""
+                                    out.write(
+                                        ("HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n" +
+                                            "Content-Length: ${body.length}\r\nConnection: close\r\n\r\n$body")
+                                            .encodeToByteArray(),
+                                    )
+                                    return@Thread
+                                }
+                                val body = histories.getOrNull(callIndex) ?: """{"data":[]}"""
                                 out.write(
                                     ("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
                                         "Content-Length: ${body.length}\r\nConnection: close\r\n\r\n$body")
@@ -154,6 +166,47 @@ class ChatRepositoryResyncStreamingTest {
                 }
             }
             assertEquals("Hello there!", continued)
+        } finally {
+            scope.cancel()
+            stub.close()
+        }
+    }
+
+    @Test
+    fun `06-T1 failed resync after the terminal event clears live tools`() {
+        // Open resync: empty history. The terminal resync (call 1) fails
+        // with HTTP 500, so the tool that was running must not stick at
+        // "Running" — the run is over and nothing will ever update it.
+        val stub = Stub(histories = listOf("""{"data":[]}"""), errorOnMessageCall = 1)
+        val scope = CoroutineScope(Job() + Dispatchers.IO)
+        try {
+            val client = EngineClient("http://127.0.0.1:${stub.port}", "Basic dXNlcjp4")
+            val repository = ChatRepository(SessionApi(client), EventStream(client), scope)
+            repository.open("s1")
+            val stream = stub.eventOut.poll(20, TimeUnit.SECONDS)
+            assertNotNull("event stream never connected", stream)
+            fun sendEvent(json: String) {
+                stream!!.write(("data: $json\n\n").encodeToByteArray())
+                stream.flush()
+            }
+
+            sendEvent("""{"type":"session.tool.input.started","data":{"sessionID":"s1","assistantMessageID":"m1","id":"call-1","name":"read"}}""")
+            val live = runBlocking {
+                withTimeoutOrNull(20_000) {
+                    while (repository.state.value.liveTools["call-1"]?.call?.status != "streaming") delay(25)
+                    repository.state.value.liveTools["call-1"]
+                }
+            }
+            assertNotNull("tool never went live", live)
+
+            sendEvent("""{"type":"session.execution.succeeded","data":{"sessionID":"s1"}}""")
+            val cleared = runBlocking {
+                withTimeoutOrNull(20_000) {
+                    while (repository.state.value.liveTools.isNotEmpty() || repository.state.value.lastFailure == null) delay(25)
+                    repository.state.value.liveTools.isEmpty() && repository.state.value.lastFailure != null
+                }
+            }
+            assertEquals(true, cleared)
         } finally {
             scope.cancel()
             stub.close()
