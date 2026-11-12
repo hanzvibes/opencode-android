@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -27,7 +28,7 @@ enum class Glyph {
     Menu, NewChat, ArrowUp, ArrowDown, ArrowLeft, ChevronDown, ChevronRight, ChevronLeft,
     File, Folder, Pencil, Terminal, Search, Globe, Sliders,
     Send, Camera, Code, Mail, External, Info, Copy, Check, Close, Mic,
-    Eye, EyeOff, Key, Sparkle, Refresh,
+    Eye, EyeOff, Key, Lock, Sparkle, Refresh,
     GitBranch, Sparkles, CheckCircle, Warning, Play, Stop,
     FileCode, Lightning, Pin, Trash, Dots, Pulse, User,
     Question, Square, CheckSquare, History, Share,
@@ -203,6 +204,28 @@ fun GlyphIcon(
                 line(11f, 11f, 20f, 20f)
                 line(16f, 16f, 18.5f, 13.5f)
                 line(18f, 18f, 20.5f, 15.5f)
+            }
+            Glyph.Lock -> {
+                // Shackle: half-circle over the body, open at the bottom.
+                drawArc(
+                    color = tint,
+                    startAngle = 180f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = Offset(7.5f * u, 4f * u),
+                    size = Size(9f * u, 9f * u),
+                    style = stroke,
+                )
+                // Body: rounded rect; keyhole is a dot with a short stem.
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(5f * u, 11f * u),
+                    size = Size(14f * u, 9.5f * u),
+                    cornerRadius = CornerRadius(2f * u, 2f * u),
+                    style = stroke,
+                )
+                drawCircle(tint, radius = 1.5f * u, center = Offset(12f * u, 14.5f * u), style = stroke)
+                line(12f, 15.5f, 12f, 18f)
             }
             Glyph.Sparkle -> {
                 val path = Path()

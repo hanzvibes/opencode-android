@@ -1,6 +1,10 @@
 package dev.bidzz.opencode.ui.files
 
+import android.content.ClipData
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.draganddrop.dragAndDropSource
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +42,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draganddrop.DragAndDropTransferData
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -62,6 +67,7 @@ import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.chat.MIME_WORKSPACE_PATH
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
@@ -247,6 +253,7 @@ fun ExplorerScreen(
 }
 
 /** The explorer list: breadcrumbs, current-directory filter, VCS note, rows. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ExplorerListContent(
     state: ExplorerUiState,
@@ -317,7 +324,30 @@ private fun ExplorerListContent(
                     isLast = index == filteredRows.lastIndex,
                     selected = row.path == selectedFilePath,
                     onClick = { onOpenRow(row) },
-                    modifier = Modifier.animateItem(),
+                    // Drag & drop (Batch 7): a long-press starts a platform
+                    // drag carrying the workspace-relative path under the
+                    // private MIME type; dropping it on the composer
+                    // inserts an @path mention for the file.
+                    modifier = Modifier
+                        .animateItem()
+                        .dragAndDropSource {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    startTransfer(
+                                        DragAndDropTransferData(
+                                            clipData = ClipData(
+                                                "path",
+                                                arrayOf(MIME_WORKSPACE_PATH),
+                                                ClipData.Item(row.path),
+                                            ),
+                                        ),
+                                    )
+                                },
+                                // No live drag feedback: the drop target
+                                // highlights instead (see ChatScreen).
+                                onDrag = { _, _ -> },
+                            )
+                        },
                 )
             }
         }

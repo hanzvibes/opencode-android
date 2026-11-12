@@ -134,6 +134,13 @@ fun FileViewScreen(
     val language = remember(state.path) { FileTypes.detectLanguage(state.path) }
     val fileInfo = remember(state.path) { FileTypes.resolve(state.path) }
 
+    // File preview (Batch 7): images and PDFs render as a preview instead
+    // of the text viewer. The view model still loads the file as text in
+    // the background and fails it as non-UTF-8; every text-only branch
+    // below is guarded by !isPreview so that failure never shows.
+    val previewKind = remember(state.path) { previewKindForPath(state.path) }
+    val isPreview = previewKind != FilePreviewKind.NONE
+
     // Find-in-file: plain-text, case-insensitive, over the text actually loaded.
     // Editing disables it — the draft is a moving target and the viewer (with its
     // highlights and scroll-to-match) is what find is built on.
@@ -191,7 +198,7 @@ fun FileViewScreen(
                 },
                 enabled = !state.saving,
             )
-        } else if (!state.loading && state.failure == null && state.failureKey == null) {
+        } else if (!isPreview && !state.loading && state.failure == null && state.failureKey == null) {
             TextAction(
                 label = stringResource(R.string.fileview_find),
                 onClick = { findOpen = !findOpen },
@@ -209,8 +216,9 @@ fun FileViewScreen(
             FilePathBreadcrumbBar(path = state.path, fileInfo = fileInfo)
         }
 
-        // Error notifications
-        state.failure?.let {
+        // Error notifications (not while previewing: the text load of a
+        // binary file always fails, and the preview is the content)
+        if (!isPreview) state.failure?.let {
             Text(
                 text = it.message(),
                 style = OpenCodeTypography.bodySmall,
@@ -218,7 +226,7 @@ fun FileViewScreen(
                 modifier = Modifier.padding(horizontal = spacing.lg, vertical = spacing.sm),
             )
         }
-        state.failureKey?.let {
+        if (!isPreview) state.failureKey?.let {
             Text(
                 text = stringResource(it),
                 style = OpenCodeTypography.bodySmall,
@@ -228,7 +236,7 @@ fun FileViewScreen(
         }
 
         // Large-file warning + explicit load-full action
-        if (state.truncated && !state.editing) {
+        if (!isPreview && state.truncated && !state.editing) {
             LargeFileBanner(
                 shownLines = lineCount,
                 totalLines = state.totalLines,
@@ -237,7 +245,7 @@ fun FileViewScreen(
         }
 
         // Find bar (view mode only)
-        if (findOpen && !state.editing) {
+        if (!isPreview && findOpen && !state.editing) {
             FindBar(
                 query = findQuery,
                 onQueryChange = { findQuery = it },
@@ -252,6 +260,7 @@ fun FileViewScreen(
         // Editor / Viewer Body
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
+                isPreview -> FilePreview(path = state.path, kind = previewKind)
                 state.loading -> LoadingState(stringResource(R.string.fileview_reading), onRetry = onReloadFromDisk)
                 state.failure != null -> EmptyState(state.failure.message(), isError = true)
                 state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
@@ -273,8 +282,9 @@ fun FileViewScreen(
             }
         }
 
-        // Bottom Status / Metadata Bar
-        FileViewStatusBar(
+        // Bottom Status / Metadata Bar (not while previewing: the preview
+        // carries its own footer — image size, or the PDF pager)
+        if (!isPreview) FileViewStatusBar(
             state = state,
             fileInfo = fileInfo,
             lineCount = lineCount,

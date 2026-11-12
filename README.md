@@ -70,6 +70,10 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 | **Share in and out** | Share an answer to any app, or share text/a link from any app into a fresh draft. Sessions open from `opencode://session/<id>` links, launcher shortcuts (new session + last session) and a home-screen widget. |
 | **Done notifications** | When an agent run finishes while the app is in the background, a notification says so; tapping it opens the session. |
 | **Camera photos** | Take a photo from the composer: it is saved into the project (`.opencode-photos/`) and mentioned in the draft by path, so the agent can reference it. |
+| **App lock** | Lock the app behind biometrics or your device PIN, from Settings → Security. The lock re-arms when the app returns from the background; the engine keeps running behind it. |
+| **File previews** | Images and PDFs open as previews inside the file viewer — sampled image decode and a page-by-page PDF renderer — instead of failing the text load. |
+| **Drag & drop** | Long-press a file in the Explorer and drop it on the composer to mention it by path; drop a file from another app onto the composer to attach it as text (same 64 KB rules as the file picker). |
+| **Multi-window** | The app declares split-screen/freeform resize support; the adaptive layout (persistent sidebar ≥840dp, drawer below) already follows the window width. |
 
 ### Not yet
 

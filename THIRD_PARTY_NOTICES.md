@@ -159,6 +159,8 @@ the ones in `android/gradle/libs.versions.toml`.
 | kotlinx-serialization | 1.7.3 | Apache-2.0 | https://github.com/Kotlin/kotlinx.serialization |
 | Jetpack Compose (BOM) | 2024.12.01 | Apache-2.0 | https://developer.android.com/jetpack/androidx |
 | activity-compose | 1.8.2 | Apache-2.0 | https://developer.android.com/jetpack/androidx |
+| androidx.biometric | 1.1.0 | Apache-2.0 | https://developer.android.com/jetpack/androidx |
+| fragment-ktx | 1.8.2 | Apache-2.0 | https://developer.android.com/jetpack/androidx |
 | lifecycle-runtime-compose / lifecycle-viewmodel-compose | 2.8.3 | Apache-2.0 | https://developer.android.com/jetpack/androidx |
 | Kotlin standard library | 2.1.0 | Apache-2.0 | https://kotlinlang.org/ |
 | Inter (bundled TTFs in `core/design/src/main/res/font/`) | — | OFL-1.1 | https://github.com/rsms/inter |
