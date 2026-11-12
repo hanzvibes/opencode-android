@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -22,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -184,6 +187,44 @@ fun TonalButton(
             text = label,
             style = OpenCodeTypography.label.copy(fontSize = 15.sp),
             color = color,
+        )
+    }
+}
+
+/**
+ * The one empty / loading / error state for list screens (Opsi B #43):
+ * a centered message, capped at the 720dp content width. Replaces the
+ * 11 private `CenteredMessage` copies in Config, Export, Inbox,
+ * Instructions, Mcp, Move, Plugins, SessionList, Stats, Usage and
+ * Worktrees. Two of them (Mcp, SessionList) already used this shape —
+ * text capped at 720dp with xxl inset; the other nine used a plain
+ * full-width box with lg inset. This keeps the capped variant: on a
+ * wide tablet a centered paragraph stays readable, and on a phone the
+ * cap is a no-op. The only visual change for the nine is the inset
+ * (lg → xxl) on centered text.
+ *
+ * Errors render in [OpenCodeColors.danger]; everything else in muted.
+ */
+@Composable
+fun EmptyState(
+    text: String,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = OpenCodeTypography.body,
+            color = if (isError) colors.danger else colors.onSurfaceMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .padding(spacing.xxl),
         )
     }
 }

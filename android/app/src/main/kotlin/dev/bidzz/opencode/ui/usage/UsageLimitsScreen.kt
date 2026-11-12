@@ -19,7 +19,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,6 +28,7 @@ import dev.bidzz.opencode.core.api.dto.UsageLimitsInfo
 import dev.bidzz.opencode.core.api.dto.UsageMeter
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.stats.formatStatsCost
@@ -74,8 +74,8 @@ fun UsageLimitsScreen(
                 modifier = Modifier.padding(bottom = spacing.sm),
             )
             when {
-                state.loading -> CenteredMessage(stringResource(R.string.common_loading))
-                state.info == null -> CenteredMessage(stringResource(R.string.usage_empty))
+                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.info == null -> EmptyState(stringResource(R.string.usage_empty))
                 else -> UsageContent(info = state.info)
             }
         }
@@ -273,23 +273,4 @@ private fun SectionHeader(textRes: Int) {
         color = colors.onSurfaceFaint,
         modifier = Modifier.padding(top = spacing.xl, bottom = spacing.xs),
     )
-}
-
-@Composable
-private fun CenteredMessage(text: String) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(spacing.lg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-        )
-    }
 }

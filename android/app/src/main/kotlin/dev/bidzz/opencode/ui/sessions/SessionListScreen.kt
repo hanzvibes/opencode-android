@@ -40,12 +40,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.sessionTitleSharedKey
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
@@ -264,10 +264,10 @@ fun SessionListPane(
         }
 
         when {
-            state.loading -> CenteredMessage(stringResource(R.string.history_loading))
-            state.failure != null -> CenteredMessage(state.failure.message(), isError = true)
-            state.failureKey != null -> CenteredMessage(stringResource(state.failureKey), isError = true)
-            filteredRows.isEmpty() -> CenteredMessage(
+            state.loading -> EmptyState(stringResource(R.string.history_loading))
+            state.failure != null -> EmptyState(state.failure.message(), isError = true)
+            state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
+            filteredRows.isEmpty() -> EmptyState(
                 if (query.isBlank()) stringResource(R.string.history_empty)
                 else stringResource(R.string.history_search_no_results, query),
             )
@@ -583,24 +583,6 @@ private fun ScopeChip(label: String, selected: Boolean, onClick: () -> Unit) {
             text = label,
             style = OpenCodeTypography.label,
             color = if (selected) colors.accentText else colors.onSurfaceMuted,
-        )
-    }
-}
-
-@Composable
-private fun CenteredMessage(text: String, isError: Boolean = false) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = if (isError) colors.danger else colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .widthIn(max = 720.dp)
-                .padding(spacing.xxl),
         )
     }
 }
