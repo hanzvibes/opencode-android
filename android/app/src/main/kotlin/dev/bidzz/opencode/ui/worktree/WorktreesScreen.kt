@@ -22,6 +22,7 @@ import dev.bidzz.opencode.core.api.dto.WorktreeDirectory
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
@@ -65,7 +66,7 @@ fun WorktreesScreen(
                 ),
             )
             when {
-                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.failure != null -> EmptyState(state.failure.message(), isError = true)
                 state.sections.isEmpty() -> EmptyState(stringResource(R.string.worktree_empty))
                 else -> {

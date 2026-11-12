@@ -46,6 +46,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.sessionTitleSharedKey
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
@@ -264,7 +265,7 @@ fun SessionListPane(
         }
 
         when {
-            state.loading -> EmptyState(stringResource(R.string.history_loading))
+            state.loading -> LoadingState(stringResource(R.string.history_loading))
             state.failure != null -> EmptyState(state.failure.message(), isError = true)
             state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
             filteredRows.isEmpty() -> EmptyState(

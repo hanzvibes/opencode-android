@@ -61,9 +61,11 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.ScreenScaffold
@@ -192,6 +194,7 @@ fun ExplorerScreen(
                             selectedFilePath = selectedFilePath,
                             onOpenRow = openRow,
                             onBreadcrumb = onBreadcrumb,
+                            onRefresh = onRefresh,
                         )
                     }
                     Box(
@@ -222,7 +225,7 @@ fun ExplorerScreen(
                                 embedded = true,
                             )
                         } else {
-                            Centered(stringResource(R.string.files_detail_empty))
+                            EmptyState(stringResource(R.string.files_detail_empty))
                         }
                     }
                 }
@@ -235,6 +238,7 @@ fun ExplorerScreen(
                     selectedFilePath = selectedFilePath,
                     onOpenRow = openRow,
                     onBreadcrumb = onBreadcrumb,
+                    onRefresh = onRefresh,
                 )
             }
         }
@@ -251,6 +255,7 @@ private fun ExplorerListContent(
     selectedFilePath: String?,
     onOpenRow: (FileRow) -> Unit,
     onBreadcrumb: (String) -> Unit,
+    onRefresh: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -287,9 +292,9 @@ private fun ExplorerListContent(
     }
 
     when {
-        state.loading -> Centered(stringResource(R.string.common_loading))
-        state.failure != null -> Centered(state.failure.message(), isError = true)
-        state.failureKey != null -> Centered(stringResource(state.failureKey), isError = true)
+        state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
+        state.failure != null -> EmptyState(state.failure.message(), isError = true)
+        state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
         state.rows.isEmpty() -> EmptyFolder()
         else -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -859,18 +864,3 @@ private fun EmptyFolder() {
     }
 }
 
-@Composable
-private fun Centered(text: String, isError: Boolean = false) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = if (isError) colors.danger else colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(spacing.xxl),
-        )
-    }
-}

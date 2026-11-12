@@ -34,6 +34,7 @@ import dev.bidzz.opencode.core.api.dto.InstructionEntry
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.RowDivider
@@ -158,7 +159,7 @@ fun InstructionsScreen(
                 }
             }
             when {
-                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.entries.isEmpty() -> EmptyState(stringResource(R.string.instructions_empty))
                 else -> {
                     LazyColumn(

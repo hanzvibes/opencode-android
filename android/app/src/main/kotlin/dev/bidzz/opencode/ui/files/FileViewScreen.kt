@@ -50,9 +50,11 @@ import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconAction
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SheetStop
@@ -250,9 +252,9 @@ fun FileViewScreen(
         // Editor / Viewer Body
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
-                state.loading -> Centered(stringResource(R.string.fileview_reading))
-                state.failure != null -> Centered(state.failure.message())
-                state.failureKey != null -> Centered(stringResource(state.failureKey))
+                state.loading -> LoadingState(stringResource(R.string.fileview_reading), onRetry = onReloadFromDisk)
+                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
                 state.editing -> CodeEditorPane(
                     draft = state.draft,
                     language = language,
@@ -836,18 +838,3 @@ private fun UnsavedPillBadge() {
     }
 }
 
-@Composable
-private fun Centered(text: String) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(spacing.xxl),
-        )
-    }
-}
