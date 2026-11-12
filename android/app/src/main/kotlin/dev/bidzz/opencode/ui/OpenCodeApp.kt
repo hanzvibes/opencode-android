@@ -63,6 +63,7 @@ import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.about.AboutScreen
 import dev.bidzz.opencode.ui.browser.InAppBrowserScreen
 import dev.bidzz.opencode.ui.browser.isBrowsableUrl
+import dev.bidzz.opencode.ui.browser.isForwardableUrl
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
@@ -522,14 +523,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     }
 
     // Links in chat open in the in-app browser (Native C): http/https
-    // stay inside the app; mailto:/tel: and the rest go to the system,
-    // guarded like the chat link guard. MarkdownText's safe handler
-    // delegates to this ambient handler, so no call site needs threading.
+    // stay inside the app; only mailto: and a strictly-shaped tel: go
+    // to the system (Fase 5, 53-F4 — the old code forwarded every
+    // scheme, so a crafted link could open the dialer with MMI codes
+    // or any other app). Anything else is ignored, never crashed on.
+    // MarkdownText's safe handler delegates to this ambient handler,
+    // so no call site needs threading.
     val browserUriHandler = object : UriHandler {
         override fun openUri(uri: String) {
             if (isBrowsableUrl(uri)) {
                 screen = Screen.InAppBrowser(uri)
-            } else {
+            } else if (isForwardableUrl(uri)) {
                 runCatching {
                     hostContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
                 }
@@ -749,6 +753,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 },
                                 details = sessionsState.details,
                                 selectedSessionId = chatState.sessionID,
+                                onRefresh = { sessionViewModel.load(sessionScopeToProject) },
+                                onDismissDeleteFailure = sessionViewModel::clearDeleteFailure,
+                                onDismissLoadFailure = sessionViewModel::clearLoadFailure,
                                 // Shared-element pilot: NO flight here. This pane
                                 // and the detail chat beside it are composed at
                                 // the same time, so the same session title would
@@ -843,6 +850,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 instructionsViewModel.load(row.id)
                                 screen = Screen.Instructions(row.id)
                             },
+                            onRefresh = { sessionViewModel.load(sessionScopeToProject) },
+                            onDismissDeleteFailure = sessionViewModel::clearDeleteFailure,
+                            onDismissLoadFailure = sessionViewModel::clearLoadFailure,
                             // Shared-element pilot: the full-screen list is the
                             // origin side of the session-title flight.
                             sharedTransitionScope = sharedTransitionScope,

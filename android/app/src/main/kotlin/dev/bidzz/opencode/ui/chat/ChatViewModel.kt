@@ -436,6 +436,24 @@ class ChatViewModel(
     private var lastParkKey: String? = null
 
     /**
+     * A deep link / notification / widget / shortcut session id that
+     * arrived before the repository existed (Fase 5, 56-F1). On a cold
+     * start the engine takes seconds to attach while the UI composes
+     * immediately, so `openSession` used to hit `repository ?: return`
+     * and the link died silently — the app opened the remembered
+     * session instead, with no sign the link failed. The id waits here
+     * until [attachIfNeeded] can open it; it clears when the repository
+     * confirms the session ([onRepoState]) or when the user navigates
+     * elsewhere explicitly ([newSession], [openSession] with a live
+     * repository). In-memory only: a process death in the few seconds
+     * before attach loses it, and the user taps the link again.
+     */
+    private var pendingOpenSessionID: String? = null
+
+    /** Test seam for the pending open (56-F1): the id waiting for attach, if any. */
+    internal fun pendingOpenForTest(): String? = pendingOpenSessionID
+
+    /**
      * Parks the current composer — draft, pending attachments and queued
      * follow-ups (13-F6) — under the current session's id, or under
      * [UNSENT_SESSION_KEY] when there is no session yet (95-F6), or under
@@ -609,6 +627,24 @@ class ChatViewModel(
 
         collectRepo(repo)
         loadControls()
+        consumePendingOpen()
+    }
+
+    /**
+     * Opens the session a deep link asked for before the repository
+     * existed (56-F1). The id stays pending until the repository
+     * confirms it in [onRepoState], so [onResume] — which runs right
+     * after attach — cannot resurrect the remembered session over it.
+     * A pending id equal to the session already open clears without
+     * opening: re-opening it would only clear the draft and queue.
+     */
+    private fun consumePendingOpen() {
+        val pending = pendingOpenSessionID ?: return
+        if (pending == _state.value.sessionID) {
+            pendingOpenSessionID = null
+            return
+        }
+        openSessionById(pending, fetchMeta = true)
     }
 
     /** (Re)starts collecting one repository's state into [_state]. */
@@ -668,6 +704,13 @@ class ChatViewModel(
     internal fun onRepoState(chat: ChatState) {
         val previous = _state.value
         val wasBusy = previous.busy
+
+        // A pending deep-link open (56-F1) is done once the repository
+        // confirms the session id — including the 404 case, where open()
+        // still installs the id and the session-gone banner follows.
+        if (pendingOpenSessionID != null && chat.sessionID == pendingOpenSessionID) {
+            pendingOpenSessionID = null
+        }
 
         // A load that succeeds resets the reload budget (item 24): the
         // session-gone guidance only fires after consecutive failed reloads.
@@ -1769,6 +1812,10 @@ class ChatViewModel(
 
     /** Starts a fresh conversation. */
     fun newSession() {
+        // A fresh session is an explicit navigation: a deep link waiting
+        // for attach (56-F1) must not yank the user back to it once the
+        // engine comes up.
+        pendingOpenSessionID = null
         sessionReloadAttempts = 0
         repository?.close()
         val attached = handle
@@ -1817,11 +1864,22 @@ class ChatViewModel(
             activeModel = session.model,
             activeAgent = session.agent,
         )
+        // An explicit open supersedes a deep link still waiting for
+        // attach (56-F1).
+        if (repository != null) pendingOpenSessionID = null
         openSessionById(session.id)
     }
 
     /** Loads an existing session by id, from the history list. */
     fun openSession(sessionID: String) {
+        // Cold start (56-F1): the repository does not exist yet, so the
+        // id waits for [attachIfNeeded] instead of dying on `?: return`.
+        // Opening the session already open stores nothing.
+        if (repository == null) {
+            if (sessionID != _state.value.sessionID) pendingOpenSessionID = sessionID
+            return
+        }
+        pendingOpenSessionID = null
         openSessionById(sessionID, fetchMeta = true)
     }
 
@@ -1891,6 +1949,10 @@ class ChatViewModel(
      * is allowed through rather than breaking resume.
      */
     fun onResume(lastSessionID: String?) {
+        // A deep link waiting for attach (56-F1) wins over the remembered
+        // session: resuming the old session here would open it first and
+        // the pending open would have to fight it afterwards.
+        if (pendingOpenSessionID != null) return
         val repo = repository ?: return
         val target = lastSessionID ?: return
         if (_state.value.messages.isNotEmpty()) return

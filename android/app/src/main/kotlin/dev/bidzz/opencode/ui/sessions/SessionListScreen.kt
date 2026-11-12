@@ -46,6 +46,8 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
+import dev.bidzz.opencode.ui.NoticeKind
+import dev.bidzz.opencode.ui.NoticeRow
 import dev.bidzz.opencode.ui.sessionTitleSharedKey
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
@@ -84,6 +86,12 @@ fun SessionListScreen(
     onExport: (SessionRow) -> Unit = {},
     onInstructions: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
+    /** Reloads the list; used as the retry for a full-screen load error. */
+    onRefresh: () -> Unit = {},
+    /** Dismisses the failed-delete banner. */
+    onDismissDeleteFailure: () -> Unit = {},
+    /** Dismisses a load-failure banner shown over a non-empty list. */
+    onDismissLoadFailure: () -> Unit = {},
     /**
      * Animation C shared-element pilot: the scopes for the session-title
      * flight to the chat header. Null disables the flight (the expanded
@@ -113,6 +121,9 @@ fun SessionListScreen(
             onExport = onExport,
             onInstructions = onInstructions,
             details = details,
+            onRefresh = onRefresh,
+            onDismissDeleteFailure = onDismissDeleteFailure,
+            onDismissLoadFailure = onDismissLoadFailure,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
             modifier = Modifier.fillMaxSize(),
@@ -144,6 +155,12 @@ fun SessionListPane(
     onInstructions: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     selectedSessionId: String? = null,
+    /** Reloads the list; used as the retry for a load error. */
+    onRefresh: () -> Unit = {},
+    /** Dismisses the failed-delete banner. */
+    onDismissDeleteFailure: () -> Unit = {},
+    /** Dismisses a load-failure banner shown over a non-empty list. */
+    onDismissLoadFailure: () -> Unit = {},
     /**
      * Animation C shared-element pilot: the scopes for the session-title
      * flight to the chat header. Null disables the flight (the expanded
@@ -224,10 +241,56 @@ fun SessionListPane(
             )
         }
 
+        // A failed delete is a banner over the list that stays visible
+        // (19-F7/65-F1/80-F2): the row the delete just restored must stay
+        // on screen, with a retry for that same session. A load failure
+        // with rows already loaded gets the same treatment — only an
+        // empty list earns the full-screen error below.
+        val deleteFailure = state.deleteFailure
+        if (deleteFailure != null) {
+            val failedRow = state.rows.find { it.id == state.deleteFailedSessionID }
+            NoticeRow(
+                message = deleteFailure.message(),
+                kind = NoticeKind.Error,
+                onRetry = failedRow?.let { row -> { onDelete(row) } },
+                onDismiss = onDismissDeleteFailure,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 720.dp)
+                    .align(Alignment.CenterHorizontally)
+                    .padding(horizontal = spacing.lg, vertical = spacing.xs),
+            )
+        } else if (state.rows.isNotEmpty()) {
+            val loadFailure = state.failure
+            val loadFailureKey = state.failureKey
+            if (loadFailure != null || loadFailureKey != null) {
+                NoticeRow(
+                    message = loadFailure?.message()
+                        ?: loadFailureKey?.let { stringResource(it) }.orEmpty(),
+                    kind = NoticeKind.Error,
+                    onRetry = onRefresh,
+                    onDismiss = onDismissLoadFailure,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 720.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                )
+            }
+        }
+
         when {
             state.loading -> LoadingState(stringResource(R.string.history_loading))
-            state.failure != null -> EmptyState(state.failure.message(), isError = true)
-            state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
+            state.failure != null && state.rows.isEmpty() -> EmptyState(
+                state.failure.message(),
+                isError = true,
+                onRetry = onRefresh,
+            )
+            state.failureKey != null && state.rows.isEmpty() -> EmptyState(
+                stringResource(state.failureKey),
+                isError = true,
+                onRetry = onRefresh,
+            )
             filteredRows.isEmpty() -> EmptyState(
                 if (query.isBlank()) stringResource(R.string.history_empty)
                 else stringResource(R.string.history_search_no_results, query),

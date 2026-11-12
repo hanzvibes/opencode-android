@@ -267,7 +267,7 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        handleExternalIntent(intent)
+        handleExternalIntentIfFirstLaunch(intent, savedInstanceState == null)
     }
 
     /**
@@ -279,6 +279,19 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleExternalIntent(intent)
+    }
+
+    /**
+     * External intents are handled on the FIRST launch only (Fase 5,
+     * 69-F11). Android hands the launch intent back to `onCreate` on
+     * every recreate — unfold the tablet, resize a multi-window, change
+     * the font scale — and re-running it replayed the share/shortcut:
+     * `newSession()` wiped the conversation in progress and replaced it
+     * with the same shared draft. `onNewIntent` stays the only path for
+     * intents that arrive while the activity is alive.
+     */
+    private fun handleExternalIntentIfFirstLaunch(intent: Intent, isFirstLaunch: Boolean) {
+        if (isFirstLaunch) handleExternalIntent(intent)
     }
 
     /**
@@ -311,6 +324,11 @@ class MainActivity : FragmentActivity() {
             Intent.ACTION_VIEW -> {
                 val uri = intent.data ?: return
                 if (uri.scheme != "opencode" || uri.host != "session") return
+                // Exactly one path segment (53-F6): opencode://session/a/b
+                // used to silently open "b", and a %2F-decoded slash in the
+                // id reached the engine's API path unencoded. The charset
+                // itself is checked in deliverSessionOpen.
+                if (uri.pathSegments.size != 1) return
                 val sessionID = uri.lastPathSegment?.takeIf { it.isNotBlank() } ?: return
                 app.deliverSessionOpen(sessionID)
             }

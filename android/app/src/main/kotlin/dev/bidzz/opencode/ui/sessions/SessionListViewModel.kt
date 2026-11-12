@@ -41,6 +41,16 @@ data class SessionListUiState(
     val failure: ApiResult.Failure? = null,
     /** A message with no failure behind it, e.g. the engine never started. */
     val failureKey: Int? = null,
+    /**
+     * A failed delete (Fase 5, 19-F7/65-F1/80-F2), kept separate from
+     * [failure] on purpose: the old code put it in `failure`, and the
+     * screen's full-screen error branch hid the list — including the
+     * row the delete had just restored. A per-row action failure is a
+     * banner over the visible list, never a full-screen error.
+     */
+    val deleteFailure: ApiResult.Failure? = null,
+    /** The session the failed delete was for, so the banner can retry it. */
+    val deleteFailedSessionID: String? = null,
     /** Only sessions for this directory, when filtering. */
     val filterDirectory: String? = null,
     /** Per-session preview/model/status (Phase 2, finding 21), filled by
@@ -90,7 +100,7 @@ class SessionListViewModel(
         val generation = ++loadGeneration
         detailsJob?.cancel()
         loadJob?.cancel()
-        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, filterDirectory = directory)
+        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, deleteFailure = null, deleteFailedSessionID = null, filterDirectory = directory)
 
         loadJob = viewModelScope.launch {
             when (val result = handle.sessions.list(directory = directory, limit = 50)) {
@@ -232,15 +242,43 @@ class SessionListViewModel(
                     // The session is still on the engine: put the row back
                     // where it was, keep its pin, and show the failure
                     // instead of pretending the delete worked.
-                    val current = _state.value.rows.toMutableList()
-                    if (deleted != null && current.none { it.id == sessionID }) {
-                        current.add(index.coerceIn(0, current.size), deleted)
-                    }
-                    _state.value = _state.value.copy(rows = current, failure = result)
+                    _state.value = resolveDeleteFailure(_state.value, deleted, index, sessionID, result)
                 }
             }
         }
     }
+    /** Dismisses the failed-delete banner; the row stays in the list. */
+    fun clearDeleteFailure() {
+        _state.value = _state.value.copy(deleteFailure = null, deleteFailedSessionID = null)
+    }
+
+    /** Dismisses a load-failure banner shown over a non-empty list. */
+    fun clearLoadFailure() {
+        _state.value = _state.value.copy(failure = null, failureKey = null)
+    }
+}
+
+/**
+ * State after a delete the engine refused (19-F7/65-F1/80-F2): the row
+ * goes back where it was with its pin intact, and the failure lands in
+ * [SessionListUiState.deleteFailure] — never in `failure`, which is the
+ * screen's full-screen error. Pure so the branch is testable without a
+ * live engine: [SessionListViewModel.delete] runs it inside a coroutine
+ * the JVM unit tests cannot drive (no Main dispatcher on the test
+ * classpath).
+ */
+internal fun resolveDeleteFailure(
+    state: SessionListUiState,
+    deleted: SessionRow?,
+    index: Int,
+    sessionID: String,
+    result: ApiResult.Failure,
+): SessionListUiState {
+    val current = state.rows.toMutableList()
+    if (deleted != null && current.none { it.id == sessionID }) {
+        current.add(index.coerceIn(0, current.size), deleted)
+    }
+    return state.copy(rows = current, deleteFailure = result, deleteFailedSessionID = sessionID)
 }
 
 private fun SessionInfo.toRow(isPinned: Boolean = false): SessionRow {
