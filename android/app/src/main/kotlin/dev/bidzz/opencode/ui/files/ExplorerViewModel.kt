@@ -11,6 +11,7 @@ import dev.bidzz.opencode.core.api.VcsApi
 import dev.bidzz.opencode.core.api.dto.FileDiffInfo
 import dev.bidzz.opencode.core.api.dto.FsEntry
 import dev.bidzz.opencode.core.api.dto.VcsFileStatus
+import java.security.MessageDigest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -351,6 +352,15 @@ class FileViewViewModel(
     private var restoredDraft: String? = savedStateHandle?.get<String>(FILE_DRAFT_TEXT_KEY)
     private var restoredEditing: Boolean =
         savedStateHandle?.get<Boolean>(FILE_DRAFT_EDITING_KEY) ?: false
+    /** SHA-256 of the content the restored draft was based on (89-F3). */
+    private var restoredBasisHash: String? = savedStateHandle?.get<String>(FILE_DRAFT_BASE_KEY)
+
+    /**
+     * Increments on every save start and every discard: a save whose generation
+     * moved must not write or apply results afterwards (35-F8). Internal so a
+     * test can pin down that discarding really cancels an in-flight save.
+     */
+    internal var saveGeneration = 0
 
     /** Writes the live draft into the handle, or clears it when not editing. */
     private fun persistDraft() {
@@ -360,6 +370,11 @@ class FileViewViewModel(
             handle[FILE_DRAFT_PATH_KEY] = s.path
             handle[FILE_DRAFT_TEXT_KEY] = s.draft
             handle[FILE_DRAFT_EDITING_KEY] = true
+            // The content the draft was made against (89-F3). A draft restored
+            // on top of newer disk content keeps its original basis:
+            // recomputing it from the new content would launder the draft
+            // as fresh, and a later restore would apply it silently.
+            if (!s.draftStale) handle[FILE_DRAFT_BASE_KEY] = sha256Hex(s.content)
         } else {
             clearPersistedDraft()
         }
@@ -370,15 +385,19 @@ class FileViewViewModel(
         savedStateHandle?.remove<String>(FILE_DRAFT_PATH_KEY)
         savedStateHandle?.remove<String>(FILE_DRAFT_TEXT_KEY)
         savedStateHandle?.remove<Boolean>(FILE_DRAFT_EDITING_KEY)
+        savedStateHandle?.remove<String>(FILE_DRAFT_BASE_KEY)
         restoredPath = null
         restoredDraft = null
         restoredEditing = false
+        restoredBasisHash = null
     }
 
     companion object {
-        private const val FILE_DRAFT_PATH_KEY = "fileview_path"
-        private const val FILE_DRAFT_TEXT_KEY = "fileview_draft"
-        private const val FILE_DRAFT_EDITING_KEY = "fileview_editing"
+        internal const val FILE_DRAFT_PATH_KEY = "fileview_path"
+        internal const val FILE_DRAFT_TEXT_KEY = "fileview_draft"
+        internal const val FILE_DRAFT_EDITING_KEY = "fileview_editing"
+        /** SHA-256 of the content the persisted draft was based on (89-F3). */
+        internal const val FILE_DRAFT_BASE_KEY = "fileview_basis"
     }
 
     /** In-flight file read, cancelled when another file is opened. */
@@ -466,21 +485,42 @@ class FileViewViewModel(
                     // file it belongs to; a truncated preview must never
                     // become a draft, so a restored draft is only applied to
                     // a whole file (loadFull applies it later).
+                    //
+                    // The draft is only fresh when the file still holds the
+                    // content it was made against (89-F3). When the agent
+                    // changed the file while the app was dead, the draft is
+                    // restored as stale instead: it stays editable, but it is
+                    // flagged and only an explicit Overwrite may write it —
+                    // a plain Save would silently replace the agent's newer
+                    // work with a draft based on an older version.
+                    val restore = resolveRestoreDecision(
+                        restoredPath = restoredPath,
+                        restoredEditing = restoredEditing,
+                        truncated = truncated,
+                        path = path,
+                        diskContent = result.value,
+                        basisHash = restoredBasisHash,
+                    )
                     val draftToRestore =
-                        if (restoredPath == path && restoredEditing && !truncated) restoredDraft else null
+                        if (restore == RestoreDecision.Apply) restoredDraft else null
+                    val staleDraft =
+                        if (restore == RestoreDecision.StaleConflict) restoredDraft else null
                     _state.value = FileViewState(
                         loading = false,
                         path = path,
                         content = if (truncated) shown else result.value,
                         truncated = truncated,
                         totalLines = if (truncated) totalLines else 0,
-                        editing = draftToRestore != null,
-                        draft = draftToRestore ?: "",
+                        editing = draftToRestore != null || staleDraft != null,
+                        draft = draftToRestore ?: staleDraft ?: "",
+                        conflict = staleDraft != null,
+                        draftStale = staleDraft != null,
                     )
-                    if (draftToRestore != null) {
+                    if (draftToRestore != null || staleDraft != null) {
                         restoredPath = null
                         restoredDraft = null
                         restoredEditing = false
+                        restoredBasisHash = null
                     }
                 }
                 is ApiResult.Failure -> _state.value = FileViewState(
@@ -498,7 +538,8 @@ class FileViewViewModel(
         // A truncated preview must never become a draft: saving it would write
         // the preview back over the real file. Load the full file first.
         if (s.truncated) return
-        _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false)
+        // A fresh edit starts from what is on screen, so its basis is current.
+        _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false, draftStale = false)
         persistDraft()
     }
 
@@ -509,7 +550,11 @@ class FileViewViewModel(
 
     /** Leaves the editor without writing. The draft goes with it. */
     fun stopEditing() {
-        _state.value = _state.value.copy(editing = false, draft = "", conflict = false, saving = false)
+        // Discarding cancels a save in flight (35-F8): the save coroutine
+        // checks the generation before it writes and before it applies
+        // anything, so a discarded draft can no longer reach the disk.
+        saveGeneration++
+        _state.value = _state.value.copy(editing = false, draft = "", conflict = false, saving = false, draftStale = false)
         clearPersistedDraft()
     }
 
@@ -519,78 +564,122 @@ class FileViewViewModel(
      * [overwrite] is only ever set from the conflict dialog. A save always re-reads
      * first: without that there is no way to know whether the draft is being written
      * over the agent's work, and the engine's write endpoint replaces the whole file.
+     *
+     * Honest limit (audit-100 35-F2/89-F1): the check and the write are two separate
+     * requests and the engine offers no conditional write, so an agent edit that
+     * lands between the re-read and the write is still silently overwritten — the
+     * post-write re-read below only catches writes that landed AFTER our write.
+     * What this save does guarantee: typing that lands while it runs is never
+     * discarded (35-F1), its result never lands in another file's viewer (35-F3),
+     * and discarding the draft cancels it before it writes (35-F8).
      */
     fun save(overwrite: Boolean = false) {
         val s = _state.value
         if (!s.editing || s.saving) return
+        // A draft restored on top of newer disk content (89-F3) may only be
+        // written by an explicit Overwrite: a plain Save would silently
+        // replace the agent's newer work with a draft based on an older
+        // version. Show the conflict dialog instead.
+        if (resolveSaveStart(s, overwrite) == SaveStart.StaleConflict) {
+            _state.value = s.copy(conflict = true)
+            return
+        }
         val handle = api.handle() ?: run {
             _state.value = s.copy(failureKey = R.string.error_engine_not_running)
             return
         }
         val directory = workspace()
+        val generation = ++saveGeneration
         _state.value = s.copy(saving = true, failure = null, failureKey = null, conflict = false)
 
         viewModelScope.launch {
             val files = FileApi(handle.client)
             val onDisk = (files.readText(directory, s.path) as? ApiResult.Success)?.value
+            // Discarded while the re-read was in flight (35-F8): never write.
+            if (generation != saveGeneration) return@launch
             when (saveAction(s.content, s.draft, onDisk, overwrite)) {
                 // Nothing to write, but the view is stale: reload so the user sees what
                 // is actually in the file rather than what was loaded when they opened it.
                 SaveAction.Unchanged -> {
+                    // The viewer moved on while the re-read ran (35-F3):
+                    // reloading the saved file here would yank it back.
+                    if (_state.value.path != s.path) return@launch
                     _state.value = _state.value.copy(saving = false)
-                    load(s.path)
+                    // A file switch was held for this save (35-F4): the draft
+                    // equals what is on disk, so open the file asked for
+                    // instead of reloading this one and dropping the request.
+                    val pending = _state.value.confirmSwitchTo
+                    if (pending != null) load(pending) else load(s.path)
                 }
 
-                SaveAction.Unverifiable -> _state.value = _state.value.copy(
-                    saving = false,
-                    failureKey = R.string.error_reread_failed,
-                )
+                SaveAction.Unverifiable -> {
+                    if (_state.value.path == s.path) {
+                        _state.value = _state.value.copy(
+                            saving = false,
+                            failureKey = R.string.error_reread_failed,
+                        )
+                    }
+                }
 
-                SaveAction.Conflict -> _state.value = _state.value.copy(
-                    saving = false,
-                    conflict = true,
-                )
+                SaveAction.Conflict -> {
+                    if (_state.value.path == s.path) {
+                        _state.value = _state.value.copy(
+                            saving = false,
+                            conflict = true,
+                        )
+                    }
+                }
 
                 SaveAction.Write -> when (val result = files.writeText(directory, s.path, s.draft)) {
                     // The draft survives a failed write: losing typed work on a network
                     // error would be worse than the error itself.
-                    is ApiResult.Failure -> _state.value = _state.value.copy(
-                        saving = false,
-                        failure = result,
-                    )
-                    is ApiResult.Success -> {
-                        // The check and the write are two separate requests:
-                        // the agent may have written between the re-read and
-                        // this write, and the write would then have replaced
-                        // the agent's edit with a draft based on older
-                        // content (audit-70 35-F2). Read the file back: a
-                        // mismatch means the file moved under this save, so
-                        // report a conflict instead of marking it saved —
-                        // the draft is kept, the agent's version stands on
-                        // disk, and the user decides. A failed re-read
-                        // cannot prove a move, so the successful write
-                        // stands (the draft is on disk either way).
-                        val after = (files.readText(directory, s.path) as? ApiResult.Success)?.value
-                        if (after != null && after != s.draft) {
-                            _state.value = _state.value.copy(saving = false, conflict = true)
-                        } else {
+                    is ApiResult.Failure -> {
+                        if (_state.value.path == s.path && generation == saveGeneration) {
                             _state.value = _state.value.copy(
                                 saving = false,
-                                editing = false,
-                                conflict = false,
-                                content = s.draft,
-                                draft = "",
-                                saved = true,
+                                failure = result,
                             )
-                            // The draft is on disk now: a later process death
-                            // must not resurrect it (audit-70 69-F3).
-                            clearPersistedDraft()
-                            // The file was written — it may be new to the
+                        }
+                    }
+                    is ApiResult.Success -> {
+                        // Discarded while the write was in flight (35-F8): the
+                        // write already happened, so there is nothing to
+                        // undo — but its result must not touch the viewer.
+                        if (generation != saveGeneration) return@launch
+                        // Read the file back: a mismatch means the file moved
+                        // under this save after our write, so report a
+                        // conflict instead of marking it saved — the draft is
+                        // kept, the agent's version stands on disk, and the
+                        // user decides. A failed re-read cannot prove a move,
+                        // so the successful write stands (the draft is on
+                        // disk either way). This does NOT cover a write
+                        // between the pre-write re-read and this write (see
+                        // the KDoc above): that edit was already replaced
+                        // before this read ran.
+                        val after = (files.readText(directory, s.path) as? ApiResult.Success)?.value
+                        if (after != null && after != s.draft) {
+                            if (_state.value.path == s.path) {
+                                _state.value = _state.value.copy(saving = false, conflict = true)
+                            }
+                        } else {
+                            val resolved = resolveSaveSuccess(_state.value, s)
+                            if (resolved != null) {
+                                _state.value = resolved
+                                if (!resolved.editing) {
+                                    // The draft is on disk now: a later process death
+                                    // must not resurrect it (audit-70 69-F3).
+                                    clearPersistedDraft()
+                                    // A file switch was held for this save (item 10): the
+                                    // draft is written now, so open the file asked for.
+                                    _state.value.confirmSwitchTo?.let { load(it) }
+                                }
+                                // When typing landed during the save (35-F1),
+                                // the new draft stays persisted and editing
+                                // continues on top of what is now on disk.
+                            }
+                            // The file was written either way — it may be new to the
                             // quick-open index, which only lists paths (item 27).
                             onSaved()
-                            // A file switch was held for this save (item 10): the
-                            // draft is written now, so open the file asked for.
-                            _state.value.confirmSwitchTo?.let { load(it) }
                         }
                     }
                 }
@@ -600,10 +689,27 @@ class FileViewViewModel(
 
     /** Drops the draft and shows what the file holds now. */
     fun reloadFromDisk() {
+        // Discarding cancels a save in flight, like stopEditing (35-F8).
+        saveGeneration++
         val s = _state.value
-        _state.value = s.copy(editing = false, draft = "", conflict = false, saving = false)
+        _state.value = s.copy(editing = false, draft = "", conflict = false, saving = false, draftStale = false)
         clearPersistedDraft()
         load(s.path)
+    }
+
+    /**
+     * Retries a load that has not finished yet (35-F10/89-F2).
+     *
+     * Unlike [reloadFromDisk] this keeps the persisted draft: a draft restored
+     * after process death has not been applied yet while the file is still
+     * loading, and clearing it here would delete work the user never saw again.
+     * The retry only re-runs the read — [load] preserves a restored draft for
+     * the same path and applies it when the read succeeds.
+     */
+    fun retryLoad() {
+        val path = _state.value.path
+        if (path.isEmpty()) return
+        load(path)
     }
 
     /** Keeps editing after a conflict, so the difference can be looked at by hand. */
@@ -691,4 +797,75 @@ class DiffViewModel(
             }
         }
     }
+}
+
+/** SHA-256 of [text] as lowercase hex, for draft-basis checks (89-F3). */
+internal fun sha256Hex(text: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val bytes = digest.digest(text.toByteArray(Charsets.UTF_8))
+    return bytes.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+}
+
+/** Whether a save may start, or must show the conflict dialog instead. */
+internal enum class SaveStart { Proceed, StaleConflict }
+
+/**
+ * A draft restored on top of newer disk content (89-F3) may only be written by
+ * an explicit Overwrite: a plain Save would silently replace the agent's newer
+ * work with a draft based on an older version.
+ */
+internal fun resolveSaveStart(state: FileViewState, overwrite: Boolean): SaveStart =
+    if (state.draftStale && !overwrite) SaveStart.StaleConflict else SaveStart.Proceed
+
+/**
+ * Applies a finished write to the live viewer state (35-F1, 35-F3).
+ *
+ * Returns null when the viewer has moved on to another file: the write stands,
+ * but its result must not land in that file's viewer. Otherwise returns the new
+ * state: when the user typed while the save ran, the fresh typing is kept and
+ * editing continues on top of what is now on disk; only when the draft is
+ * untouched is it cleared and the file marked saved.
+ */
+internal fun resolveSaveSuccess(now: FileViewState, snapshot: FileViewState): FileViewState? {
+    if (now.path != snapshot.path) return null
+    return if (now.draft != snapshot.draft) {
+        now.copy(saving = false, content = snapshot.draft, saved = false)
+    } else {
+        now.copy(
+            saving = false,
+            editing = false,
+            conflict = false,
+            content = snapshot.draft,
+            draft = "",
+            saved = true,
+            draftStale = false,
+        )
+    }
+}
+
+/** What loading a file should do with a draft restored after process death. */
+internal enum class RestoreDecision {
+    /** The file still holds the content the draft was made against: apply it. */
+    Apply,
+    /** The file moved on since the draft was made: restore it as stale (89-F3). */
+    StaleConflict,
+    /** No draft to restore for this file (wrong file, not editing, truncated). */
+    Skip,
+}
+
+/**
+ * Decides a draft restore from its basis (89-F3). A handle written before basis
+ * tracking has no hash, so it restores as before rather than being discarded.
+ */
+internal fun resolveRestoreDecision(
+    restoredPath: String?,
+    restoredEditing: Boolean,
+    truncated: Boolean,
+    path: String,
+    diskContent: String,
+    basisHash: String?,
+): RestoreDecision {
+    if (restoredPath != path || !restoredEditing || truncated) return RestoreDecision.Skip
+    if (basisHash == null) return RestoreDecision.Apply
+    return if (basisHash == sha256Hex(diskContent)) RestoreDecision.Apply else RestoreDecision.StaleConflict
 }
