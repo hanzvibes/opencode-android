@@ -87,6 +87,12 @@ data class FileViewState(
      * file — until the user saves, discards, or cancels from the dialog.
      */
     val confirmSwitchTo: String? = null,
+    /**
+     * True when the draft was restored after process death on top of disk
+     * content newer than the version the draft was made against (89-F3).
+     * A plain Save must not write it — only an explicit Overwrite may.
+     */
+    val draftStale: Boolean = false,
 ) {
     val dirty: Boolean get() = editing && draft != content
 }
@@ -117,6 +123,12 @@ fun FileViewScreen(
     onCancelEdit: () -> Unit,
     onOverwrite: () -> Unit,
     onReloadFromDisk: () -> Unit,
+    /**
+     * Retries a load that has not finished yet. Unlike [onReloadFromDisk] this
+     * keeps a restored draft (35-F10/89-F2): the conflict dialog's Reload
+     * deliberately discards the draft, a loading retry must not.
+     */
+    onRetryLoad: () -> Unit = onReloadFromDisk,
     onDismissConflict: () -> Unit,
     onLoadFull: () -> Unit = {},
     /** Discards the unsaved draft and opens the file held in [FileViewState.confirmSwitchTo]. */
@@ -261,7 +273,7 @@ fun FileViewScreen(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
                 isPreview -> FilePreview(path = state.path, kind = previewKind)
-                state.loading -> LoadingState(stringResource(R.string.fileview_reading), onRetry = onReloadFromDisk)
+                state.loading -> LoadingState(stringResource(R.string.fileview_reading), onRetry = onRetryLoad)
                 state.failure != null -> EmptyState(state.failure.message(), isError = true)
                 state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
                 state.editing -> CodeEditorPane(

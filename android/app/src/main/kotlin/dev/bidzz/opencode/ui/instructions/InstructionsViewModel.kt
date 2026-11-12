@@ -78,18 +78,20 @@ class InstructionsViewModel(
     fun load(sessionID: String) {
         this.sessionID = sessionID
         val handle = api.handle() ?: run {
-            _state.value = InstructionsUiState(loading = false)
+            _state.value = _state.value.copy(loading = false)
             return
         }
-        _state.value = InstructionsUiState(loading = true)
+        // A reload must not wipe the editor (98-F9): the key/value being typed
+        // survive the load, and only the list itself is replaced on success.
+        _state.value = _state.value.copy(loading = true, failure = null)
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             when (val result = InstructionsApi(handle.client).list(sessionID)) {
-                is ApiResult.Success -> _state.value = InstructionsUiState(
+                is ApiResult.Success -> _state.value = _state.value.copy(
                     entries = result.value.sortedBy { it.key.lowercase() },
                     loading = false,
                 )
-                is ApiResult.Failure -> _state.value = InstructionsUiState(
+                is ApiResult.Failure -> _state.value = _state.value.copy(
                     loading = false,
                     failure = result,
                 )

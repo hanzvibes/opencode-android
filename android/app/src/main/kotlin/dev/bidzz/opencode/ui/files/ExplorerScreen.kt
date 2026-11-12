@@ -125,6 +125,8 @@ fun ExplorerScreen(
     onFileCancelEdit: () -> Unit = {},
     onFileOverwrite: () -> Unit = {},
     onFileReloadFromDisk: () -> Unit = {},
+    /** Retries a load that has not finished yet; keeps a restored draft (35-F10). */
+    onFileRetryLoad: () -> Unit = onFileReloadFromDisk,
     onFileDismissConflict: () -> Unit = {},
     onFileLoadFull: () -> Unit = {},
     /** Discards the unsaved draft and opens the file held by the switch dialog. */
@@ -225,6 +227,7 @@ fun ExplorerScreen(
                                 onCancelEdit = onFileCancelEdit,
                                 onOverwrite = onFileOverwrite,
                                 onReloadFromDisk = onFileReloadFromDisk,
+                                onRetryLoad = onFileRetryLoad,
                                 onDismissConflict = onFileDismissConflict,
                                 onLoadFull = onFileLoadFull,
                                 onConfirmSwitchDiscard = onFileConfirmSwitchDiscard,
