@@ -119,6 +119,10 @@ fun ToolTrace(
      * still-running step can show a live elapsed time instead of no
      * duration at all. A tool the client never saw live has no entry. */
     toolStartedAtMillis: Map<String, Long> = emptyMap(),
+    /** #6f: called before any height-changing toggle in this trace
+     * (header expand/collapse, step expand, show-full output/diff),
+     * so the caller can anchor the scroll position first. */
+    onBeforeHeightChange: () -> Unit = {},
 ) {
     if (tools.isEmpty()) return
 
@@ -161,11 +165,18 @@ fun ToolTrace(
     // hidden behind the collapsed summary. When a clean run finishes,
     // collapse it back to the one-line summary — unless the reader
     // expanded it by hand mid-stream, in which case it stays open.
+    // #6f: anchor first, but only when the value actually flips.
     LaunchedEffect(streaming, failed) {
         if (!streaming && failed > 0) {
-            open = true
+            if (!open) {
+                onBeforeHeightChange()
+                open = true
+            }
         } else if (shouldAutoCollapseToolTrace(userExpanded, streaming, failed > 0)) {
-            open = false
+            if (open) {
+                onBeforeHeightChange()
+                open = false
+            }
         }
     }
 
@@ -197,6 +208,9 @@ fun ToolTrace(
                     indication = LocalIndication.current,
                     role = Role.Button,
                 ) {
+                    // #6f: anchor the scroll position before the
+                    // height toggle, so the list does not jump.
+                    onBeforeHeightChange()
                     open = !open
                     if (open) userExpanded = true
                 }
@@ -419,6 +433,7 @@ fun ToolTrace(
                         workspacePath = workspacePath,
                         onOpenToolFile = onOpenToolFile,
                         onRequestDiffRevert = onRequestDiffRevert,
+                        onBeforeHeightChange = onBeforeHeightChange,
                     )
                 }
             }
@@ -513,6 +528,10 @@ fun ToolStep(
      * item 5). Only read while the step is still running, to show a live
      * elapsed time; a finished step uses [durationMillis] instead. */
     startedAtMillis: Long? = null,
+    /** #6f: called before any height-changing toggle in this step
+     * (header expand, auto-open on start, show-full output/diff),
+     * so the caller can anchor the scroll position first. */
+    onBeforeHeightChange: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -541,7 +560,13 @@ fun ToolStep(
 
     // A step that starts running after it was composed (pending → running)
     // opens too. Never force one closed: a user-opened step stays open.
-    LaunchedEffect(active) { if (active) open = true }
+    // #6f: anchor first, but only when the value actually flips.
+    LaunchedEffect(active) {
+        if (active && !open) {
+            onBeforeHeightChange()
+            open = true
+        }
+    }
 
     // One glyph rotating 0° (right, collapsed) ↔ 90° (down, open).
     val stepChevronRotation by animateFloatAsState(
@@ -729,7 +754,12 @@ fun ToolStep(
                             interactionSource = stepPressSource,
                             indication = LocalIndication.current,
                             enabled = hasDetails,
-                        ) { open = !open }
+                        ) {
+                            // #6f: anchor the scroll position before the
+                            // height toggle, so the list does not jump.
+                            onBeforeHeightChange()
+                            open = !open
+                        }
                         .padding(horizontal = spacing.sm, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1039,6 +1069,7 @@ fun ToolStep(
                                 hunks = diffHunks,
                                 additions = diffCounts.first,
                                 deletions = diffCounts.second,
+                                onBeforeHeightChange = onBeforeHeightChange,
                             )
                             // Accept / reject for a finished edit (Fase 1,
                             // item 2). Only a completed edit/write shows
@@ -1070,6 +1101,7 @@ fun ToolStep(
                                 language = inputLang,
                                 promptPrefix = prompt,
                                 subtitle = if (isShell) "bash" else null,
+                                onBeforeHeightChange = onBeforeHeightChange,
                             )
                         }
 
@@ -1093,6 +1125,7 @@ fun ToolStep(
                                 copyText = out,
                                 language = outLang,
                                 subtitle = lineSubtitle,
+                                onBeforeHeightChange = onBeforeHeightChange,
                             )
                         }
 
@@ -1102,6 +1135,7 @@ fun ToolStep(
                                 title = stringResource(R.string.tool_stderr),
                                 body = err,
                                 isError = true,
+                                onBeforeHeightChange = onBeforeHeightChange,
                             )
                         }
                     }
@@ -1130,6 +1164,9 @@ private fun TerminalConsoleBlock(
     subtitle: String? = null,
     /** Text the Copy button writes; defaults to [body] (the displayed text). */
     copyText: String = body,
+    /** #6f: called before the show-full toggle changes this block's
+     * height, so the caller can anchor the scroll position first. */
+    onBeforeHeightChange: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -1278,7 +1315,9 @@ private fun TerminalConsoleBlock(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(role = Role.Button) { showFullOutput = !showFullOutput }
+                // #6f: anchor the scroll position before the height
+                // toggle, so the list does not jump.
+                .clickable(role = Role.Button) { onBeforeHeightChange(); showFullOutput = !showFullOutput }
                 .padding(horizontal = spacing.md, vertical = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(spacing.xs),
@@ -1628,6 +1667,9 @@ private fun InlineDiffBlock(
     additions: Int,
     deletions: Int,
     modifier: Modifier = Modifier,
+    /** #6f: called before the show-full toggle changes this block's
+     * height, so the caller can anchor the scroll position first. */
+    onBeforeHeightChange: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -1790,7 +1832,9 @@ private fun InlineDiffBlock(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(role = Role.Button) { showFull = !showFull }
+                    // #6f: anchor the scroll position before the height
+                    // toggle, so the list does not jump.
+                    .clickable(role = Role.Button) { onBeforeHeightChange(); showFull = !showFull }
                     .padding(horizontal = spacing.md, vertical = spacing.xs),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.xs),

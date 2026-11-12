@@ -201,6 +201,10 @@ fun MessageBubble(
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
     onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
+    /** #6f: called before a ToolTrace height toggle (expand/collapse,
+     * show-full output/diff), so the transcript can anchor the scroll
+     * position first and the list does not jump. */
+    onBeforeToolTraceHeightChange: () -> Unit = {},
     /** Saves a code block through the system picker (Fase 1, item 4). */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
     /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
@@ -535,6 +539,7 @@ fun MessageBubble(
                                             workspacePath = workspacePath,
                                             onOpenToolFile = onOpenToolFile,
                                             onRequestDiffRevert = onRequestDiffRevert,
+                                            onBeforeHeightChange = onBeforeToolTraceHeightChange,
                                             modifier = Modifier.padding(bottom = spacing.sm),
                                         )
                                     }
