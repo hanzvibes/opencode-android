@@ -10,6 +10,9 @@ import dev.bidzz.opencode.core.engine.EngineStartupException
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
 import dev.bidzz.opencode.service.EngineService
+import dev.bidzz.opencode.ui.chat.CodeSaveQueue
+import dev.bidzz.opencode.ui.chat.CodeSaveRequest
+import dev.bidzz.opencode.ui.chat.SharedPrefsCodeSaveQueueStore
 import dev.bidzz.opencode.workspace.WorkspaceStore
 import java.io.File
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -257,27 +260,38 @@ class OpenCodeApplication : Application() {
      * names the file and its text, MainActivity owns the `CreateDocument`
      * launcher (a Compose launcher in chat crashed for want of an
      * ActivityResultRegistryOwner) and the write.
+     *
+     * The pending requests live in a persisted queue ([CodeSaveQueue]),
+     * not a single in-memory slot (05-F2): a second Save used to
+     * overwrite the first without feedback, and a process death while
+     * the picker was open meant nothing was ever written. The queue is
+     * restored on first use, so the picker callback that arrives after
+     * a recreation still finds the request it belongs to.
      */
-    data class CodeSaveRequest(val filename: String, val text: String)
-
-    /** The pending code-save request, consumed once by MainActivity. */
-    private var pendingCodeSave: CodeSaveRequest? = null
+    private val codeSaveQueue by lazy {
+        CodeSaveQueue(SharedPrefsCodeSaveQueueStore(this))
+    }
 
     /** Asks MainActivity to open the system save picker for a code block. */
     fun requestCodeSave(filename: String, text: String) {
-        pendingCodeSave = CodeSaveRequest(filename, text)
+        codeSaveQueue.enqueue(CodeSaveRequest(filename, text))
         codeSaveRequest.tryEmit(System.currentTimeMillis())
     }
 
-    /** Takes the pending code-save request, if any; null when already taken. */
-    fun takePendingCodeSave(): CodeSaveRequest? {
-        val pending = pendingCodeSave
-        pendingCodeSave = null
-        return pending
-    }
+    /** Takes the oldest pending code-save request, if any. */
+    fun takePendingCodeSave(): CodeSaveRequest? = codeSaveQueue.take()
 
-    /** Peeks at the pending request without consuming it (for the launch). */
-    fun peekPendingCodeSave(): CodeSaveRequest? = pendingCodeSave
+    /** Peeks at the oldest pending request without consuming it (for the launch). */
+    fun peekPendingCodeSave(): CodeSaveRequest? = codeSaveQueue.peek()
+
+    /**
+     * Re-emits the save-picker request when requests are still queued —
+     * called by MainActivity after a picker returns, so the next Save in
+     * line opens its picker instead of waiting for another tap.
+     */
+    fun emitCodeSaveRequestIfPending() {
+        if (!codeSaveQueue.isEmpty()) codeSaveRequest.tryEmit(System.currentTimeMillis())
+    }
 
     val codeSaveRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
 
