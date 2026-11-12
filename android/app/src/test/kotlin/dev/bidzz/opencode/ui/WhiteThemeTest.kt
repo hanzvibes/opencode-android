@@ -82,16 +82,25 @@ class WhiteThemeTest {
         assertTrue(contrastRatio(Palette.lightUserBubble, Palette.lightAssistantBubble) > 1.0)
     }
 
-    // ---- Dark palette untouched ----
+    // ---- Dark palette ladder (Opsi B: measured steps, not aliases) ----
 
     @Test
-    fun `dark palette is untouched OLED black`() {
+    fun `dark palette ladder is four measured steps`() {
         assertEquals(0xFF000000.toInt(), Palette.darkBackground.toArgb())
         assertEquals(0xFF1C1C1E.toInt(), Palette.darkSurfaceRaised.toArgb())
         assertEquals(0xFF0E0E10.toInt(), Palette.darkSurfaceSunken.toArgb())
         assertEquals(0xFF1C1C1E.toInt(), Palette.darkSurface.toArgb())
-        assertEquals(0xFF1C1C1E.toInt(), Palette.darkSurfaceVariant.toArgb())
+        // Variant is its own step since Opsi B: when it aliased raised,
+        // chips and inline code were invisible on dark cards.
+        assertEquals(0xFF26262A.toInt(), Palette.darkSurfaceVariant.toArgb())
         assertEquals(0xFF0A84FF.toInt(), Palette.darkAccent.toArgb())
+        // The sender reads in dark: user bubble one step above assistant.
+        assertEquals(0xFF2C2C30.toInt(), Palette.darkUserBubble.toArgb())
+        assertEquals(0xFF1C1C1E.toInt(), Palette.darkAssistantBubble.toArgb())
+        // Muted is brighter than faint again (the old pair was inverted).
+        assertEquals(0xFFAEAEB2.toInt(), Palette.darkOnSurfaceMuted.toArgb())
+        // Pressed is its own step in light too, not the variant colour.
+        assertEquals(0xFFE9E9EC.toInt(), Palette.lightSurfacePressed.toArgb())
     }
 
     // ---- Shadow tokens ----

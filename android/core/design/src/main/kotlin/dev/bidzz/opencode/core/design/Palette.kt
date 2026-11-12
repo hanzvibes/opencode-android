@@ -8,25 +8,28 @@ import androidx.compose.ui.graphics.Color
  * sentence-case section labels, and Apple System Blue accent.
  *
  * Phase 1 ("The quiet terminal") rules, enforced here:
- * - THREE OPAQUE SURFACES per theme, no alpha: background, raised, sunken.
- *   Dark: #000000 / #1C1C1E / #0E0E10. Light (White B): #F9F9FA / #FFFFFF /
- *   #F7F7F8 (code blocks). `surface` aliases the raised value; `surfaceVariant`
- *   is a separate chips-only neutral #F5F5F7, NOT an alias of raised — White B
- *   needs chips to read against white cards.
+ * - OPAQUE SURFACES, no alpha: dark has four measured steps — background
+ *   #000000, sunken #0E0E10, raised #1C1C1E, variant #26262A (each step
+ *   1.09-1.13:1); light (White B) has #F9F9FA / #FFFFFF / #F7F7F8
+ *   (code blocks) / variant #F5F5F7 (chips only). `surface` aliases the
+ *   raised value in both themes. Never `surface*.copy(alpha = …)`: on
+ *   dark an alpha surface renders darker than its container and the
+ *   ladder collapses — tints use [dev.bidzz.opencode.core.design.AlphaTokens].
  *   The old near-blacks #141416 and #1E1E21 (dark) and #F5F5F7 / #F0F0F2
  *   (light) were folded into the raised value in Phase 1 — on OLED they were
  *   visually indistinguishable from it. White B un-folds the light side:
  *   the page is #F9F9FA, cards are pure #FFFFFF, so the ladder reads again.
  * - NO GLASS, NO HALOS: the glass/halo colour blocks were deleted with the
  *   Glassmorphism / ElevationHalos tokens (zero consumers). Depth comes
- *   from the three surfaces plus a hairline in dark; in light, from the
+ *   from the surfaces plus a hairline in dark; in light, from the
  *   white-card shadow tokens (`ShadowTokens` in Tokens.kt) plus a 1dp
  *   #EBEBEB border — never from translucency.
  * - ONE BLUE: accent is the only live/activity colour (see Theme.kt).
- * - USER BUBBLE IS NEUTRAL, not blue: it is the raised surface in both
- *   themes, with [OpenCodeColors.onUserBubble] = onSurface. In White B
- *   that means a white bubble on the #F9F9FA page — distinguished by
- *   position and shape only (see the contrast note in the final report).
+ * - USER BUBBLE IS NEUTRAL, not blue. In light it is the raised surface
+ *   (a white bubble on the #F9F9FA page — distinguished by position and
+ *   shape only); in dark it is one step above the assistant bubble
+ *   (#2C2C30 vs #1C1C1E), so the sender reads without relying on the
+ *   avatar alone. [OpenCodeColors.onUserBubble] = onSurface in both.
  * - LIGHT-THEME TEXT IS AA: bright semantic colours (#34C759, #FF9500,
  *   #FF3B30, #007AFF) are 2.2–4.0:1 on light backgrounds and must NEVER be
  *   used as text. Text uses the `*Text` variants below (all ≥ 4.5:1 on
@@ -44,16 +47,26 @@ object Palette {
     val systemPurpleDark = Color(0xFF5E5CE6)
 
     // ---- Dark: OLED black experience ----
-    // Three canonical opaque surfaces: background #000000, raised #1C1C1E,
-    // sunken #0E0E10. surface / surfaceVariant alias the raised value.
+    // FOUR opaque surfaces, one step apart (measured): background #000000,
+    // sunken #0E0E10 (1.09:1), raised #1C1C1E (1.13:1), variant #26262A
+    // (1.13:1). `surface` aliases the raised value; `surfaceVariant` is
+    // its own step since Opsi B — when it aliased raised, chips and inline
+    // code were invisible on dark cards. Light keeps its White B ladder
+    // (background #F9F9FA, raised #FFFFFF, sunken #F7F7F8, variant
+    // #F5F5F7): its steps are 1.02-1.05:1 by design and surfaces there are
+    // told apart by the 1dp border + shadow, not by colour.
     val darkBackground = Color(0xFF000000)
     val darkSurfaceRaised = Color(0xFF1C1C1E)
     val darkSurfaceSunken = Color(0xFF0E0E10)
     val darkSurface = darkSurfaceRaised
-    val darkSurfaceVariant = darkSurfaceRaised
+    val darkSurfaceVariant = Color(0xFF26262A)
 
     val darkOnSurface = Color(0xFFFFFFFF)
-    val darkOnSurfaceMuted = Color(0xFF8E8E93)
+    // #AEAEB2, not the old #8E8E93: muted must be BRIGHTER than faint
+    // (the old pair was inverted — faint #9A9AA0 was lighter than muted).
+    // #AEAEB2 is 9.50 / 7.69 / 8.72 on black / raised / sunken, so it
+    // stays AA everywhere faint is used too.
+    val darkOnSurfaceMuted = Color(0xFFAEAEB2)
     // #9A9AA0 on OLED black is ~7:1, so even ≤13sp text in this token stays
     // readable. The previous #5A5A5F was ~3.0:1 — fine for a decorative dot,
     // too faint for the small labels and chevrons that actually use it.
@@ -73,17 +86,18 @@ object Palette {
     // #0A84FF is only 3.65:1, so dark fills never use darkAccent itself.
     val darkAccentFill = Color(0xFF0066CC)
 
-    // NEUTRAL user bubble (Phase 1 §7): the raised surface, not blue.
-    // The old deepened blues #0062D6 / #0066CC are gone on purpose — a blue
-    // bubble fought the "quiet terminal" and duplicated the accent's job.
+    // NEUTRAL user bubble (Phase 1 §7): not blue. Since Opsi B it is one
+    // step ABOVE the assistant bubble (#2C2C30 vs #1C1C1E, 1.22:1) — when
+    // both were the raised surface, only position/avatar/tail told the
+    // sender apart in dark. Light keeps the raised surface for both
+    // bubbles; there the assistant bubble is the grey #EFEFF1.
     // Text on it is plain onSurface (white on dark, near-black on light).
-    val darkUserBubble = darkSurfaceRaised
+    val darkUserBubble = Color(0xFF2C2C30)
     val darkOnUserBubble = darkOnSurface
 
     // Assistant bubble (Redesign C): the classic grey bubble for
     // assistant turns, with a small logomark avatar beside it. Dark is
-    // the raised surface — the same neutral the user bubble uses, so the
-    // dark side of the pattern is the surface the app already speaks.
+    // the raised surface #1C1C1E.
     val darkAssistantBubble = darkSurfaceRaised
     val darkOnAssistantBubble = darkOnSurface
 
@@ -122,8 +136,10 @@ object Palette {
     val lightHairline = Color(0xFFE5E5EA)
     val lightFill = Color(0x0D000000)         // 5% black
     // Pressed must stay visible in White B: raised is now pure white, so a
-    // pressed alias would be invisible. #F5F5F7 = surfaceVariant.
-    val lightSurfacePressed = Color(0xFFF5F5F7)
+    // pressed alias would be invisible — and it must NOT be #F5F5F7 any
+    // more, that is surfaceVariant (a pressed card looked identical to a
+    // chip). #E9E9EC is one step darker than variant (1.11:1).
+    val lightSurfacePressed = Color(0xFFE9E9EC)
     // White-card edge: 1dp #EBEBEB border on every floating white card
     // (see Tokens.ShadowTokens / Modifier.whiteCard). Dark uses hairline.
     val lightCardBorder = Color(0xFFEBEBEB)
