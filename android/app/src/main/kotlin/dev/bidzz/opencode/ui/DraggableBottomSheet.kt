@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -36,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -203,6 +205,42 @@ fun DraggableBottomSheet(
                         ),
                 )
 
+                // Putih B sheet edge (Opsi B #41): 16dp top radius + 1dp
+                // border + raised shadow in light; flat + hairline in
+                // dark. whiteCard() itself forces a symmetric radius, so
+                // the treatment is mirrored here with the top-only shape
+                // (the shared whiteCardEdge(shape) extraction is #43).
+                val sheetShape = RoundedCornerShape(
+                    topStart = radius.lg,
+                    topEnd = radius.lg,
+                )
+                val sheetEdge = if (colors.isDark) {
+                    Modifier
+                        .clip(sheetShape)
+                        .background(colors.surface)
+                        .border(
+                            OpenCodeTheme.tokens.dimensions.hairline,
+                            colors.hairline,
+                            sheetShape,
+                        )
+                } else {
+                    val shadow = OpenCodeTheme.tokens.shadow.raised
+                    Modifier
+                        .shadow(
+                            elevation = shadow.elevation,
+                            shape = sheetShape,
+                            ambientColor = shadow.ambientColor,
+                            spotColor = shadow.spotColor,
+                        )
+                        .clip(sheetShape)
+                        .background(colors.surface)
+                        .border(
+                            OpenCodeTheme.tokens.shadow.cardBorderWidth,
+                            colors.cardBorder,
+                            sheetShape,
+                        )
+                }
+
                 // The sheet. A no-op clickable so taps on empty sheet area
                 // don't fall through to the scrim and dismiss under the user.
                 Box(
@@ -211,13 +249,7 @@ fun DraggableBottomSheet(
                         .widthIn(max = 640.dp)
                         .fillMaxWidth()
                         .height(with(density) { heightAnim.value.toDp() })
-                        .clip(
-                            RoundedCornerShape(
-                                topStart = radius.md,
-                                topEnd = radius.md,
-                            ),
-                        )
-                        .background(colors.surfaceRaised)
+                        .then(sheetEdge)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,

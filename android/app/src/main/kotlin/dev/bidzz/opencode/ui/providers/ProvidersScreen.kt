@@ -59,6 +59,7 @@ import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
+import dev.bidzz.opencode.ui.whiteCard
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -143,7 +144,6 @@ fun ProvidersScreen(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
 
     var keyFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var manageFor by remember { mutableStateOf<IntegrationInfo?>(null) }
@@ -163,14 +163,14 @@ fun ProvidersScreen(
                 .padding(spacing.lg),
             verticalArrangement = Arrangement.spacedBy(spacing.lg),
         ) {
-            // Free Tier / Unconnected hero notice
+            // Free Tier / Unconnected hero notice — a white card (Opsi B
+            // #41), not a blue wash: the Sparkle icon keeps the info
+            // signal, the card edge keeps the White B surface.
             if (state.integrations.none { it.connected } && state.customProviders.isEmpty()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(radius.md))
-                        .background(colors.accent.copy(alpha = 0.08f))
-                        .border(OpenCodeTheme.tokens.dimensions.hairline, colors.accent.copy(alpha = 0.25f), RoundedCornerShape(radius.md))
+                        .whiteCard()
                         .padding(spacing.md),
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                     verticalAlignment = Alignment.Top,
@@ -620,17 +620,22 @@ private fun ProviderCard(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(radius.lg))
-            .background(colors.surface)
-            .border(
-                OpenCodeTheme.tokens.dimensions.hairline,
-                if (status == ProviderStatus.CONNECTED) colors.success.copy(alpha = 0.25f) else colors.hairline,
-                RoundedCornerShape(radius.lg),
+            .whiteCard(
+                // The connected edge survives the white-card treatment:
+                // a green edge reads "connected" where the card itself
+                // is white in both themes. 0.25 is the shared border
+                // token's value (AlphaTokens.border, PR #39) — written
+                // as a literal here so this PR stays independent of #39;
+                // switch it to tokens.alpha.border once #39 lands.
+                borderColor = if (status == ProviderStatus.CONNECTED) {
+                    colors.success.copy(alpha = 0.25f)
+                } else {
+                    null
+                },
             )
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = spacing.md, vertical = spacing.md),
@@ -883,14 +888,11 @@ private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third:
 private fun SearchField(query: String, onChange: (String) -> Unit) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val shape = RoundedCornerShape(radius.md)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface, shape)
-            .border(OpenCodeTheme.tokens.dimensions.hairline, colors.hairline, shape)
+            .whiteCard()
             .padding(horizontal = spacing.md, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
