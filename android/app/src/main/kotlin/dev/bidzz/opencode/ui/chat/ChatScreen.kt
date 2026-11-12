@@ -1920,7 +1920,7 @@ private fun PinnedErrorBanner(
                 modifier = Modifier
                     .defaultMinSize(minHeight = dims.minTouchTarget)
                     .clip(RoundedCornerShape(radius.full))
-                    .background(colors.accent)
+                    .background(colors.accentFill)
                     .semantics {
                         role = SemanticsRole.Button
                         contentDescription = retryLabel
@@ -3242,7 +3242,7 @@ private fun CollapsedSidebarRail(
             modifier = Modifier
                 .size(dims.minTouchTarget)
                 .clip(RoundedCornerShape(radius.md))
-                .background(colors.accent)
+                .background(colors.accentFill)
                 .clickable(role = SemanticsRole.Button, onClick = onNewSession)
                 .semantics { contentDescription = newSessionDescription },
             contentAlignment = Alignment.Center,
@@ -3352,7 +3352,7 @@ private fun SidebarPrimaryButton(
             .padding(horizontal = spacing.sm, vertical = spacing.xxs)
             .height(dims.minTouchTarget)
             .clip(RoundedCornerShape(radius.md))
-            .background(colors.accent)
+            .background(colors.accentFill)
             .clickable(role = SemanticsRole.Button, onClick = onClick)
             .padding(horizontal = spacing.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -3768,7 +3768,7 @@ private fun JumpToLatest(
                     .padding(bottom = spacing.xs)
                     .height(24.dp)
                     .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.full))
-                    .background(colors.accent)
+                    .background(colors.accentFill)
                     .padding(horizontal = spacing.sm),
                 contentAlignment = Alignment.Center,
             ) {
@@ -3804,7 +3804,7 @@ private fun JumpToLatest(
                     .offset(x = 3.dp, y = (-3).dp)
                     .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
                     .clip(CircleShape)
-                    .background(colors.accent)
+                    .background(colors.accentFill)
                     .padding(horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -4010,7 +4010,7 @@ private fun EmptyChat(
                                 modifier = Modifier
                                     .defaultMinSize(minHeight = dims.minTouchTarget)
                                     .clip(RoundedCornerShape(radius.full))
-                                    .background(colors.accent)
+                                    .background(colors.accentFill)
                                     .clickable(role = SemanticsRole.Button, onClick = onStatusClick)
                                     .padding(horizontal = spacing.lg, vertical = spacing.sm),
                                 contentAlignment = Alignment.Center,

@@ -432,7 +432,7 @@ private fun SingleQuestionSection(
                     .fillMaxWidth()
                     .defaultMinSize(minHeight = 48.dp)
                     .clip(RoundedCornerShape(radius.sm))
-                    .background(if (hasSelection) colors.accent else colors.fill)
+                    .background(if (hasSelection) colors.accentFill else colors.fill)
                     .clickable(enabled = hasSelection, role = Role.Button) {
                         submitAnswer(selectedOptionIds, writeInText, writeInActive)
                     }

@@ -91,7 +91,7 @@ fun AboutScreen(versionName: String, onBack: () -> Unit) {
                         modifier = Modifier
                             .size(76.dp)
                             .clip(CircleShape)
-                            .background(colors.accent),
+                            .background(colors.accentFill),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
