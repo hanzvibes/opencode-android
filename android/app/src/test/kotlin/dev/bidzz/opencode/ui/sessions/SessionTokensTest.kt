@@ -19,9 +19,10 @@ class SessionTokensTest {
     @Test
     fun `no usage is null, a reported zero stays zero`() {
         assertNull(totalTokens(null))
-        assertNull(totalTokens(TokenUsage()))
-        // 67-F5: absence hides, zero shows — the list, the footer and
-        // Stats share one rule now.
+        // A present object with no bucket values still sums to zero —
+        // absence is the null object itself, the same rule Stats uses
+        // (67-F5: one zero rule everywhere).
+        assertEquals(0L, totalTokens(TokenUsage()))
         assertEquals(0L, totalTokens(TokenUsage(input = 0, output = 0, reasoning = 0)))
     }
 
