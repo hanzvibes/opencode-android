@@ -5,6 +5,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -23,10 +24,12 @@ import androidx.compose.ui.graphics.Color
  *   never to warning — orange is reserved for genuine warnings only.
  *   Header dot, streaming, tools and composer focus all read "working"
  *   through the same blue.
- * - THREE OPAQUE SURFACES, NO ALPHA: background / raised / sunken only
- *   (see Palette). Glass and halo fields were deleted, not deprecated.
- * - USER BUBBLE IS NEUTRAL: [userBubble] is the raised surface in both
- *   themes; [onUserBubble] is [onSurface]. No blue bubble anywhere.
+ * - OPAQUE SURFACES, no alpha: dark has four measured steps, light its
+ *   White B ladder (see Palette). Glass and halo fields were deleted,
+ *   not deprecated.
+ * - USER BUBBLE IS NEUTRAL: [userBubble] is the raised surface in light
+ *   and one step above the assistant bubble in dark; [onUserBubble] is
+ *   [onSurface]. No blue bubble anywhere.
  * - LIGHT TEXT IS AA: in light, success / warning / danger / neutral are
  *   the dark text variants (≥ 4.5:1); the bright Apple colours live on
  *   only as [successBright] / [warningBright] / [dangerBright] for
@@ -517,6 +520,126 @@ object OpenCodeTheme {
 }
 
 /**
+ * The Material3 [ColorScheme] for these [OpenCodeColors], in full.
+ *
+ * Every field is set from our own tokens — nothing falls through to the
+ * M3 baseline defaults (dark used to leak the baseline purple #D0BCFF
+ * through `surfaceContainerHigh` and friends, and `surfaceVariant` was
+ * mapped to the raised surface instead of the variant step). A pure
+ * function, not a @Composable, so MaterialSchemeTest can assert it on
+ * the JVM.
+ *
+ * The design system has ONE BLUE and neutral containers: primary,
+ * secondary and tertiary are all [OpenCodeColors.accentFill] (white on
+ * it is AA in both themes); every `*Container` is a ladder step, never
+ * a tinted M3 container, and `on*Container` is plain
+ * [OpenCodeColors.onSurface]. Error keeps [OpenCodeColors.danger] with
+ * [OpenCodeColors.background] on it — white on the dark danger #FF453A
+ * is only 3.41:1, black-on-red is 6.17:1 (light: #F9F9FA on #B3261E is
+ * 6.21:1). `surfaceTint` is the surface itself: depth comes from
+ * shadow, never from a tinted elevation overlay. `scrim` is the
+ * standard 32% black — a translucent overlay by definition, not a
+ * surface, so the opaque-surface rule does not apply to it.
+ */
+fun materialColorScheme(colors: OpenCodeColors, darkTheme: Boolean): ColorScheme {
+    // The container scale runs lightest -> darkest in light (Lowest is
+    // the raised white, Highest the pressed step) and darkest -> lightest
+    // in dark (Lowest is the black background, Highest the variant step).
+    // NOTE: the top dark step only reads above pressed once PR #39's
+    // variant (#26262A) lands; until then Highest == surface.
+    val surfaceContainerLowest = if (darkTheme) colors.background else colors.surfaceRaised
+    val surfaceContainerLow = if (darkTheme) colors.surfaceSunken else colors.background
+    val surfaceContainer = if (darkTheme) colors.surface else colors.surfaceSunken
+    val surfaceContainerHigh = if (darkTheme) colors.surfacePressed else colors.surfaceVariant
+    val surfaceContainerHighest = if (darkTheme) colors.surfaceVariant else colors.surfacePressed
+    val surfaceDim = if (darkTheme) colors.background else colors.surfacePressed
+    val surfaceBright = if (darkTheme) colors.surfaceVariant else colors.surfaceRaised
+    // Inverse roles are the opposite theme's ladder, for Snackbars.
+    val inverseSurface = if (darkTheme) Palette.lightSurfaceRaised else Palette.darkSurfaceRaised
+    val inverseOnSurface = if (darkTheme) Palette.lightOnSurface else Palette.darkOnSurface
+    val inversePrimary = if (darkTheme) Palette.lightAccentFill else Palette.darkAccentFill
+    return if (darkTheme) {
+        darkColorScheme(
+            primary = colors.accentFill,
+            onPrimary = colors.onAccent,
+            primaryContainer = colors.surfaceVariant,
+            onPrimaryContainer = colors.onSurface,
+            secondary = colors.accentFill,
+            onSecondary = colors.onAccent,
+            secondaryContainer = colors.surfaceVariant,
+            onSecondaryContainer = colors.onSurface,
+            tertiary = colors.accentFill,
+            onTertiary = colors.onAccent,
+            tertiaryContainer = colors.surfaceVariant,
+            onTertiaryContainer = colors.onSurface,
+            error = colors.danger,
+            onError = colors.background,
+            errorContainer = colors.surfaceVariant,
+            onErrorContainer = colors.onSurface,
+            background = colors.background,
+            onBackground = colors.onSurface,
+            surface = colors.surface,
+            onSurface = colors.onSurface,
+            surfaceVariant = colors.surfaceVariant,
+            onSurfaceVariant = colors.onSurfaceMuted,
+            surfaceDim = surfaceDim,
+            surfaceBright = surfaceBright,
+            surfaceContainerLowest = surfaceContainerLowest,
+            surfaceContainerLow = surfaceContainerLow,
+            surfaceContainer = surfaceContainer,
+            surfaceContainerHigh = surfaceContainerHigh,
+            surfaceContainerHighest = surfaceContainerHighest,
+            outline = colors.outline,
+            outlineVariant = colors.hairline,
+            scrim = Color(0x52000000),
+            inverseSurface = inverseSurface,
+            inverseOnSurface = inverseOnSurface,
+            inversePrimary = inversePrimary,
+            surfaceTint = colors.surface,
+        )
+    } else {
+        lightColorScheme(
+            primary = colors.accentFill,
+            onPrimary = colors.onAccent,
+            primaryContainer = colors.surfaceVariant,
+            onPrimaryContainer = colors.onSurface,
+            secondary = colors.accentFill,
+            onSecondary = colors.onAccent,
+            secondaryContainer = colors.surfaceVariant,
+            onSecondaryContainer = colors.onSurface,
+            tertiary = colors.accentFill,
+            onTertiary = colors.onAccent,
+            tertiaryContainer = colors.surfaceVariant,
+            onTertiaryContainer = colors.onSurface,
+            error = colors.danger,
+            onError = colors.background,
+            errorContainer = colors.surfaceVariant,
+            onErrorContainer = colors.onSurface,
+            background = colors.background,
+            onBackground = colors.onSurface,
+            surface = colors.surface,
+            onSurface = colors.onSurface,
+            surfaceVariant = colors.surfaceVariant,
+            onSurfaceVariant = colors.onSurfaceMuted,
+            surfaceDim = surfaceDim,
+            surfaceBright = surfaceBright,
+            surfaceContainerLowest = surfaceContainerLowest,
+            surfaceContainerLow = surfaceContainerLow,
+            surfaceContainer = surfaceContainer,
+            surfaceContainerHigh = surfaceContainerHigh,
+            surfaceContainerHighest = surfaceContainerHighest,
+            outline = colors.outline,
+            outlineVariant = colors.hairline,
+            scrim = Color(0x52000000),
+            inverseSurface = inverseSurface,
+            inverseOnSurface = inverseOnSurface,
+            inversePrimary = inversePrimary,
+            surfaceTint = colors.surface,
+        )
+    }
+}
+
+/**
  * Applies the design system.
  *
  * [themeMode] resolves to dark/light here: System follows the phone, Dark /
@@ -544,36 +667,7 @@ fun OpenCodeTheme(
         tween(durationMillis = tokens.motion.standard, easing = tokens.motion.easingStandard),
     )
 
-    val material = if (darkTheme) {
-        darkColorScheme(
-            // M3 primary is the button-fill pair (primary/onPrimary), so it
-            // is the AA-safe fill, not the bright accent: white on #0066CC
-            // is 5.57:1 in dark, white on #005FCC is 5.98:1 in light.
-            primary = colors.accentFill,
-            onPrimary = colors.onAccent,
-            background = colors.background,
-            onBackground = colors.onSurface,
-            surface = colors.surface,
-            onSurface = colors.onSurface,
-            surfaceVariant = colors.surfaceRaised,
-            onSurfaceVariant = colors.onSurfaceMuted,
-            outline = colors.hairline,
-            error = colors.danger,
-        )
-    } else {
-        lightColorScheme(
-            primary = colors.accentFill,
-            onPrimary = colors.onAccent,
-            background = colors.background,
-            onBackground = colors.onSurface,
-            surface = colors.surface,
-            onSurface = colors.onSurface,
-            surfaceVariant = colors.surfaceRaised,
-            onSurfaceVariant = colors.onSurfaceMuted,
-            outline = colors.hairline,
-            error = colors.danger,
-        )
-    }
+    val material = materialColorScheme(colors, darkTheme)
 
     CompositionLocalProvider(
         LocalColors provides colors,
