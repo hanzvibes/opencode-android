@@ -14,6 +14,17 @@ import dev.bidzz.opencode.R
 private const val CHANNEL_ID = "agent_done"
 
 /**
+ * Whether an engine event type marks the end of an agent run (Fase 5,
+ * 55-F6). The service-side watcher and the UI trigger agree on this
+ * set: `succeeded` and `failed` mean the answer is final, while
+ * `interrupted` is a user Stop — the user who stopped it needs no
+ * "your run finished" notification.
+ */
+internal fun isAgentRunEndEvent(type: String): Boolean =
+    type == dev.bidzz.opencode.core.api.dto.EventTypes.EXECUTION_SUCCEEDED ||
+        type == dev.bidzz.opencode.core.api.dto.EventTypes.EXECUTION_FAILED
+
+/**
  * Tells the user an agent run finished while the app was in the
  * background (Native C). Tapping the notification opens that session
  * through the opencode:// deep link, so the path is the same one a

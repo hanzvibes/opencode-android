@@ -295,12 +295,19 @@ fun TonalButton(
  * (lg → xxl) on centered text.
  *
  * Errors render in [OpenCodeColors.danger]; everything else in muted.
+ *
+ * [onRetry] (Fase 5, 64-F11) adds a retry button under the message: before
+ * this the component had no action slot at all, so every error rendered
+ * through it was a dead end — 11+ screens showed a red message with no
+ * way to try again in place. Callers pass their own refresh callback;
+ * the label reuses the chat retry string.
  */
 @Composable
 fun EmptyState(
     text: String,
     modifier: Modifier = Modifier,
     isError: Boolean = false,
+    onRetry: (() -> Unit)? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -308,15 +315,26 @@ fun EmptyState(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = if (isError) colors.danger else colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
             modifier = Modifier
                 .widthIn(max = 720.dp)
                 .padding(spacing.xxl),
-        )
+        ) {
+            Text(
+                text = text,
+                style = OpenCodeTypography.body,
+                color = if (isError) colors.danger else colors.onSurfaceMuted,
+                textAlign = TextAlign.Center,
+            )
+            if (onRetry != null) {
+                TonalButton(
+                    label = stringResource(R.string.chat_retry),
+                    onClick = onRetry,
+                )
+            }
+        }
     }
 }
 

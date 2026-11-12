@@ -37,4 +37,27 @@ class InAppBrowserTest {
         assertEquals("example.com", browserDisplayHost("https://example.com/docs"))
         assertEquals("not a url", browserDisplayHost("not a url"))
     }
+
+    @Test
+    fun `53-F4 mailto and plain tel numbers may go to the system`() {
+        assertTrue(isForwardableUrl("mailto:rehan@example.com"))
+        assertTrue(isForwardableUrl("MAILTO:rehan@example.com"))
+        assertTrue(isForwardableUrl("tel:+621234567"))
+        assertTrue(isForwardableUrl("tel:021 555 1234"))
+        assertTrue(isForwardableUrl("tel:(021) 555-1234"))
+    }
+
+    @Test
+    fun `53-F4 MMI USSD and other schemes are never forwarded`() {
+        assertFalse(isForwardableUrl("tel:*#06#"))
+        assertFalse(isForwardableUrl("tel:*#*#4636#*#*"))
+        assertFalse(isForwardableUrl("tel:123;123"))
+        assertFalse(isForwardableUrl("tel:123,456"))
+        assertFalse(isForwardableUrl("intent://scan/#Intent;scheme=zxing;end"))
+        assertFalse(isForwardableUrl("file:///storage/emulated/0/notes.txt"))
+        assertFalse(isForwardableUrl("javascript:alert(1)"))
+        assertFalse(isForwardableUrl("https://example.com"))
+        assertFalse(isForwardableUrl(""))
+        assertFalse(isForwardableUrl("mailto:"))
+    }
 }

@@ -66,6 +66,27 @@ fun isBrowsableUrl(url: String): Boolean {
     return host.isNotBlank()
 }
 
+/**
+ * Whether a non-web URL may be handed to the system from the in-app
+ * browser (Fase 5, 53-F4). Only `mailto:` and a strictly-shaped `tel:`
+ * pass: the old code forwarded EVERYTHING — `intent:`, `file:`,
+ * `javascript:`, custom schemes — so any page opened from a chat link
+ * could trigger a system action without a tap, including a dialer
+ * open with MMI/USSD codes. A `tel:` number is only digits, spaces,
+ * parentheses, dots and dashes, with an optional leading `+`: `*`, `#`,
+ * `,` and `;` never belong in a dialled number the user tapped.
+ */
+fun isForwardableUrl(url: String): Boolean {
+    val scheme = url.substringBefore(':').lowercase()
+    return when (scheme) {
+        "mailto" -> url.length > scheme.length + 1
+        "tel" -> TEL_NUMBER_REGEX.matches(url)
+        else -> false
+    }
+}
+
+private val TEL_NUMBER_REGEX = Regex("^tel:\\+?[0-9\\s().-]*$")
+
 /** The host for the toolbar title, or the raw URL when it has none. */
 fun browserDisplayHost(url: String): String {
     val host = urlHostAfterScheme(url)
@@ -140,8 +161,12 @@ fun InAppBrowserScreen(
                     val target = request.url.toString()
                     return if (isBrowsableUrl(target)) {
                         false
-                    } else {
-                        // mailto:/tel:/intent: and friends belong to the
+                    } else if (!request.isForMainFrame) {
+                        // A subframe/iframe redirect is not a user tap: it
+                        // must never launch a system action (53-F4).
+                        true
+                    } else if (isForwardableUrl(target)) {
+                        // mailto: and a strictly-shaped tel: belong to the
                         // system, not this WebView. Guarded: no app for
                         // the scheme must not crash the browser.
                         runCatching {
@@ -149,6 +174,11 @@ fun InAppBrowserScreen(
                                 Intent(Intent.ACTION_VIEW, request.url),
                             )
                         }
+                        true
+                    } else {
+                        // intent:, file:, javascript: and friends are
+                        // dropped, not forwarded: the page asked for an
+                        // action the user never tapped.
                         true
                     }
                 }

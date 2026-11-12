@@ -14,9 +14,18 @@ import android.util.Log
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.core.api.ApiResult
+import dev.bidzz.opencode.core.api.EngineClient
+import dev.bidzz.opencode.core.api.EventStream
+import dev.bidzz.opencode.core.api.EventStreamAuthException
+import dev.bidzz.opencode.core.api.SessionApi
+import dev.bidzz.opencode.core.api.dto.EngineEvent
+import dev.bidzz.opencode.core.engine.EngineCredentials
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
+import dev.bidzz.opencode.ui.isAgentRunEndEvent
+import dev.bidzz.opencode.ui.notifyAgentDone
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +34,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Keeps the embedded engine alive while the app is not in the foreground.
@@ -167,6 +179,12 @@ class EngineService : Service() {
     private val stopping = AtomicBoolean(false)
     private var consecutiveFailures = 0
 
+    /** The agent-done stream watcher (55-F6), if one is running. */
+    private var agentDoneJob: Job? = null
+
+    /** Credentials the running watcher was built with; a restart rotates them. */
+    private var agentDoneCredentials: EngineCredentials? = null
+
     /** Guards against two resurrection attempts overlapping while one is in flight. */
     private val resurrecting = AtomicBoolean(false)
 
@@ -282,12 +300,69 @@ class EngineService : Service() {
                 // A run that got this far earns a fresh retry budget: the limit counts
                 // consecutive failed *resurrections*, not lifetime failures.
                 if (status.state == EngineState.RUNNING) consecutiveFailures = 0
+                updateAgentDoneWatcher(status)
                 if (shouldResurrect(status.state, stopping.get(), resurrecting.get(), consecutiveFailures, RESTART_FAILURE_LIMIT)) {
                     resurrect(supervisor)
                 }
             }
         }
     }
+
+    /**
+     * Watches the engine's global event stream for finished agent runs
+     * (Fase 5, 55-F6).
+     *
+     * The old trigger lived in the chat composition (`LaunchedEffect`
+     * on `busy`): swiping the app from recents destroyed the activity
+     * and the ViewModel with it, so a run that finished afterwards had
+     * no observer at all — the headline "agent done" notification never
+     * fired in the most common background case. The service survives
+     * the swipe (that is its job), so the watcher lives here, on the
+     * engine's own `/api/event` stream: `execution.succeeded/failed`
+     * is the run-end signal, no per-session polling.
+     *
+     * The watcher runs only while the engine is RUNNING and restarts
+     * whenever the credentials rotate (every engine restart prints a
+     * new password). It notifies only while the app is not in the
+     * foreground — a run that ends while the user watches needs no
+     * notification, and the UI trigger still covers the
+     * backgrounded-but-alive case. Posting twice for the same run is
+     * harmless: both paths use the same notification id, so the second
+     * post replaces the first. A title fetch that fails falls back to
+     * the generic body text.
+     */
+    private fun updateAgentDoneWatcher(status: EngineStatus) {
+        val credentials = if (status.state == EngineState.RUNNING) status.credentials else null
+        if (credentials == agentDoneCredentials && agentDoneJob?.isActive == true) return
+        agentDoneJob?.cancel()
+        agentDoneCredentials = credentials
+        if (credentials == null) return
+        val client = EngineClient(credentials.baseUrl, credentials.basicAuthHeader)
+        val sessions = SessionApi(client)
+        agentDoneJob = scope.launch {
+            try {
+                EventStream(client).events().collect { event ->
+                    if (!isAgentRunEndEvent(event.type)) return@collect
+                    val sessionID = event.sessionIDOf() ?: return@collect
+                    if ((application as OpenCodeApplication).isAppForeground) return@collect
+                    val title = runCatching { sessions.get(sessionID) }
+                        .getOrNull()
+                        ?.let { (it as? ApiResult.Success)?.value?.title }
+                    notifyAgentDone(this@EngineService, sessionID, title)
+                }
+            } catch (e: EventStreamAuthException) {
+                // The password rotated: the next RUNNING status restarts
+                // the watcher with fresh credentials. Cancellation is
+                // deliberately not caught: it must propagate when the job
+                // is cancelled (engine stopped, credentials rotated).
+                Log.i(TAG, "agent-done stream rejected (${e.message}); waiting for fresh credentials")
+            }
+        }
+    }
+
+    /** The session an engine event belongs to, if its payload names one. */
+    private fun EngineEvent.sessionIDOf(): String? =
+        data?.jsonObject?.get("sessionID")?.jsonPrimitive?.contentOrNull
 
     /**
      * Starts the engine again after it exited on its own.

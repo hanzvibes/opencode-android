@@ -94,6 +94,7 @@ class OpenCodeApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        registerActivityLifecycleCallbacks(ForegroundTracker)
 
         val nativeLibraryDir = File(applicationInfo.nativeLibraryDir)
         workspaceStore = WorkspaceStore(this)
@@ -310,9 +311,12 @@ class OpenCodeApplication : Application() {
 
     /**
      * Session id from an opencode://session/{id} deep link (Native C).
-     * Same bridge shape as the share above.
+     * Same bridge shape as the share above. An id that fails
+     * [isValidSessionId] is dropped silently: it came from outside the
+     * app and never reaches the engine (Fase 5, 53-F6).
      */
     fun deliverSessionOpen(sessionID: String) {
+        if (!isValidSessionId(sessionID)) return
         sessionOpenRequested.tryEmit(sessionID)
     }
 
@@ -398,4 +402,55 @@ class OpenCodeApplication : Application() {
         startForegroundService(Intent(this, EngineService::class.java).setAction(action))
         return true
     }
+
+    /**
+     * Whether any activity is currently started (Fase 5, 55-F6).
+     *
+     * The agent-done watcher in [EngineService] needs to know if the user
+     * is looking at the app: a run that ends while the app is in the
+     * foreground needs no notification. A counter, not a boolean: two
+     * activities can overlap during a transition, and a single flag would
+     * flicker false between onStop and onStart.
+     */
+    val isAppForeground: Boolean get() = ForegroundTracker.startedCount > 0
+}
+
+/**
+ * Counts started activities for [OpenCodeApplication.isAppForeground].
+ * A plain object on purpose: the service reads the same flag from the
+ * application instance, and the count must not depend on which activity
+ * happens to be alive.
+ */
+private object ForegroundTracker : Application.ActivityLifecycleCallbacks {
+    @Volatile var startedCount: Int = 0
+        private set
+
+    override fun onActivityStarted(activity: android.app.Activity) {
+        startedCount++
+    }
+
+    override fun onActivityStopped(activity: android.app.Activity) {
+        startedCount = (startedCount - 1).coerceAtLeast(0)
+    }
+
+    override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) = Unit
+    override fun onActivityResumed(activity: android.app.Activity) = Unit
+    override fun onActivityPaused(activity: android.app.Activity) = Unit
+    override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) = Unit
+    override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+}
+
+/**
+ * Whether a deep-link session id is shaped like a real session id
+ * (Fase 5, 53-F6). Session ids are single path segments of letters,
+ * digits, `_`, `-` and `.` (UUIDs and the engine's own ids); anything
+ * else — a `/` smuggled in through `%2F`, `..`, `?`, `#`, a blank —
+ * is rejected before it reaches the engine. `Uri.getLastPathSegment`
+ * returns the segment percent-decoded, so the charset check is what
+ * catches an encoded slash, not the segment count.
+ */
+internal fun isValidSessionId(id: String): Boolean {
+    if (id.isEmpty()) return false
+    if (!id.first().isLetterOrDigit()) return false
+    return id.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
 }
