@@ -19,12 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
 
@@ -72,9 +72,9 @@ fun ExportScreen(
                 color = colors.onSurfaceMuted,
             )
             when {
-                state.loading -> CenteredMessage(stringResource(R.string.common_loading))
-                state.failure != null -> CenteredMessage(state.failure.message(), isError = true)
-                state.export == null -> CenteredMessage(stringResource(R.string.export_empty))
+                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                state.export == null -> EmptyState(stringResource(R.string.export_empty))
                 else -> {
                     val export = state.export
                     Column(
@@ -131,24 +131,5 @@ fun ExportScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun CenteredMessage(text: String, isError: Boolean = false) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(spacing.lg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = if (isError) colors.danger else colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-        )
     }
 }

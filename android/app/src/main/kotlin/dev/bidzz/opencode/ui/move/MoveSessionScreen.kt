@@ -21,13 +21,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.ProjectInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
@@ -77,9 +77,9 @@ fun MoveSessionScreen(
                 ),
             )
             when {
-                state.loading -> CenteredMessage(stringResource(R.string.common_loading))
+                state.loading -> EmptyState(stringResource(R.string.common_loading))
                 state.moved -> {
-                    CenteredMessage(stringResource(R.string.move_done))
+                    EmptyState(stringResource(R.string.move_done))
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center,
@@ -93,8 +93,8 @@ fun MoveSessionScreen(
                         }
                     }
                 }
-                state.failure != null -> CenteredMessage(state.failure.message(), isError = true)
-                state.projects.isEmpty() -> CenteredMessage(stringResource(R.string.move_empty))
+                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                state.projects.isEmpty() -> EmptyState(stringResource(R.string.move_empty))
                 else -> {
                     LazyColumn(
                         modifier = Modifier
@@ -206,24 +206,5 @@ private fun ProjectRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-    }
-}
-
-@Composable
-private fun CenteredMessage(text: String, isError: Boolean = false) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(spacing.lg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = if (isError) colors.danger else colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-        )
     }
 }

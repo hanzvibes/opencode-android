@@ -1,6 +1,5 @@
 package dev.bidzz.opencode.ui.worktree
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,13 +15,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.WorktreeDirectory
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
@@ -66,9 +65,9 @@ fun WorktreesScreen(
                 ),
             )
             when {
-                state.loading -> CenteredMessage(stringResource(R.string.common_loading))
-                state.failure != null -> CenteredMessage(state.failure.message(), isError = true)
-                state.sections.isEmpty() -> CenteredMessage(stringResource(R.string.worktree_empty))
+                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                state.sections.isEmpty() -> EmptyState(stringResource(R.string.worktree_empty))
                 else -> {
                     LazyColumn(
                         modifier = Modifier
@@ -149,24 +148,5 @@ private fun WorktreeRow(worktree: WorktreeDirectory) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun CenteredMessage(text: String, isError: Boolean = false) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(spacing.lg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = if (isError) colors.danger else colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-        )
     }
 }

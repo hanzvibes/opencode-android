@@ -27,13 +27,13 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.InstructionEntry
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.RowDivider
@@ -158,8 +158,8 @@ fun InstructionsScreen(
                 }
             }
             when {
-                state.loading -> CenteredMessage(stringResource(R.string.common_loading))
-                state.entries.isEmpty() -> CenteredMessage(stringResource(R.string.instructions_empty))
+                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.entries.isEmpty() -> EmptyState(stringResource(R.string.instructions_empty))
                 else -> {
                     LazyColumn(
                         modifier = Modifier
@@ -283,24 +283,5 @@ private fun EntryRow(
                 modifier = Modifier.padding(spacing.xs),
             )
         }
-    }
-}
-
-@Composable
-private fun CenteredMessage(text: String, isError: Boolean = false) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(spacing.lg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = if (isError) colors.danger else colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-        )
     }
 }

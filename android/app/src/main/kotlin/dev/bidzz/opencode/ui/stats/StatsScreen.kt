@@ -1,6 +1,5 @@
 package dev.bidzz.opencode.ui.stats
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,7 +14,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,6 +23,7 @@ import dev.bidzz.opencode.core.api.dto.StatsModelUsage
 import dev.bidzz.opencode.core.api.dto.StatsToolUsage
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
@@ -68,9 +67,9 @@ fun StatsScreen(
                 modifier = Modifier.padding(bottom = spacing.sm),
             )
             when {
-                state.loading -> CenteredMessage(stringResource(R.string.common_loading))
+                state.loading -> EmptyState(stringResource(R.string.common_loading))
                 state.failure != null || state.stats == null ->
-                    CenteredMessage(stringResource(R.string.stats_empty))
+                    EmptyState(stringResource(R.string.stats_empty))
                 else -> StatsContent(stats = state.stats)
             }
         }
@@ -218,25 +217,6 @@ private fun ToolRow(tool: StatsToolUsage) {
             style = OpenCodeTypography.bodySmall,
             color = colors.onSurfaceMuted,
             modifier = Modifier.padding(top = spacing.xxs),
-        )
-    }
-}
-
-@Composable
-private fun CenteredMessage(text: String) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(spacing.lg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
         )
     }
 }
