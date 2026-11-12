@@ -3,6 +3,10 @@ package dev.bidzz.opencode.engine
 import android.util.Log
 import java.io.File
 import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import org.json.JSONObject
 
 /**
@@ -37,6 +41,26 @@ class EngineConfigStore(configHome: File) {
         val hasRefreshToken: Boolean = false,
     )
 
+    /** What reading `antigravity-accounts.json` found (audit-100 31-F10/38-F5). */
+    sealed interface AntigravityAccountsResult {
+        /** No accounts file at all — OAuth was never set up. */
+        data object Missing : AntigravityAccountsResult
+
+        /** The file parsed; the list may be empty (an account-less but valid file). */
+        data class Ok(val accounts: List<AntigravityAccount>) : AntigravityAccountsResult
+
+        /** The file exists but could not be read or parsed — not the same as "no accounts". */
+        data class Corrupt(val reason: String) : AntigravityAccountsResult
+    }
+
+    /** Why the engine config could not be read, if the last read failed (audit-100 30-F3). */
+    data class ConfigReadProblem(val fileName: String, val reason: String)
+
+    /** Set by the last [readRoot] attempt: null when the last read succeeded (or nothing was read). */
+    @Volatile
+    var lastConfigReadProblem: ConfigReadProblem? = null
+        private set
+
     /** One custom provider as stored in the config file. Never carries the key. */
     data class CustomProvider(val id: String, val name: String, val baseURL: String, val models: List<String>)
 
@@ -49,16 +73,22 @@ class EngineConfigStore(configHome: File) {
      */
     data class ModelSpec(val id: String, val name: String? = null)
 
-    /** Outcome of a write, so the UI can distinguish success from a shadowed file. */
+    /** Outcome of a write. */
     sealed interface WriteResult {
         data class Saved(val providerID: String) : WriteResult
-
-        /**
-         * The entry was written, but the engine will ignore it: config discovery picks
-         * the *last* existing candidate, so a sibling `opencode.jsonc` wins over ours.
-         */
-        data class Shadowed(val providerID: String) : WriteResult
     }
+
+    /**
+     * The effective config lives in `opencode.jsonc`, which this class reads but
+     * never writes (audit-100 30-F5/38-F10): writing the merged root into
+     * `opencode.json` would leave a shadowed copy the engine ignores — and
+     * silently drop the user's comments from that copy. Refusing is honest;
+     * the UI offers deleting the `.jsonc` file instead.
+     */
+    class JsoncBlockedException : IOException(
+        "Providers are stored in opencode.jsonc, which the app does not write. " +
+            "Delete opencode.jsonc to let the app manage providers in opencode.json.",
+    )
 
     /** Providers already declared in the config file, in document order. */
     fun customProviders(): List<CustomProvider> {
@@ -76,17 +106,30 @@ class EngineConfigStore(configHome: File) {
         }.toList()
     }
 
-    /** List of active/saved Google Antigravity OAuth accounts. */
-    fun antigravityAccounts(): List<AntigravityAccount> {
-        if (!antigravityAccountsFile.isFile) return emptyList()
-        val text = runCatching { antigravityAccountsFile.readText() }.getOrNull() ?: return emptyList()
-        if (text.isBlank()) return emptyList()
+    /** Raw read of the accounts file: one slot per array entry, in file order. */
+    private sealed interface AntigravityRead {
+        data object Missing : AntigravityRead
+        data class Corrupt(val reason: String) : AntigravityRead
+        data class Parsed(val slots: List<AntigravityAccount?>, val activeIndex: Int?) : AntigravityRead
+    }
+
+    private fun readAntigravity(): AntigravityRead {
+        if (!antigravityAccountsFile.isFile) return AntigravityRead.Missing
+        val text = runCatching { antigravityAccountsFile.readText() }.getOrNull()
+            ?: return AntigravityRead.Corrupt("could not read the file")
+        if (text.isBlank()) return AntigravityRead.Parsed(emptyList(), null)
         return try {
             val root = JSONObject(text)
-            val accounts = root.optJSONArray("accounts") ?: return emptyList()
-            (0 until accounts.length()).mapNotNull { i ->
-                val obj = accounts.optJSONObject(i) ?: return@mapNotNull null
-                val email = obj.optString("email").ifEmpty { return@mapNotNull null }
+            val accounts = root.optJSONArray("accounts")
+            val activeIndex = if (root.has("activeIndex")) {
+                root.optInt("activeIndex", -1).takeIf { it >= 0 }
+            } else {
+                null
+            }
+            if (accounts == null) return AntigravityRead.Parsed(emptyList(), activeIndex)
+            val slots = (0 until accounts.length()).map { i ->
+                val obj = accounts.optJSONObject(i) ?: return@map null
+                val email = obj.optString("email").ifEmpty { return@map null }
                 AntigravityAccount(
                     id = obj.optString("id").ifEmpty { email },
                     email = email,
@@ -95,15 +138,84 @@ class EngineConfigStore(configHome: File) {
                     hasRefreshToken = obj.optString("refreshToken").isNotBlank(),
                 )
             }
+            AntigravityRead.Parsed(slots, activeIndex)
         } catch (e: Exception) {
             Log.w(TAG, "failed reading antigravity accounts", e)
-            emptyList()
+            AntigravityRead.Corrupt(e.message ?: e.javaClass.simpleName)
         }
     }
 
-    /** Active Google Antigravity OAuth account if one is configured and enabled. */
-    fun activeAntigravityAccount(): AntigravityAccount? =
-        antigravityAccounts().firstOrNull { it.enabled && it.hasRefreshToken }
+    /** List of active/saved Google Antigravity OAuth accounts. */
+    fun antigravityAccounts(): List<AntigravityAccount> =
+        (antigravityAccountsResult() as? AntigravityAccountsResult.Ok)?.accounts ?: emptyList()
+
+    /**
+     * What reading `antigravity-accounts.json` found. Unlike [antigravityAccounts],
+     * this distinguishes "no file" from "file exists but is corrupt" (audit-100
+     * 31-F10/38-F5): a corrupt file must not silently look like "never set up".
+     */
+    fun antigravityAccountsResult(): AntigravityAccountsResult = when (val read = readAntigravity()) {
+        is AntigravityRead.Missing -> AntigravityAccountsResult.Missing
+        is AntigravityRead.Corrupt -> AntigravityAccountsResult.Corrupt(read.reason)
+        is AntigravityRead.Parsed -> AntigravityAccountsResult.Ok(read.slots.filterNotNull())
+    }
+
+    /**
+     * Active Google Antigravity OAuth account if one is configured and enabled.
+     *
+     * The file's own `activeIndex` wins when it points at a usable account
+     * (audit-100 31-F5/38-F4); otherwise this falls back to the first enabled
+     * account with a refresh token, as before. `activeIndex` indexes the file's
+     * `accounts` array, so an entry without an email still occupies its slot.
+     */
+    fun activeAntigravityAccount(): AntigravityAccount? {
+        val read = readAntigravity() as? AntigravityRead.Parsed ?: return null
+        val indexed = read.activeIndex?.let { read.slots.getOrNull(it) }
+        if (indexed != null && indexed.enabled && indexed.hasRefreshToken) return indexed
+        return read.slots.filterNotNull().firstOrNull { it.enabled && it.hasRefreshToken }
+    }
+
+    /**
+     * Points the accounts file's `activeIndex` at the account with this id
+     * (audit-100 31-F5). Returns false when the id is unknown or the file
+     * cannot be read or written. The caller restarts the engine so the plugin
+     * picks the account up.
+     */
+    fun setAntigravityActiveAccount(id: String): Boolean = updateAntigravityFile { root ->
+        val accounts = root.optJSONArray("accounts") ?: return@updateAntigravityFile false
+        val index = (0 until accounts.length()).indexOfFirst { i ->
+            val obj = accounts.optJSONObject(i)
+            obj != null && obj.optString("id").ifEmpty { obj.optString("email") } == id
+        }
+        if (index < 0) return@updateAntigravityFile false
+        root.put("activeIndex", index)
+        true
+    }
+
+    /** Enables or disables one Antigravity account in the file (audit-100 31-F5). */
+    fun setAntigravityAccountEnabled(id: String, enabled: Boolean): Boolean = updateAntigravityFile { root ->
+        val accounts = root.optJSONArray("accounts") ?: return@updateAntigravityFile false
+        for (i in 0 until accounts.length()) {
+            val obj = accounts.optJSONObject(i) ?: continue
+            if (obj.optString("id").ifEmpty { obj.optString("email") } == id) {
+                obj.put("enabled", enabled)
+                return@updateAntigravityFile true
+            }
+        }
+        false
+    }
+
+    /** Deletes `opencode.jsonc` so the app can manage providers in `opencode.json` again (30-F5/38-F10). */
+    fun deleteJsoncConfig(): Boolean = runCatching { jsoncFile.delete() }.getOrDefault(false)
+
+    private fun updateAntigravityFile(mutator: (JSONObject) -> Boolean): Boolean {
+        if (!antigravityAccountsFile.isFile) return false
+        val root = runCatching { JSONObject(antigravityAccountsFile.readText()) }.getOrNull() ?: return false
+        if (!mutator(root)) return false
+        return runCatching {
+            writeAtomically(antigravityAccountsFile, root.toString(INDENT) + "\n")
+        }.isSuccess
+    }
 
     /** Whether Google Antigravity OAuth is configured with at least one active account. */
     fun hasActiveAntigravity(): Boolean = activeAntigravityAccount() != null
@@ -133,7 +245,12 @@ class EngineConfigStore(configHome: File) {
         apiKey: String,
         models: List<ModelSpec>,
     ): WriteResult {
-        val root = readRoot() ?: JSONObject()
+        val (rootOrNull, source) = readRootAndSource()
+        val root = rootOrNull ?: JSONObject()
+        // The app only writes opencode.json. When the effective config lives in
+        // opencode.jsonc, writing would copy its content into a shadowed .json
+        // (dropping the user's comments) while the engine keeps reading .jsonc.
+        if (source == jsoncFile) throw JsoncBlockedException()
         // "providers" must be an object to merge into: a hand-made config
         // may hold a string, an array or null there, and replacing it with
         // a fresh object would silently delete it (audit-70 38-F4). Refuse
@@ -173,51 +290,70 @@ class EngineConfigStore(configHome: File) {
 
         write(root)
         Log.i(TAG, "configured custom provider '$id' -> $baseURL (${models.size} models)")
-        return if (File(dir, "opencode.jsonc").exists()) WriteResult.Shadowed(id) else WriteResult.Saved(id)
+        return WriteResult.Saved(id)
     }
 
-    private fun readRoot(): JSONObject? {
+    private fun readRoot(): JSONObject? = readRootAndSource().first
+
+    /**
+     * Reads the effective config and says which file it came from. The engine's
+     * config discovery picks the *last* existing candidate, so a sibling
+     * `opencode.jsonc` wins over `opencode.json` (audit-100 30-F5/38-F3) — the
+     * app must read the same file the engine reads, or it shows providers the
+     * engine will never load. A failed read records [lastConfigReadProblem] and
+     * throws, so the UI can name the file instead of showing an empty list.
+     */
+    private fun readRootAndSource(): Pair<JSONObject?, File?> {
         val target = when {
-            file.isFile -> file
             jsoncFile.isFile -> jsoncFile
-            else -> return null
+            file.isFile -> file
+            else -> return null to null
         }
         val text = target.readText()
-        if (text.isBlank()) return JSONObject()
+        if (text.isBlank()) {
+            lastConfigReadProblem = null
+            return JSONObject() to target
+        }
         return try {
-            // Strip single-line comments in case it is jsonc
-            val cleaned = text.lines().joinToString("\n") { line ->
-                val trimmed = line.trimStart()
-                if (trimmed.startsWith("//")) "" else line
-            }
-            JSONObject(cleaned)
+            lastConfigReadProblem = null
+            JSONObject(stripJsonc(text)) to target
         } catch (e: org.json.JSONException) {
             // A malformed file the app did not write is a real problem, but overwriting
             // it silently would destroy something the user made by hand.
             Log.e(TAG, "config unreadable, refusing to merge into it", e)
-            throw IOException("Existing config file is not valid JSON: ${e.message}")
+            lastConfigReadProblem = ConfigReadProblem(target.name, e.message ?: e.javaClass.simpleName)
+            throw IOException("Existing config file ${target.name} is not valid JSON: ${e.message}")
         }
     }
 
     private fun write(root: JSONObject) {
         if (!dir.exists() && !dir.mkdirs()) throw IOException("Could not create ${dir.absolutePath}")
-        val tmp = File(dir, "opencode.json.tmp")
+        writeAtomically(file, root.toString(INDENT) + "\n")
+    }
+
+    /**
+     * Temp file + rename in the same directory, so a reader sees the old or the
+     * new content, never a half-written file. Falls back to a plain rename where
+     * the filesystem refuses an atomic move (audit-100 38-F8).
+     */
+    private fun writeAtomically(target: File, text: String) {
+        val tmp = File(target.parentFile, "${target.name}.tmp")
         // The file holds provider API keys, so keep it owner-only before any content lands.
         // ponytail: plaintext at rest in app-private storage; the engine reads `settings.apiKey`
         // from this file, so encrypting needs engine support (env/file substitution) first.
         tmp.createNewFile()
         tmp.setReadable(false, false); tmp.setReadable(true, true)
         tmp.setWritable(false, false); tmp.setWritable(true, true)
-        tmp.writeText(root.toString(INDENT) + "\n")
+        tmp.writeText(text)
         try {
             // Same directory, so the atomic replace holds; a failure leaves the old file intact
             // instead of truncating it mid-write.
-            java.nio.file.Files.move(
-                tmp.toPath(), file.toPath(),
-                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (e: java.io.IOException) {
+            try {
+                Files.move(tmp.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+            } catch (e: AtomicMoveNotSupportedException) {
+                Files.move(tmp.toPath(), target.toPath(), REPLACE_EXISTING)
+            }
+        } catch (e: IOException) {
             tmp.delete()
             throw e
         }
@@ -227,6 +363,98 @@ class EngineConfigStore(configHome: File) {
         private const val TAG = "EngineConfig"
         private const val PACKAGE = "@opencode/ai/providers/openai-compatible"
         private const val INDENT = 2
+
+        /**
+         * Strips JSONC syntax — `//` line comments, `/* */` block comments,
+         * trailing commas, and a leading UTF-8 BOM — so `org.json` can parse a
+         * hand-edited config (audit-100 30-F3/38-F2). Comment markers inside
+         * string literals are left alone, as are escaped quotes. Comments are
+         * stripped first, then trailing commas, so a comma before a comment
+         * that precedes `}` or `]` is still dropped.
+         */
+        internal fun stripJsonc(text: String): String =
+            stripTrailingCommas(stripJsoncComments(text.removePrefix("\uFEFF")))
+
+        private fun stripJsoncComments(text: String): String {
+            val out = StringBuilder(text.length)
+            var i = 0
+            var inString = false
+            while (i < text.length) {
+                val c = text[i]
+                if (inString) {
+                    out.append(c)
+                    if (c == '\\' && i + 1 < text.length) {
+                        out.append(text[i + 1])
+                        i += 2
+                    } else {
+                        if (c == '"') inString = false
+                        i++
+                    }
+                    continue
+                }
+                when {
+                    c == '"' -> {
+                        inString = true
+                        out.append(c)
+                        i++
+                    }
+                    c == '/' && i + 1 < text.length && text[i + 1] == '/' -> {
+                        while (i < text.length && text[i] != '\n') i++
+                    }
+                    c == '/' && i + 1 < text.length && text[i + 1] == '*' -> {
+                        val end = text.indexOf("*/", i + 2)
+                        i = if (end < 0) text.length else end + 2
+                    }
+                    else -> {
+                        out.append(c)
+                        i++
+                    }
+                }
+            }
+            return out.toString()
+        }
+
+        private fun stripTrailingCommas(text: String): String {
+            val out = StringBuilder(text.length)
+            var i = 0
+            var inString = false
+            while (i < text.length) {
+                val c = text[i]
+                if (inString) {
+                    out.append(c)
+                    if (c == '\\' && i + 1 < text.length) {
+                        out.append(text[i + 1])
+                        i += 2
+                    } else {
+                        if (c == '"') inString = false
+                        i++
+                    }
+                    continue
+                }
+                when {
+                    c == '"' -> {
+                        inString = true
+                        out.append(c)
+                        i++
+                    }
+                    c == ',' -> {
+                        var j = i + 1
+                        while (j < text.length && text[j].isWhitespace()) j++
+                        if (j < text.length && (text[j] == '}' || text[j] == ']')) {
+                            i++ // trailing comma: drop it
+                        } else {
+                            out.append(c)
+                            i++
+                        }
+                    }
+                    else -> {
+                        out.append(c)
+                        i++
+                    }
+                }
+            }
+            return out.toString()
+        }
 
         /** Turns a display name into the provider key models get namespaced under. */
         fun slug(name: String): String {

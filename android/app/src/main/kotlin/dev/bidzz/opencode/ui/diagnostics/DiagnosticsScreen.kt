@@ -65,6 +65,7 @@ import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.core.engine.AntigravityPatchOutcome
 import dev.bidzz.opencode.core.engine.EngineDiagnostics
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.AppTag
@@ -301,6 +302,13 @@ fun DiagnosticsScreen(
             appendLine("- Port: ${status.port ?: "None"}")
             appendLine("- Base URL: ${status.credentials?.baseUrl ?: "None"}")
             appendLine("- Last Error: ${status.lastError ?: "None"}")
+            status.antigravityPatch?.let { patch ->
+                append("- Antigravity Patch: ${patch.outcome.name}")
+                if (patch.patchedFiles.isNotEmpty()) append(" (${patch.patchedFiles.joinToString()})")
+                if (patch.restartRequired) append(" — restart required")
+                patch.detail?.let { append(" — $it") }
+                appendLine()
+            }
             if (app.startupFailure != null) {
                 appendLine("- Startup Failure: ${app.startupFailure}")
             }
@@ -473,6 +481,32 @@ fun DiagnosticsScreen(
                                     }
                                 },
                             )
+
+                            // Antigravity plugin patch status (audit-100 31-F2): only
+                            // shown once a patch run has happened, so a fresh engine
+                            // that never needed the patch stays quiet.
+                            status.antigravityPatch?.let { patch ->
+                                RowDivider(inset = spacing.md)
+                                DiagnosticRow(
+                                    label = "antigravityPatch",
+                                    value = buildString {
+                                        append(patch.outcome.name)
+                                        if (patch.patchedFiles.isNotEmpty()) {
+                                            append(" (")
+                                            append(patch.patchedFiles.joinToString())
+                                            append(")")
+                                        }
+                                        if (patch.restartRequired) append(" — restart required")
+                                        patch.detail?.let { append(" — $it") }
+                                    },
+                                    isCode = true,
+                                    valueColor = when (patch.outcome) {
+                                        AntigravityPatchOutcome.APPLIED,
+                                        AntigravityPatchOutcome.ALREADY_PATCHED -> colors.onSurfaceMuted
+                                        else -> colors.warning
+                                    },
+                                )
+                            }
 
                             if (!status.lastError.isNullOrEmpty()) {
                                 RowDivider(inset = spacing.md)

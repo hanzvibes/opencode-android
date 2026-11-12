@@ -50,6 +50,12 @@ data class EngineStatus(
     val lastError: String? = null,
     /** Recent stdout/stderr lines, for the diagnostics screen. */
     val recentOutput: List<String> = emptyList(),
+    /**
+     * Last Antigravity plugin patch report (audit-100 31-F2): null before the
+     * first run. When the patch lands after the engine started, the report's
+     * [AntigravityPatchReport.restartRequired] says a restart is needed.
+     */
+    val antigravityPatch: AntigravityPatchReport? = null,
 )
 
 /**
@@ -140,6 +146,13 @@ class ProcessManager(
 
         /** One retry covers a port stolen between allocation and bind. */
         private const val MAX_START_ATTEMPTS = 3
+
+        /** Post-start Antigravity re-patch: how often to check for the downloaded plugin. */
+        private const val PATCH_POLL_INTERVAL_MS = 10_000L
+        /** …and how long to keep checking (30 × 10s = 5 minutes after boot). */
+        private const val PATCH_POLL_ATTEMPTS = 30
+        /** Failed patch runs retried this many times before giving up for this boot. */
+        private const val PATCH_FAILURE_LIMIT = 3
     }
 
     private val _status = MutableStateFlow(EngineStatus())
@@ -147,6 +160,7 @@ class ProcessManager(
 
     private val process = AtomicReference<Process?>(null)
     private var monitorJob: Job? = null
+    private var patchJob: Job? = null
 
     /** Serialises start/stop/restart against each other. */
     private val lifecycle = Mutex()
@@ -180,6 +194,8 @@ class ProcessManager(
     fun shutdownBlocking(graceMs: Long = 1_500L) {
         monitorJob?.cancel()
         monitorJob = null
+        patchJob?.cancel()
+        patchJob = null
         val proc = process.getAndSet(null)
         if (proc != null) {
             runCatching {
@@ -217,6 +233,8 @@ class ProcessManager(
         // with a ghost for its port or workspace.
         reapZombies()
 
+        patchJob?.cancel()
+        patchJob = null
         var lastFailure: Throwable? = null
         for (attempt in 1..MAX_START_ATTEMPTS) {
             when (val outcome = attemptStart(attempt)) {
@@ -238,6 +256,7 @@ class ProcessManager(
         try {
             transition(EngineState.INITIALIZING)
             environment.prepare()
+            environment.lastPatchReport?.let { updatePatchReport(it) }
             environment.clearTmp()
 
             val port = portProvider.allocate()
@@ -272,6 +291,16 @@ class ProcessManager(
 
             transition(EngineState.RUNNING, credentials = credentials, pid = pid, port = port)
             monitorJob = scope.launch { monitor(proc) }
+            // Fresh install: prepare() ran before the plugin was downloaded, so its
+            // patch reported NOT_FOUND. The engine downloads the plugin after boot;
+            // keep re-trying the patch until it lands (or the plugin proves to be a
+            // version the patch does not know). A patch applied here still needs a
+            // restart — the running engine already loaded the unpatched code.
+            if (environment.lastPatchReport?.outcome == AntigravityPatchOutcome.NOT_FOUND ||
+                environment.lastPatchReport?.outcome == AntigravityPatchOutcome.FAILED
+            ) {
+                patchJob = scope.launch { repatchAntigravityAfterDownload(proc) }
+            }
             return StartOutcome.Ready(credentials)
         } catch (t: Throwable) {
             Log.e(TAG, "engine start failed", t)
@@ -293,6 +322,8 @@ class ProcessManager(
         if (!current.canTransitionTo(EngineState.STOPPING)) {
             monitorJob?.cancelAndJoin()
             monitorJob = null
+            patchJob?.cancel()
+            patchJob = null
             process.getAndSet(null)?.let { terminate(it) }
             transition(EngineState.STOPPED)
             return@withContext Result.success(Unit)
@@ -301,6 +332,8 @@ class ProcessManager(
         transition(EngineState.STOPPING)
         monitorJob?.cancelAndJoin()
         monitorJob = null
+        patchJob?.cancel()
+        patchJob = null
         process.getAndSet(null)?.let { terminate(it) }
         transition(EngineState.STOPPED)
         Result.success(Unit)
@@ -357,6 +390,43 @@ class ProcessManager(
             delay(250)
         }
         return null
+    }
+
+    /** Publishes a patch report without changing the engine state. */
+    private fun updatePatchReport(report: AntigravityPatchReport) {
+        synchronized(stateLock) {
+            _status.value = _status.value.copy(antigravityPatch = report)
+        }
+    }
+
+    /**
+     * Re-runs the Antigravity plugin patch while the engine runs, for the fresh-
+     * install case where the plugin was not downloaded yet when [EngineEnvironment.prepare]
+     * ran (audit-100 31-F2). Polls until the patch lands, the plugin proves to be
+     * already patched or an unknown version, or the window runs out; stops early
+     * when the process dies. A FAILED run is retried a few times (a transient
+     * disk error can clear) and then left for the next start to retry.
+     */
+    private suspend fun repatchAntigravityAfterDownload(proc: Process) {
+        var failures = 0
+        repeat(PATCH_POLL_ATTEMPTS) {
+            delay(PATCH_POLL_INTERVAL_MS)
+            if (!proc.isAlive) return
+            val report = runCatching {
+                environment.patchAntigravityPlugin(restartRequired = true)
+            }.getOrNull() ?: return
+            updatePatchReport(report)
+            when (report.outcome) {
+                AntigravityPatchOutcome.APPLIED,
+                AntigravityPatchOutcome.ALREADY_PATCHED,
+                AntigravityPatchOutcome.VERSION_MISMATCH -> return
+                AntigravityPatchOutcome.FAILED -> {
+                    failures++
+                    if (failures >= PATCH_FAILURE_LIMIT) return
+                }
+                AntigravityPatchOutcome.NOT_FOUND -> Unit // plugin not downloaded yet; keep polling
+            }
+        }
     }
 
     /** Polls health while the process lives; degrades after repeated failures. */

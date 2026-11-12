@@ -35,6 +35,10 @@ data class ProvidersUiState(
     /** Google Antigravity OAuth accounts detected from config storage. */
     val antigravityAccounts: List<EngineConfigStore.AntigravityAccount> = emptyList(),
     val activeAntigravityEmail: String? = null,
+    /** The accounts file exists but could not be read — not the same as "no accounts" (31-F10). */
+    val antigravityAccountsCorrupt: Boolean = false,
+    /** The engine config file could not be read at all (30-F3): which file, and why. */
+    val configProblem: EngineConfigStore.ConfigReadProblem? = null,
 )
 
 /**
@@ -60,12 +64,19 @@ class ProvidersViewModel(
     fun refresh() {
         // Read the config first and independently: it is on disk, so it is worth showing
         // even while the engine is down.
-        val agAccounts = runCatching { configStore.antigravityAccounts() }.getOrDefault(emptyList())
+        val agResult = runCatching { configStore.antigravityAccountsResult() }
+            .getOrDefault(EngineConfigStore.AntigravityAccountsResult.Missing)
+        val agAccounts = (agResult as? EngineConfigStore.AntigravityAccountsResult.Ok)?.accounts ?: emptyList()
         val activeAg = configStore.activeAntigravityAccount()
+        // customProviders() runs readRoot() first, which records the problem when the
+        // config file is unreadable — read it back after, not before.
+        val custom = runCatching { configStore.customProviders() }.getOrDefault(emptyList())
         _state.value = _state.value.copy(
-            customProviders = runCatching { configStore.customProviders() }.getOrDefault(emptyList()),
+            customProviders = custom,
             antigravityAccounts = agAccounts,
             activeAntigravityEmail = activeAg?.email,
+            antigravityAccountsCorrupt = agResult is EngineConfigStore.AntigravityAccountsResult.Corrupt,
+            configProblem = configStore.lastConfigReadProblem,
         )
         val h = api.handle() ?: return
         _state.value = _state.value.copy(loading = true, failure = null, failureKey = null)
@@ -180,23 +191,62 @@ class ProvidersViewModel(
         }
         val written = outcome.getOrNull()
         if (written == null) {
+            val blocked = outcome.exceptionOrNull() is EngineConfigStore.JsoncBlockedException
             _state.value = _state.value.copy(
                 busyFor = null,
-                failureKey = R.string.providers_config_write_failed,
+                failureKey = if (blocked) {
+                    R.string.providers_config_jsonc_blocks_write
+                } else {
+                    R.string.providers_config_write_failed
+                },
             )
             return
         }
         _state.value = _state.value.copy(
             busyFor = null,
             connected = trimmedName,
-            failureKey = if (written is EngineConfigStore.WriteResult.Shadowed) {
-                R.string.providers_config_shadowed
-            } else {
-                null
-            },
+            failureKey = null,
         )
         refresh()
         restartEngine()
+    }
+
+    /**
+     * Makes another Antigravity account the active one (audit-100 31-F5): writes
+     * `activeIndex` into the accounts file and restarts the engine so the plugin
+     * picks the account up.
+     */
+    fun selectAntigravityAccount(id: String) {
+        if (!configStore.setAntigravityActiveAccount(id)) {
+            _state.value = _state.value.copy(failureKey = R.string.providers_config_write_failed)
+            return
+        }
+        refresh()
+        restartEngine()
+    }
+
+    /** Enables or disables one Antigravity account, then restarts the engine (31-F5). */
+    fun setAntigravityAccountEnabled(id: String, enabled: Boolean) {
+        if (!configStore.setAntigravityAccountEnabled(id, enabled)) {
+            _state.value = _state.value.copy(failureKey = R.string.providers_config_write_failed)
+            return
+        }
+        refresh()
+        restartEngine()
+    }
+
+    /**
+     * Deletes `opencode.jsonc` so the app can manage providers in `opencode.json`
+     * again (30-F5/38-F10). Offered when a save was refused because the effective
+     * config lives in `.jsonc`.
+     */
+    fun deleteJsoncConfig() {
+        if (configStore.deleteJsoncConfig()) {
+            _state.value = _state.value.copy(failureKey = null)
+            refresh()
+        } else {
+            _state.value = _state.value.copy(failureKey = R.string.providers_config_write_failed)
+        }
     }
 
     private fun providerName(integrationID: String): String =

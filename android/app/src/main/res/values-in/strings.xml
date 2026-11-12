@@ -612,6 +612,16 @@
     <string name="providers_gemini_keys_configured">%1$d kunci API Gemini telah dikonfigurasi.</string>
     <string name="providers_antigravity_oauth_account">Antigravity OAuth (%1$s)</string>
     <string name="providers_antigravity_connected_plain">Antigravity Terhubung</string>
+    <string name="providers_antigravity_needs_attention">OAuth Antigravity perlu perhatian</string>
+    <string name="providers_antigravity_needs_attention_hint">Ada akun tersimpan tetapi tidak ada yang bisa dipakai: dinonaktifkan, atau tanpa refresh token. Pilih akun yang bisa dipakai di bawah, atau sambungkan ulang OAuth di konfigurasi engine.</string>
+    <string name="providers_antigravity_corrupt">Berkas akun Antigravity rusak — akun OAuth tidak bisa dibaca.</string>
+    <string name="providers_antigravity_use_account">Pakai</string>
+    <string name="providers_antigravity_disable">Nonaktifkan</string>
+    <string name="providers_antigravity_enable">Aktifkan</string>
+    <string name="providers_patch_applied_restart">Plugin Antigravity sudah ditambal — restart engine untuk memakainya.</string>
+    <string name="providers_patch_version_mismatch">Plugin Antigravity berubah — tambalan tidak cocok dengan versi ini.</string>
+    <string name="providers_patch_failed">Tambalan plugin Antigravity gagal — berkas plugin asli tetap dipakai.</string>
+    <string name="providers_patch_not_found">Plugin Antigravity belum terunduh — tambalan akan jalan begitu plugin muncul.</string>
     <string name="providers_manage_body">Mesin menyimpan kunci ini di databasenya sendiri. Isi kuncinya tidak pernah dibaca kembali ke aplikasi, jadi tiap baris dikenali dari id-nya.</string>
     <string name="providers_in_use">DIPAKAI</string>
     <string name="providers_add_another">Tambah kunci lain</string>
@@ -630,8 +640,6 @@
     <string name="providers_status_connected">Terhubung</string>
     <string name="providers_status_free_tier">Paket Gratis</string>
     <string name="providers_status_missing_key">Kunci Belum Ada</string>
-    <string name="providers_quick_test">Uji Kunci</string>
-    <string name="providers_testing">Menguji…</string>
     <string name="providers_key_empty">Kunci API tidak boleh kosong</string>
     <string name="providers_key_spaces">Kunci tidak boleh berisi spasi</string>
     <string name="providers_key_too_short">Kunci terlalu pendek (min 8 karakter)</string>
@@ -726,7 +734,9 @@
     <string name="error_reread_failed">Berkas tidak bisa dibaca ulang untuk memeriksa perubahannya, jadi tidak ada yang ditimpa.</string>
     <string name="providers_config_write_failed">Berkas konfigurasi tidak bisa ditulis</string>
     <string name="providers_name_taken">Penyedia dengan nama ini sudah ada</string>
-    <string name="providers_config_shadowed">Tersimpan, tetapi `opencode.jsonc` di sebelahnya lebih diutamakan. Engine akan membaca berkas itu, bukan yang ini.</string>
+    <string name="providers_config_jsonc_blocks_write">Penyedia tersimpan di opencode.jsonc, yang tidak ditulis aplikasi ini. Hapus opencode.jsonc agar aplikasi bisa mengelola penyedia.</string>
+    <string name="providers_delete_jsonc">Hapus opencode.jsonc</string>
+    <string name="providers_config_unreadable">Berkas konfigurasi %1$s tidak bisa dibaca: %2$s. Daftar penyedia mungkin tidak lengkap.</string>
     <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
     <string name="cmd_init_desc">Inisialisasi workspace atau konfigurasi proyek</string>
     <string name="cmd_test_desc">Jalankan test suite atau target test</string>
