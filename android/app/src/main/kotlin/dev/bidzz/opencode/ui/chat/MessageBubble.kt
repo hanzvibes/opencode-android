@@ -23,6 +23,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +42,7 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -355,225 +358,265 @@ fun MessageBubble(
             }
         }
 
-        Role.ASSISTANT -> Column(modifier = modifier.fillMaxWidth()) {
-            val effectiveParts = remember(parts, markdown, tools, reasoning, streaming) {
-                val built = if (parts.isNotEmpty()) parts
-                else buildTurnParts(
-                    content = emptyList(),
-                    streamingText = markdown,
-                    isStreaming = streaming,
-                    liveTools = tools,
-                    explicitReasoning = reasoning,
-                    fallbackText = markdown,
+        Role.ASSISTANT -> Row(modifier = modifier.fillMaxWidth()) {
+            // Redesign C (Klasik + Avatar): every assistant turn gets the
+            // small logomark avatar on the left and its content in a grey
+            // bubble — the classic chat shape. The avatar is the same
+            // logomark the provenance badge already uses (no new asset);
+            // the bubble is the assistantBubble token (grey #EFEFF1 in
+            // light, raised surface in dark). The tool timeline, diffs
+            // and thinking disclosure stay INSIDE the bubble: they are
+            // part of the turn, not floating elements. Copy/Reply and
+            // the turn footer stay outside, under the bubble, like the
+            // actions under a message in Muse/Claude.
+            AssistantAvatar(
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            Spacer(Modifier.width(spacing.sm))
+            Column(modifier = Modifier.weight(1f)) {
+                // Tail at the top-start corner, next to the avatar — the
+                // mirror of the user bubble's tail at the bottom-end.
+                val assistantBubbleShape = RoundedCornerShape(
+                    topStart = radius.xs,
+                    topEnd = radius.bubble,
+                    bottomStart = radius.bubble,
+                    bottomEnd = radius.bubble,
                 )
-                // One trace card per turn (Phase 2, finding 20): a text
-                // block between two tool calls splits the turn into several
-                // ToolGroups, and each one used to render its own ToolTrace.
-                // The groups collapse here — prose order is untouched.
-                mergeToolGroups(built)
-            }
-
-            val hasReasoning = effectiveParts.any { it is ChatTurnPart.Reasoning }
-            val isThinkingActive = effectiveParts.any { it is ChatTurnPart.Reasoning && it.isActivelyStreaming }
-
-            // Same scroll guard as the user row (PR #9 follow-up): Copy +
-            // Reply cannot clip on a narrow turn. Left-aligned, so no
-            // scroll-to-end — the row starts at Copy as before.
-            val assistantPillScrollState = rememberScrollState()
-
-            var elapsedSeconds by remember(streaming) { mutableIntStateOf(0) }
-            var recordedDuration by remember { mutableIntStateOf(0) }
-
-            LaunchedEffect(isThinkingActive) {
-                if (isThinkingActive) {
-                    val start = System.currentTimeMillis()
-                    while (isActive) {
-                        val current = ((System.currentTimeMillis() - start) / 1000).toInt()
-                        elapsedSeconds = maxOf(1, current)
-                        delay(500)
-                    }
-                } else if (elapsedSeconds > 0) {
-                    recordedDuration = elapsedSeconds
-                }
-            }
-
-            // The screen-owned timer wins when provided; the local one is
-            // only a fallback for callers that do not pass it.
-            val finalDuration = thinkingElapsedSeconds
-                ?: if (recordedDuration > 0) recordedDuration else elapsedSeconds
-            val hasTextContent = effectiveParts.any { it is ChatTurnPart.Text && it.markdown.isNotBlank() }
-            val showStreamingSpinner = streaming && hasTextContent
-
-            // 1. Author Identity Header: Branded provenance badge
-            // While streaming with no identity yet, the badge stays hidden
-            // instead of showing "OpenCode" and then jumping to
-            // "Build · model" once the identity arrives — one appearance,
-            // not a label swap. A finished turn with no identity still
-            // falls back to "OpenCode".
-            val identityKnown = !provenance.isNullOrBlank()
-            // Opsi A turn header: identity badge on the left, the turn's
-            // own clock time on the right (mono, faint). A consecutive
-            // assistant turn has no badge — it is the same turn continuing,
-            // so its time already showed on the first part — and the
-            // streaming row carries the clock instead.
-            if (showProvenance && (identityKnown || !streaming)) {
-                val labelText = if (identityKnown) provenance else "OpenCode"
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = spacing.sm),
-                ) {
-                    ProvenanceBadge(
-                        provenance = labelText,
-                        modelRef = model,
-                        streaming = showStreamingSpinner,
+                val effectiveParts = remember(parts, markdown, tools, reasoning, streaming) {
+                    val built = if (parts.isNotEmpty()) parts
+                    else buildTurnParts(
+                        content = emptyList(),
+                        streamingText = markdown,
+                        isStreaming = streaming,
+                        liveTools = tools,
+                        explicitReasoning = reasoning,
+                        fallbackText = markdown,
                     )
-                    if (createdAtMillis != null) {
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            text = formatClock(createdAtMillis),
-                            style = OpenCodeTypography.caption.copy(
-                                fontFamily = OpenCodeTypography.mono,
-                                fontSize = 11.sp,
-                            ),
-                            color = colors.onSurfaceFaint,
-                            maxLines = 1,
-                        )
+                    // One trace card per turn (Phase 2, finding 20): a text
+                    // block between two tool calls splits the turn into several
+                    // ToolGroups, and each one used to render its own ToolTrace.
+                    // The groups collapse here — prose order is untouched.
+                    mergeToolGroups(built)
+                }
+
+                val hasReasoning = effectiveParts.any { it is ChatTurnPart.Reasoning }
+                val isThinkingActive = effectiveParts.any { it is ChatTurnPart.Reasoning && it.isActivelyStreaming }
+
+                // Same scroll guard as the user row (PR #9 follow-up): Copy +
+                // Reply cannot clip on a narrow turn. Left-aligned, so no
+                // scroll-to-end — the row starts at Copy as before.
+                val assistantPillScrollState = rememberScrollState()
+
+                var elapsedSeconds by remember(streaming) { mutableIntStateOf(0) }
+                var recordedDuration by remember { mutableIntStateOf(0) }
+
+                LaunchedEffect(isThinkingActive) {
+                    if (isThinkingActive) {
+                        val start = System.currentTimeMillis()
+                        while (isActive) {
+                            val current = ((System.currentTimeMillis() - start) / 1000).toInt()
+                            elapsedSeconds = maxOf(1, current)
+                            delay(500)
+                        }
+                    } else if (elapsedSeconds > 0) {
+                        recordedDuration = elapsedSeconds
                     }
                 }
-            } else if (showStreamingSpinner) {
-                // No provenance badge on a consecutive assistant turn, so the
-                // streaming state needs its own marker. The old 8dp spinner
-                // here was practically invisible; an 11dp pulse plus a
-                // "Typing…" label reads at a glance.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+
+                // The screen-owned timer wins when provided; the local one is
+                // only a fallback for callers that do not pass it.
+                val finalDuration = thinkingElapsedSeconds
+                    ?: if (recordedDuration > 0) recordedDuration else elapsedSeconds
+                val hasTextContent = effectiveParts.any { it is ChatTurnPart.Text && it.markdown.isNotBlank() }
+                val showStreamingSpinner = streaming && hasTextContent
+
+                // The bubble is flat — no shadow, just a 0.5dp hairline
+                // edge — so it reads as a message bubble, not a floating
+                // card; the white user bubble keeps the card shadow.
+                // Bottom padding comes from the parts themselves: every
+                // part carries bottom sm, so the bubble needs none.
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = spacing.xs),
+                        .clip(assistantBubbleShape)
+                        .background(colors.assistantBubble)
+                        .border(0.5.dp, colors.hairline, assistantBubbleShape)
+                        .padding(start = spacing.md, end = spacing.md, top = spacing.sm),
                 ) {
-                    StreamingTypingRow()
-                    if (createdAtMillis != null) {
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            text = formatClock(createdAtMillis),
-                            style = OpenCodeTypography.caption.copy(
-                                fontFamily = OpenCodeTypography.mono,
-                                fontSize = 11.sp,
-                            ),
-                            color = colors.onSurfaceFaint,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-
-            // The last text block of a streaming turn gets the blinking cursor.
-            val lastTextIndex = effectiveParts.indexOfLast { it is ChatTurnPart.Text }
-
-            // 2. Chronological turn content: Interleaved Reasoning, Tools, Questions, and Markdown Text
-            effectiveParts.forEachIndexed { partIndex, part ->
-                when (part) {
-                    is ChatTurnPart.Reasoning -> {
-                        ThinkingDisclosure(
-                            isThinkingActive = isThinkingActive,
-                            reasoningText = part.text,
-                            elapsedSeconds = finalDuration,
-                            modifier = Modifier.padding(bottom = spacing.sm),
-                        )
-                    }
-
-                    is ChatTurnPart.ToolGroup -> {
-                        if (part.tools.isNotEmpty()) {
-                            ToolTrace(
-                                tools = part.tools,
-                                streaming = part.streaming,
-                                startedAtMillis = toolsStartedAtMillis,
-                                toolDurations = toolDurations,
-                                toolStartedAtMillis = toolStartedAtMillis,
-                                workspacePath = workspacePath,
-                                onOpenToolFile = onOpenToolFile,
-                                onRequestDiffRevert = onRequestDiffRevert,
-                                modifier = Modifier.padding(bottom = spacing.sm),
-                            )
-                        }
-                    }
-
-                    is ChatTurnPart.Question -> {
-                        InlineQuestionCard(
-                            call = part.call,
-                            questions = part.questions,
-                            onAnswer = onAnswerQuestion,
-                            modifier = Modifier.padding(bottom = spacing.sm),
-                        )
-                    }
-
-                    is ChatTurnPart.Text -> {
-                        if (part.markdown.isNotBlank()) {
-                            AnimatedVisibility(
-                                visible = true,
-                                enter = fadeIn(OpenCodeTheme.tokens.motion.tweenStandard()) +
-                                    expandVertically(OpenCodeTheme.tokens.motion.tweenStandard()),
-                                modifier = Modifier.padding(bottom = spacing.sm),
+                    Column {
+                        // 1. Author Identity Header: Branded provenance badge
+                        // While streaming with no identity yet, the badge stays hidden
+                        // instead of showing "OpenCode" and then jumping to
+                        // "Build · model" once the identity arrives — one appearance,
+                        // not a label swap. A finished turn with no identity still
+                        // falls back to "OpenCode".
+                        val identityKnown = !provenance.isNullOrBlank()
+                        // Opsi A turn header: identity badge on the left, the turn's
+                        // own clock time on the right (mono, faint). A consecutive
+                        // assistant turn has no badge — it is the same turn continuing,
+                        // so its time already showed on the first part — and the
+                        // streaming row carries the clock instead.
+                        if (showProvenance && (identityKnown || !streaming)) {
+                            val labelText = if (identityKnown) provenance else "OpenCode"
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = spacing.sm),
                             ) {
-                                MarkdownText(
-                                    markdown = part.markdown,
-                                    streaming = streaming && partIndex == lastTextIndex,
-                                    onSaveCode = onSaveCode,
+                                ProvenanceBadge(
+                                    provenance = labelText,
+                                    modelRef = model,
+                                    streaming = showStreamingSpinner,
                                 )
+                                if (createdAtMillis != null) {
+                                    Spacer(Modifier.weight(1f))
+                                    Text(
+                                        text = formatClock(createdAtMillis),
+                                        style = OpenCodeTypography.caption.copy(
+                                            fontFamily = OpenCodeTypography.mono,
+                                            fontSize = 11.sp,
+                                        ),
+                                        color = colors.onSurfaceFaint,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        } else if (showStreamingSpinner) {
+                            // No provenance badge on a consecutive assistant turn, so the
+                            // streaming state needs its own marker. The old 8dp spinner
+                            // here was practically invisible; an 11dp pulse plus a
+                            // "Typing…" label reads at a glance.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = spacing.xs),
+                            ) {
+                                StreamingTypingRow()
+                                if (createdAtMillis != null) {
+                                    Spacer(Modifier.weight(1f))
+                                    Text(
+                                        text = formatClock(createdAtMillis),
+                                        style = OpenCodeTypography.caption.copy(
+                                            fontFamily = OpenCodeTypography.mono,
+                                            fontSize = 11.sp,
+                                        ),
+                                        color = colors.onSurfaceFaint,
+                                        maxLines = 1,
+                                    )
+                                }
                             }
                         }
+
+                        // The last text block of a streaming turn gets the blinking cursor.
+                        val lastTextIndex = effectiveParts.indexOfLast { it is ChatTurnPart.Text }
+
+                        // 2. Chronological turn content: Interleaved Reasoning, Tools, Questions, and Markdown Text
+                        effectiveParts.forEachIndexed { partIndex, part ->
+                            when (part) {
+                                is ChatTurnPart.Reasoning -> {
+                                    ThinkingDisclosure(
+                                        isThinkingActive = isThinkingActive,
+                                        reasoningText = part.text,
+                                        elapsedSeconds = finalDuration,
+                                        modifier = Modifier.padding(bottom = spacing.sm),
+                                    )
+                                }
+
+                                is ChatTurnPart.ToolGroup -> {
+                                    if (part.tools.isNotEmpty()) {
+                                        ToolTrace(
+                                            tools = part.tools,
+                                            streaming = part.streaming,
+                                            startedAtMillis = toolsStartedAtMillis,
+                                            toolDurations = toolDurations,
+                                            toolStartedAtMillis = toolStartedAtMillis,
+                                            workspacePath = workspacePath,
+                                            onOpenToolFile = onOpenToolFile,
+                                            onRequestDiffRevert = onRequestDiffRevert,
+                                            modifier = Modifier.padding(bottom = spacing.sm),
+                                        )
+                                    }
+                                }
+
+                                is ChatTurnPart.Question -> {
+                                    InlineQuestionCard(
+                                        call = part.call,
+                                        questions = part.questions,
+                                        onAnswer = onAnswerQuestion,
+                                        modifier = Modifier.padding(bottom = spacing.sm),
+                                    )
+                                }
+
+                                is ChatTurnPart.Text -> {
+                                    if (part.markdown.isNotBlank()) {
+                                        AnimatedVisibility(
+                                            visible = true,
+                                            enter = fadeIn(OpenCodeTheme.tokens.motion.tweenStandard()) +
+                                                expandVertically(OpenCodeTheme.tokens.motion.tweenStandard()),
+                                            modifier = Modifier.padding(bottom = spacing.sm),
+                                        ) {
+                                            MarkdownText(
+                                                markdown = part.markdown,
+                                                streaming = streaming && partIndex == lastTextIndex,
+                                                onSaveCode = onSaveCode,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                     }
                 }
-            }
+                // 3. Response Actions: Quiet copy button when complete, plus
+                // Reply, which quotes a line of this turn into the composer
+                // (C-E). Long-press quoting is deliberately not added: the
+                // text is already selectable, and a long-press gesture would
+                // fight text selection.
+                val allProse = effectiveParts
+                    .filterIsInstance<ChatTurnPart.Text>()
+                    .map { it.markdown }
+                    .filter { it.isNotBlank() }
+                    .joinToString("\n\n")
+                    .ifEmpty { markdown }
 
-            // 3. Response Actions: Quiet copy button when complete, plus
-            // Reply, which quotes a line of this turn into the composer
-            // (C-E). Long-press quoting is deliberately not added: the
-            // text is already selectable, and a long-press gesture would
-            // fight text selection.
-            val allProse = effectiveParts
-                .filterIsInstance<ChatTurnPart.Text>()
-                .map { it.markdown }
-                .filter { it.isNotBlank() }
-                .joinToString("\n\n")
-                .ifEmpty { markdown }
+                if (!streaming && allProse.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                        modifier = Modifier
+                            .padding(top = spacing.xs)
+                            .horizontalScroll(assistantPillScrollState),
+                    ) {
+                        CopyButton(text = allProse)
+                        ReplyButton(
+                            onClick = {
+                                val flat = allProse.replace("\n", " ").trim()
+                                val snippet = flat.take(120)
+                                    .let { if (flat.length > 120) "$it…" else it }
+                                onQuote("> $snippet")
+                            },
+                        )
+                    }
+                }
 
-            if (!streaming && allProse.isNotBlank()) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
-                    modifier = Modifier
-                        .padding(top = spacing.xs)
-                        .horizontalScroll(assistantPillScrollState),
-                ) {
-                    CopyButton(text = allProse)
-                    ReplyButton(
-                        onClick = {
-                            val flat = allProse.replace("\n", " ").trim()
-                            val snippet = flat.take(120)
-                                .let { if (flat.length > 120) "$it…" else it }
-                            onQuote("> $snippet")
-                        },
+                // 4. Turn footer (Phase 2, finding 6, UI half): mono usage line
+                // under the turn — "12,4k tokens · 8,2s · $0,02" plus the stop
+                // reason. Hidden entirely while every field is null, so a turn
+                // renders exactly as before until the integration agent fills
+                // the fields from the engine.
+                if (!streaming) {
+                    TurnFooter(
+                        usageTokens = usageTokens,
+                        usageCostUsd = usageCostUsd,
+                        turnDurationMs = turnDurationMs,
+                        stopReason = stopReason,
+                        modifier = Modifier.padding(top = spacing.xs),
                     )
                     ShareButton(text = allProse)
                 }
-            }
-
-            // 4. Turn footer (Phase 2, finding 6, UI half): mono usage line
-            // under the turn — "12,4k tokens · 8,2s · $0,02" plus the stop
-            // reason. Hidden entirely while every field is null, so a turn
-            // renders exactly as before until the integration agent fills
-            // the fields from the engine.
-            if (!streaming) {
-                TurnFooter(
-                    usageTokens = usageTokens,
-                    usageCostUsd = usageCostUsd,
-                    turnDurationMs = turnDurationMs,
-                    stopReason = stopReason,
-                    modifier = Modifier.padding(top = spacing.xs),
-                )
             }
         }
 
@@ -760,8 +803,7 @@ fun ThinkingDisclosure(
 
                 Text(
                     text = labelText,
-                    style = OpenCodeTypography.label.copy(
-                        fontSize = 11.5.sp,
+                    style = OpenCodeTypography.labelSmall.copy(
                         fontWeight = if (isThinkingActive) FontWeight.SemiBold else FontWeight.Normal,
                     ),
                     color = if (isThinkingActive) colors.onSurface else colors.onSurfaceMuted,
@@ -803,10 +845,7 @@ fun ThinkingDisclosure(
                     SelectionContainer {
                         Text(
                             text = reasoningText.orEmpty(),
-                            style = OpenCodeTypography.bodySmall.copy(
-                                fontSize = 12.5.sp,
-                                lineHeight = 18.sp,
-                            ),
+                            style = OpenCodeTypography.bodySmall,
                             color = colors.onSurfaceMuted,
                         )
                     }
@@ -836,6 +875,39 @@ private fun ThoughtSparkleIcon(
             close()
         }
         drawPath(path, tint)
+    }
+}
+
+/**
+ * Redesign C avatar: the logomark the provenance badge already uses,
+ * in a 28dp circle (tokens.dimensions.avatarSize) beside the assistant
+ * bubble. The logomark PNG is an opaque black rounded square, so the
+ * circle clip crops it into a black disc with the white mark — it reads
+ * in both themes, and the hairline border defines its edge on the dark
+ * page. Decorative: the badge inside the bubble still carries the
+ * provider identity, so TalkBack gets nothing here.
+ *
+ * Internal (not private): ChatScreen's working placeholder wears the
+ * same avatar so the placeholder→turn transition does not pop.
+ */
+@Composable
+internal fun AssistantAvatar(
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val dims = OpenCodeTheme.tokens.dimensions
+    Box(
+        modifier = modifier
+            .size(dims.avatarSize)
+            .clip(CircleShape)
+            .border(0.5.dp, colors.hairline, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_logomark),
+            contentDescription = null,
+            modifier = Modifier.size(dims.avatarSize),
+        )
     }
 }
 
@@ -925,7 +997,7 @@ private fun ReplyButton(
                 )
                 Text(
                     text = stringResource(R.string.message_reply),
-                    style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                    style = OpenCodeTypography.labelSmall,
                     color = colors.onSurfaceMuted,
                     maxLines = 1,
                     softWrap = false,
@@ -1071,7 +1143,7 @@ private fun CopyButton(
                 ) { isCopied ->
                     Text(
                         text = stringResource(if (isCopied) R.string.code_copied else R.string.code_copy),
-                        style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                        style = OpenCodeTypography.labelSmall,
                         color = contentColor,
                         maxLines = 1,
                         softWrap = false,
@@ -1130,7 +1202,7 @@ private fun UserActionPill(
                 )
                 Text(
                     text = stringResource(labelRes),
-                    style = OpenCodeTypography.label.copy(fontSize = 11.sp),
+                    style = OpenCodeTypography.labelSmall,
                     color = colors.onSurfaceMuted,
                     maxLines = 1,
                     softWrap = false,

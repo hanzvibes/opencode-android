@@ -61,8 +61,11 @@ data class Spacing(
  * ladder) and the full pill for chips and the send button, where a pill is
  * conventional on Android rather than decorative.
  *
- * The old 22dp composer capsule token was deleted in Phase 1: the composer
- * moves to [md] (12dp) in the next wave. Do not re-add a composer radius.
+ * The old 22dp composer capsule token was deleted in Phase 1. Redesign C
+ * moves the composer to [lg] (16dp) via `Modifier.whiteCard` — the surface
+ * cap, not a capsule: a full pill would break the 16dp rule, and 16dp plus
+ * the card shadow is the floating Muse-like treatment inside this ladder.
+ * Do not re-add a composer radius.
  */
 @Immutable
 data class Radius(

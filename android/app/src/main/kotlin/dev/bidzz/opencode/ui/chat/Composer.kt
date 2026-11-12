@@ -78,15 +78,18 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
+import dev.bidzz.opencode.ui.whiteCard
 
 /**
  * Message input styled as an AI IDE omnibar (like Cursor, Claude, Antigravity).
  *
  * Features:
- * - Flat omnibar (12dp) with a hairline border and an accent focus ring — no glow.
+ * - Floating white card (16dp, `Modifier.whiteCard` since Redesign C)
+ *   with a hairline border and an accent focus ring — no glow.
  * - Multi-line auto-expand behavior with comfortable line-height.
  * - Quick action shortcuts: `/` command prefix, `@` mention and file-attach chips, clear icon.
  * - Modern action button (Send / Stop / Voice / Abort) with dynamic colors and haptic-like press feel.
+ * - Working progress row while the agent runs: the live step + run clock.
  */
 @Composable
 fun Composer(
@@ -136,6 +139,15 @@ fun Composer(
     onVoiceUnavailable: () -> Unit = {},
     /** True after Stop was tapped until the run actually ends ("Stopping…"). */
     stopping: Boolean = false,
+    /** Sentence for the tool running right now ("Reading ChatScreen.kt"),
+     * from the streaming turn's live tools; null while the agent thinks
+     * before the first tool, so the progress row falls back to the
+     * generic busy label. Owned by the screen — the composer never reads
+     * the engine. */
+    busyStepText: String? = null,
+    /** Seconds since the run started, owned by the screen (the same timer
+     * the turn header reads). Only shown while busy, beside the step. */
+    busyElapsedSeconds: Int = 0,
     /** True while a user message is being edited; shows the editing header. */
     isEditing: Boolean = false,
     onCancelEdit: () -> Unit = {},
@@ -180,9 +192,13 @@ fun Composer(
     // A message that is only attachments still sends: picking a file and
     // hitting Send with no typed text means "show the agent this file".
     val canSend = enabled && (value.isNotBlank() || attachments.isNotEmpty()) && !busy
-    // Phase 1 flat omnibar: radius.md (12dp). The old 22dp capsule token
-    // (radius.composer) was deleted in Wave 1 — do not re-add it.
-    val shape = RoundedCornerShape(radius.md)
+    // Redesign C: the composer floats as a white card — `Modifier.whiteCard`
+    // (16dp radius, 1dp card border, card shadow in light; flat hairline
+    // in dark), the Muse-like capsule inside the design system's own
+    // 16dp surface cap. The old 12dp omnibar shape is gone; a full pill
+    // would break plan.md §12, and 16dp plus the shadow is the floating
+    // treatment that rule allows.
+    val shape = RoundedCornerShape(radius.lg)
 
     val borderColor by animateColorAsState(
         targetValue = if (isFocused) colors.accent.copy(alpha = 0.70f) else colors.hairline,
@@ -194,29 +210,18 @@ fun Composer(
         animationSpec = motion.tweenQuick(),
         label = "composer_border_width",
     )
-    // White B: the omnibar floats as a white card — the card shadow from
-    // tokens.shadow.card, keeping the flat 12dp omnibar shape (NOT
-    // whiteCard(), which would force a 16dp radius). Dark stays flat:
-    // no shadow, depth still comes from the hairline border only.
-    // The background crossfades between the focused gradient and the solid
-    // unfocused surface; multi-line growth eases on motion.springSmooth().
+    // Redesign C: the omnibar floats as a white card — `Modifier.whiteCard`
+    // (16dp radius, 1dp card border, card shadow in light; flat hairline
+    // in dark). The animated focus border draws on top of it with the
+    // same shape. The background crossfades between the focused gradient
+    // and the solid unfocused surface; multi-line growth eases on
+    // motion.springSmooth().
     Box(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = spacing.md, vertical = spacing.sm)
             .animateContentSize(motion.springSmooth())
-            .then(
-                if (!colors.isDark) {
-                    val shadow = OpenCodeTheme.tokens.shadow.card
-                    Modifier.shadow(
-                        elevation = shadow.elevation,
-                        shape = shape,
-                        ambientColor = shadow.ambientColor,
-                        spotColor = shadow.spotColor,
-                    )
-                } else Modifier
-            )
-            .clip(shape)
+            .whiteCard()
             .border(borderWidth, borderColor, shape),
     ) {
         Crossfade(
@@ -342,6 +347,20 @@ fun Composer(
                     elapsedSeconds = voiceElapsedSeconds,
                     interimText = voiceInterimText,
                     onStop = onVoiceStop,
+                )
+            }
+
+            // Redesign C working progress: while the agent runs, the
+            // composer says what it is doing right now — the live step
+            // sentence from the streaming turn, plus the run clock — so
+            // the wait reads as progress, not a stall. The step comes
+            // from the screen (busyStepText); without a running tool yet
+            // it falls back to the generic busy label. The Stop button
+            // below is the control; this row is display-only.
+            if (busy) {
+                WorkingProgressRow(
+                    stepText = busyStepText ?: stringResource(R.string.composer_busy),
+                    elapsedSeconds = busyElapsedSeconds,
                 )
             }
 
@@ -723,6 +742,42 @@ private fun VoiceRecordingBar(
                 size = 14.dp,
             )
         }
+    }
+}
+
+/**
+ * Redesign C working progress: a live accent pulse plus the current step
+ * sentence and the run clock ("Reading ChatScreen.kt · 12s"), above the
+ * text field while the agent works. Display-only — stopping is the
+ * ActionButton's job, never this row's.
+ */
+@Composable
+private fun WorkingProgressRow(
+    stepText: String,
+    elapsedSeconds: Int,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        LivePulseIndicator(
+            color = colors.accent,
+            size = 8.dp,
+        )
+        Text(
+            text = stringResource(R.string.composer_working_progress, stepText, elapsedSeconds),
+            style = OpenCodeTypography.bodySmall,
+            color = colors.onSurfaceMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
