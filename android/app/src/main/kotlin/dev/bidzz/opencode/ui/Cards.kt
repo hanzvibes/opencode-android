@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -554,13 +558,22 @@ fun SearchField(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val clearDescription = stringResource(R.string.search_clear)
+    // A11y (#8d): a visible focus ring (accent border while focused —
+    // the same pattern as the composer) plus the Search/Done key
+    // dismissing the keyboard, so the field is usable without touch.
+    val focusManager = LocalFocusManager.current
+    var isFocused by remember { mutableStateOf(false) }
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(radius.md))
             .background(colors.fill)
-            .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+            .border(
+                if (isFocused) 1.dp else 0.5.dp,
+                if (isFocused) colors.accent.copy(alpha = 0.70f) else colors.hairline,
+                RoundedCornerShape(radius.md),
+            )
             .padding(horizontal = spacing.md, vertical = spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -571,10 +584,15 @@ fun SearchField(
             textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.accent),
             keyboardOptions = KeyboardOptions(imeAction = imeAction),
+            keyboardActions = KeyboardActions(
+                onSearch = { focusManager.clearFocus() },
+                onDone = { focusManager.clearFocus() },
+            ),
             singleLine = true,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = spacing.sm),
+                .padding(start = spacing.sm)
+                .onFocusChanged { isFocused = it.isFocused },
             decorationBox = { inner ->
                 if (query.isEmpty()) {
                     Text(
@@ -634,7 +652,9 @@ fun TurnActionPill(
     Box(
         modifier = modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .clickable { onClick() },
+            // A11y (#8b): the pill is a button — the label text inside is
+            // its name, so no contentDescription is needed here.
+            .clickable(role = Role.Button) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -721,7 +741,9 @@ fun SelectorChip(
                 if (selected) colors.accentFill else colors.hairline,
                 RoundedCornerShape(radius.full),
             )
-            .clickable(role = Role.Button) { onClick() }
+            // A11y (#8c): a filter chip is a toggle, not a plain button —
+            // toggleable announces "selected / not selected" with the label.
+            .toggleable(value = selected, role = Role.Checkbox, onValueChange = { onClick() })
             .padding(horizontal = spacing.sm, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {

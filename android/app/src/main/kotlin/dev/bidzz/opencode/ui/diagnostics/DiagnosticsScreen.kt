@@ -819,7 +819,8 @@ fun DiagnosticsScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(radius.sm))
                                 .background(colors.fill)
-                                .clickable(onClick = { copyLogs(filteredLogs.map { it.text }) })
+                                // A11y (#8b): the "Copy logs" text inside is the name.
+                                .clickable(role = Role.Button, onClick = { copyLogs(filteredLogs.map { it.text }) })
                                 .padding(horizontal = spacing.sm, vertical = spacing.xs),
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -272,9 +274,15 @@ private fun EntryRow(
                 )
             }
         }
+        // Hoisted: stringResource() is @Composable and cannot be called
+        // inside a .semantics {} block.
+        val deleteDescription = stringResource(R.string.common_delete)
         Box(
             modifier = Modifier
-                .clickable(role = Role.Button, onClick = onDelete),
+                .clickable(role = Role.Button, onClick = onDelete)
+                // A11y (#8a): an icon-only button with no name announces
+                // just "Button" — the entry text before it is the context.
+                .semantics { contentDescription = deleteDescription },
             contentAlignment = Alignment.Center,
         ) {
             GlyphIcon(

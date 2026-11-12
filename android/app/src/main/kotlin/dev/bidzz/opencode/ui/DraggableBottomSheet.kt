@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -198,6 +199,10 @@ fun DraggableBottomSheet(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(Color.Black.copy(alpha = 0.45f))
+                        // A11y (#8b): a dismiss scrim is not an action for
+                        // TalkBack — it has no name; dismissal stays
+                        // available through the sheet's own close control.
+                        .clearAndSetSemantics { }
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -250,6 +255,9 @@ fun DraggableBottomSheet(
                         .fillMaxWidth()
                         .height(with(density) { heightAnim.value.toDp() })
                         .then(sheetEdge)
+                        // A11y (#8b): the sheet body is not itself an action —
+                        // the no-op clickable only blocks fall-through taps.
+                        .clearAndSetSemantics { }
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,

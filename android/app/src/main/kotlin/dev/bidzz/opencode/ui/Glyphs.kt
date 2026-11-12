@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -31,14 +33,29 @@ enum class Glyph {
     Question, Square, CheckSquare, History, Share,
 }
 
+/** A11y (#8a): an icon that stands alone as the only content of a
+ * TalkBack node can carry its own description here. Icons inside a
+ * clickable keep their label on the clickable node instead (a label on
+ * both would announce twice); those call sites leave this null. */
 @Composable
-fun GlyphIcon(glyph: Glyph, tint: Color, modifier: Modifier = Modifier, size: Dp = 20.dp) {
+fun GlyphIcon(
+    glyph: Glyph,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 20.dp,
+    contentDescription: String? = null,
+) {
     // Glyph floor (Phase 2, finding 25): a meaningful glyph is never drawn
     // smaller than 12dp — the 9–11dp call sites (tool badges, tags) were
     // below the legibility floor. Decorative sub-12dp marks (status dots,
     // sparkles) are separate canvases, not GlyphIcon, and are unaffected.
     val effectiveSize = size.coerceAtLeast(12.dp)
-    Canvas(modifier.size(effectiveSize)) {
+    val descriptionModifier = if (contentDescription != null) {
+        Modifier.semantics { this.contentDescription = contentDescription }
+    } else {
+        Modifier
+    }
+    Canvas(modifier.then(descriptionModifier).size(effectiveSize)) {
         val u = this.size.minDimension / 24f
         val width = 1.8f * u
         val stroke = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round)

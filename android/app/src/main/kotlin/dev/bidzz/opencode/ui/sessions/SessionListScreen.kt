@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -195,6 +196,7 @@ fun SessionListPane(
             query = query,
             onQueryChange = { query = it },
             placeholder = stringResource(R.string.history_search_hint),
+            imeAction = ImeAction.Search,
             modifier = Modifier
                 .widthIn(max = 720.dp)
                 .align(Alignment.CenterHorizontally)

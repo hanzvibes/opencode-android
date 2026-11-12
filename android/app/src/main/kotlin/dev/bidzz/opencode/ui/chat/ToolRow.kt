@@ -51,6 +51,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -730,15 +732,24 @@ fun ToolStep(
                         shape = RoundedCornerShape(radius.sm),
                     ),
             ) {
+                // Hoisted: stringResource() is @Composable and cannot be
+                // called inside a .semantics {} block.
+                val stepStateDescription = stringResource(
+                    if (open) R.string.tool_step_expanded else R.string.tool_step_collapsed,
+                )
                 // Main terminal execution row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .pressScale(motion, stepPressSource)
+                        // A11y (#8b/#8c): an expandable step row is a button
+                        // whose expanded state is announced.
+                        .semantics { stateDescription = stepStateDescription }
                         .clickable(
                             interactionSource = stepPressSource,
                             indication = LocalIndication.current,
                             enabled = hasDetails,
+                            role = Role.Button,
                         ) {
                             // #6f: anchor the scroll position before the
                             // height toggle, so the list does not jump.
@@ -837,10 +848,10 @@ fun ToolStep(
                                         .padding(start = spacing.xs)
                                         .then(
                                             when {
-                                                openablePath != null -> Modifier.clickable {
+                                                openablePath != null -> Modifier.clickable(role = Role.Button) {
                                                     onOpenToolFile(openablePath)
                                                 }
-                                                canCopyPath -> Modifier.clickable {
+                                                canCopyPath -> Modifier.clickable(role = Role.Button) {
                                                     clipboardManager.setText(AnnotatedString(fullPath))
                                                     pathCopied = true
                                                 }
@@ -1254,7 +1265,7 @@ private fun TerminalConsoleBlock(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(radius.xs))
-                    .clickable {
+                    .clickable(role = Role.Button) {
                         clipboardManager.setText(AnnotatedString(copyText))
                         copied = true
                     }
@@ -1744,7 +1755,7 @@ private fun InlineDiffBlock(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(radius.xs))
-                    .clickable {
+                    .clickable(role = Role.Button) {
                         clipboardManager.setText(AnnotatedString(patchText))
                         copied = true
                     }

@@ -36,6 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -246,7 +249,9 @@ fun InAppBrowserScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
+                // A11y (#8b): the URL row copies on tap; the URL text
+                // inside is its name.
+                .clickable(role = Role.Button) {
                     val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     manager.setPrimaryClip(ClipData.newPlainText("url", currentUrl))
                     (context.applicationContext as OpenCodeApplication).showSnackbar(
@@ -301,7 +306,10 @@ private fun BrowserAction(
         modifier = Modifier
             .sizeIn(minWidth = 40.dp, minHeight = 40.dp)
             .size(40.dp)
-            .clickable(enabled = enabled, onClick = onClick),
+            // A11y (#8a/#8b): the action had a description parameter that
+            // was never announced — role + description on the clickable node.
+            .semantics { contentDescription = description }
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         GlyphIcon(

@@ -17,7 +17,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -364,6 +369,7 @@ fun ProvidersScreen(
                         query = query,
                         onQueryChange = { query = it },
                         placeholder = stringResource(R.string.providers_search),
+                        imeAction = ImeAction.Search,
                     )
                 }
 
@@ -657,7 +663,8 @@ private fun ProviderCard(
                     null
                 },
             )
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            // A11y (#8b): the card is a button — its name text is the label.
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(horizontal = spacing.md, vertical = spacing.md),
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -975,6 +982,9 @@ private fun KeyPrompt(
     val clipboard = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
 
+    // A11y (#8d): Done on the single key field dismisses the keyboard.
+    val focusManager = LocalFocusManager.current
+
     var value by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
     var isTesting by remember { mutableStateOf(false) }
@@ -1042,7 +1052,11 @@ private fun KeyPrompt(
                         textStyle = OpenCodeTypography.codeInline.copy(color = colors.onSurface),
                         cursorBrush = SolidColor(colors.accent),
                         visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = if (showKey) KeyboardType.Ascii else KeyboardType.Password),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = if (showKey) KeyboardType.Ascii else KeyboardType.Password,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         modifier = Modifier.weight(1f),
                         decorationBox = { inner ->
                             if (value.isEmpty()) {
@@ -1062,7 +1076,8 @@ private fun KeyPrompt(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(radius.xs))
                                 .background(colors.surfaceRaised)
-                                .clickable {
+                                // A11y (#8b): the "Paste" text inside is the name.
+                                .clickable(role = Role.Button) {
                                     val text = clipboard.getText()?.text.orEmpty().trim()
                                     if (text.isNotEmpty()) {
                                         value = text
@@ -1164,7 +1179,8 @@ private fun KeyPrompt(
                             .clip(RoundedCornerShape(radius.sm))
                             .background(colors.surfaceRaised)
                             .border(OpenCodeTheme.tokens.dimensions.hairline, colors.hairline, RoundedCornerShape(radius.sm))
-                            .clickable(enabled = value.isNotBlank() && !isTesting) {
+                            // A11y (#8b): the "Quick test" text inside is the name.
+                            .clickable(role = Role.Button, enabled = value.isNotBlank() && !isTesting) {
                                 coroutineScope.launch {
                                     isTesting = true
                                     testResult = null
@@ -1325,7 +1341,7 @@ private fun ManageCredentialsDialog(
                                 style = OpenCodeTypography.label,
                                 color = colors.accentText,
                                 modifier = Modifier
-                                    .clickable { onReplace(row) }
+                                    .clickable(role = Role.Button) { onReplace(row) }
                                     .padding(vertical = spacing.xxs),
                             )
                             Text(
@@ -1333,7 +1349,7 @@ private fun ManageCredentialsDialog(
                                 style = OpenCodeTypography.label,
                                 color = colors.danger,
                                 modifier = Modifier
-                                    .clickable { onDelete(row) }
+                                    .clickable(role = Role.Button) { onDelete(row) }
                                     .padding(vertical = spacing.xxs),
                             )
                         }
@@ -1342,7 +1358,7 @@ private fun ManageCredentialsDialog(
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(radius.xs))
-                        .clickable(onClick = onAddKey)
+                        .clickable(role = Role.Button, onClick = onAddKey)
                         .padding(vertical = spacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(spacing.xs),
@@ -1379,6 +1395,12 @@ private fun CustomProviderDialog(
     var apiKey by remember { mutableStateOf("") }
     var models by remember { mutableStateOf(initialModels) }
 
+    // A11y (#8d): one FocusRequester per field, in tab order.
+    val focusManager = LocalFocusManager.current
+    val urlRequester = remember { FocusRequester() }
+    val keyRequester = remember { FocusRequester() }
+    val modelsRequester = remember { FocusRequester() }
+
     val ready = name.isNotBlank() && baseURL.isNotBlank() && apiKey.isNotBlank() && models.isNotBlank()
 
     LocalizedDraggableBottomSheet(
@@ -1407,6 +1429,8 @@ private fun CustomProviderDialog(
                     value = name,
                     singleLine = true,
                     keyboard = KeyboardType.Text,
+                    imeAction = ImeAction.Next,
+                    onImeAction = { urlRequester.requestFocus() },
                 ) { name = it }
                 FormField(
                     label = stringResource(R.string.providers_field_url),
@@ -1414,6 +1438,9 @@ private fun CustomProviderDialog(
                     value = baseURL,
                     singleLine = true,
                     keyboard = KeyboardType.Uri,
+                    imeAction = ImeAction.Next,
+                    focusRequester = urlRequester,
+                    onImeAction = { keyRequester.requestFocus() },
                 ) { baseURL = it }
                 FormField(
                     label = stringResource(R.string.providers_field_key),
@@ -1421,6 +1448,9 @@ private fun CustomProviderDialog(
                     value = apiKey,
                     singleLine = true,
                     secret = true,
+                    imeAction = ImeAction.Next,
+                    focusRequester = keyRequester,
+                    onImeAction = { modelsRequester.requestFocus() },
                 ) { apiKey = it }
                 FormField(
                     label = stringResource(R.string.providers_field_models),
@@ -1428,6 +1458,9 @@ private fun CustomProviderDialog(
                     value = models,
                     singleLine = false,
                     keyboard = KeyboardType.Text,
+                    imeAction = ImeAction.Done,
+                    focusRequester = modelsRequester,
+                    onImeAction = { focusManager.clearFocus() },
                 ) { models = it }
             }
         },
@@ -1448,6 +1481,11 @@ private fun FormField(
     placeholder: String,
     secret: Boolean = false,
     keyboard: KeyboardType = KeyboardType.Text,
+    // A11y (#8d): the focus chain — each field advances to the next on
+    // Next; the last field dismisses the keyboard on Done.
+    imeAction: ImeAction = ImeAction.Default,
+    focusRequester: FocusRequester? = null,
+    onImeAction: (() -> Unit)? = null,
     onValueChange: (String) -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -1474,8 +1512,17 @@ private fun FormField(
                 textStyle = (if (secret) OpenCodeTypography.codeInline else OpenCodeTypography.input).copy(color = colors.onSurface),
                 cursorBrush = SolidColor(colors.accent),
                 visualTransformation = if (secret && !showSecret) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(keyboardType = if (secret && !showSecret) KeyboardType.Password else keyboard),
-                modifier = Modifier.weight(1f),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (secret && !showSecret) KeyboardType.Password else keyboard,
+                    imeAction = imeAction,
+                ),
+                keyboardActions = KeyboardActions(
+                    onNext = { onImeAction?.invoke() },
+                    onDone = { onImeAction?.invoke() },
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
                 decorationBox = { inner ->
                     if (value.isEmpty()) {
                         Text(placeholder, style = OpenCodeTypography.input, color = colors.onSurfaceFaint)
@@ -1487,7 +1534,10 @@ private fun FormField(
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
-                        .clickable(role = Role.Button) { showSecret = !showSecret }
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = stringResource(if (showSecret) R.string.providers_hide_key else R.string.providers_show_key),
+                        ) { showSecret = !showSecret }
                         .padding(spacing.xxs),
                 ) {
                     GlyphIcon(

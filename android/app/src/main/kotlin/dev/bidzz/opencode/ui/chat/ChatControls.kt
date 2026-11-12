@@ -9,6 +9,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -405,13 +406,17 @@ private fun AgentSelector(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                // Hoisted: stringResource() is @Composable and cannot be
+                // called inside a .semantics {} block.
+                val clearSearchDescription = stringResource(R.string.search_clear)
                 if (agentQuery.isNotEmpty()) {
                     // 48dp hit area around the 14dp clear glyph.
                     Box(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
-                            .clickable(role = Role.Button) { agentQuery = "" },
+                            .clickable(role = Role.Button) { agentQuery = "" }
+                            .semantics { contentDescription = clearSearchDescription },
                         contentAlignment = Alignment.Center,
                     ) {
                         GlyphIcon(
@@ -474,11 +479,17 @@ private fun AgentSelector(
                                     .clip(RoundedCornerShape(radius.sm))
                                     .background(rowBg)
                                     .then(if (isSelected) Modifier.bringIntoViewRequester(selectedRowBringIntoView) else Modifier)
-                                    .clickable {
-                                        recentAgentIds = storeRecentRef(prefs, RECENT_AGENTS_KEY, agent.id)
-                                        onSelect(agent.id)
-                                        expanded = false
-                                    }
+                                    // A11y (#8c): a single-select row is selectable, not a
+                                    // plain button — TalkBack announces which agent is chosen.
+                                    .selectable(
+                                        selected = isSelected,
+                                        role = Role.RadioButton,
+                                        onClick = {
+                                            recentAgentIds = storeRecentRef(prefs, RECENT_AGENTS_KEY, agent.id)
+                                            onSelect(agent.id)
+                                            expanded = false
+                                        },
+                                    )
                                     .padding(horizontal = spacing.md, vertical = spacing.sm),
                             ) {
                                 Row(
@@ -827,13 +838,17 @@ internal fun ModelSelector(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                // Hoisted: stringResource() is @Composable and cannot be
+                // called inside a .semantics {} block.
+                val clearSearchDescription = stringResource(R.string.search_clear)
                 if (modelQuery.isNotEmpty()) {
                     // 48dp hit area around the 14dp clear glyph.
                     Box(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
-                            .clickable(role = Role.Button) { modelQuery = "" },
+                            .clickable(role = Role.Button) { modelQuery = "" }
+                            .semantics { contentDescription = clearSearchDescription },
                         contentAlignment = Alignment.Center,
                     ) {
                         GlyphIcon(
@@ -896,12 +911,18 @@ internal fun ModelSelector(
                                     .clip(RoundedCornerShape(radius.sm))
                                     .background(rowBg)
                                     .then(if (isSelected) Modifier.bringIntoViewRequester(selectedRowBringIntoView) else Modifier)
-                                    .clickable {
-                                        recentModelRefs = storeRecentRef(prefs, RECENT_MODELS_KEY, modelRefKey(model))
-                                        onSelect(model.ref())
-                                        expanded = false
-                                        modelQuery = ""
-                                    }
+                                    // A11y (#8c): same as the agent row — the chosen model
+                                    // is announced as selected.
+                                    .selectable(
+                                        selected = isSelected,
+                                        role = Role.RadioButton,
+                                        onClick = {
+                                            recentModelRefs = storeRecentRef(prefs, RECENT_MODELS_KEY, modelRefKey(model))
+                                            onSelect(model.ref())
+                                            expanded = false
+                                            modelQuery = ""
+                                        },
+                                    )
                                     .padding(horizontal = spacing.md, vertical = spacing.sm),
                             ) {
                                 // Top line: Brand dot, Model display name, Tier badge, Context Window, Checkmark
