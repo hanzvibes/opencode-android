@@ -264,6 +264,19 @@ data class Dimensions(
     val userBubbleMaxWidthFraction: Float = 0.80f,
 )
 
+/**
+ * The only alpha values for tints and borders. Surfaces themselves are
+ * opaque — never `surface*.copy(alpha = …)`: on dark, an alpha surface
+ * renders darker than its container and the ladder collapses. A tint
+ * (accent/fill washed over a surface) uses [subtle]; a hairline drawn
+ * as an alpha overlay uses [border]. Component PRs migrate the scattered
+ * `.copy(alpha = …)` call sites to these tokens.
+ */
+data class AlphaTokens(
+    val subtle: Float = 0.12f,
+    val border: Float = 0.25f,
+)
+
 /** All tokens, passed through CompositionLocal so previews can override them. */
 @Immutable
 data class OpenCodeTokens(
@@ -273,4 +286,5 @@ data class OpenCodeTokens(
     val dimensions: Dimensions = Dimensions(),
     val elevation: Elevation = Elevation(),
     val shadow: ShadowTokens = ShadowTokens(),
+    val alpha: AlphaTokens = AlphaTokens(),
 )
