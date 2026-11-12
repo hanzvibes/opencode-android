@@ -18,7 +18,20 @@ jobs:
     permissions:
       contents: write
     steps:
+      # fetch-depth: 0 — the build derives versionCode from `git rev-list --count HEAD`
+      # (audit-100 Fase 4, 84-F3); a shallow checkout would report 1 for every build.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Guard FIRST (audit-100 Fase 4, 62-F6): it used to run after the upload, so a
+      # committed native binary was already published by the time the job failed.
+      - name: Fail if the engine binary ever lands in git
+        run: |
+          if git ls-files | grep -qE 'jniLibs/.*\.so$'; then
+            echo "A staged native binary was committed to git." >&2
+            exit 1
+          fi
 
       # The wrapper jar is executable content pulled from a distribution URL. If it
       # were swapped, every build below would run attacker-chosen code.
@@ -254,16 +267,93 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleDebug --no-daemon
 
+      # Release signing (audit-100 Fase 4, 84-F2/84-F4): when the maintainer has stored
+      # the release keystore as secrets, restore it so assembleRelease produces a
+      # signed, installable APK. Without the secrets the release stays unsigned —
+      # the step says so loudly instead of failing or pretending otherwise.
+      # Secrets needed (see docs/RELEASE_SIGNING.md): RELEASE_KEYSTORE_B64 (base64
+      # of the .keystore), RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS,
+      # RELEASE_KEY_PASSWORD.
+      - name: Restore release keystore (if configured)
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RELEASE_KEYSTORE_B64" ]; then
+            echo "No RELEASE_KEYSTORE_B64 secret — assembleRelease will be UNSIGNED (see docs/RELEASE_SIGNING.md)."
+            exit 0
+          fi
+          echo "$RELEASE_KEYSTORE_B64" | base64 -d > android/release.keystore
+          cat > android/keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=$RELEASE_KEYSTORE_PASSWORD
+          keyAlias=$RELEASE_KEY_ALIAS
+          keyPassword=$RELEASE_KEY_PASSWORD
+          EOF
+          echo "Release keystore restored; assembleRelease will be signed."
+
       # Opsi C: the release artifact (R8 + shrinkResources) must build too —
       # debug-only CI hid release-only failures.
       - name: Compile release artifact
         working-directory: android
         run: ./gradlew :app:assembleRelease --no-daemon
 
+      # The release APK is built on every run but used to be thrown away
+      # (audit-100 Fase 4, 84-F11). Keep it as a workflow artifact so it can be
+      # downloaded and tested; the signed-release channel below publishes it to
+      # a GitHub release once a keystore secret exists.
+      - name: Upload release APK as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # GPL: git (GPL-2.0), GNU tar and binutils (GPL-3.0) ship inside the APK, so
+      # each release must carry their corresponding source (audit-100 Fase 4,
+      # 62-F3/84-F5). Download the exact pinned tarballs, verify SHA-256, and fail
+      # hard on any mismatch — the upload step below attaches them to the release.
+      # Hashes are cross-checked against the publishers (kernel.org sha256sums.asc
+      # for git; a second GNU mirror for tar/binutils) and recorded in
+      # THIRD_PARTY_NOTICES.md.
+      - name: Download and verify GPL source tarballs
+        run: |
+          set -euo pipefail
+          mkdir -p gpl-sources
+          cd gpl-sources
+          curl -f -sL --retry 3 --retry-delay 2 -4 \
+            -o git-2.56.0.tar.gz \
+            https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.56.0.tar.gz
+          curl -f -sL --retry 3 --retry-delay 2 -4 \
+            -o tar-1.35.tar.gz \
+            https://ftp.gnu.org/gnu/tar/tar-1.35.tar.gz
+          curl -f -sL --retry 3 --retry-delay 2 -4 \
+            -o binutils-2.47.tar.gz \
+            https://ftp.gnu.org/gnu/binutils/binutils-2.47.tar.gz
+          cat > SHA256SUMS <<'EOF'
+          826817fd3671b8565586d6d49f688298de8354ab11db829c02720e5c74b9b39f  git-2.56.0.tar.gz
+          14d55e32063ea9526e057fbf35fcabd53378e769787eff7919c3755b02d2b57e  tar-1.35.tar.gz
+          15f5abd0db9cf8ea116f516a9ce12bc1cefef491ef9e50942868093d8f92a6f3  binutils-2.47.tar.gz
+          EOF
+          sha256sum --check --strict SHA256SUMS
+          ls -la
+
+      # The version the APKs actually carry (audit-100 Fase 4, 84-F3): versionCode
+      # is the commit count on main, versionName is 0.1.1+<short SHA>. Gradle
+      # computes the same values from git, so the release body and the APK agree.
+      - name: Compute release version
+        id: release-version
+        run: |
+          echo "version-code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version-name=0.1.1+${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
       - name: Upload debug APK to rolling release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
-        continue-on-error: true
         with:
           tag_name: debug-latest
           name: OpenCode Android (Latest with Engine)
@@ -274,23 +364,71 @@ jobs:
           body: |
             Automated build with PrivateLM UI & bundled OpenCode engine binaries (arm64-v8a & x86_64).
             Commit: ${{ github.sha }}
+            Version: ${{ steps.release-version.outputs.version-name }} (code ${{ steps.release-version.outputs.version-code }})
+            Debug APKs are signed with the shared debug key (docs/RELEASE_SIGNING.md), so they update in place.
+            Corresponding Source for the GPL components in the APK is attached below (git, GNU tar, binutils); licence texts are in THIRD_PARTY_NOTICES.md and inside the APK at assets/licenses/.
           files: |
             android/app/build/outputs/apk/debug/*.apk
+            gpl-sources/git-2.56.0.tar.gz
+            gpl-sources/tar-1.35.tar.gz
+            gpl-sources/binutils-2.47.tar.gz
 
-      - name: Fail if the engine binary ever lands in git
+      # A failed upload used to be hidden by `continue-on-error: true`
+      # (audit-100 Fase 4, 84-F1/62-F1): the job stayed green while debug-latest
+      # kept the old APK. The upload step now fails loudly, and this step proves
+      # the release actually carries the APKs we just built, at the exact sizes.
+      # (SHA-256 would need re-downloading ~500 MB of APKs; size + name catches
+      # the realistic failures — empty glob, truncated upload, wrong file.)
+      - name: Verify the rolling release carries the new APKs
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if git ls-files | grep -qE 'jniLibs/.*\.so$'; then
-            echo "A staged native binary was committed to git." >&2
-            exit 1
+          set -euo pipefail
+          release=$(gh api "repos/${{ github.repository }}/releases/tags/debug-latest")
+          for apk in android/app/build/outputs/apk/debug/*.apk; do
+            name=$(basename "$apk")
+            size=$(wc -c < "$apk")
+            actual=$(echo "$release" | jq -r --arg n "$name" '.assets[] | select(.name == $n) | .size')
+            if [ -z "$actual" ]; then
+              echo "release asset $name is MISSING from debug-latest" >&2
+              exit 1
+            fi
+            if [ "$actual" != "$size" ]; then
+              echo "release asset $name has size $actual, expected $size (truncated upload?)" >&2
+              exit 1
+            fi
+            echo "verified $name ($size bytes)"
+          done
+
+      # Signed release channel (audit-100 Fase 4, 84-F4): publishes the release APK
+      # to `release-latest` once the maintainer stores the keystore secret. Until
+      # then the step is skipped — visibly, in the Actions UI — and the release
+      # APK is still kept as a workflow artifact above. The debug channel above
+      # stays the default distribution until then; switching it would break
+      # in-place updates (different signing key).
+      - name: Note signed-release status
+        env:
+          HAS_RELEASE_KEY: ${{ secrets.RELEASE_KEYSTORE_B64 != '' }}
+        run: |
+          if [ "$HAS_RELEASE_KEY" != 'true' ]; then
+            echo "No RELEASE_KEYSTORE_B64 secret: the signed release channel is disabled; the release APK is kept as a workflow artifact (see docs/RELEASE_SIGNING.md)."
           fi
 
-      # GPLv2: git is built from upstream sources and shipped in the APK, so each
-      # release must carry the matching source tarball. This does not attach it —
-      # it proves the version the build script downloads is pinned and reachable.
-      - name: Check the git source tarball is fetchable
-        run: |
-          version=$(sed -n 's/^\$GitVersion = "\([0-9.]*\)".*/\1/p' script/android/build-tools.ps1)
-          test -n "$version" || { echo "Could not read GitVersion from build-tools.ps1" >&2; exit 1; }
-          url="https://mirrors.edge.kernel.org/pub/software/scm/git/git-$version.tar.gz"
-          curl --fail --silent --head --output /dev/null "$url"
-          echo "release must attach: git-$version.tar.gz"
+      - name: Publish signed release APK
+        if: github.event_name == 'push' && secrets.RELEASE_KEYSTORE_B64 != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: release-latest
+          name: OpenCode Android (Release)
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          generate_release_notes: false
+          body: |
+            Signed release build (R8 + shrinkResources, not debuggable).
+            Commit: ${{ github.sha }}
+            Version: ${{ steps.release-version.outputs.version-name }} (code ${{ steps.release-version.outputs.version-code }})
+            Corresponding Source for the GPL components in the APK is attached to the debug-latest release; licence texts are in THIRD_PARTY_NOTICES.md and inside the APK at assets/licenses/.
+          files: |
+            android/app/build/outputs/apk/release/*.apk

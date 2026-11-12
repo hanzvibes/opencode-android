@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -17,6 +18,65 @@ val keystoreProperties = Properties().apply {
 }
 val hasReleaseKey = keystoreProperties.getProperty("storeFile") != null
 
+/**
+ * Debug signing uses the COMMITTED `debug.keystore` next to this file (audit-100 Fase 4,
+ * 84-F2). Every debug APK — CI or local — is signed with the same key, so the rolling
+ * `debug-latest` release can be installed as an in-place update instead of forcing an
+ * uninstall (which wipes sessions and config). This is a DEBUG-ONLY key: same trust
+ * level as Android's public default debug key (alias `androiddebugkey`, passwords
+ * `android`), and it must never sign a release build — the release signing config
+ * below stays separate and keystore-backed. Its SHA-256 certificate fingerprint is
+ * 7D:1D:2E:34:A0:2B:14:BC:CA:33:3D:08:F5:94:92:DB:01:94:4F:F2:3F:7F:1E:39:C0:C3:6B:FE:CC:D6:4C:4D.
+ */
+val debugKeystoreFile = rootProject.file("debug.keystore")
+
+/**
+ * Runs `git ...` in the repo root (one level above this `android/` dir) and returns its
+ * trimmed stdout, or null when there is no `.git` (tarball checkout), git is missing,
+ * or the command fails. Plain `ProcessBuilder` — the Gradle `exec` APIs are deprecated
+ * for configuration-time use and `providers.exec` needs a newer Gradle than 8.14's
+ * stable surface for this shape.
+ */
+fun gitOutput(vararg args: String): String? {
+    val repoDir = rootProject.projectDir.parentFile
+    if (!File(repoDir, ".git").exists()) return null
+    return runCatching {
+        val proc = ProcessBuilder(listOf("git") + args.toList())
+            .directory(repoDir)
+            .redirectErrorStream(true)
+            .start()
+        val text = proc.inputStream.bufferedReader().readText().trim()
+        if (proc.waitFor() != 0) null else text.takeIf { it.isNotEmpty() }
+    }.getOrNull()
+}
+
+/**
+ * `versionCode` (audit-100 Fase 4, 84-F3/62-F7): one scale, commit count on main, so every
+ * distributed build is a higher version than the last and Obtainium / the package manager
+ * actually detect the update. Precedence: `-PversionCode` > `VERSION_CODE` env > `git
+ * rev-list --count HEAD` (repo root, when `.git` exists) > 2 (fallback for tarball
+ * checkouts without git history — never distribute a build with the fallback code).
+ * CI checks out with `fetch-depth: 0` so the count is the real one, not 1.
+ */
+fun resolveVersionCode(): Int {
+    providers.gradleProperty("versionCode").orNull?.toIntOrNull()?.let { return it }
+    System.getenv("VERSION_CODE")?.toIntOrNull()?.let { return it }
+    gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull()?.let { return it }
+    return 2
+}
+
+/**
+ * `versionName`: the app's own `0.1.1` (NOT the engine's upstream tag, which happens to
+ * share the number) plus a per-build suffix — `-PversionNameSuffix` > `VERSION_NAME_SUFFIX`
+ * env > short git SHA > `local`. Each build is identifiable in Settings / Obtainium.
+ */
+fun resolveVersionNameSuffix(): String {
+    providers.gradleProperty("versionNameSuffix").orNull?.takeIf { it.isNotBlank() }?.let { return it }
+    System.getenv("VERSION_NAME_SUFFIX")?.takeIf { it.isNotBlank() }?.let { return it }
+    gitOutput("rev-parse", "--short", "HEAD")?.let { return it }
+    return "local"
+}
+
 android {
     namespace = "dev.bidzz.opencode"
     compileSdk = 35
@@ -25,14 +85,22 @@ android {
         applicationId = "dev.bidzz.opencode"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = resolveVersionCode()
+        versionName = "0.1.1+${resolveVersionNameSuffix()}"
 
         // ABI selection lives in `splits` below: declaring `ndk.abiFilters` as well
         // is a hard configuration error in AGP 8.
     }
 
     signingConfigs {
+        // AGP pre-creates a `debug` signing config (default debug keystore); re-point
+        // it at the committed keystore instead of creating a second one.
+        getByName("debug") {
+            storeFile = debugKeystoreFile
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (hasReleaseKey) {
             create("release") {
                 storeFile = file(keystoreProperties.getProperty("storeFile"))
@@ -46,6 +114,7 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             // Shrinks the Kotlin/Java side only; the ~217 MB engine is a native library

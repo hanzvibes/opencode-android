@@ -15,6 +15,10 @@ android/local.properties
 android/keystore.properties
 *.jks
 *.keystore
+# ...except the SHARED DEBUG keystore (audit-100 Fase 4, 84-F2): it signs every
+# debug APK with one stable key so `debug-latest` updates in place. Debug-only —
+# same trust level as Android's public default debug key; never for release.
+!android/debug.keystore
 android/app/src/main/jniLibs/
 # Node.js runtime assets (npm tree + CA bundle), staged by
 # script/android/stage-node.sh — ~10 MB of small files, never committed.
