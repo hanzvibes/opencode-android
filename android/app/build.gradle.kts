@@ -126,6 +126,10 @@ dependencies {
     // exports, so they stay aligned with the design system.
     implementation(platform(libs.compose.bom))
     implementation(libs.activity.compose)
+    // App lock (Batch 7): BiometricPrompt needs a FragmentActivity, so the
+    // activity extends it via fragment-ktx; biometric itself is the prompt API.
+    implementation(libs.biometric)
+    implementation(libs.fragment.ktx)
     // WindowSizeClass for the adaptive tablet layout (persistent sidebar +
     // list-detail at >=840dp). Version comes from the Compose BOM above.
     implementation(libs.material3.window.size)

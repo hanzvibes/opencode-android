@@ -7,6 +7,8 @@
          model/brand (OpenCode, Claude, GPT-4o, Gemini) -> apa adanya. -->
     <!-- Common -->
     <string name="common_back">Kembali</string>
+    <string name="common_on">Aktif</string>
+    <string name="common_off">Nonaktif</string>
     <string name="common_cancel">Batal</string>
     <string name="common_save">Simpan</string>
     <string name="common_refresh">Segarkan</string>
@@ -70,6 +72,16 @@
     <string name="settings_engine_port_desc">Port loopback server lokal</string>
     <string name="settings_engine_inactive">Tidak aktif</string>
     <string name="settings_section_about">Tentang</string>
+    <string name="settings_section_security">Keamanan</string>
+    <string name="lock_title">Kunci aplikasi</string>
+    <string name="lock_subtitle">Minta biometrik atau PIN perangkat untuk membuka aplikasi</string>
+    <string name="lock_unavailable_no_hardware">Perangkat ini tidak punya sensor biometrik</string>
+    <string name="lock_unavailable_none_enrolled">Belum ada biometrik atau kunci layar yang diatur</string>
+    <string name="lock_unavailable_generic">Kunci aplikasi tidak tersedia di perangkat ini</string>
+    <string name="lock_unlock_title">Buka kunci OpenCode</string>
+    <string name="lock_unlock_subtitle">Gunakan biometrik atau PIN perangkat untuk melanjutkan</string>
+    <string name="lock_unlock_button">Buka kunci</string>
+    <string name="lock_failed">Tidak dikenali — coba lagi</string>
     <string name="settings_about_title">Tentang pengembang</string>
     <string name="settings_about_body">Portofolio dan cara menghubungi.</string>
     <string name="settings_saved_permissions">Izin tersimpan</string>
@@ -506,6 +518,11 @@
     <string name="fileview_find_next">Cocokan berikutnya</string>
     <string name="fileview_find_close">Tutup pencarian</string>
     <string name="fileview_large_warning">File besar (lebih dari 1 MB). Menampilkan %1$d baris pertama dari %2$d baris — pencarian hanya mencakup pratinjau ini. Muat seluruh file untuk mengedit atau mencari semuanya.</string>
+    <string name="preview_page_of">Halaman %1$d dari %2$d</string>
+    <string name="preview_page_prev">Halaman sebelumnya</string>
+    <string name="preview_page_next">Halaman berikutnya</string>
+    <string name="preview_load_failed">Pratinjau tidak bisa dibuka</string>
+    <string name="preview_image_size">%1$d × %2$d</string>
     <string name="fileview_load_full">Muat seluruh file</string>
     <string name="fileview_lines_truncated">%1$d dari %2$d baris</string>
 

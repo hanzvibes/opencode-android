@@ -55,10 +55,15 @@
         android:theme="@style/Theme.OpenCode"
         android:enableOnBackInvokedCallback="true">
 
+        <!-- resizeableActivity (Batch 7, multi-window): explicit even
+          though it defaults to true at this targetSdk — split-screen and
+          freeform resize must keep working, and configChanges above
+          already keeps a resize from restarting the activity. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
+            android:resizeableActivity="true"
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode">
             <intent-filter>

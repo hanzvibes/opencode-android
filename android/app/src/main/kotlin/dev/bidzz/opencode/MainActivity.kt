@@ -12,10 +12,14 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import java.io.File
 import java.text.SimpleDateFormat
@@ -26,6 +30,8 @@ import dev.bidzz.opencode.ui.ACTION_OPEN_SESSION
 import dev.bidzz.opencode.ui.EXTRA_OPENCODE_ACTION
 import dev.bidzz.opencode.ui.EXTRA_SESSION_ID
 import dev.bidzz.opencode.ui.OpenCodeApp
+import dev.bidzz.opencode.ui.security.AppLockPrefs
+import dev.bidzz.opencode.ui.security.LockScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,8 +41,34 @@ import kotlinx.coroutines.withContext
  *
  * Everything else lives in the composables. The engine is started by the foreground
  * service, not here, so destroying this activity never interrupts it.
+ *
+ * A FragmentActivity (not ComponentActivity) because the app lock
+ * (Batch 7) uses androidx BiometricPrompt, which requires one.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    /**
+     * App lock (Batch 7): whether the lock screen has been passed since
+     * this foreground session began. Re-armed whenever the activity
+     * returns from the background ([onResume] after [onStop]), so leaving
+     * the app and coming back asks again. Held as snapshot state so
+     * flipping it recomposes the setContent gate below.
+     */
+    private var unlocked by mutableStateOf(false)
+    private var wentBackground = false
+
+    override fun onStop() {
+        super.onStop()
+        wentBackground = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (wentBackground) {
+            wentBackground = false
+            unlocked = false
+        }
+    }
 
     private val requestNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* optional */ }
@@ -158,7 +190,15 @@ class MainActivity : ComponentActivity() {
         observeDialogRequests()
 
         setContent {
-            OpenCodeApp(app = application as OpenCodeApplication)
+            // App lock (Batch 7): read once per launch. Enabling the lock
+            // in Settings does not lock the running session — it takes
+            // effect on the next launch or background return.
+            val lockEnabled = remember { AppLockPrefs.isEnabled(this) }
+            if (lockEnabled && !unlocked) {
+                LockScreen(onUnlocked = { unlocked = true })
+            } else {
+                OpenCodeApp(app = application as OpenCodeApplication)
+            }
         }
 
         handleExternalIntent(intent)

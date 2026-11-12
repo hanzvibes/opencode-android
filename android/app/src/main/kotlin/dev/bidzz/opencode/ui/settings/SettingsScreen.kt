@@ -19,6 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.AppLanguage
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
+import androidx.fragment.app.FragmentActivity
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.PermissionSavedInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -64,6 +68,10 @@ import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.StatusDot
+import dev.bidzz.opencode.ui.security.AppLockPrefs
+import dev.bidzz.opencode.ui.security.LockAvailability
+import dev.bidzz.opencode.ui.security.authenticateWithBiometrics
+import dev.bidzz.opencode.ui.security.lockAvailability
 import dev.bidzz.opencode.ui.message
 import kotlinx.coroutines.launch
 
@@ -210,6 +218,26 @@ fun SettingsScreen(
     val aboutTitle = stringResource(R.string.settings_about_title)
     val aboutSubtitle = stringResource(R.string.settings_about_body)
 
+    // App lock (Batch 7): one boolean in SharedPreferences, read once when
+    // this screen opens. The availability is read once too — the sensor set
+    // does not change while the screen is open.
+    val lockContext = LocalContext.current
+    val lockActivity = lockContext as? FragmentActivity
+    var lockEnabled by remember { mutableStateOf(AppLockPrefs.isEnabled(lockContext)) }
+    val lockAvailability = remember { lockAvailability(lockContext) }
+    val lockTitle = stringResource(R.string.lock_title)
+    val lockSubtitle = stringResource(R.string.lock_subtitle)
+    val lockOnValue = stringResource(R.string.common_on)
+    val lockOffValue = stringResource(R.string.common_off)
+    val lockUnavailableText = stringResource(
+        when (lockAvailability) {
+            LockAvailability.NoHardware -> R.string.lock_unavailable_no_hardware
+            LockAvailability.NoneEnrolled -> R.string.lock_unavailable_none_enrolled
+            else -> R.string.lock_unavailable_generic
+        },
+    )
+    val lockFailedMessage = stringResource(R.string.lock_failed)
+
     // Per-row visibility; a section renders only when at least one of its
     // rows matches. A blank query matches everything, so the screen is
     // unchanged from before searching.
@@ -249,6 +277,9 @@ fun SettingsScreen(
         matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
     }
     val appearanceVisible = visibleThemeModes.isNotEmpty()
+    val securityVisible = matchesSettingsQuery(
+        query, lockTitle, lockSubtitle, lockOnValue, lockOffValue, lockUnavailableText,
+    )
     val providerVisible = matchesSettingsQuery(query, providerTitle, providerSubtitle)
     val aboutVisible = matchesSettingsQuery(query, aboutTitle, aboutSubtitle)
     val statusCardVisible = matchesSettingsQuery(
@@ -260,8 +291,8 @@ fun SettingsScreen(
         allFilesValue,
     )
     val anyVisible = projectVisible || savedPermissionsVisible || engineVisible ||
-        languageVisible || appearanceVisible || providerVisible || aboutVisible ||
-        statusCardVisible
+        languageVisible || appearanceVisible || securityVisible || providerVisible ||
+        aboutVisible || statusCardVisible
 
     ScreenScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
         Column(
@@ -496,6 +527,47 @@ fun SettingsScreen(
                             onSelect = { if (mode != themeMode) onThemeModeChange(mode) },
                         )
                     }
+                }
+            }
+
+            // App lock (Batch 7): enabling runs one biometric prompt first
+            // and only persists on success — a failed or cancelled prompt
+            // leaves the lock off. Disabling is immediate: the user is
+            // already past the lock to be here. When the device cannot
+            // offer an unlock at all the switch is disabled and the row
+            // says why instead of offering a dead toggle.
+            if (securityVisible) {
+                Section(R.string.settings_section_security) {
+                    SettingsToggleRow(
+                        glyph = Glyph.Lock,
+                        title = lockTitle,
+                        subtitle = if (lockAvailability == LockAvailability.Available) {
+                            lockSubtitle
+                        } else {
+                            lockUnavailableText
+                        },
+                        checked = lockEnabled,
+                        enabled = lockAvailability == LockAvailability.Available,
+                        onCheckedChange = { wantOn ->
+                            if (!wantOn) {
+                                AppLockPrefs.setEnabled(lockContext, false)
+                                lockEnabled = false
+                            } else {
+                                val activity = lockActivity ?: return@SettingsToggleRow
+                                authenticateWithBiometrics(
+                                    activity,
+                                    lockTitle,
+                                    lockSubtitle,
+                                    lockFailedMessage,
+                                    onSuccess = {
+                                        AppLockPrefs.setEnabled(lockContext, true)
+                                        lockEnabled = true
+                                    },
+                                    onError = {},
+                                )
+                            }
+                        },
+                    )
                 }
             }
 
@@ -773,6 +845,83 @@ private fun SettingsRow(
                 modifier = Modifier.padding(start = spacing.xs),
             )
         }
+    }
+}
+
+/**
+ * Grouped settings row with a trailing switch, for on/off preferences.
+ * Mirrors [SettingsRow]'s badge + title + subtitle layout; the switch
+ * takes the value slot, so there is no chevron. The whole row is a button
+ * that flips the switch (a11y #8: the row, not just the small switch, is
+ * the tap target); tapping the switch itself fires only its own
+ * onCheckedChange, never both.
+ */
+@Composable
+private fun SettingsToggleRow(
+    glyph: Glyph,
+    title: String,
+    subtitle: String? = null,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 54.dp)
+            .clickable(
+                role = Role.Button,
+                enabled = enabled,
+                onClick = { onCheckedChange(!checked) },
+            )
+            .padding(horizontal = spacing.md, vertical = spacing.sm + 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconBadge(
+            glyph = glyph,
+            tint = colors.onSurface,
+            background = colors.fill,
+            shape = RoundedCornerShape(radius.sm),
+            size = 30.dp,
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = spacing.md, end = spacing.xs),
+        ) {
+            Text(
+                text = title,
+                style = OpenCodeTypography.body,
+                color = if (enabled) colors.onSurface else colors.onSurfaceMuted,
+            )
+            if (!subtitle.isNullOrEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = colors.onAccent,
+                checkedTrackColor = colors.accentFill,
+                uncheckedThumbColor = colors.onSurfaceMuted,
+                uncheckedTrackColor = colors.fill,
+                uncheckedBorderColor = colors.hairline,
+            ),
+        )
     }
 }
 

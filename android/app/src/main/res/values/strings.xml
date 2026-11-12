@@ -2,6 +2,8 @@
 <resources>
     <!-- Common -->
     <string name="common_back">Back</string>
+    <string name="common_on">On</string>
+    <string name="common_off">Off</string>
     <string name="common_cancel">Cancel</string>
     <string name="common_save">Save</string>
     <string name="common_refresh">Refresh</string>
@@ -66,6 +68,16 @@
     <string name="settings_engine_port_desc">Local server loopback port</string>
     <string name="settings_engine_inactive">Inactive</string>
     <string name="settings_section_about">About</string>
+    <string name="settings_section_security">Security</string>
+    <string name="lock_title">App lock</string>
+    <string name="lock_subtitle">Require biometrics or your device PIN to open the app</string>
+    <string name="lock_unavailable_no_hardware">This device has no biometric sensor</string>
+    <string name="lock_unavailable_none_enrolled">No biometrics or screen lock set up yet</string>
+    <string name="lock_unavailable_generic">App lock is not available on this device</string>
+    <string name="lock_unlock_title">Unlock OpenCode</string>
+    <string name="lock_unlock_subtitle">Use your biometrics or device PIN to continue</string>
+    <string name="lock_unlock_button">Unlock</string>
+    <string name="lock_failed">Not recognized — try again</string>
     <string name="settings_about_title">About the developer</string>
     <string name="settings_about_body">Portfolio and ways to get in touch.</string>
     <string name="settings_saved_permissions">Saved permissions</string>
@@ -502,6 +514,11 @@
     <string name="fileview_find_next">Next match</string>
     <string name="fileview_find_close">Close find</string>
     <string name="fileview_large_warning">Large file (over 1 MB). Showing the first %1$d of %2$d lines — find searches this preview only. Load the full file to edit or search it all.</string>
+    <string name="preview_page_of">Page %1$d of %2$d</string>
+    <string name="preview_page_prev">Previous page</string>
+    <string name="preview_page_next">Next page</string>
+    <string name="preview_load_failed">Could not open this preview</string>
+    <string name="preview_image_size">%1$d × %2$d</string>
     <string name="fileview_load_full">Load full file</string>
     <string name="fileview_lines_truncated">%1$d of %2$d lines</string>
 

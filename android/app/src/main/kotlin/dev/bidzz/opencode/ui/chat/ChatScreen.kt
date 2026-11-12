@@ -1,6 +1,8 @@
 package dev.bidzz.opencode.ui.chat
 
 import android.net.Uri
+import android.view.DragEvent
+import android.view.View
 import dev.bidzz.opencode.OpenCodeApplication
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -112,6 +114,11 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.AnnotatedString
@@ -844,6 +851,82 @@ fun ChatScreen(
                 is SafReadResult.Unreadable -> onAttachmentRefused(R.string.attach_unreadable_file, result.name)
             }
         }
+    }
+
+    // Drag & drop into the composer (Batch 7): files dropped from another
+    // app arrive as content:// URIs and are read with the SAF rules above;
+    // a workspace file dragged from the Explorer arrives as a path under
+    // the private MIME type and becomes an @path mention. The listener
+    // lives on the composition root view because Compose 1.7's
+    // dragAndDropTarget cannot read the dropped ClipData (see
+    // DropAttachments.kt). The composer bounds decide whether the drop
+    // landed on it; anything dropped elsewhere in the chat is ignored.
+    val composerBounds = remember { mutableStateOf<Rect?>(null) }
+    var dragOverComposer by remember { mutableStateOf(false) }
+    val dropRootView = LocalView.current
+    DisposableEffect(dropRootView) {
+        val listener = View.OnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    val description = event.clipDescription
+                        ?: return@OnDragListener false
+                    val types = (0 until description.mimeTypeCount)
+                        .map { description.getMimeType(it) }
+                        .toSet()
+                    acceptsDropMimeTypes(types)
+                }
+                DragEvent.ACTION_DRAG_ENTERED, DragEvent.ACTION_DRAG_LOCATION -> {
+                    dragOverComposer = composerBounds.value
+                        ?.contains(Offset(event.x, event.y)) == true
+                    true
+                }
+                DragEvent.ACTION_DRAG_EXITED -> {
+                    dragOverComposer = false
+                    true
+                }
+                DragEvent.ACTION_DROP -> {
+                    dragOverComposer = false
+                    val inside = composerBounds.value
+                        ?.contains(Offset(event.x, event.y)) == true
+                    if (!inside) return@OnDragListener false
+                    val content = droppedContent(event.clipData)
+                    if (content.uris.isEmpty() && content.texts.isEmpty()) {
+                        return@OnDragListener false
+                    }
+                    // Only a drag carrying the private path MIME type may
+                    // insert mentions: a URI drop from another app can
+                    // carry a text label too, and that label is not a
+                    // workspace path.
+                    val pathDrop = event.clipDescription
+                        ?.hasMimeType(MIME_WORKSPACE_PATH) == true
+                    scope.launch {
+                        content.uris.forEach { uri ->
+                            when (val result = withContext(Dispatchers.IO) {
+                                readSafFile(safContentResolver, uri)
+                            }) {
+                                is SafReadResult.Success -> onAttachmentAdded(result.file)
+                                is SafReadResult.TooLarge -> onAttachmentRefused(R.string.attach_file_too_large, result.name)
+                                is SafReadResult.NotText -> onAttachmentRefused(R.string.attach_not_text_file, result.name)
+                                is SafReadResult.Unreadable -> onAttachmentRefused(R.string.attach_unreadable_file, result.name)
+                            }
+                        }
+                        if (pathDrop) {
+                            content.texts.forEach { text ->
+                                onDraftChange(insertMention(currentDraft, text))
+                            }
+                        }
+                    }
+                    true
+                }
+                DragEvent.ACTION_DRAG_ENDED -> {
+                    dragOverComposer = false
+                    true
+                }
+                else -> false
+            }
+        }
+        dropRootView.setOnDragListener(listener)
+        onDispose { dropRootView.setOnDragListener(null) }
     }
 
     // Camera photo (Native C): same bridge shape as the SAF picker —
@@ -1634,7 +1717,20 @@ fun ChatScreen(
                         agentLabel = agentLabel,
                         autofocus = true,
                         focusRequestSignal = composerFocusSignal,
-                        modifier = Modifier.navigationBarsPadding(),
+                        modifier = Modifier
+                            .navigationBarsPadding()
+                            .onGloballyPositioned { composerBounds.value = it.boundsInRoot() }
+                            .then(
+                                if (dragOverComposer) {
+                                    Modifier.border(
+                                        1.5.dp,
+                                        colors.accent,
+                                        RoundedCornerShape(OpenCodeTheme.tokens.radius.lg),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         onKeyEvent = { keyEvent ->
                             // Ctrl/Cmd+Enter sends from a physical keyboard; a plain
                             // Enter stays a newline and is left to the text field.
