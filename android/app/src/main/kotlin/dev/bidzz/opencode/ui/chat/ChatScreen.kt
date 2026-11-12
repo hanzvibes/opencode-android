@@ -674,11 +674,16 @@ fun ChatScreen(
         // is half of the "stuck scroll" feeling. After the gesture ends
         // the next token re-evaluates and follows normally.
         if (state.messages.isNotEmpty() && nearBottom && !listState.isScrollInProgress) {
-            // Bottom-pin, not top-pin (see scrollToItemBottom): instant
-            // while busy so a tap on Jump-to-latest is not fought by a
-            // per-token snap; animated only when idle.
+            // Bottom-pin, not top-pin (see scrollToItemBottom). While
+            // busy, #6e: animate when the remaining distance is small
+            // so the list glides with the stream instead of snapping
+            // per token (the streaming flicker, laporan #23); snap
+            // only for a large jump, otherwise the animation queues
+            // behind the tokens and the list lags. When idle, always
+            // animate. The nearBottom gate is untouched: a reader
+            // reading above is never followed.
             if (state.busy) {
-                listState.scrollToItemBottom(targetLastIndex)
+                listState.followScrollToBottom(targetLastIndex)
             } else {
                 listState.animateScrollToItemBottom(targetLastIndex)
             }
@@ -3747,6 +3752,36 @@ private suspend fun LazyListState.animateScrollToItemBottom(index: Int) {
         return
     }
 }
+
+/**
+ * #6e: the follow-scroll step while the agent is streaming. Animates
+ * when the remaining distance to the bottom pin is small so the list
+ * glides with the stream; snaps when the jump is large (session
+ * switch, load-earlier), otherwise each token queues another animation
+ * and the list lags behind the newest token. The caller still owns the
+ * nearBottom gate — this never scrolls a reader who is reading above.
+ */
+private suspend fun LazyListState.followScrollToBottom(index: Int) {
+    if (distanceToBottomPx(index) > SNAP_DISTANCE_VIEWPORTS * viewportHeightPx()) {
+        scrollToItemBottom(index)
+    } else {
+        animateScrollToItemBottom(index)
+    }
+}
+
+/** How far the bottom pin of [index] still is, in pixels. */
+private fun LazyListState.distanceToBottomPx(index: Int): Int {
+    val visible = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+        ?: return Int.MAX_VALUE // Not laid out yet: far by definition.
+    val desiredOffset = layoutInfo.viewportStartOffset - bottomOffsetFor(visible)
+    return kotlin.math.abs(visible.offset - desiredOffset)
+}
+
+private fun LazyListState.viewportHeightPx(): Int =
+    (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset).coerceAtLeast(0)
+
+/** A jump larger than this many viewports snaps instead of animating. */
+private const val SNAP_DISTANCE_VIEWPORTS = 3
 
 /**
  * The scrollOffset that pins [item]'s bottom edge to the viewport
