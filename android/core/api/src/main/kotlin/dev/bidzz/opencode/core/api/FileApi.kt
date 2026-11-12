@@ -14,6 +14,7 @@ import dev.bidzz.opencode.core.api.dto.VcsStatusResponse
 import java.net.URLEncoder
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -93,6 +94,11 @@ class FileApi(private val client: EngineClient) {
                 )
                 ApiResult.Success(text)
             }
+        } catch (e: CancellationException) {
+            // Cancellation is not a failure (Fase 2, 59-F4): the same
+            // swallow as in EngineClient.execute — a cancelled read came
+            // back as a failed one, so the job never actually stopped.
+            throw e
         } catch (e: Exception) {
             ApiResult.Failure(code = 0, message = e.message, cause = e)
         }

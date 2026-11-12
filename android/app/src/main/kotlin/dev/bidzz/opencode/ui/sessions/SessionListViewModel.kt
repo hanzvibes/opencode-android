@@ -90,17 +90,24 @@ class SessionListViewModel(
         val generation = ++loadGeneration
         detailsJob?.cancel()
         loadJob?.cancel()
-        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, filterDirectory = directory, details = emptyMap())
+        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, filterDirectory = directory)
 
         loadJob = viewModelScope.launch {
             when (val result = handle.sessions.list(directory = directory, limit = 50)) {
                 is ApiResult.Success -> {
                     if (generation != loadGeneration) return@launch
                     val pinned = pinnedStore?.getPinnedIds().orEmpty()
+                    // Details survive a reload (Fase 2, 19-F1): wiping them
+                    // made every drawer open refetch every session's full
+                    // history. Entries for sessions no longer listed are
+                    // pruned; the rest are refreshed by loadDetails, which
+                    // only fetches sessions without a preview.
+                    val listedIds = result.value.map { it.id }.toSet()
                     _state.value = _state.value.copy(
                         loading = false,
                         rows = result.value.map { it.toRow(isPinned = pinned.contains(it.id)) },
                         failure = null, failureKey = null,
+                        details = _state.value.details.filterKeys { it in listedIds },
                     )
                     loadDetails(result.value, generation)
                 }
@@ -120,6 +127,13 @@ class SessionListViewModel(
      * in hand — no extra call for those two. The preview is the session's
      * first user message; that is the oldest entry, so the full history is
      * fetched (no limit), newest-first from the engine and reversed here.
+     * There is no cheaper way to reach the oldest message: the endpoint
+     * takes only a newest-first limit, and a small limit returns the wrong
+     * end. What is cheap is not fetching twice (Fase 2, 19-F1): a preview
+     * already loaded is immutable — the first message never changes — so
+     * it is kept across reloads and only its model/status refresh from
+     * the fresh list info, with no network call. Sessions without a
+     * preview (new, empty, or failed before) are still looked up.
      * Lookups run sequentially in the background and publish incrementally,
      * so rows fill in as their data lands. A failed lookup leaves that
      * session's model/status in place with no preview rather than failing
@@ -130,9 +144,15 @@ class SessionListViewModel(
         detailsJob?.cancel()
         detailsJob = viewModelScope.launch {
             val handle = api.handle() ?: return@launch
-            val filled = mutableMapOf<String, SessionDetail>()
+            val filled = _state.value.details.toMutableMap()
             for (info in infos) {
                 val modelLabel = info.model?.let { "${it.providerID}/${it.id}" }
+                val existing = filled[info.id]
+                if (existing?.preview != null) {
+                    filled[info.id] = existing.copy(model = modelLabel, status = info.outcome)
+                    _state.value = _state.value.copy(details = filled.toMap())
+                    continue
+                }
                 when (val result = handle.sessions.messages(info.id)) {
                     is ApiResult.Success -> {
                         val preview = result.value.reversed()

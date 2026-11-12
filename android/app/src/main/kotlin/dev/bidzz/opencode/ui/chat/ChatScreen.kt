@@ -695,6 +695,14 @@ fun ChatScreen(
         }
     }
 
+    // Which session the open effect has already scrolled for (below).
+    // Declared here so the follow effect can gate on it: on a fresh load
+    // both effects fire on the same size change, and the follow animation
+    // used to run first and the open snap second — a visible swoop then
+    // jump through the shared list mutex (Fase 2, 76-F2). The follow stays
+    // off until the open effect has landed this session.
+    var scrolledSessionID by remember { mutableStateOf<String?>(null) }
+
     // Follow keys include the last message's tools and parts: a stream
     // that only runs tools (no new text) used to never trigger a follow.
     LaunchedEffect(
@@ -708,7 +716,7 @@ fun ChatScreen(
         // used to yank the list out from under the reader's finger, which
         // is half of the "stuck scroll" feeling. After the gesture ends
         // the next token re-evaluates and follows normally.
-        if (state.messages.isNotEmpty() && nearBottom && !listState.isScrollInProgress) {
+        if (state.messages.isNotEmpty() && nearBottom && !listState.isScrollInProgress && scrolledSessionID == state.sessionID) {
             // Bottom-pin, not top-pin (see scrollToItemBottom). While
             // busy, #6e: animate when the remaining distance is small
             // so the list glides with the stream instead of snapping
@@ -733,10 +741,10 @@ fun ChatScreen(
     // happens — the reader lands at the top of the history instead.
     // The outgoing session's watermark is saved before the switch, so the
     // badge never shows a phantom count carried over from another session.
-    // This effect is declared after the follow effect, so when both fire on
-    // the same load its scroll wins and the reader lands on the unread
-    // message, not the bottom.
-    var scrolledSessionID by remember { mutableStateOf<String?>(null) }
+    // This effect is the single scroll owner on load (Fase 2, 76-F2):
+    // it sets scrolledSessionID, which is what lets the follow effect
+    // above run again — the old "declared after, so its scroll wins"
+    // comment was wrong, both effects ran through the same mutex.
     LaunchedEffect(state.sessionID, state.messages.size) {
         if (state.messages.isNotEmpty() && scrolledSessionID != state.sessionID) {
             scrolledSessionID?.let { readPositionStore.putReadCount(it, lastReadMessageCount) }

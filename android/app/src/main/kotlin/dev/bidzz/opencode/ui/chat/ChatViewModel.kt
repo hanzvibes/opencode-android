@@ -229,6 +229,42 @@ data class ChatMessage(
     val toolStartedAtMillis: Map<String, Long> = emptyMap(),
 )
 
+/** What the busy→idle edge does with the queued follow-ups (Fase 2, 13-F2/17-F1). */
+internal enum class RunEndAction {
+    /** Send the first queued entry now, as before. */
+    FLUSH,
+    /** Send nothing: the queue goes back to the composer instead. */
+    RETURN_TO_DRAFT,
+    /** No edge, no queue, or the flush cannot start — leave it alone. */
+    NONE,
+}
+
+/**
+ * Decides what the busy→idle edge does with the queued follow-ups (Fase 2,
+ * 13-F2/17-F1). Pure so the decision is testable without a live engine.
+ *
+ * The old code flushed whenever the run ended, which raced Stop two ways:
+ * when the interrupt event landed first the follow-up sent and restarted
+ * the run the user had just stopped, and when the HTTP interrupt returned
+ * first the queue stuck until another run ended. Stop now decides the
+ * queue explicitly: anything queued up to the end of a stopped run goes
+ * back to the composer — visible, sendable, never auto-sent — and the
+ * flush only fires for a run that ended on its own.
+ */
+internal fun resolveRunEndAction(
+    wasBusy: Boolean,
+    busy: Boolean,
+    stopping: Boolean,
+    hasQueued: Boolean,
+    sendInFlight: Boolean,
+    flushing: Boolean,
+    hasRepository: Boolean,
+): RunEndAction {
+    if (!wasBusy || busy) return RunEndAction.NONE
+    if (!hasQueued || sendInFlight || flushing || !hasRepository) return RunEndAction.NONE
+    return if (stopping) RunEndAction.RETURN_TO_DRAFT else RunEndAction.FLUSH
+}
+
 /**
  * Drives the chat screen.
  *
@@ -750,24 +786,41 @@ class ChatViewModel(
         )
 
         // The run just ended and follow-ups were queued while it worked:
-        // send the first one now. It goes straight to sendText — never back
-        // through the draft, so text the user typed after queueing is not
-        // overwritten, and never through send(), so pending attachments
-        // picked for the next message are not baked into it (item 16). The
-        // entry stays at the head of the queue while it sends (13-F1):
-        // dropping it first meant a failed send — 429, 401, session gone —
-        // lost the text with no way back, and the rest of the queue stuck
-        // behind it. [sendNow] settles it once the engine answers. Nothing
-        // is flushed while a send is still in flight, or while the engine
+        // send the first one now — unless this run was stopped (13-F2/
+        // 17-F1), in which case the queue goes back to the composer
+        // instead of starting a new run right after the Stop. The flush
+        // goes straight to sendText — never back through the draft, so
+        // text the user typed after queueing is not overwritten, and never
+        // through send(), so pending attachments picked for the next
+        // message are not baked into it (item 16). The entry stays at the
+        // head of the queue while it sends (13-F1): dropping it first
+        // meant a failed send — 429, 401, session gone — lost the text
+        // with no way back, and the rest of the queue stuck behind it.
+        // [sendNow] settles it once the engine answers. Nothing is
+        // flushed while a send is still in flight, or while the engine
         // is gone — the queue belongs to the draft then (item 8).
-        if (wasBusy && !chat.busy && !sendInFlight && flushingEntry == null && repository != null) {
-            val next = _state.value.queuedPrompts.firstOrNull()
-            if (next != null) {
-                flushingEntry = next
-                if (!sendText(next.fullText, next.typedText, emptyList())) {
-                    flushingEntry = null
+        when (
+            resolveRunEndAction(
+                wasBusy = wasBusy,
+                busy = chat.busy,
+                stopping = previous.stopping,
+                hasQueued = _state.value.queuedPrompts.isNotEmpty(),
+                sendInFlight = sendInFlight,
+                flushing = flushingEntry != null,
+                hasRepository = repository != null,
+            )
+        ) {
+            RunEndAction.FLUSH -> {
+                val next = _state.value.queuedPrompts.firstOrNull()
+                if (next != null) {
+                    flushingEntry = next
+                    if (!sendText(next.fullText, next.typedText, emptyList())) {
+                        flushingEntry = null
+                    }
                 }
             }
+            RunEndAction.RETURN_TO_DRAFT -> returnQueueToDraft()
+            RunEndAction.NONE -> Unit
         }
 
         // A queue restored after process death (audit-70 69-F2): the first
@@ -1642,7 +1695,20 @@ class ChatViewModel(
                     reportFailure(result, RetryKind.NONE)
                     _state.value = _state.value.copy(stopping = false)
                 }
-                is ApiResult.Success -> _state.value = _state.value.copy(busy = false, stopping = false)
+                is ApiResult.Success -> {
+                    // The interrupt only asked the engine to stop — it is
+                    // not the run ending (Fase 2, 13-F2/17-F1). Setting
+                    // busy=false here was optimistic and raced the queue
+                    // flush two ways: an interrupt event landing first let
+                    // the flush send a follow-up and restart the run just
+                    // stopped, and this branch landing first left the queue
+                    // stuck until another run ended. So busy and stopping
+                    // stay until the terminal event (or resync) clears
+                    // them, and the queue's fate is decided now: Stop
+                    // means stop, so the follow-ups go back to the
+                    // composer instead of auto-sending after it.
+                    returnQueueToDraft()
+                }
             }
         }
     }

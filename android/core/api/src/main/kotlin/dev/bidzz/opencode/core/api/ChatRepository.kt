@@ -1,10 +1,13 @@
 package dev.bidzz.opencode.core.api
 
 import android.util.Log
+import dev.bidzz.opencode.core.api.dto.CacheUsage
 import dev.bidzz.opencode.core.api.dto.EngineEvent
 import dev.bidzz.opencode.core.api.dto.EventTypes
 import dev.bidzz.opencode.core.api.dto.MessageContent
+import dev.bidzz.opencode.core.api.dto.MessageTime
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.core.api.dto.ToolCall
 import dev.bidzz.opencode.core.api.dto.toolOutput
 import dev.bidzz.opencode.core.api.dto.PendingPermission
@@ -54,6 +57,82 @@ data class ChatState(
 
 /** A tool call from the live stream, tied to the assistant message that owns it. */
 data class LiveTool(val messageID: String, val call: ToolCall)
+
+/**
+ * Sums two token usages bucket by bucket (Fase 2, 01-F3).
+ *
+ * The engine reports tokens per assistant chunk, and [ChatRepository] merges
+ * contiguous chunks into one message — but the merge kept only the last
+ * chunk's tokens while summing the cost, so the footer under-reported tokens
+ * for every multi-chunk run. A bucket is null only when both sides report
+ * nothing for it; cache read/write are subsets of input, summed like the
+ * rest, and the caller's total (which adds input + output + reasoning, never
+ * cache) still cannot double-count.
+ */
+internal fun mergeTokenUsage(a: TokenUsage?, b: TokenUsage?): TokenUsage? {
+    if (a == null) return b
+    if (b == null) return a
+    return TokenUsage(
+        input = sumOrNull(a.input, b.input),
+        output = sumOrNull(a.output, b.output),
+        reasoning = sumOrNull(a.reasoning, b.reasoning),
+        cache = mergeCacheUsage(a.cache, b.cache),
+    )
+}
+
+internal fun mergeCacheUsage(a: CacheUsage?, b: CacheUsage?): CacheUsage? {
+    if (a == null) return b
+    if (b == null) return a
+    return CacheUsage(
+        read = sumOrNull(a.read, b.read),
+        write = sumOrNull(a.write, b.write),
+    )
+}
+
+private fun sumOrNull(a: Long?, b: Long?): Long? =
+    if (a == null && b == null) null else (a ?: 0L) + (b ?: 0L)
+
+/**
+ * Merges two message timestamps (Fase 2, 01-F3).
+ *
+ * The merge used to keep the first chunk's time untouched, so a merged
+ * message never showed when its run actually finished. Created comes from
+ * the earlier chunk, completed from the later one, streamed is the latest
+ * of the two — the newest progress either chunk reported.
+ */
+internal fun mergeMessageTime(a: MessageTime?, b: MessageTime?): MessageTime? {
+    if (a == null) return b
+    if (b == null) return a
+    return MessageTime(
+        created = a.created ?: b.created,
+        streamed = listOfNotNull(a.streamed, b.streamed).maxOrNull(),
+        completed = b.completed ?: a.completed,
+    )
+}
+
+/**
+ * Message ids whose streaming buffers survive a resync (Fase 2, 03-F1).
+ *
+ * [chronological] is the history just fetched, oldest first. Live are the
+ * trailing assistant messages of the current run that have no completed
+ * time — the run's own tail — plus any id with a streaming entry that has
+ * no history row at all (the engine had not persisted it yet). A finished
+ * message is always the newest row, so it never qualifies through either
+ * arm, and a run that ended leaves this set empty.
+ */
+internal fun liveStreamingIds(
+    chronological: List<SessionMessage>,
+    streamingIds: Set<String>,
+): Set<String> {
+    val live = mutableSetOf<String>()
+    for (msg in chronological.asReversed()) {
+        if (!msg.isAssistant || msg.time?.completed != null) break
+        live += msg.id
+    }
+    val historyIds = chronological.map { it.id }.toSet()
+    live += streamingIds.filter { it !in historyIds }
+    return live
+}
 
 /**
  * Owns one session's conversation state.
@@ -183,7 +262,8 @@ class ChatRepository(
             content = target.content + addition.content,
             finish = addition.finish ?: target.finish,
             cost = (target.cost ?: 0.0) + (addition.cost ?: 0.0),
-            tokens = addition.tokens ?: target.tokens,
+            tokens = mergeTokenUsage(target.tokens, addition.tokens),
+            time = mergeMessageTime(target.time, addition.time),
             error = addition.error ?: target.error,
             model = addition.model ?: target.model,
             agent = addition.agent ?: target.agent,
@@ -221,10 +301,24 @@ class ChatRepository(
                 }
 
                 val newest = result.value.firstOrNull()
-                buffers.clear()
+                // A resync mid-run must not wipe the streaming text (Fase 2,
+                // 03-F1): the success path used to clear every buffer and
+                // every streaming entry, so the in-flight answer collapsed
+                // to the last delta until TEXT_ENDED. Keep the buffers of
+                // the messages that are still streaming — the trailing
+                // assistant messages without a completed time — and drop
+                // the rest: their text is in the history now. A message
+                // with a streaming entry but no history row yet (the
+                // engine had not persisted it when this call ran) is
+                // still streaming by definition, so it is kept too; a
+                // finished message is always the newest row, so it can
+                // never hide in that set. When the run is over the live
+                // set is empty and this is the old full clear.
+                val liveIds = liveStreamingIds(rawChronological, _state.value.streaming.keys)
+                buffers.keys.retainAll { (id, _) -> id in liveIds }
                 _state.value = _state.value.copy(
                     messages = chronological,
-                    streaming = emptyMap(),
+                    streaming = _state.value.streaming.filterKeys { it in liveIds },
                     liveTools = emptyMap(),
                     // A run is over when the newest entry is `idle`, or when the
                     // newest assistant message is finished. The second case matters:
