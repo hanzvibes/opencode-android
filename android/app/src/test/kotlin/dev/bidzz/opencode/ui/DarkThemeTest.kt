@@ -38,6 +38,29 @@ class DarkThemeTest {
         assertEquals(0xFF0A84FF.toInt(), Palette.darkAccent.toArgb())
     }
 
+    @Test
+    fun `dark muted and faint both pass AA on every dark surface`() {
+        // Opsi B restored the order (muted #AEAEB2 brighter than faint
+        // #9A9AA0); both must stay AA on black, raised, sunken and the
+        // new variant step #26262A.
+        val surfaces = listOf(
+            Palette.darkBackground,
+            Palette.darkSurfaceRaised,
+            Palette.darkSurfaceSunken,
+            Palette.darkSurfaceVariant,
+        )
+        for (surface in surfaces) {
+            assertTrue(
+                "muted on $surface is ${contrastRatio(Palette.darkOnSurfaceMuted, surface)}",
+                contrastRatio(Palette.darkOnSurfaceMuted, surface) >= 4.5,
+            )
+            assertTrue(
+                "faint on $surface is ${contrastRatio(Palette.darkOnSurfaceFaint, surface)}",
+                contrastRatio(Palette.darkOnSurfaceFaint, surface) >= 4.5,
+            )
+        }
+    }
+
     // ---- WCAG relative luminance, straight from the spec (mirrors WhiteThemeTest) ----
 
     private fun luminance(color: Color): Double {
