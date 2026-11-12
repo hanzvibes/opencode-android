@@ -345,9 +345,51 @@ fun ChatScreen(
 
     var lastReadMessageCount by remember { mutableStateOf(state.messages.size) }
 
+    // Read watermark, persisted per session (#6d): the in-memory count died
+    // with the process, so returning to a session always showed a phantom
+    // unread badge. The store is read on open (see the session effect
+    // below) and written whenever the watermark advances.
+    // NOTE: LocalContext.current must be read here, in the composable body —
+    // never inside remember {} (that lambda is not a @Composable context).
+    val appContext = LocalContext.current.applicationContext
+    val readPositionStore = remember { ReadPositionStore(appContext) }
+    fun saveReadCount() {
+        val id = state.sessionID ?: return
+        readPositionStore.putReadCount(id, lastReadMessageCount)
+    }
+
+    // Load-earlier anchor (#6d): captured when the reader taps "load
+    // earlier", restored once the older messages arrive — without it the
+    // list keeps its first-visible index while N older items are prepended
+    // above, so the viewport jumps up by a page. The session id is part
+    // of the anchor: a session switch mid-load drops it instead of
+    // restoring a stale position into the new session.
+    var pendingAnchor by remember { mutableStateOf<ScrollAnchor?>(null) }
+    var anchorBaseSize by remember { mutableIntStateOf(0) }
+    var anchorBaseHeadOffset by remember { mutableIntStateOf(0) }
+    var anchorSessionId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.loadingEarlier, state.messages.size) {
+        val anchor = pendingAnchor
+        if (anchor != null && !state.loadingEarlier) {
+            if (state.sessionID == anchorSessionId) {
+                val newHeadOffset = if (state.hasMoreOlder) 1 else 0
+                val target = computeRestoredIndex(
+                    anchorIndex = anchor.index,
+                    oldMessageCount = anchorBaseSize,
+                    newMessageCount = state.messages.size,
+                    oldHeadOffset = anchorBaseHeadOffset,
+                    newHeadOffset = newHeadOffset,
+                )
+                listState.scrollToItem(target, anchor.offset)
+            }
+            pendingAnchor = null
+        }
+    }
+
     LaunchedEffect(nearBottom, state.messages.size) {
         if (nearBottom) {
             lastReadMessageCount = state.messages.size
+            saveReadCount()
         }
     }
 
@@ -413,6 +455,7 @@ fun ChatScreen(
     LaunchedEffect(firstUnreadVisible, firstUnreadIndex) {
         if (firstUnreadVisible && firstUnreadIndex >= 0) {
             lastReadMessageCount = firstUnreadIndex + 1
+            saveReadCount()
         }
     }
 
@@ -642,19 +685,33 @@ fun ChatScreen(
         }
     }
 
-    // Opening an old session lands at the bottom (latest) once per session,
-    // and marks everything read so the jump-to-latest badge never shows a
-    // phantom count carried over from the previous session.
-    // Keyed on messages.size as well as the session: history loads
+    // Opening a session restores its read watermark (#6d) and lands on the
+    // first unread message when there is one, else the bottom — once per
+    // session. Keyed on messages.size as well as the session: history loads
     // asynchronously, so an effect keyed only on sessionID fires while
     // messages are still empty, its guard fails, and the scroll never
     // happens — the reader lands at the top of the history instead.
+    // The outgoing session's watermark is saved before the switch, so the
+    // badge never shows a phantom count carried over from another session.
+    // This effect is declared after the follow effect, so when both fire on
+    // the same load its scroll wins and the reader lands on the unread
+    // message, not the bottom.
     var scrolledSessionID by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.sessionID, state.messages.size) {
         if (state.messages.isNotEmpty() && scrolledSessionID != state.sessionID) {
-            listState.scrollToItemBottom(targetLastIndex)
-            lastReadMessageCount = state.messages.size
+            scrolledSessionID?.let { readPositionStore.putReadCount(it, lastReadMessageCount) }
+            val restored = state.sessionID?.let { readPositionStore.getReadCount(it) }
+                ?.coerceIn(0, state.messages.size)
+            lastReadMessageCount = restored ?: state.messages.size
             scrolledSessionID = state.sessionID
+            val firstUnread = state.messages.withIndex().firstOrNull { (index, message) ->
+                index >= lastReadMessageCount && message.role == Role.ASSISTANT
+            }?.index ?: -1
+            if (firstUnread >= 0) {
+                listState.scrollToItem(firstUnread + (if (state.hasMoreOlder) 1 else 0), 0)
+            } else {
+                listState.scrollToItemBottom(targetLastIndex)
+            }
         }
     }
 
@@ -973,7 +1030,14 @@ fun ChatScreen(
                                                 .clickable(
                                                     role = SemanticsRole.Button,
                                                     enabled = !state.loadingEarlier,
-                                                    onClick = onLoadEarlier,
+                                                    onClick = {
+                                                        pendingAnchor = listState.captureAnchor()
+                                                        anchorBaseSize = state.messages.size
+                                                        anchorBaseHeadOffset =
+                                                            if (state.hasMoreOlder) 1 else 0
+                                                        anchorSessionId = state.sessionID
+                                                        onLoadEarlier()
+                                                    },
                                                 )
                                                 .padding(
                                                     horizontal = spacing.md,
@@ -1217,6 +1281,10 @@ fun ChatScreen(
                                 },
                             )
                         }
+                        TranscriptScrollbar(
+                            listState = listState,
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                        )
                     }
 
                     // Subtle scrim overlay over chat history when command palette is active
