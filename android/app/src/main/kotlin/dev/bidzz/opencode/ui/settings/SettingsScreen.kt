@@ -638,7 +638,7 @@ private fun EngineStatusCard(
 
     // Floating white card (White B): the status card lifts off the #F9F9FA
     // page with the shadow tokens instead of sitting as a flat grey fill.
-    CardGroup(whiteCard = true) {
+    CardGroup {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -721,7 +721,7 @@ private fun Section(titleRes: Int, content: @Composable ColumnScope.() -> Unit) 
     )
     // Floating white card (White B): grouped rows sit on #FFFFFF with the
     // shadow tokens, not on a grey fill, against the #F9F9FA page.
-    CardGroup(whiteCard = true, content = content)
+    CardGroup(content = content)
 }
 
 /**

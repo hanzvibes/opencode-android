@@ -42,16 +42,20 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
  * Later phases apply this by name to the composer, session rows and
  * other surfaces; [CardGroup] already wires it through its `whiteCard`
  * parameter for grouped settings-style cards.
+ *
+ * [borderColor] overrides the 1dp edge (the connected-provider green
+ * edge, for example); null keeps the default [OpenCodeColors.cardBorder].
  */
 @Composable
-fun Modifier.whiteCard(): Modifier {
+fun Modifier.whiteCard(borderColor: Color? = null): Modifier {
     val colors = OpenCodeTheme.colors
     val tokens = OpenCodeTheme.tokens
     val shape = RoundedCornerShape(tokens.radius.lg)
+    val edge = borderColor ?: colors.cardBorder
     return if (colors.isDark) {
         clip(shape)
             .background(colors.surface)
-            .border(tokens.dimensions.hairline, colors.hairline, shape)
+            .border(tokens.dimensions.hairline, edge, shape)
     } else {
         val shadow = tokens.shadow.card
         shadow(
@@ -62,7 +66,7 @@ fun Modifier.whiteCard(): Modifier {
         )
             .clip(shape)
             .background(colors.surface)
-            .border(tokens.shadow.cardBorderWidth, colors.cardBorder, shape)
+            .border(tokens.shadow.cardBorderWidth, edge, shape)
     }
 }
 
@@ -71,14 +75,14 @@ fun Modifier.whiteCard(): Modifier {
 fun CardGroup(
     modifier: Modifier = Modifier,
     /**
-     * When true, the group renders as a floating white card ([whiteCard]):
-     * 16dp radius, 1dp #EBEBEB border, shadow tokens — instead of the
-     * flat surface + hairline. Light theme only; in dark the treatment
-     * falls back to the flat surface, so the parameter is safe to set
-     * unconditionally. Settings uses this; other grouped screens keep
-     * the flat treatment until their own phase opts in.
+     * When true (the default since Opsi B #41), the group renders as a
+     * floating white card ([whiteCard]): 16dp radius, 1dp #EBEBEB border,
+     * shadow tokens — instead of the flat surface + hairline. Light theme
+     * only; in dark the treatment falls back to the flat surface, so the
+     * parameter is safe to set unconditionally. Set false only for a
+     * deliberately flat group.
      */
-    whiteCard: Boolean = false,
+    whiteCard: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
