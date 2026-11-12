@@ -29,6 +29,7 @@ import dev.bidzz.opencode.core.api.dto.UsageMeter
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.stats.formatStatsCost
@@ -74,7 +75,7 @@ fun UsageLimitsScreen(
                 modifier = Modifier.padding(bottom = spacing.sm),
             )
             when {
-                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.info == null -> EmptyState(stringResource(R.string.usage_empty))
                 else -> UsageContent(info = state.info)
             }

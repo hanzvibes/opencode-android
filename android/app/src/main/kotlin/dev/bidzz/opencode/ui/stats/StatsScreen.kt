@@ -24,6 +24,7 @@ import dev.bidzz.opencode.core.api.dto.StatsToolUsage
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
@@ -67,7 +68,7 @@ fun StatsScreen(
                 modifier = Modifier.padding(bottom = spacing.sm),
             )
             when {
-                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.failure != null || state.stats == null ->
                     EmptyState(stringResource(R.string.stats_empty))
                 else -> StatsContent(stats = state.stats)

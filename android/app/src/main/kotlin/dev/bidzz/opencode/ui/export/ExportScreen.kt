@@ -25,6 +25,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
 
@@ -72,7 +73,7 @@ fun ExportScreen(
                 color = colors.onSurfaceMuted,
             )
             when {
-                state.loading -> EmptyState(stringResource(R.string.common_loading))
+                state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.failure != null -> EmptyState(state.failure.message(), isError = true)
                 state.export == null -> EmptyState(stringResource(R.string.export_empty))
                 else -> {

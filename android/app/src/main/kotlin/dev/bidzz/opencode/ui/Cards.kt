@@ -17,21 +17,30 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import kotlinx.coroutines.delay
 
 /**
  * Floating white card treatment (White B, light theme only).
@@ -290,6 +299,69 @@ fun EmptyState(
                 .widthIn(max = 720.dp)
                 .padding(spacing.xxl),
         )
+    }
+}
+
+/**
+ * The one loading state for list/detail screens (Opsi B #4c): a centered
+ * spinner in the same style as the chat engine-loading spinner
+ * (`dims.iconLarge`, 2dp stroke, `colors.accent`) with the loading text
+ * below it, capped at the 720dp content width like [EmptyState].
+ *
+ * The retry button ([R.string.chat_retry]) appears only after
+ * [retryAfterMs] (default 15s) and only when [onRetry] is given: engine
+ * calls normally finish in seconds, so 15s means "stuck". The timer is a
+ * `LaunchedEffect(Unit)` inside this composable, so it is cancelled
+ * automatically when loading finishes and the composable leaves the
+ * composition — it never leaks.
+ *
+ * Screens without a refresh callback (SessionList, Diff, SessionDiff)
+ * pass `onRetry = null` and never show the button.
+ */
+@Composable
+fun LoadingState(
+    text: String,
+    modifier: Modifier = Modifier,
+    onRetry: (() -> Unit)? = null,
+    retryAfterMs: Long = 15_000,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val dims = OpenCodeTheme.tokens.dimensions
+    var showRetry by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(retryAfterMs)
+        showRetry = true
+    }
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(spacing.md),
+            modifier = Modifier
+                .widthIn(max = 720.dp)
+                .padding(spacing.xxl),
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(dims.iconLarge),
+                strokeWidth = 2.dp,
+                color = colors.accent,
+            )
+            Text(
+                text = text,
+                style = OpenCodeTypography.body,
+                color = colors.onSurfaceMuted,
+                textAlign = TextAlign.Center,
+            )
+            if (showRetry && onRetry != null) {
+                TonalButton(
+                    label = stringResource(R.string.chat_retry),
+                    onClick = onRetry,
+                )
+            }
+        }
     }
 }
 

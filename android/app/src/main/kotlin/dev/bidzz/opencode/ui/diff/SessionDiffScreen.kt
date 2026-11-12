@@ -8,10 +8,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
-import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.message
 
 /**
@@ -36,10 +36,10 @@ fun SessionDiffScreen(
         return
     }
     when {
-        state.loading -> CenteredText(stringResource(R.string.diff_loading))
-        state.failure != null -> CenteredText(state.failure.message())
-        state.failureKey != null -> CenteredText(stringResource(state.failureKey))
-        state.files.isEmpty() -> CenteredText(stringResource(R.string.sessiondiff_empty))
+        state.loading -> LoadingState(stringResource(R.string.diff_loading))
+        state.failure != null -> EmptyState(state.failure.message(), isError = true)
+        state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
+        state.files.isEmpty() -> EmptyState(stringResource(R.string.sessiondiff_empty))
         else -> DiffListScreen(
             changed = state.changed,
             onBack = onBack,
@@ -48,18 +48,3 @@ fun SessionDiffScreen(
     }
 }
 
-@Composable
-private fun CenteredText(text: String) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(spacing.xxl),
-        )
-    }
-}

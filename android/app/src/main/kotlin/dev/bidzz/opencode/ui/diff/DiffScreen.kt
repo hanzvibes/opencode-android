@@ -42,6 +42,8 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.files.DiffUiState
 import dev.bidzz.opencode.ui.message
@@ -80,11 +82,11 @@ fun DiffScreen(
         },
     ) {
         when {
-            state.loading -> Centered(stringResource(R.string.diff_loading))
-            state.gitUnavailable -> Centered(stringResource(R.string.diff_git_unavailable))
-            state.failure != null -> Centered(state.failure.message())
-            state.failureKey != null -> Centered(stringResource(state.failureKey))
-            state.hunks.isEmpty() -> Centered(stringResource(R.string.diff_none))
+            state.loading -> LoadingState(stringResource(R.string.diff_loading))
+            state.gitUnavailable -> EmptyState(stringResource(R.string.diff_git_unavailable), isError = true)
+            state.failure != null -> EmptyState(state.failure.message(), isError = true)
+            state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
+            state.hunks.isEmpty() -> EmptyState(stringResource(R.string.diff_none))
             mode == DiffViewMode.Unified -> UnifiedDiffView(state = state)
             mode == DiffViewMode.Split -> SplitDiffView(state = state)
         }
@@ -509,18 +511,3 @@ private fun SplitDiffRow(pair: DiffSideBySideRow, colors: OpenCodeColors) {
 
 private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-@Composable
-private fun Centered(text: String) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = text,
-            style = OpenCodeTypography.body,
-            color = colors.onSurfaceMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(spacing.xxl),
-        )
-    }
-}
