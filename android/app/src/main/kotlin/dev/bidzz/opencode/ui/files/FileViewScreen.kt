@@ -796,7 +796,9 @@ private fun FileViewStatusBar(
             Text(
                 text = fileInfo.language,
                 style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.Medium),
-                color = fileInfo.color,
+                // The brand colour as text is 2.14:1 for Rust — use the
+                // AA-safe text variant, same as the badge (FileTypes.kt).
+                color = if (colors.isDark) fileInfo.darkTextColor else fileInfo.textColor,
             )
             Text(
                 text = "UTF-8",
