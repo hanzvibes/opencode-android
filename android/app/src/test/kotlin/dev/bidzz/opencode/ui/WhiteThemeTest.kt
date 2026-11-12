@@ -190,6 +190,20 @@ class WhiteThemeTest {
         )
     }
 
+    @Test
+    fun `accent fill is 005FCC and white text on it passes AA`() {
+        // Every solid button/badge/chip fill that carries white onAccent
+        // text uses accentFill, not the bright accent: white on #005FCC
+        // is 5.98:1, white on #007AFF is only 4.02:1.
+        assertEquals(0xFF005FCC.toInt(), Palette.lightAccentFill.toArgb())
+        assertTrue(
+            contrastRatio(Color(0xFFFFFFFF), Palette.lightAccentFill) >= 4.5,
+        )
+        // The fill is its own token, not an alias of the bright accent:
+        // aliasing it back to #007AFF would silently reintroduce 4.02:1.
+        assertTrue(Palette.lightAccentFill.toArgb() != Palette.lightAccent.toArgb())
+    }
+
     // ---- WCAG relative luminance, straight from the spec ----
 
     private fun luminance(color: Color): Double {

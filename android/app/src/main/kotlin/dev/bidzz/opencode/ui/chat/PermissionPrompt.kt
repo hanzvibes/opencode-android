@@ -299,7 +299,7 @@ fun PermissionPrompt(
         ) {
             PermissionAction(
                 label = stringResource(R.string.permission_allow_once),
-                backgroundColor = colors.accent,
+                backgroundColor = colors.accentFill,
                 contentColor = colors.onAccent,
                 enabled = !replied,
                 onClick = {

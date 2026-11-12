@@ -96,9 +96,18 @@ data class OpenCodeColors(
      * in light it is the darkened #005FCC (5.98:1 on white, 5.69:1 on
      * background #F9F9FA, 5.59:1 on sunken #F7F7F8) because [accent]
      * #007AFF is only 4.02:1 on white and must never be used as text.
-     * Dots, fills and backgrounds keep [accent].
+     * Dots, bars, cursors and tints keep [accent]; solid fills that carry
+     * [onAccent] text or icons use [accentFill] instead.
      */
     val accentText: Color = accent,
+    /**
+     * Solid fill for buttons, badges and chips that carry [onAccent]
+     * (white) text or icons. Light #005FCC (white on it 5.98:1), dark
+     * #0066CC (white on it 5.57:1) — both AA. The bright [accent]
+     * (#007AFF / #0A84FF) is only 4.02:1 / 3.65:1 with white text, so no
+     * text-bearing fill may use it.
+     */
+    val accentFill: Color = accent,
     /** Vivid success for dots/fills only. In dark == [success]; in light
      *  == bright #34C759 (2.22:1 on white — never as text). */
     val successBright: Color = success,
@@ -300,6 +309,7 @@ private val DarkColors = OpenCodeColors(
     danger = Palette.danger,
     neutral = Palette.neutral,
     accentText = Palette.darkAccent,
+    accentFill = Palette.darkAccentFill,
     successBright = Palette.success,
     warningBright = Palette.warning,
     dangerBright = Palette.danger,
@@ -371,6 +381,7 @@ private val LightColors = OpenCodeColors(
     danger = Palette.lightDangerText,
     neutral = Palette.lightAccentText,
     accentText = Palette.lightAccentText,
+    accentFill = Palette.lightAccentFill,
     successBright = Palette.successLight,
     warningBright = Palette.warningLight,
     dangerBright = Palette.dangerLight,
@@ -453,6 +464,7 @@ private fun OpenCodeColors.animated(animationSpec: AnimationSpec<Color>): OpenCo
     danger = animateColorAsState(danger, animationSpec, label = "danger").value,
     neutral = animateColorAsState(neutral, animationSpec, label = "neutral").value,
     accentText = animateColorAsState(accentText, animationSpec, label = "accentText").value,
+    accentFill = animateColorAsState(accentFill, animationSpec, label = "accentFill").value,
     successBright = animateColorAsState(successBright, animationSpec, label = "successBright").value,
     warningBright = animateColorAsState(warningBright, animationSpec, label = "warningBright").value,
     dangerBright = animateColorAsState(dangerBright, animationSpec, label = "dangerBright").value,
@@ -534,7 +546,10 @@ fun OpenCodeTheme(
 
     val material = if (darkTheme) {
         darkColorScheme(
-            primary = colors.accent,
+            // M3 primary is the button-fill pair (primary/onPrimary), so it
+            // is the AA-safe fill, not the bright accent: white on #0066CC
+            // is 5.57:1 in dark, white on #005FCC is 5.98:1 in light.
+            primary = colors.accentFill,
             onPrimary = colors.onAccent,
             background = colors.background,
             onBackground = colors.onSurface,
@@ -547,7 +562,7 @@ fun OpenCodeTheme(
         )
     } else {
         lightColorScheme(
-            primary = colors.accent,
+            primary = colors.accentFill,
             onPrimary = colors.onAccent,
             background = colors.background,
             onBackground = colors.onSurface,

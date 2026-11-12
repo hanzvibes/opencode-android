@@ -939,7 +939,7 @@ private fun PrimaryButton(text: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(radius.md))
-            .background(colors.accent)
+            .background(colors.accentFill)
             .clickable(onClick = onClick)
             .padding(horizontal = spacing.lg, vertical = spacing.sm),
     ) {

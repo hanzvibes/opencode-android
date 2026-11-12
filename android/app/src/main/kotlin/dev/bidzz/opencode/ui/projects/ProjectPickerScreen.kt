@@ -244,7 +244,7 @@ private fun ChooseFolderButton(onClick: () -> Unit, modifier: Modifier = Modifie
             .fillMaxWidth()
             .heightIn(min = 52.dp)
             .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.lg))
-            .background(colors.accent)
+            .background(colors.accentFill)
             .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = spacing.lg),
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,

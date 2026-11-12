@@ -172,7 +172,7 @@ private fun ProjectStep(
                 else R.string.onboarding_continue,
             ),
             onClick = if (samplePath == null) onCreateSample else onSampleContinue,
-            fill = colors.accent,
+            fill = colors.accentFill,
             color = colors.onAccent,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -207,7 +207,7 @@ private fun ProviderStep(
         TonalButton(
             label = stringResource(R.string.onboarding_open_providers),
             onClick = onOpenProviders,
-            fill = colors.accent,
+            fill = colors.accentFill,
             color = colors.onAccent,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -246,7 +246,7 @@ private fun PermissionsStep(
             TonalButton(
                 label = stringResource(R.string.onboarding_grant_access),
                 onClick = onGrantAllFilesAccess,
-                fill = colors.accent,
+                fill = colors.accentFill,
                 color = colors.onAccent,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -254,7 +254,7 @@ private fun PermissionsStep(
         TonalButton(
             label = stringResource(R.string.onboarding_finish),
             onClick = onFinish,
-            fill = if (hasAllFilesAccess) colors.accent else colors.fill,
+            fill = if (hasAllFilesAccess) colors.accentFill else colors.fill,
             color = if (hasAllFilesAccess) colors.onAccent else colors.onSurface,
             modifier = Modifier.fillMaxWidth(),
         )

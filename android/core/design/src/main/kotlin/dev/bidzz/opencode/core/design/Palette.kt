@@ -68,6 +68,10 @@ object Palette {
 
     val darkAccent = systemBlueDark
     val darkOnAccent = Color(0xFFFFFFFF)
+    // Accent FILL for buttons/badges/chips that carry onAccent (white)
+    // text or icons. White on #0066CC is 5.57:1 (AA); white on the bright
+    // #0A84FF is only 3.65:1, so dark fills never use darkAccent itself.
+    val darkAccentFill = Color(0xFF0066CC)
 
     // NEUTRAL user bubble (Phase 1 §7): the raised surface, not blue.
     // The old deepened blues #0062D6 / #0066CC are gone on purpose — a blue
@@ -171,9 +175,14 @@ object Palette {
     // The old #FF3B30 was 3.55:1 on white — same failure as success/warning.
     val lightDangerText = Color(0xFFB3261E)
     // accent-as-text: 5.98 / 5.69 / 5.59 / 5.50 (was 5.98 / 4.77 / 5.03).
-    // The accent itself (#007AFF, 4.02:1 on white) stays for dots/fills/
-    // backgrounds only.
+    // The accent itself (#007AFF, 4.02:1 on white) stays for dots, bars,
+    // cursors and tints only — never as text, and never as a fill under
+    // onAccent text (see accentFill below).
     val lightAccentText = Color(0xFF005FCC)
+    // Accent FILL for buttons/badges/chips that carry onAccent (white)
+    // text or icons. White on #005FCC is 5.98:1 (AA); white on the bright
+    // #007AFF is only 4.02:1, so light fills never use lightAccent itself.
+    val lightAccentFill = Color(0xFF005FCC)
 
     // ---- Syntax roles for code blocks ----
     // SINGLE source of truth (Phase 1 §5). The slate/violet palette

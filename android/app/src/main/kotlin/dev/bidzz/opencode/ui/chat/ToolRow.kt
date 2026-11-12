@@ -373,10 +373,10 @@ fun ToolTrace(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(radius.full))
-                            .background(if (selected) colors.accent else colors.fill)
+                            .background(if (selected) colors.accentFill else colors.fill)
                             .border(
                                 0.5.dp,
-                                if (selected) colors.accent else colors.hairline,
+                                if (selected) colors.accentFill else colors.hairline,
                                 RoundedCornerShape(radius.full),
                             )
                             .clickable(role = Role.Button) { filter = option }
@@ -1892,7 +1892,7 @@ private fun DiffDecisionRow(
                         .weight(1f)
                         .defaultMinSize(minHeight = 48.dp)
                         .clip(RoundedCornerShape(radius.sm))
-                        .background(colors.accent)
+                        .background(colors.accentFill)
                         .clickable(role = Role.Button, onClick = onAccept)
                         .padding(horizontal = spacing.xs, vertical = spacing.sm),
                     contentAlignment = Alignment.Center,
