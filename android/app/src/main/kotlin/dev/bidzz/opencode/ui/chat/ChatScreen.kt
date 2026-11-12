@@ -139,6 +139,7 @@ import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.files.FileRow
 import dev.bidzz.opencode.ui.files.rankQuickOpen
 import dev.bidzz.opencode.ui.PersistentSidebarWidth
+import dev.bidzz.opencode.ui.PrimaryButton
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
@@ -2879,10 +2880,13 @@ private fun ChatDrawerContent(
 
         // New session is the primary action: a filled accent button,
         // not another tinted row like Files / All sessions below it.
-        SidebarPrimaryButton(
+        // The drawer inset lives at the call site — PrimaryButton
+        // itself carries no drawer-specific padding.
+        PrimaryButton(
             label = stringResource(R.string.chat_new_session),
             glyph = Glyph.NewChat,
             onClick = onNewSession,
+            modifier = Modifier.padding(horizontal = spacing.sm, vertical = spacing.xxs),
         )
         DrawerItem(
             label = stringResource(R.string.drawer_files),
@@ -3333,43 +3337,7 @@ private fun SidebarSearchField(
     }
 }
 
-/** The primary New session action: a filled accent button, 48dp tall. */
-@Composable
-private fun SidebarPrimaryButton(
-    label: String,
-    glyph: Glyph,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val dims = OpenCodeTheme.tokens.dimensions
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.sm, vertical = spacing.xxs)
-            .height(dims.minTouchTarget)
-            .clip(RoundedCornerShape(radius.md))
-            .background(colors.accentFill)
-            .clickable(role = SemanticsRole.Button, onClick = onClick)
-            .padding(horizontal = spacing.md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        GlyphIcon(glyph, tint = colors.onAccent, size = dims.iconMedium)
-        Text(
-            text = label,
-            style = OpenCodeTypography.bodyStrong,
-            color = colors.onAccent,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = spacing.sm),
-        )
-    }
-}
-
+/** A drawer row: icon + label, tinted when active. */
 @Composable
 private fun DrawerItem(
     label: String,
@@ -4006,21 +3974,10 @@ private fun EmptyChat(
                         )
                         if (onStatusClick != null) {
                             Spacer(Modifier.height(spacing.md))
-                            Box(
-                                modifier = Modifier
-                                    .defaultMinSize(minHeight = dims.minTouchTarget)
-                                    .clip(RoundedCornerShape(radius.full))
-                                    .background(colors.accentFill)
-                                    .clickable(role = SemanticsRole.Button, onClick = onStatusClick)
-                                    .padding(horizontal = spacing.lg, vertical = spacing.sm),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.chat_status_dialog_diagnostics),
-                                    style = OpenCodeTypography.label.copy(fontWeight = FontWeight.SemiBold),
-                                    color = colors.onAccent,
-                                )
-                            }
+                            PrimaryButton(
+                                label = stringResource(R.string.chat_status_dialog_diagnostics),
+                                onClick = onStatusClick,
+                            )
                         }
                     }
                 } else if (visibleStarters.isNotEmpty()) {
