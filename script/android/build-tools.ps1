@@ -33,7 +33,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 $GitVersion = "2.56.0"
+# SHA-256 of the upstream tarballs, pinned (audit-100 Fase 4, 63-F3): a moved tag or a
+# compromised mirror must fail the build loudly instead of silently shipping different
+# source. The git hash is also published in sha256sums.asc at the kernel.org mirror;
+# the ripgrep hash is the GitHub-generated archive for the pinned tag - re-derive it
+# from a fresh download if the tag ever moves (the build will fail first).
+$GitSha256 = "826817fd3671b8565586d6d49f688298de8354ab11db829c02720e5c74b9b39f"
 $RipgrepVersion = "15.1.0"
+$RipgrepSha256 = "046fa01a216793b8bd2750f9d68d4ad43986eb9c0d6122600f993906012972e8"
 $AndroidApi = "29"
 
 # Paths with spaces break the tools' own shell invocations (see handoff.md §7:
@@ -88,6 +95,14 @@ function Get-AbiConfig([string]$name) {
     return @{ Clang = "x86_64-linux-android$AndroidApi-clang.cmd"; UnameM = "x86_64"; Machine = 0x3E; Rust = "x86_64-linux-android" }
 }
 
+# Fails hard when a downloaded tarball does not match its pinned SHA-256.
+function Assert-Sha256([string]$file, [string]$expected) {
+    $actual = (Get-FileHash -Algorithm SHA256 -Path $file).Hash.ToLowerInvariant()
+    if ($actual -ne $expected.ToLowerInvariant()) {
+        throw "SHA-256 mismatch for $file`: expected $expected, got $actual"
+    }
+}
+
 # --- sources -----------------------------------------------------------------
 
 function Get-Sources {
@@ -98,6 +113,7 @@ function Get-Sources {
             Write-Host "downloading git $GitVersion"
             Invoke-WebRequest "https://mirrors.edge.kernel.org/pub/software/scm/git/git-$GitVersion.tar.gz" -OutFile $tarball -UseBasicParsing
         }
+        Assert-Sha256 $tarball $GitSha256
         # gzip, not xz: Windows' bundled bsdtar has no xz support.
         & tar.exe -xzf $tarball -C $WorkDir
     }
@@ -109,6 +125,7 @@ function Get-Sources {
             Write-Host "downloading ripgrep $RipgrepVersion"
             Invoke-WebRequest "https://github.com/BurntSushi/ripgrep/archive/refs/tags/$RipgrepVersion.tar.gz" -OutFile $tarball -UseBasicParsing
         }
+        Assert-Sha256 $tarball $RipgrepSha256
         & tar.exe -xzf $tarball -C $WorkDir
     }
     return @{ Git = $srcGit; Rg = $srcRg }

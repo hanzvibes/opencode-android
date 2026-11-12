@@ -23,6 +23,7 @@ child processes. They are **not** linked into the app.
 | Licence | **GPL-2.0** (GNU General Public License, version 2) |
 | Upstream | https://git-scm.com/ · https://github.com/git/git |
 | Source used | https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.56.0.tar.gz |
+| Source SHA-256 | `826817fd3671b8565586d6d49f688298de8354ab11db829c02720e5c74b9b39f` (also published in `sha256sums.asc` at the same mirror) |
 | Modifications | **None.** Built from unmodified upstream source. |
 | Build | `script/android/build-tools.ps1` — see `docs/BUILD.md` |
 
@@ -37,9 +38,10 @@ that does apply is to make the corresponding source available:
   used (`NO_CURL`, `NO_OPENSSL`, `NO_GETTEXT`, `NO_RUST`, `NO_PTHREADS`, ...), so
   the binary is reproducible from that tarball.
 
-Every release must attach that tarball (or a link to it) next to the APK.
-
-The GPL-2.0 licence text is in `licenses/GPL-2.0.txt`.
+Every release attaches that tarball next to the APK (CI downloads it, verifies the
+SHA-256 above, and uploads it to the same release — see `.github/workflows/ci.yml`).
+The GPL-2.0 licence text is in `licenses/GPL-2.0.txt` (also bundled in the APK at
+`assets/licenses/GPL-2.0.txt`).
 
 ### ripgrep 15.1.0 — `librg.so`
 
@@ -166,8 +168,8 @@ the ones in `android/gradle/libs.versions.toml`.
 | Inter (bundled TTFs in `core/design/src/main/res/font/`) | — | OFL-1.1 | https://github.com/rsms/inter |
 | JetBrains Mono (bundled TTFs in `core/design/src/main/res/font/`) | — | OFL-1.1 | https://github.com/JetBrains/JetBrainsMono |
 
-Apache-2.0 licence text: https://www.apache.org/licenses/LICENSE-2.0.
-The OFL-1.1 text is in `licenses/OFL.txt`.
+The Apache-2.0 licence text is in `licenses/Apache-2.0.txt` (also bundled in the APK
+at `assets/licenses/Apache-2.0.txt`). The OFL-1.1 text is in `licenses/OFL.txt`.
 
 Test-only dependencies (JUnit, `org.json`, `kotlinx-coroutines-test`) are
 not shipped in the APK, so they are not listed here.
@@ -239,7 +241,30 @@ above is the Termux package source
 (https://github.com/termux/termux-packages — `packages/tar`,
 `packages/binutils`), and the pinned `.deb` files are fetchable from
 https://packages.termux.dev/apt/termux-main/ (pool paths and SHA256 pins are
-in `script/android/stage-xz.sh`).
+in `script/android/stage-xz.sh`). Every release also attaches the upstream
+source tarballs next to the APK (CI downloads them and verifies the SHA-256
+below before uploading):
+
+| Tarball | SHA-256 |
+|---|---|
+| `tar-1.35.tar.gz` (https://ftp.gnu.org/gnu/tar/tar-1.35.tar.gz) | `14d55e32063ea9526e057fbf35fcabd53378e769787eff7919c3755b02d2b57e` |
+| `binutils-2.47.tar.gz` (https://ftp.gnu.org/gnu/binutils/binutils-2.47.tar.gz) | `15f5abd0db9cf8ea116f516a9ce12bc1cefef491ef9e50942868093d8f92a6f3` |
+
+The GPL-3.0 licence text is in `licenses/GPL-3.0.txt`, the LGPL-2.1 text in
+`licenses/LGPL-2.1.txt` (both also bundled in the APK at
+`assets/licenses/`).
+
+### Written offer for Corresponding Source
+
+For every GPL-2.0 and GPL-3.0 component shipped in the APK, the Corresponding
+Source is either attached to the same GitHub release as the APK or available
+at the pinned upstream URLs above. If a release ever lacks an attachment, or
+if you cannot fetch it from upstream, you may request the complete
+machine-readable Corresponding Source for the exact versions listed in this
+file — including the build scripts and flags in `script/android/` — by opening
+an issue at https://github.com/hanzvibes/opencode-android/issues. This offer
+is valid for as long as the corresponding APK is distributed, and for at least
+three years after that distribution ends.
 
 ### curl — `libcurl-cli.so` (+ libcurl and support libs)
 
