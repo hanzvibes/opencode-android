@@ -157,6 +157,16 @@ data class QueuedPrompt(
     }
 }
 
+/**
+ * Drops the flushed head entry after the engine accepted it (13-F1). Pure,
+ * so the rule is unit-tested here rather than through a send: the head
+ * leaves only when it is the entry that was sent — a different head (the
+ * user queued more while the send was in flight) stays put, and a null
+ * entry drops nothing.
+ */
+internal fun resolveFlushDrop(queue: List<QueuedPrompt>, sent: QueuedPrompt?): List<QueuedPrompt> =
+    if (sent != null && queue.firstOrNull() == sent) queue.drop(1) else queue
+
 /** What the error banner's Retry button does for the current failure. */
 enum class RetryKind {
     /** No retry is offered (non-retryable failure, or nothing failed). */
@@ -245,6 +255,12 @@ class ChatViewModel(
      * session that was just abandoned (item 14).
      */
     private val onSessionCleared: () -> Unit = {},
+    /**
+     * Where parked composers live (Fase 1a). Defaults to in-memory, which
+     * is what unit tests get; the app passes the SharedPreferences-backed
+     * store so parked drafts survive process death (57-F1).
+     */
+    private val parkedStore: ParkedComposerStore = InMemoryParkedComposerStore(),
 ) : ViewModel() {
 
     /**
@@ -374,33 +390,70 @@ class ChatViewModel(
     private var draftBeforeEdit: String? = null
 
     /**
-     * Composer contents parked per session (audit-70 20-F4): switching
-     * sessions used to throw the draft and its attachments away, so coming
-     * back to the session found an empty composer. The outgoing session's
-     * composer is parked under its id and restored when that session is
-     * opened again. In-memory only, like [draftBeforeEdit]: parked
-     * composers do not survive process death — the live draft alone is
-     * persisted via [DRAFT_KEY].
+     * Key the live draft was last parked under, or null. After the engine
+     * dies the live draft belongs to a session that no longer has an id in
+     * state (80-F5): parking it again on the next switch must refresh that
+     * session's entry, not file the same text under the unsent key as well
+     * — two copies would let the text come back twice. Typing clears it:
+     * the parked copy no longer matches the live draft.
      */
-    private data class ParkedComposer(val draft: String, val attachments: List<AttachedFile>)
+    private var lastParkKey: String? = null
 
-    private val parkedComposers = mutableMapOf<String, ParkedComposer>()
-
-    /** Parks the current session's composer, if it holds anything. */
+    /**
+     * Parks the current composer — draft, pending attachments and queued
+     * follow-ups (13-F6) — under the current session's id, or under
+     * [UNSENT_SESSION_KEY] when there is no session yet (95-F6), or under
+     * [lastParkKey] when the live draft was already parked for a session
+     * that has since lost its id (80-F5). Parking nothing removes the
+     * entry, so a sent draft never comes back.
+     */
     private fun parkComposer() {
-        val id = _state.value.sessionID ?: return
+        val id = _state.value.sessionID ?: lastParkKey ?: UNSENT_SESSION_KEY
         val draft = _state.value.draft
         val attachments = _state.value.pendingAttachments
-        if (draft.isNotBlank() || attachments.isNotEmpty()) {
-            parkedComposers[id] = ParkedComposer(draft, attachments)
+        val queued = _state.value.queuedPrompts
+        if (draft.isNotBlank() || attachments.isNotEmpty() || queued.isNotEmpty()) {
+            parkedStore.put(id, ParkedComposer(draft, attachments, queued))
+            lastParkKey = id
         } else {
-            parkedComposers.remove(id)
+            parkedStore.remove(id)
+            if (lastParkKey == id) lastParkKey = null
         }
     }
 
     /** Takes the parked composer for [sessionID], if the user left one there. */
-    private fun takeParkedComposer(sessionID: String): ParkedComposer? =
-        parkedComposers.remove(sessionID)
+    private fun takeParkedComposer(sessionID: String): ParkedComposer? {
+        val parked = parkedStore.get(sessionID) ?: return null
+        parkedStore.remove(sessionID)
+        if (lastParkKey == sessionID) lastParkKey = null
+        return parked
+    }
+
+    /**
+     * The follow-up the flush is currently sending (13-F1). It stays at
+     * the head of the queue until the engine answers: dropping it first
+     * meant a failed send lost the text with no way back, and the rest of
+     * the queue stuck behind it. [sendNow] settles it — dropping it on
+     * success, leaving it queued on failure or abandonment.
+     */
+    private var flushingEntry: QueuedPrompt? = null
+
+    /**
+     * Settles a flushed entry once the send resolves. On success the head
+     * entry leaves the live queue and its parked copy goes too, so
+     * reopening the session cannot send it a second time; on failure or
+     * abandonment the entry stays queued (and parked, if the user has
+     * switched away since) for the next run to end or the next retry.
+     */
+    private fun settleFlushedEntry(sessionID: String?, sent: Boolean) {
+        val entry = flushingEntry ?: return
+        flushingEntry = null
+        if (!sent) return
+        _state.value = _state.value.copy(
+            queuedPrompts = resolveFlushDrop(_state.value.queuedPrompts, entry),
+        )
+        if (sessionID != null) parkedStore.removeQueued(sessionID, entry)
+    }
 
     /**
      * Moves the queued follow-ups (and their attachments) back into the
@@ -462,6 +515,12 @@ class ChatViewModel(
                     // whatever the user typed since — with a notice, instead
                     // of vanishing with the queue.
                     val anythingReturned = returnQueueToDraft()
+                    // Park the draft before the session id is zeroed below
+                    // (80-F5): the switch that follows calls parkComposer()
+                    // when the id is already null, which no-ops for a real
+                    // session — and the draft would be overwritten by the
+                    // next session's composer with no copy anywhere.
+                    parkComposer()
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
@@ -695,17 +754,19 @@ class ChatViewModel(
         // through the draft, so text the user typed after queueing is not
         // overwritten, and never through send(), so pending attachments
         // picked for the next message are not baked into it (item 16). The
-        // entry leaves the queue before sending so a failed send cannot
-        // re-queue it in a loop; the rest wait for the next run to end.
-        // Nothing is flushed while a send is still in flight, or while the
-        // engine is gone — the queue belongs to the draft then (item 8).
-        if (wasBusy && !chat.busy && !sendInFlight && repository != null) {
+        // entry stays at the head of the queue while it sends (13-F1):
+        // dropping it first meant a failed send — 429, 401, session gone —
+        // lost the text with no way back, and the rest of the queue stuck
+        // behind it. [sendNow] settles it once the engine answers. Nothing
+        // is flushed while a send is still in flight, or while the engine
+        // is gone — the queue belongs to the draft then (item 8).
+        if (wasBusy && !chat.busy && !sendInFlight && flushingEntry == null && repository != null) {
             val next = _state.value.queuedPrompts.firstOrNull()
             if (next != null) {
-                _state.value = _state.value.copy(
-                    queuedPrompts = _state.value.queuedPrompts.drop(1),
-                )
-                sendText(next.fullText, next.typedText, emptyList())
+                flushingEntry = next
+                if (!sendText(next.fullText, next.typedText, emptyList())) {
+                    flushingEntry = null
+                }
             }
         }
 
@@ -947,12 +1008,18 @@ class ChatViewModel(
     }
 
     fun onDraftChange(text: String) {
+        // New typing supersedes whatever was parked: the parked copy no
+        // longer matches the live draft, so the next park must file it
+        // under the live session (or the unsent key), not refresh a stale
+        // entry for a session the user has left (see [lastParkKey]).
+        lastParkKey = null
         savedStateHandle?.set(DRAFT_KEY, text)
         _state.value = _state.value.copy(draft = text)
     }
 
     /** Clears the draft in both the UI state and the saved-state handle. */
     private fun clearDraft() {
+        lastParkKey = null
         savedStateHandle?.remove<String>(DRAFT_KEY)
         _state.value = _state.value.copy(draft = "")
     }
@@ -1082,11 +1149,15 @@ class ChatViewModel(
      * file dump into the composer. [attachments] are the files baked into
      * [fullText]; they are cleared once the engine accepts the prompt, by
      * id, so a file picked mid-send survives.
+     *
+     * Returns false when no send started (no repository): the flush uses
+     * that to clear its in-flight marker instead of waiting on a send that
+     * will never resolve (13-F1).
      */
-    private fun sendText(fullText: String, typedText: String, attachments: List<AttachedFile>) {
+    private fun sendText(fullText: String, typedText: String, attachments: List<AttachedFile>): Boolean {
         val repo = repository ?: run {
             _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
-            return
+            return false
         }
         _state.value = _state.value.copy(
             lastSentText = fullText,
@@ -1113,6 +1184,7 @@ class ChatViewModel(
                 sendInFlight = false
             }
         }
+        return true
     }
 
     /**
@@ -1165,6 +1237,11 @@ class ChatViewModel(
      */
     fun startEdit(messageId: String, text: String) {
         if (_state.value.editingMessageId == messageId) return
+        // Already editing another message: finish that edit first, so the
+        // draft it was guarding is restored before a new backup is taken
+        // (13-F3). Taking a backup now would overwrite the original draft
+        // with the first edit's text, and Cancel would restore the wrong one.
+        if (_state.value.editingMessageId != null) cancelEdit()
         draftBeforeEdit = _state.value.draft
         _state.value = _state.value.copy(editingMessageId = messageId)
         onDraftChange(text)
@@ -1423,15 +1500,18 @@ class ChatViewModel(
         val sessionID = capturedSessionID ?: createSession(repo)
         if (sessionID == null) {
             clearOptimistic()
+            settleFlushedEntry(null, sent = false)
             return
         }
         // The session changed under us while the send was in flight.
         if (repository !== repo) {
             clearOptimistic()
+            settleFlushedEntry(sessionID, sent = false)
             return
         }
         if (repo.state.value.sessionID != sessionID) {
             clearOptimistic()
+            settleFlushedEntry(sessionID, sent = false)
             return
         }
         // A leading slash is a command, not a prompt. The engine runs it and answers
@@ -1448,10 +1528,12 @@ class ChatViewModel(
             is ApiResult.Failure -> {
                 clearOptimistic()
                 reportFailure(result)
+                settleFlushedEntry(sessionID, sent = false)
             }
             is ApiResult.Success -> {
                 clearSentDraft(typedText)
                 clearSentAttachments(attachments)
+                settleFlushedEntry(sessionID, sent = true)
             }
         }
     }
@@ -1639,8 +1721,16 @@ class ChatViewModel(
         // Pending attachments go with the draft: they were picked for the old
         // session's message, and the refusal notice with them.
         parkComposer()
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
-        savedStateHandle?.remove<String>(DRAFT_KEY)
+        // Text typed before any session exists lives under the unsent key
+        // (95-F6): a fresh session is where it belongs, so it comes back
+        // as this session's composer instead of starting empty.
+        val restored = takeParkedComposer(UNSENT_SESSION_KEY)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
+        if (restored?.draft.isNullOrBlank()) {
+            savedStateHandle?.remove<String>(DRAFT_KEY)
+        } else {
+            savedStateHandle?.set(DRAFT_KEY, restored.draft)
+        }
         // The abandoned session must not come back on the next resume:
         // without this, switching workspaces reopened the old workspace's
         // session under the new project's header (item 14).
@@ -1686,7 +1776,7 @@ class ChatViewModel(
         // target from the previous session: the refusal notice goes with it.
         parkComposer()
         val restored = takeParkedComposer(sessionID)
-        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE)
         if (restored?.draft.isNullOrBlank()) {
             savedStateHandle?.remove<String>(DRAFT_KEY)
         } else {

@@ -66,6 +66,7 @@ import dev.bidzz.opencode.ui.browser.isBrowsableUrl
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
+import dev.bidzz.opencode.ui.chat.SharedPrefsParkedComposerStore
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
 import dev.bidzz.opencode.ui.diff.DiffListScreen
 import dev.bidzz.opencode.ui.diff.DiffScreen
@@ -247,6 +248,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
             { app.workspaceStore.resolve().absolutePath },
             savedStateHandle = extras.createSavedStateHandle(),
             onSessionCleared = { app.lastSessionID = null },
+            // Parked composers survive process death on disk (Fase 1a, 57-F1).
+            parkedStore = SharedPrefsParkedComposerStore(app),
         )
     })
 
