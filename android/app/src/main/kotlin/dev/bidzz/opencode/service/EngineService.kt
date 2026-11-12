@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.util.Log
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.OpenCodeApplication
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
@@ -84,14 +85,24 @@ class EngineService : Service() {
         fun buildNotification(context: Context, status: EngineStatus): Notification {
             ensureChannel(context)
 
+            // The baseUrl and lastError are engine data, never translated;
+            // only the fixed words around them come from strings. "Ready"
+            // and "Stop" reuse the existing keys with the same meaning.
             val (title, text) = when (status.state) {
-                EngineState.STOPPED -> "Engine stopped" to "Not running"
-                EngineState.INITIALIZING -> "Engine starting" to "Preparing environment"
-                EngineState.STARTING -> "Engine starting" to "Waiting for the server"
-                EngineState.RUNNING -> "Engine running" to (status.credentials?.baseUrl ?: "Ready")
-                EngineState.DEGRADED -> "Engine unhealthy" to (status.lastError ?: "Health check failing")
-                EngineState.STOPPING -> "Engine stopping" to "Shutting down"
-                EngineState.FAILED -> "Engine failed" to (status.lastError ?: "Stopped unexpectedly")
+                EngineState.STOPPED -> context.getString(R.string.engine_notif_stopped_title) to
+                    context.getString(R.string.engine_notif_stopped_text)
+                EngineState.INITIALIZING -> context.getString(R.string.engine_notif_starting_title) to
+                    context.getString(R.string.engine_notif_preparing_text)
+                EngineState.STARTING -> context.getString(R.string.engine_notif_starting_title) to
+                    context.getString(R.string.engine_notif_waiting_text)
+                EngineState.RUNNING -> context.getString(R.string.engine_notif_running_title) to
+                    (status.credentials?.baseUrl ?: context.getString(R.string.chat_status_ready))
+                EngineState.DEGRADED -> context.getString(R.string.engine_notif_unhealthy_title) to
+                    (status.lastError ?: context.getString(R.string.engine_notif_health_failing_text))
+                EngineState.STOPPING -> context.getString(R.string.engine_notif_stopping_title) to
+                    context.getString(R.string.engine_notif_stopping_text)
+                EngineState.FAILED -> context.getString(R.string.engine_notif_failed_title) to
+                    (status.lastError ?: context.getString(R.string.engine_notif_failed_text))
             }
 
             val open = PendingIntent.getActivity(
@@ -119,7 +130,7 @@ class EngineService : Service() {
                 builder.addAction(
                     Notification.Action.Builder(
                         null,
-                        "Stop",
+                        context.getString(R.string.composer_stop),
                         stopPendingIntent(context),
                     ).build(),
                 )
@@ -139,8 +150,12 @@ class EngineService : Service() {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
             if (manager.getNotificationChannel(CHANNEL_ID) != null) return
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Engine", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Keeps the local OpenCode engine running"
+                NotificationChannel(
+                    CHANNEL_ID,
+                    context.getString(R.string.engine_notif_channel_name),
+                    NotificationManager.IMPORTANCE_LOW,
+                ).apply {
+                    description = context.getString(R.string.engine_notif_channel_desc)
                     setShowBadge(false)
                 },
             )

@@ -278,6 +278,12 @@ private fun AgentSelector(
     // Selector chips are 40dp tall (the composer touch target), not 28dp:
     // they sit in the same controls row as the composer chips, and a 28dp
     // chip next to a 40dp hit area was the smallest tap target in the row.
+    // Resolved here, not inside .semantics {}: the semantics lambda is
+    // not a composable scope, so stringResource cannot run inside it.
+    val modeDescription = stringResource(
+        R.string.chat_mode_label,
+        currentPresentation?.title ?: stringResource(R.string.chat_mode_fallback),
+    )
     Box {
         Row(
             modifier = Modifier
@@ -287,7 +293,7 @@ private fun AgentSelector(
                 .border(0.5.dp, if (expanded) colors.outline else colors.hairline, chipShape)
                 .semantics {
                     role = Role.Button
-                    contentDescription = "Mode: ${currentPresentation?.title ?: "Mode"}"
+                    contentDescription = modeDescription
                 }
                 .clickable(enabled = enabled) { expanded = true }
                 .padding(start = spacing.sm, end = spacing.sm),
@@ -353,7 +359,7 @@ private fun AgentSelector(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "AGENT MODE",
+                    text = stringResource(R.string.chat_agent_mode).uppercase(),
                     style = OpenCodeTypography.caption,
                     color = colors.onSurfaceFaint,
                 )
@@ -689,6 +695,11 @@ internal fun ModelSelector(
     // from the composer the menu opens above the chip, from the header
     // below it, and in both cases its edge sits flush with the chip.
 
+    // Resolved here, not inside .semantics {} (see the agent chip above).
+    val modelDescription = stringResource(
+        R.string.chat_model_label,
+        currentPresentation?.displayName ?: stringResource(R.string.chat_model_fallback),
+    )
     Box {
         Row(
             modifier = Modifier
@@ -698,7 +709,7 @@ internal fun ModelSelector(
                 .border(0.5.dp, if (expanded) colors.outline else colors.hairline, chipShape)
                 .semantics {
                     role = Role.Button
-                    contentDescription = "Model: ${currentPresentation?.displayName ?: "Model"}"
+                    contentDescription = modelDescription
                 }
                 .clickable(enabled = enabled) { expanded = true }
                 .padding(start = spacing.sm, end = spacing.sm),
@@ -765,12 +776,12 @@ internal fun ModelSelector(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = "SELECT MODEL",
+                    text = stringResource(R.string.chat_select_model).uppercase(),
                     style = OpenCodeTypography.caption,
                     color = colors.onSurfaceFaint,
                 )
                 Text(
-                    text = "${dedupedModels.size} available",
+                    text = stringResource(R.string.chat_models_available, dedupedModels.size),
                     style = OpenCodeTypography.caption,
                     color = colors.onSurfaceFaint,
                 )

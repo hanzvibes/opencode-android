@@ -22,6 +22,20 @@
     <string name="engine_state_stopping">stopping</string>
     <string name="engine_state_failed">failed</string>
     <string name="engine_state_stopped">stopped</string>
+    <string name="engine_notif_stopped_title">Engine berhenti</string>
+    <string name="engine_notif_stopped_text">Tidak berjalan</string>
+    <string name="engine_notif_starting_title">Engine memulai</string>
+    <string name="engine_notif_preparing_text">Menyiapkan environment</string>
+    <string name="engine_notif_waiting_text">Menunggu server</string>
+    <string name="engine_notif_running_title">Engine berjalan</string>
+    <string name="engine_notif_unhealthy_title">Engine tidak sehat</string>
+    <string name="engine_notif_health_failing_text">Pemeriksaan kesehatan gagal</string>
+    <string name="engine_notif_stopping_title">Engine sedang berhenti</string>
+    <string name="engine_notif_stopping_text">Mematikan</string>
+    <string name="engine_notif_failed_title">Engine gagal</string>
+    <string name="engine_notif_failed_text">Berhenti tiba-tiba</string>
+    <string name="engine_notif_channel_name">Engine</string>
+    <string name="engine_notif_channel_desc">Menjaga engine OpenCode lokal tetap berjalan</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -380,6 +394,17 @@
     <string name="question_answered">Answered</string>
     <string name="question_answer_failed">The answer could not be sent — it is back in the composer so you can retry.</string>
     <string name="bubble_thinking">Thinking…</string>
+    <string name="commands_no_match">Tidak ada perintah yang cocok dengan “%1$s”</string>
+    <string name="commands_standard">Perintah standar: %1$s</string>
+    <string name="commands_palette">Palet perintah</string>
+    <string name="chat_agent_mode">Mode agen</string>
+    <string name="chat_select_model">Pilih model</string>
+    <string name="chat_mode_label">Mode: %1$s</string>
+    <string name="chat_mode_fallback">Mode</string>
+    <string name="chat_model_label">Model: %1$s</string>
+    <string name="chat_model_fallback">Model</string>
+    <string name="chat_models_available">%1$d tersedia</string>
+    <string name="bubble_thought_for">Berpikir selama %1$d dtk</string>
     <string name="streaming_typing">Typing…</string>
     <string name="tool_steps_one">%1$d step</string>
     <string name="tool_steps_other">%1$d steps</string>
@@ -481,6 +506,8 @@
     <string name="diff_mode_unified">Unified</string>
     <string name="diff_mode_split">Split</string>
     <string name="diff_filter_hint">Filter changed files…</string>
+    <string name="explorer_search_hint">Cari file…</string>
+    <string name="diff_files_changed">%1$d file diubah</string>
     <string name="diff_original">Original</string>
     <string name="diff_modified">Modified</string>
     <string name="difflist_title">Changes (%1$d)</string>
@@ -544,6 +571,19 @@
     <string name="providers_delete_body">%1$s (%2$s) will be removed from the engine\'s database.</string>
     <string name="providers_delete_last">It is the only key for %1$s, which will stop working until another is added.</string>
     <string name="providers_keys_for">Keys for %1$s</string>
+    <string name="providers_key_valid">Format kunci %1$s terverifikasi (%2$s…)</string>
+    <string name="providers_key_warning">Kunci %1$s biasanya diawali %2$s</string>
+    <string name="providers_key_valid_generic">Format kunci tampaknya valid (%1$d karakter)</string>
+    <string name="providers_subtitle_free_tier">Model tingkat gratis bawaan</string>
+    <string name="providers_subtitle_local">Model lokal &amp; kompatibel OpenAI</string>
+    <string name="providers_antigravity_title">Google (Gemini &amp; Antigravity)</string>
+    <string name="providers_antigravity_connected">Antigravity OAuth: Terhubung</string>
+    <string name="providers_antigravity_active_account">Akun aktif: %1$s</string>
+    <string name="providers_antigravity_models_note">Model seperti %1$s diautentikasi via token Google Antigravity OAuth secara otomatis. Tidak perlu API key.</string>
+    <string name="providers_antigravity_use_key">Gunakan Gemini dengan Google API Key Anda, atau konfigurasi Antigravity OAuth di konfigurasi engine.</string>
+    <string name="providers_gemini_keys_configured">%1$d kunci API Gemini telah dikonfigurasi.</string>
+    <string name="providers_antigravity_oauth_account">Antigravity OAuth (%1$s)</string>
+    <string name="providers_antigravity_connected_plain">Antigravity Terhubung</string>
     <string name="providers_manage_body">The engine keeps these in its own database. The key itself is never read back into the app, so rows are identified by their id.</string>
     <string name="providers_in_use">IN USE</string>
     <string name="providers_add_another">Add another key</string>

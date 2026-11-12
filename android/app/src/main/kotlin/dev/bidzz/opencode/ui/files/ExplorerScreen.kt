@@ -269,9 +269,7 @@ private fun ExplorerListContent(
         SearchField(
             query = searchFilter,
             onQueryChange = onSearchFilterChange,
-            // Batch 3 (i18n) owns this literal: "Search files…" is the
-            // one hardcoded search placeholder left in the app.
-            placeholder = "Search files…",
+            placeholder = stringResource(R.string.explorer_search_hint),
             imeAction = ImeAction.Search,
         )
     }

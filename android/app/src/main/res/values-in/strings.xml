@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Glosarium i18n (Batch 3, #7): pakai padanan ini secara konsisten.
+         session -> sesi | file -> file | workspace -> ruang kerja |
+         composer -> kolom ketik | edit/change -> Ubah | permission -> izin |
+         engine -> engine (istilah teknis, tidak diterjemahkan) |
+         model/brand (OpenCode, Claude, GPT-4o, Gemini) -> apa adanya. -->
     <!-- Common -->
     <string name="common_back">Kembali</string>
     <string name="common_cancel">Batal</string>
@@ -21,6 +26,20 @@
     <string name="engine_state_stopping">sedang berhenti</string>
     <string name="engine_state_failed">gagal</string>
     <string name="engine_state_stopped">berhenti</string>
+    <string name="engine_notif_stopped_title">Engine berhenti</string>
+    <string name="engine_notif_stopped_text">Tidak berjalan</string>
+    <string name="engine_notif_starting_title">Engine memulai</string>
+    <string name="engine_notif_preparing_text">Menyiapkan environment</string>
+    <string name="engine_notif_waiting_text">Menunggu server</string>
+    <string name="engine_notif_running_title">Engine berjalan</string>
+    <string name="engine_notif_unhealthy_title">Engine tidak sehat</string>
+    <string name="engine_notif_health_failing_text">Pemeriksaan kesehatan gagal</string>
+    <string name="engine_notif_stopping_title">Engine sedang berhenti</string>
+    <string name="engine_notif_stopping_text">Mematikan</string>
+    <string name="engine_notif_failed_title">Engine gagal</string>
+    <string name="engine_notif_failed_text">Berhenti tiba-tiba</string>
+    <string name="engine_notif_channel_name">Engine</string>
+    <string name="engine_notif_channel_desc">Menjaga engine OpenCode lokal tetap berjalan</string>
 
     <!-- Settings -->
     <string name="settings_title">Pengaturan</string>
@@ -379,6 +398,17 @@
     <string name="question_answered">Terjawab</string>
     <string name="question_answer_failed">Jawaban gagal terkirim — sudah dikembalikan ke kolom ketik supaya bisa dicoba lagi.</string>
     <string name="bubble_thinking">Berpikir…</string>
+    <string name="commands_no_match">Tidak ada perintah yang cocok dengan “%1$s”</string>
+    <string name="commands_standard">Perintah standar: %1$s</string>
+    <string name="commands_palette">Palet perintah</string>
+    <string name="chat_agent_mode">Mode agen</string>
+    <string name="chat_select_model">Pilih model</string>
+    <string name="chat_mode_label">Mode: %1$s</string>
+    <string name="chat_mode_fallback">Mode</string>
+    <string name="chat_model_label">Model: %1$s</string>
+    <string name="chat_model_fallback">Model</string>
+    <string name="chat_models_available">%1$d tersedia</string>
+    <string name="bubble_thought_for">Berpikir selama %1$d dtk</string>
     <string name="streaming_typing">Mengetik…</string>
     <string name="tool_steps_one">%1$d langkah</string>
     <string name="tool_steps_other">%1$d langkah</string>
@@ -480,6 +510,8 @@
     <string name="diff_mode_unified">Terpadu</string>
     <string name="diff_mode_split">Berdampingan</string>
     <string name="diff_filter_hint">Filter file yang diubah…</string>
+    <string name="explorer_search_hint">Cari file…</string>
+    <string name="diff_files_changed">%1$d file diubah</string>
     <string name="diff_original">Asli</string>
     <string name="diff_modified">Dimodifikasi</string>
     <string name="difflist_title">Perubahan (%1$d)</string>
@@ -543,6 +575,19 @@
     <string name="providers_delete_body">%1$s (%2$s) akan dihapus dari database mesin.</string>
     <string name="providers_delete_last">Ini satu-satunya kunci untuk %1$s, yang akan berhenti berfungsi sampai kunci lain ditambahkan.</string>
     <string name="providers_keys_for">Kunci untuk %1$s</string>
+    <string name="providers_key_valid">Format kunci %1$s terverifikasi (%2$s…)</string>
+    <string name="providers_key_warning">Kunci %1$s biasanya diawali %2$s</string>
+    <string name="providers_key_valid_generic">Format kunci tampaknya valid (%1$d karakter)</string>
+    <string name="providers_subtitle_free_tier">Model tingkat gratis bawaan</string>
+    <string name="providers_subtitle_local">Model lokal &amp; kompatibel OpenAI</string>
+    <string name="providers_antigravity_title">Google (Gemini &amp; Antigravity)</string>
+    <string name="providers_antigravity_connected">Antigravity OAuth: Terhubung</string>
+    <string name="providers_antigravity_active_account">Akun aktif: %1$s</string>
+    <string name="providers_antigravity_models_note">Model seperti %1$s diautentikasi via token Google Antigravity OAuth secara otomatis. Tidak perlu API key.</string>
+    <string name="providers_antigravity_use_key">Gunakan Gemini dengan Google API Key Anda, atau konfigurasi Antigravity OAuth di konfigurasi engine.</string>
+    <string name="providers_gemini_keys_configured">%1$d kunci API Gemini telah dikonfigurasi.</string>
+    <string name="providers_antigravity_oauth_account">Antigravity OAuth (%1$s)</string>
+    <string name="providers_antigravity_connected_plain">Antigravity Terhubung</string>
     <string name="providers_manage_body">Mesin menyimpan kunci ini di databasenya sendiri. Isi kuncinya tidak pernah dibaca kembali ke aplikasi, jadi tiap baris dikenali dari id-nya.</string>
     <string name="providers_in_use">DIPAKAI</string>
     <string name="providers_add_another">Tambah kunci lain</string>

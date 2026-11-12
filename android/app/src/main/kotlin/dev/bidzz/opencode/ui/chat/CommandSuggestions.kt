@@ -595,12 +595,12 @@ fun CommandSuggestions(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
                         Text(
-                            text = "No command matches \"/$query\"",
+                            text = stringResource(R.string.commands_no_match, "/$query"),
                             style = OpenCodeTypography.bodySmall,
                             color = colors.onSurfaceMuted,
                         )
                         Text(
-                            text = "Standard commands: /init, /test, /review, /fix",
+                            text = stringResource(R.string.commands_standard, "/init, /test, /review, /fix"),
                             style = OpenCodeTypography.caption,
                             color = colors.onSurfaceFaint,
                         )
@@ -682,7 +682,7 @@ private fun CommandPaletteHeader(
                     )
                 }
                 Text(
-                    text = "COMMAND PALETTE",
+                    text = stringResource(R.string.commands_palette).uppercase(),
                     style = OpenCodeTypography.caption,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.onSurfaceMuted,
