@@ -111,7 +111,14 @@ class EventStream(private val client: EngineClient) {
             val source = response.body?.source() ?: throw IOException("event stream had no body")
             val parser = SseParser()
             while (true) {
-                val line = source.readUtf8Line() ?: return
+                val line = source.readUtf8Line() ?: run {
+                    // The server closed the stream mid-block: a trailing
+                    // event without its closing blank line still counts
+                    // (Fase 2, 03-F4). The parser exists for exactly this
+                    // case and previously had no production caller.
+                    parser.flush()?.let { onEvent(it) }
+                    return
+                }
                 val event = parser.accept(line) ?: continue
                 onEvent(event)
             }

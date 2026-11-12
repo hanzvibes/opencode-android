@@ -49,6 +49,18 @@ class SseParserTest {
     }
 
     @Test
+    fun `03-F4 flush returns a trailing block the stream ended without a blank line`() {
+        // The server closed the connection mid-block: the data line arrived
+        // but its closing blank line never did. Without the flush this
+        // event is lost, and streamOnce previously returned without it.
+        val events = feed(
+            """data: {"type":"session.text.delta","data":{"sessionID":"s1","assistantMessageID":"m1","ordinal":0,"delta":"tail"}}""",
+        )
+        assertEquals(1, events.size)
+        assertEquals("session.text.delta", events[0].type)
+    }
+
+    @Test
     fun `parses consecutive events`() {
         val events = feed(
             """data: {"type":"session.text.started","data":{"sessionID":"s1","assistantMessageID":"m1","ordinal":0}}""",

@@ -3,6 +3,7 @@ package dev.bidzz.opencode.core.api
 import android.util.Log
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -56,6 +57,14 @@ class EngineClient(
 
     private val client: OkHttpClient = streamingClient.newBuilder()
         .callTimeout(callTimeoutSeconds, TimeUnit.SECONDS)
+        // No silent resend for REST (Fase 2, 43-F4): OkHttp retries a POST
+        // whose connection failed before a response, and a prompt admitted
+        // by the engine but lost on the wire would then be sent twice — the
+        // prompt endpoint takes no idempotency key, so the duplicate is
+        // indistinguishable from a second message. The streaming client
+        // keeps the retry: a GET stream never mutates anything, and a
+        // dropped connection there is recovered by the app-level reconnect.
+        .retryOnConnectionFailure(false)
         .build()
 
     /** Raw client for SSE; the stream owns its own lifecycle. */
@@ -87,6 +96,15 @@ class EngineClient(
         } catch (e: IOException) {
             Log.w(TAG, "${request.method} ${request.url.encodedPath} failed: ${e.message}")
             ApiResult.Failure(code = 0, message = e.message, cause = e)
+        } catch (e: CancellationException) {
+            // Cancellation is not a failure (Fase 2, 58-F4): swallowing it
+            // turned a cancelled job into a failed one, so callers treated
+            // it as a real error and the job never actually stopped. The
+            // two named victims (SessionDiffViewModel.load, loadBranches)
+            // both cancel the previous job before starting a new one, so
+            // the rethrow is what keeps a stale write from landing — no
+            // separate generation guard is needed there.
+            throw e
         } catch (e: Exception) {
             // A decode failure is a contract mismatch, not a network problem, and
             // must be visible rather than silently retried.
