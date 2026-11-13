@@ -127,7 +127,11 @@ class MarkdownNestedTest {
     @Test
     fun `04-F7 streaming unclosed link shows its words, not raw brackets`() {
         assertEquals(listOf(MdSpan.Text("docs")), streamingSpans("[docs](https://exa"))
-        assertTrue(spans("[docs](https://exa").none { it is MdSpan.Link })
+        // The final parse keeps the old behaviour: "[docs](..." is not a
+        // link (no closing paren), though the bare URL still autolinks.
+        val final = spans("[docs](https://exa")
+        assertTrue(final.none { it is MdSpan.Link && it.spans == listOf(MdSpan.Text("docs")) })
+        assertEquals(MdSpan.Text("[docs]("), final.first())
     }
 
     @Test
