@@ -51,6 +51,14 @@ import dev.bidzz.opencode.ui.message
 enum class DiffViewMode { Unified, Split }
 
 /**
+ * Audit-200 A2: the [DiffViewMode] for a saved name. Unknown names
+ * fall back to [DiffViewMode.Unified] instead of throwing — the mode
+ * is a view preference, never data.
+ */
+internal fun diffViewModeForName(name: String): DiffViewMode =
+    runCatching { DiffViewMode.valueOf(name) }.getOrDefault(DiffViewMode.Unified)
+
+/**
  * Code diff viewer with Side-by-side or Unified layout.
  *
  * Line highlights match Git and Claude Code styling:
@@ -66,7 +74,11 @@ fun DiffScreen(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    var mode by rememberSaveable { mutableStateOf(DiffViewMode.Unified) }
+    // Audit-200 A2: the mode is stored by NAME — rememberSaveable has
+    // no built-in enum saver, and saving the enum directly crashes on
+    // onSaveInstanceState (same class as C-006).
+    var modeName by rememberSaveable { mutableStateOf(DiffViewMode.Unified.name) }
+    val mode = diffViewModeForName(modeName)
 
     ScreenScaffold(
         title = state.file.substringAfterLast('/'),
@@ -77,7 +89,7 @@ fun DiffScreen(
             if (state.hunks.isNotEmpty()) {
                 DiffModeSelector(
                     current = mode,
-                    onSelect = { mode = it },
+                    onSelect = { modeName = it.name },
                 )
             }
         },

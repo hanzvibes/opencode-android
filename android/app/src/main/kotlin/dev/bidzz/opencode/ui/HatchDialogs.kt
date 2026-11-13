@@ -146,7 +146,10 @@ fun HatchRenameDialog(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
-    var tfv by rememberSaveable(initialTitle) {
+    // Audit-200 A2 (C-006, PROVEN): TextFieldValue needs its Saver —
+    // without it, backgrounding the app with this dialog open crashes
+    // in onSaveInstanceState (IllegalStateException from performSave).
+    var tfv by rememberSaveable(initialTitle, stateSaver = TextFieldValue.Saver) {
         mutableStateOf(
             TextFieldValue(
                 text = initialTitle,
