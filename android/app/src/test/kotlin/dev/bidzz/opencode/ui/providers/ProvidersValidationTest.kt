@@ -102,7 +102,7 @@ class ProvidersValidationTest {
     }
 
     @Test
-    fun `loopback is localhost, 127.0.0.1 and ipv6 loopback only`() {
+    fun `loopback is localhost, 127-0-0-1 and ipv6 loopback only`() {
         assertTrue(isLoopbackHost("localhost"))
         assertTrue(isLoopbackHost("LOCALHOST"))
         assertTrue(isLoopbackHost("127.0.0.1"))
