@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import android.content.Context
+import android.util.Log
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.ObjectInputStream
@@ -82,6 +83,31 @@ class CodeSaveQueue(private val store: CodeSaveQueueStore = InMemoryCodeSaveQueu
         store.save(queue.toList())
     }
 
+    /**
+     * Prepends a request: a retry is the oldest work, so it goes first
+     * (audit-200 A6, DL-025). Only safe when no picker is open — the head
+     * is the request whose picker is currently open, and jumping it would
+     * make that picker take the wrong request on its return.
+     */
+    fun enqueueFirst(request: CodeSaveRequest) {
+        queue.addFirst(request)
+        store.save(queue.toList())
+    }
+
+    /**
+     * Inserts a request right behind the head (audit-200 A6, DL-024,
+     * DL-025): the head is the request whose picker is currently open.
+     * A failed save re-queues here — ahead of every request whose picker
+     * has not opened yet, behind the one that has — so it survives the
+     * snackbar and stays FIFO without breaking the open picker's pairing.
+     */
+    fun enqueueAfterHead(request: CodeSaveRequest) {
+        val head = queue.pollFirst()
+        queue.addFirst(request)
+        if (head != null) queue.addFirst(head)
+        store.save(queue.toList())
+    }
+
     /** Takes the oldest request, or null when the queue is empty. */
     fun take(): CodeSaveRequest? {
         val head = queue.pollFirst() ?: return null
@@ -96,20 +122,53 @@ class CodeSaveQueue(private val store: CodeSaveQueueStore = InMemoryCodeSaveQueu
 }
 
 /**
- * Encodes the queue for storage. Pure — `java.util.Base64`, not the
- * Android one, so the round-trip is unit-tested here on the JVM (minSdk
- * 29, so the JDK Base64 is available on device too).
+ * Encodes the queue for storage: one Base64 blob per request, joined
+ * with newlines (audit-200 A6, DL-026). Pure — `java.util.Base64`, not
+ * the Android one, so the round-trip is unit-tested here on the JVM
+ * (minSdk 29, so the JDK Base64 is available on device too).
  */
 internal fun encodeCodeSaveQueue(queue: List<CodeSaveRequest>): String {
-    val bytes = ByteArrayOutputStream().use { out ->
-        ObjectOutputStream(out).use { it.writeObject(ArrayList(queue)) }
-        out.toByteArray()
+    return queue.joinToString("\n") { request ->
+        val bytes = ByteArrayOutputStream().use { out ->
+            ObjectOutputStream(out).use { it.writeObject(request) }
+            out.toByteArray()
+        }
+        Base64.getEncoder().withoutPadding().encodeToString(bytes)
     }
-    return Base64.getEncoder().withoutPadding().encodeToString(bytes)
 }
 
-/** Decodes a stored queue, or empty when the bytes are not one anymore. */
+/** Decodes one stored request, or null when its bytes are not one anymore. */
+private fun decodeCodeSaveRequest(encoded: String): CodeSaveRequest? {
+    return try {
+        val bytes = Base64.getDecoder().decode(encoded)
+        ObjectInputStream(ByteArrayInputStream(bytes)).use { it.readObject() as? CodeSaveRequest }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/**
+ * Decodes a stored queue, or empty when the bytes are not one anymore.
+ *
+ * Audit-200 A6 (DL-026): one corrupt entry no longer wipes the whole
+ * queue. Each part decodes on its own; a part that fails is dropped (and
+ * logged) while the rest survive. A stored value with no newlines is
+ * tried as one new-format entry first, then as the legacy whole-queue
+ * blob, so queues written before this change still read back.
+ */
 internal fun decodeCodeSaveQueue(encoded: String): List<CodeSaveRequest> {
+    if (encoded.isEmpty()) return emptyList()
+    val parts = encoded.split('\n')
+    val decoded = parts.mapNotNull { decodeCodeSaveRequest(it) }
+    if (decoded.isNotEmpty()) {
+        if (decoded.size != parts.size) {
+            Log.w(
+                "CodeSaveQueue",
+                "Dropped ${parts.size - decoded.size} unreadable code-save request(s)",
+            )
+        }
+        return decoded
+    }
     return try {
         val bytes = Base64.getDecoder().decode(encoded)
         @Suppress("UNCHECKED_CAST")

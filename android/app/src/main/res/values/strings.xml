@@ -621,6 +621,10 @@
     <string name="conflict_overwrite">Overwrite</string>
     <string name="conflict_reload">Reload</string>
     <string name="conflict_keep">Keep editing</string>
+    <string name="conflict_changes_title">What changed on disk</string>
+    <string name="conflict_changes_summary">+%1$d lines added, −%2$d lines removed since this editor opened.</string>
+    <string name="conflict_changes_more">+%1$d more lines</string>
+    <string name="conflict_changes_too_large">The file is too large to show the changes here — the edit spans the whole file.</string>
 
     <string name="fileview_discard_title">Discard unsaved changes?</string>
     <string name="fileview_discard_body">You have unsaved changes. Leaving will discard them.</string>

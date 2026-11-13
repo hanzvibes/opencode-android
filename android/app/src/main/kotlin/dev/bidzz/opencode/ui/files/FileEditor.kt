@@ -1,5 +1,8 @@
 package dev.bidzz.opencode.ui.files
 
+import dev.bidzz.opencode.ui.chat.DIFF_LCS_LINE_LIMIT
+import dev.bidzz.opencode.ui.chat.computeDiffHunks
+import dev.bidzz.opencode.ui.diff.DiffLine
 import java.util.Locale
 
 /**
@@ -44,6 +47,56 @@ fun saveAction(original: String, draft: String, onDisk: String?, overwrite: Bool
     onDisk == null -> SaveAction.Unverifiable
     onDisk != original && !overwrite -> SaveAction.Conflict
     else -> SaveAction.Write
+}
+
+/**
+ * What changed on disk since the editor opened, for the conflict dialog
+ * (audit-200 A6, DL-022): the user must see the agent's edit before
+ * choosing Overwrite, not a blind "the file changed". Pure, so the
+ * counts and the cap are unit-tested here rather than through the sheet.
+ * The diff is the same [computeDiffHunks] the full-screen diff renders,
+ * so "+" and "−" never disagree between the two views.
+ */
+internal data class ConflictChanges(
+    /** Lines added on disk. */
+    val added: Int,
+    /** Lines removed from the version the editor opened. */
+    val removed: Int,
+    /** Changed lines to show, each prefixed "+" or "−". */
+    val shownLines: List<String>,
+    /** Changed lines beyond [shownLines]. */
+    val moreLines: Int,
+    /**
+     * True when the file is too large for an exact diff: the counts are
+     * the whole file, not the change, so the dialog must not present them
+     * as the change.
+     */
+    val tooLarge: Boolean,
+)
+
+/** The agent's edit between [base] (what the editor opened) and [disk] (what the file holds now). */
+internal fun conflictChanges(base: String, disk: String, maxShown: Int = 12): ConflictChanges {
+    val oldLines = base.split('\n').dropLastWhile { it.isEmpty() }
+    val newLines = disk.split('\n').dropLastWhile { it.isEmpty() }
+    if (oldLines == newLines) return ConflictChanges(0, 0, emptyList(), 0, false)
+    if (oldLines.size + newLines.size > DIFF_LCS_LINE_LIMIT) {
+        return ConflictChanges(oldLines.size, newLines.size, emptyList(), 0, true)
+    }
+    val changed = computeDiffHunks(base, disk)
+        .flatMap { it.lines }
+        .filter { it.kind != DiffLine.Kind.CONTEXT }
+    val added = changed.count { it.kind == DiffLine.Kind.ADDED }
+    val removed = changed.count { it.kind == DiffLine.Kind.REMOVED }
+    val shown = changed.take(maxShown).map { line ->
+        (if (line.kind == DiffLine.Kind.ADDED) "+" else "−") + " " + line.text
+    }
+    return ConflictChanges(
+        added = added,
+        removed = removed,
+        shownLines = shown,
+        moreLines = (changed.size - shown.size).coerceAtLeast(0),
+        tooLarge = false,
+    )
 }
 
 /**

@@ -413,6 +413,15 @@ class FileViewViewModel(
      */
     internal var saveGeneration = 0
 
+    /**
+     * The save coroutine, if one is running (audit-200 A6, DL-021): the
+     * generation check above only stops a save that has not written yet —
+     * a discard that lands after the check but during the write needs the
+     * job itself cancelled, so the in-flight request is aborted instead
+     * of overwriting the file the user just threw away.
+     */
+    private var saveJob: Job? = null
+
     /** Writes the live draft into the handle, or clears it when not editing. */
     private fun persistDraft() {
         val handle = savedStateHandle ?: return
@@ -502,9 +511,6 @@ class FileViewViewModel(
     }
 
     private fun load(path: String, allowFull: Boolean) {
-        // A draft restored after process death belongs to its file: opening
-        // another file abandons it (audit-70 69-F3).
-        if (restoredPath != null && restoredPath != path) clearPersistedDraft()
         // Never overwrite an unsaved draft with another file's content
         // (item 10): every load path goes through requestLoad, and this
         // guard is the backstop for any caller that forgot.
@@ -568,6 +574,15 @@ class FileViewViewModel(
                         diskContent = file.text,
                         basisHash = restoredBasisHash,
                     )
+                    // Audit-200 A6 (DL-023): a draft restored after process
+                    // death belongs to its file, and opening another file
+                    // abandons it (audit-70 69-F3) — but only once the other
+                    // file actually loads. Clearing it up front deleted
+                    // work the user never saw again when the origin file
+                    // could not be read and the new load failed too.
+                    if (restoredPath != null && restoredPath != path) {
+                        clearPersistedDraft()
+                    }
                     val draftToRestore =
                         if (restore == RestoreDecision.Apply) restoredDraft else null
                     val staleDraft =
@@ -606,7 +621,7 @@ class FileViewViewModel(
         // the preview back over the real file. Load the full file first.
         if (s.truncated) return
         // A fresh edit starts from what is on screen, so its basis is current.
-        _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false, draftStale = false)
+        _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false, conflictDiskContent = null, draftStale = false)
         persistDraft()
     }
 
@@ -620,8 +635,11 @@ class FileViewViewModel(
         // Discarding cancels a save in flight (35-F8): the save coroutine
         // checks the generation before it writes and before it applies
         // anything, so a discarded draft can no longer reach the disk.
+        // Audit-200 A6 (DL-021): cancel the job too — the generation check
+        // cannot stop a write that is already in flight.
         saveGeneration++
-        _state.value = _state.value.copy(editing = false, draft = "", conflict = false, saving = false, draftStale = false)
+        saveJob?.cancel()
+        _state.value = _state.value.copy(editing = false, draft = "", conflict = false, conflictDiskContent = null, saving = false, draftStale = false)
         clearPersistedDraft()
     }
 
@@ -657,9 +675,9 @@ class FileViewViewModel(
         }
         val directory = workspace()
         val generation = ++saveGeneration
-        _state.value = s.copy(saving = true, failure = null, failureKey = null, conflict = false)
+        _state.value = s.copy(saving = true, failure = null, failureKey = null, conflict = false, conflictDiskContent = null)
 
-        viewModelScope.launch {
+        saveJob = viewModelScope.launch {
             val files = FileApi(handle.client)
             val onDisk = (files.readText(directory, s.path) as? ApiResult.Success)?.value?.text
             // Discarded while the re-read was in flight (35-F8): never write.
@@ -693,6 +711,9 @@ class FileViewViewModel(
                         _state.value = _state.value.copy(
                             saving = false,
                             conflict = true,
+                            // Audit-200 A6 (DL-022): keep what is on disk
+                            // so the dialog can show the agent's edit.
+                            conflictDiskContent = onDisk,
                         )
                     }
                 }
@@ -726,7 +747,11 @@ class FileViewViewModel(
                         val after = (files.readText(directory, s.path) as? ApiResult.Success)?.value?.text
                         if (after != null && after != s.draft) {
                             if (_state.value.path == s.path) {
-                                _state.value = _state.value.copy(saving = false, conflict = true)
+                                _state.value = _state.value.copy(
+                                    saving = false,
+                                    conflict = true,
+                                    conflictDiskContent = after,
+                                )
                             }
                         } else {
                             val resolved = resolveSaveSuccess(_state.value, s)
@@ -758,8 +783,9 @@ class FileViewViewModel(
     fun reloadFromDisk() {
         // Discarding cancels a save in flight, like stopEditing (35-F8).
         saveGeneration++
+        saveJob?.cancel()
         val s = _state.value
-        _state.value = s.copy(editing = false, draft = "", conflict = false, saving = false, draftStale = false)
+        _state.value = s.copy(editing = false, draft = "", conflict = false, conflictDiskContent = null, saving = false, draftStale = false)
         clearPersistedDraft()
         load(s.path)
     }
@@ -781,7 +807,7 @@ class FileViewViewModel(
 
     /** Keeps editing after a conflict, so the difference can be looked at by hand. */
     fun dismissConflict() {
-        _state.value = _state.value.copy(conflict = false)
+        _state.value = _state.value.copy(conflict = false, conflictDiskContent = null)
     }
 }
 
@@ -911,6 +937,7 @@ internal fun resolveSaveSuccess(now: FileViewState, snapshot: FileViewState): Fi
             saving = false,
             editing = false,
             conflict = false,
+            conflictDiskContent = null,
             content = snapshot.draft,
             draft = "",
             saved = true,

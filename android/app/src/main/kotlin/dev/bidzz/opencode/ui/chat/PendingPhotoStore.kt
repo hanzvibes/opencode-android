@@ -19,15 +19,30 @@ class PendingPhotoStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "pending_photo"
         private const val KEY_URI = "uri"
+        /** The camera result arrived and the photo was handed to the chat screen. */
+        private const val KEY_DELIVERED = "delivered"
     }
 
     fun get(): Uri? = prefs.getString(KEY_URI, null)?.let { Uri.parse(it) }
 
     fun put(uri: Uri) {
-        prefs.edit().putString(KEY_URI, uri.toString()).apply()
+        prefs.edit().putString(KEY_URI, uri.toString()).remove(KEY_DELIVERED).apply()
     }
 
+    /**
+     * Marks the pending photo as delivered (audit-200 A6, DL-027): the
+     * camera result arrived, but the workspace copy may still be running.
+     * The trace stays until the copy's acknowledgement clears it, so a
+     * death mid-copy leaves a photo to retry from on the next launch.
+     */
+    fun markDelivered() {
+        prefs.edit().putBoolean(KEY_DELIVERED, true).apply()
+    }
+
+    /** True when the camera result arrived but the copy never acknowledged. */
+    fun isDelivered(): Boolean = prefs.getBoolean(KEY_DELIVERED, false)
+
     fun clear() {
-        prefs.edit().remove(KEY_URI).apply()
+        prefs.edit().remove(KEY_URI).remove(KEY_DELIVERED).apply()
     }
 }

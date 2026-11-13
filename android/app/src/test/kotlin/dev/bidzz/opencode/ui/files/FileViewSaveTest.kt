@@ -205,4 +205,18 @@ class FileViewSaveTest {
 
         assertEquals(before + 1, vm.saveGeneration)
     }
+
+    @Test
+    fun `DL-023 opening another file while the origin cannot be read keeps the restored draft`() {
+        val (vm, handle) = viewModelWithRestoredDraft()
+
+        // The origin file never loaded (the engine is not running), so the
+        // draft was never applied — opening another file must not delete
+        // work the user never saw again. Only a file that actually loads
+        // abandons it.
+        vm.load("b.kt")
+
+        assertTrue(handle.keys().contains(FileViewViewModel.FILE_DRAFT_TEXT_KEY))
+        assertEquals("one\\ntwo\\n", handle.get<String>(FileViewViewModel.FILE_DRAFT_TEXT_KEY))
+    }
 }
