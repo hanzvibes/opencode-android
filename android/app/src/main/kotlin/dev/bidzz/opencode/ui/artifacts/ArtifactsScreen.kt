@@ -99,11 +99,13 @@ fun ArtifactsScreen(
                 ),
             )
             if (state.providers.isNotEmpty()) {
+                // stringResource is @Composable: resolve it here, not inside joinToString.
+                val defaultLabel = stringResource(R.string.artifact_provider_default)
                 Text(
                     text = stringResource(
                         R.string.artifact_providers,
                         state.providers.joinToString(", ") { provider ->
-                            if (provider.default) "${provider.name} (${stringResource(R.string.artifact_provider_default)})" else provider.name
+                            if (provider.default) "${provider.name} ($defaultLabel)" else provider.name
                         },
                     ),
                     style = OpenCodeTypography.bodySmall,

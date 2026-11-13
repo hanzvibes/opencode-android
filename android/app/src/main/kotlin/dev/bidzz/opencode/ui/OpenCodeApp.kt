@@ -443,11 +443,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     })
 
     val artifactsViewModel: ArtifactsViewModel = viewModel(factory = viewModelFactory { _ ->
-        ArtifactsViewModel()
+        ArtifactsViewModel(app.engineApi)
     })
 
     val jobsViewModel: JobsViewModel = viewModel(factory = viewModelFactory { _ ->
-        JobsViewModel()
+        JobsViewModel(app.engineApi)
     })
 
     val worktreesViewModel: WorktreesViewModel = viewModel(factory = viewModelFactory { _ ->

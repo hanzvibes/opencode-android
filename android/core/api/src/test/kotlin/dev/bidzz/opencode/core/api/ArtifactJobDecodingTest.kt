@@ -9,6 +9,7 @@ import dev.bidzz.opencode.core.api.dto.ArtifactsResponse
 import dev.bidzz.opencode.core.api.dto.JobInfo
 import dev.bidzz.opencode.core.api.dto.JobsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
+import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

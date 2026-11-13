@@ -30,6 +30,7 @@ import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SelectorChip
 import dev.bidzz.opencode.ui.StatusDot
+import dev.bidzz.opencode.ui.message
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter

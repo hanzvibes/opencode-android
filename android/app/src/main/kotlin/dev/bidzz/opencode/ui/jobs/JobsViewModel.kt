@@ -45,7 +45,7 @@ data class JobsUiState(
  * and what finished, so the user can see work that outlives the turn
  * that started it.
  */
-class JobsViewModel : ViewModel() {
+class JobsViewModel(private val api: EngineApi) : ViewModel() {
 
     private val _state = MutableStateFlow(JobsUiState())
     val state: StateFlow<JobsUiState> = _state.asStateFlow()
@@ -71,7 +71,7 @@ class JobsViewModel : ViewModel() {
             _state.value = _state.value.copy(loading = true, failure = null)
         }
         viewModelScope.launch {
-            val handle = EngineApi.handle()
+            val handle = api.handle()
             if (handle == null) {
                 _state.value = _state.value.copy(
                     loading = false,

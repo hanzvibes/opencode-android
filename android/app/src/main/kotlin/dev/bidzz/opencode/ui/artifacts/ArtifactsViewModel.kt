@@ -45,7 +45,7 @@ internal fun ApiResult.Failure.isArtifactsDisabled(): Boolean = code == 403
  * therefore a first-class state the screen explains, not a bare error:
  * the app cannot enable the flag itself (`ConfigApi` is list-only).
  */
-class ArtifactsViewModel : ViewModel() {
+class ArtifactsViewModel(private val api: EngineApi) : ViewModel() {
 
     private val _state = MutableStateFlow(ArtifactsUiState())
     val state: StateFlow<ArtifactsUiState> = _state.asStateFlow()
@@ -59,7 +59,7 @@ class ArtifactsViewModel : ViewModel() {
             _state.value = _state.value.copy(loading = true, failure = null)
         }
         viewModelScope.launch {
-            val handle = EngineApi.handle()
+            val handle = api.handle()
             if (handle == null) {
                 _state.value = _state.value.copy(
                     loading = false,
@@ -89,7 +89,7 @@ class ArtifactsViewModel : ViewModel() {
         if (id in _state.value.deletingIds) return
         _state.value = _state.value.copy(deletingIds = _state.value.deletingIds + id)
         viewModelScope.launch {
-            val handle = EngineApi.handle()
+            val handle = api.handle()
             val result = handle?.artifacts?.delete(id)
             if (result is ApiResult.Failure) {
                 _state.value = _state.value.copy(
