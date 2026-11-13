@@ -25,6 +25,10 @@ data class LocationRef(
 @Serializable
 data class SessionInfo(
     val id: String,
+    /** Parent session when this one was forked (`Session.Info.parentID`). */
+    val parentID: String? = null,
+    /** Where this session was forked from, when it was (`Session.Info.fork`). */
+    val fork: ForkInfo? = null,
     val projectID: String? = null,
     val title: String? = null,
     /** The agent (mode) this session runs as, e.g. "build" — the engine's
@@ -36,6 +40,10 @@ data class SessionInfo(
     val outcome: String? = null,
     val time: SessionTime? = null,
     val location: LocationRef? = null,
+    /** Workspace-relative subpath the session is scoped to, when set. */
+    val subpath: String? = null,
+    /** A staged revert waiting for commit or clear, when one exists. */
+    val revert: SessionRevert? = null,
 )
 
 @Serializable

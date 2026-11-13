@@ -1,7 +1,12 @@
 package dev.bidzz.opencode.core.api
 
+import dev.bidzz.opencode.core.api.dto.CompactRequest
 import dev.bidzz.opencode.core.api.dto.CreateSessionRequest
 import dev.bidzz.opencode.core.api.dto.FileDiffInfo
+import dev.bidzz.opencode.core.api.dto.ForkRequest
+import dev.bidzz.opencode.core.api.dto.InboxItem
+import dev.bidzz.opencode.core.api.dto.RevertStageRequest
+import dev.bidzz.opencode.core.api.dto.SessionRevert
 import dev.bidzz.opencode.core.api.dto.FormInfo
 import dev.bidzz.opencode.core.api.dto.FormReplyRequest
 import dev.bidzz.opencode.core.api.dto.FormsResponse
@@ -359,6 +364,98 @@ class SessionApi(private val client: EngineClient) {
             .build()
         return client.executeUnit(request)
     }
+
+    /**
+     * Forks the session (`POST /api/session/{id}/fork`).
+     *
+     * [before] is the message the fork stops *before* — the forked session
+     * contains everything up to (excluding) that message; without it the
+     * whole session is forked through the latest message. Answers
+     * `{ data: SessionInfo }` for the **new** session; forking an empty
+     * session fails with `InvalidRequestError` (kind `empty_session`).
+     * Shape verified against the pinned engine source (see [ForkRequest]).
+     */
+    suspend fun fork(sessionID: String, before: String? = null): ApiResult<SessionInfo> {
+        val body = ApiJson.encodeToString(ForkRequest(before = before))
+        val request = client.request(sessionPath(sessionID, "/fork"))
+            .post(client.jsonBody(body))
+            .build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<SingleResponse<SessionInfo>>(raw).data
+        }
+    }
+
+    /**
+     * Compacts the session (`POST /api/session/{id}/compact`).
+     *
+     * [inputID] is a fresh [newMessageId]: the compaction runs as an inbox
+     * item with that id, and its message shows the outcome. [delivery]
+     * `"queue"` waits behind the current run; `"steer"` interrupts it.
+     * Answers `{ data: SessionInbox.Compaction }` — an [InboxItem] of type
+     * `compaction`. The transcript is replaced by the summary afterwards,
+     * so callers must reload the messages. A conflicting [inputID] fails
+     * with 409. Shape verified against the pinned engine source (see
+     * [CompactRequest]).
+     */
+    suspend fun compact(
+        sessionID: String,
+        inputID: String,
+        delivery: String = "queue",
+    ): ApiResult<InboxItem> {
+        val body = ApiJson.encodeToString(CompactRequest(id = inputID, delivery = delivery))
+        val request = client.request(sessionPath(sessionID, "/compact"))
+            .post(client.jsonBody(body))
+            .build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<SingleResponse<InboxItem>>(raw).data
+        }
+    }
+
+    /**
+     * Stages a session revert (`POST /api/session/{id}/revert/stage`).
+     *
+     * Plans the revert to just before [messageID] and answers
+     * `{ data: Session.Revert }`. [files] includes the file changes in
+     * the plan. The staged revert stays visible on the session
+     * ([SessionInfo.revert]) until [revertCommit] applies it or
+     * [revertClear] drops it. Staging while the session is busy fails.
+     * Shape verified against the pinned engine source (see
+     * [RevertStageRequest]).
+     */
+    suspend fun revertStage(
+        sessionID: String,
+        messageID: String,
+        files: Boolean = true,
+    ): ApiResult<SessionRevert> {
+        val body = ApiJson.encodeToString(RevertStageRequest(messageID = messageID, files = files))
+        val request = client.request(sessionPath(sessionID, "/revert/stage"))
+            .post(client.jsonBody(body))
+            .build()
+        return client.execute(request) { raw ->
+            ApiJson.decodeFromString<SingleResponse<SessionRevert>>(raw).data
+        }
+    }
+
+    /**
+     * Drops a staged revert (`DELETE /api/session/{id}/revert`).
+     * Answers 204 No Content.
+     */
+    suspend fun revertClear(sessionID: String): ApiResult<Unit> {
+        val request = client.request(sessionPath(sessionID, "/revert")).delete().build()
+        return client.executeUnit(request)
+    }
+
+    /**
+     * Applies a staged revert (`POST /api/session/{id}/revert/commit`).
+     * Answers 204 No Content. The session's messages and files move back
+     * to the staged point; callers must reload the transcript afterwards.
+     */
+    suspend fun revertCommit(sessionID: String): ApiResult<Unit> {
+        val request = client.request(sessionPath(sessionID, "/revert/commit"))
+            .post(client.emptyBody())
+            .build()
+        return client.executeUnit(request)
+    }
 }
 
 /**
@@ -381,3 +478,45 @@ data class SessionExport(
     val data: SessionTransferData,
     val rawJson: String,
 )
+
+/**
+ * A fresh message ID in the engine's own format, for client-supplied
+ * inbox-item ids (see [SessionApi.compact]).
+ *
+ * A faithful port of the fork's `Identifier.ascending()` plus the
+ * `SessionMessage.ID` prefix (`packages/schema/src/identifier.ts` and
+ * `packages/schema/src/session-message.ts` at pin 92b2ca0): `"msg_"`,
+ * then 12 hex chars from the current time (millis × 0x1000 plus a
+ * per-millisecond counter, low 48 bits, big-endian), then 14 random
+ * characters from the engine's 62-character alphabet. A bare UUID
+ * would fail the engine's `isStartingWith("msg_")` check, so the
+ * format matters — it is not cosmetic.
+ */
+fun newMessageId(nowMillis: Long = System.currentTimeMillis()): String =
+    "msg_" + MessageIdGenerator.next(nowMillis)
+
+private object MessageIdGenerator {
+    private const val ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    private var lastTimestamp = 0L
+    private var counter = 0
+
+    @Synchronized
+    fun next(nowMillis: Long): String {
+        if (nowMillis != lastTimestamp) {
+            lastTimestamp = nowMillis
+            counter = 0
+        }
+        counter++
+        val value = nowMillis * 0x1000L + counter
+        val timeHex = buildString(12) {
+            for (shift in intArrayOf(40, 32, 24, 16, 8, 0)) {
+                append(((value shr shift) and 0xFF).toString(16).padStart(2, '0'))
+            }
+        }
+        val random = buildString(14) {
+            repeat(14) { append(ALPHABET.random()) }
+        }
+        return timeHex + random
+    }
+}
+
