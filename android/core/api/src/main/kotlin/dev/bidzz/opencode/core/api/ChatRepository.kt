@@ -45,6 +45,14 @@ data class ChatState(
     val busy: Boolean = false,
     /** What went wrong, as a value: the screen words it in the app's language. */
     val lastFailure: ApiResult.Failure? = null,
+    /**
+     * True when [lastFailure] came from a failed resync (03-F2), not from a
+     * failed send: the prompt already ran, so the banner's Retry must
+     * re-open the session (re-fetching the finished answer) instead of
+     * re-sending the prompt. Cleared wherever [lastFailure] is set from any
+     * other origin or cleared.
+     */
+    val resyncFailed: Boolean = false,
     /** Active permission request waiting for the operator to reply. */
     val pendingPermission: PendingPermission? = null,
     /** Tool calls seen on the stream this run, keyed by call id. Cleared on resync. */
@@ -135,6 +143,33 @@ internal fun liveStreamingIds(
 }
 
 /**
+ * Whether a permission request the engine still lists may be restored by a
+ * resync (58-F5).
+ *
+ * A request that is being answered right now, or was answered moments ago,
+ * must not come back: the engine can keep listing it until it processes
+ * the reply, and restoring it shows a dead prompt that fails again when
+ * answered. The suppression window is deliberately short — a genuinely new
+ * ask carries a new id, so only a stale listing of the just-answered one
+ * is hidden, and only briefly.
+ */
+internal fun shouldRestorePermission(
+    requestId: String,
+    replyingPermissionId: String?,
+    lastAnsweredPermissionId: String?,
+    lastAnsweredPermissionAtMs: Long,
+    nowMs: Long,
+    windowMs: Long = ANSWERED_PERMISSION_SUPPRESS_MS,
+): Boolean {
+    if (requestId == replyingPermissionId) return false
+    if (requestId == lastAnsweredPermissionId && nowMs - lastAnsweredPermissionAtMs < windowMs) return false
+    return true
+}
+
+/** How long a just-answered permission id stays suppressed from resync restore (58-F5). */
+internal const val ANSWERED_PERMISSION_SUPPRESS_MS = 60_000L
+
+/**
  * Owns one session's conversation state.
  *
  * Streaming text is accumulated per assistant message id, not per "last message":
@@ -157,6 +192,14 @@ class ChatRepository(
 
         /** Each "load earlier" grows the window by this many messages. */
         private const val MESSAGE_PAGE = 100
+
+        /**
+         * Terminal resync retries (03-F2): the finished answer only reaches
+         * the transcript through that resync, so one transient failure hid
+         * it until the next run. Three attempts, 1s then 2s apart.
+         */
+        private const val TERMINAL_RESYNC_ATTEMPTS = 3
+        private val TERMINAL_RESYNC_DELAYS_MS = longArrayOf(1_000L, 2_000L)
     }
 
     private val _state = MutableStateFlow(ChatState())
@@ -177,6 +220,15 @@ class ChatRepository(
     /** Request id with a reply in flight: a double-tap (or a tap after a
      * rotation re-arms the buttons) must not answer twice (item 22). */
     private var replyingPermissionId: String? = null
+
+    /**
+     * Last permission id answered successfully, with the time it was
+     * answered (58-F5): the engine can keep listing it until it processes
+     * the reply, and a resync in that window must not resurrect the dead
+     * prompt. See [shouldRestorePermission].
+     */
+    private var lastAnsweredPermissionId: String? = null
+    private var lastAnsweredPermissionAtMs: Long = 0L
 
     /**
      * Text received per (assistant message id, block ordinal), for the message
@@ -221,6 +273,7 @@ class ChatRepository(
                         tag = "LostConnection",
                         message = null,
                     ),
+                    resyncFailed = false,
                 )
             }
         }
@@ -270,8 +323,14 @@ class ChatRepository(
         )
     }
 
-    /** Rebuilds from REST. Called on open and after every reconnect. */
-    private suspend fun resync() {
+    /**
+     * Rebuilds from REST. Called on open and after every reconnect.
+     *
+     * @param fromTerminal true when this resync follows a terminal run
+     * event (03-F2/01-F4): the finished answer only arrives through it,
+     * and a failed run's error is only visible in the history it returns.
+     */
+    private suspend fun resync(fromTerminal: Boolean = false) {
         val id = sessionID ?: return
         when (val result = sessionApi.messages(id, limit = messageLimit)) {
             is ApiResult.Success -> {
@@ -316,6 +375,22 @@ class ChatRepository(
                 // set is empty and this is the old full clear.
                 val liveIds = liveStreamingIds(rawChronological, _state.value.streaming.keys)
                 buffers.keys.retainAll { (id, _) -> id in liveIds }
+                // A run that died after partial content (01-F4): the error
+                // lives on the newest assistant message, and the old
+                // unconditional clear hid the failure — the partial answer
+                // looked complete. Only a terminal resync names it: on an
+                // open or a reconnect the same message is an old failure,
+                // not this run's, and the turn itself still carries the
+                // error marker (see ChatViewModel). The banner offers no
+                // Retry for it (code -1 is not transient): re-sending is
+                // the operator's call, not the banner's.
+                val terminalFailure = if (fromTerminal) {
+                    chronological.asReversed().firstOrNull { it.isAssistant }?.error?.let { error ->
+                        ApiResult.Failure(code = -1, tag = error.type, message = error.message)
+                    }
+                } else {
+                    null
+                }
                 _state.value = _state.value.copy(
                     messages = chronological,
                     streaming = _state.value.streaming.filterKeys { it in liveIds },
@@ -325,7 +400,8 @@ class ChatRepository(
                     // a rejected permission aborts the run without ever writing an
                     // `idle` message, so an idle-only check spins "Working" forever.
                     busy = newest != null && !newest.isIdle && newest.time?.completed == null,
-                    lastFailure = null,
+                    lastFailure = terminalFailure,
+                    resyncFailed = false,
                     // A full page back means the window may have cut older
                     // messages (item 28); a short page means we are at the
                     // beginning. Exactly one full page with nothing older
@@ -337,12 +413,24 @@ class ChatRepository(
                 // so restore it from REST. Only ever sets — an empty list
                 // must not wipe a request that arrived via SSE while this
                 // call was in flight, and a failed call leaves the prompt
-                // untouched.
+                // untouched. A request answered just now is not restored
+                // (58-F5): the engine can keep listing it until it
+                // processes the reply, and bringing it back shows a dead
+                // prompt that fails again when answered.
                 when (val pending = sessionApi.listPermissions(id)) {
                     is ApiResult.Success -> {
                         if (sessionID != id) return
                         pending.value.firstOrNull()?.let { request ->
-                            _state.value = _state.value.copy(pendingPermission = request)
+                            if (shouldRestorePermission(
+                                    requestId = request.id,
+                                    replyingPermissionId = replyingPermissionId,
+                                    lastAnsweredPermissionId = lastAnsweredPermissionId,
+                                    lastAnsweredPermissionAtMs = lastAnsweredPermissionAtMs,
+                                    nowMs = System.currentTimeMillis(),
+                                )
+                            ) {
+                                _state.value = _state.value.copy(pendingPermission = request)
+                            }
                         }
                     }
                     is ApiResult.Failure -> Log.w(TAG, "permission restore failed: ${pending.message}")
@@ -368,9 +456,36 @@ class ChatRepository(
                 // is still going).
                 _state.value = _state.value.copy(
                     lastFailure = result,
+                    // Marks the failure's origin (03-F2): the prompt already
+                    // ran, so Retry must re-open the session instead of
+                    // re-sending it. See retryKindFor.
+                    resyncFailed = true,
                     streaming = emptyMap(),
                     liveTools = emptyMap(),
                 )
+            }
+        }
+    }
+
+    /**
+     * The resync after a terminal run event, retried with backoff (03-F2).
+     *
+     * The finished answer only reaches the transcript through this resync,
+     * so one transient failure used to hide it until the next run. Retries
+     * while the failure is a NEW one from this resync: success clears
+     * [ChatState.lastFailure], and a session change leaves it untouched
+     * (the early return) — either way there is nothing left to fetch.
+     * Gives up after [TERMINAL_RESYNC_ATTEMPTS]; the banner (with its
+     * RELOAD_SESSION retry) is already set by the failed resync.
+     */
+    private suspend fun resyncAfterTerminal() {
+        repeat(TERMINAL_RESYNC_ATTEMPTS) { attempt ->
+            val before = _state.value.lastFailure
+            resync(fromTerminal = true)
+            val after = _state.value.lastFailure
+            if (after == null || after === before) return
+            if (attempt + 1 < TERMINAL_RESYNC_ATTEMPTS) {
+                delay(TERMINAL_RESYNC_DELAYS_MS[attempt])
             }
         }
     }
@@ -395,9 +510,10 @@ class ChatRepository(
                 messages = _state.value.messages + shown,
                 busy = true,
                 lastFailure = null,
+                resyncFailed = false,
             )
         } else if (result is ApiResult.Failure) {
-            _state.value = _state.value.copy(lastFailure = result)
+            _state.value = _state.value.copy(lastFailure = result, resyncFailed = false)
         }
         return when (result) {
             is ApiResult.Success -> ApiResult.Success(Unit)
@@ -437,13 +553,18 @@ class ChatRepository(
                     // Clear by id (item 22): a newer request may have arrived
                     // via SSE while this reply was in flight, and wiping it
                     // would leave the run blocked with no prompt on screen.
+                    // Remember the answer (58-F5): the engine can keep
+                    // listing this id until it processes the reply, and a
+                    // resync in that window must not resurrect it.
+                    lastAnsweredPermissionId = pending.id
+                    lastAnsweredPermissionAtMs = System.currentTimeMillis()
                     _state.value = _state.value.copy(
                         pendingPermission = _state.value.pendingPermission?.takeIf { it.id != pending.id },
                     )
                     ApiResult.Success(Unit)
                 }
                 is ApiResult.Failure -> {
-                    _state.value = _state.value.copy(lastFailure = result)
+                    _state.value = _state.value.copy(lastFailure = result, resyncFailed = false)
                     result
                 }
             }
@@ -499,6 +620,7 @@ class ChatRepository(
                     .orEmpty()
                 _state.value = _state.value.copy(
                     lastFailure = null,
+                    resyncFailed = false,
                     // Stored so the UI can render the prompt and the operator can reply.
                     // The engine blocks the tool until this is answered.
                     pendingPermission = PendingPermission(
@@ -528,8 +650,11 @@ class ChatRepository(
                 publishFlushJob?.cancel()
                 publishFlushJob = null
                 // Pull the finished message from REST so tool calls and token counts
-                // that never appeared as deltas are included.
-                scope.launch { resync() }
+                // that never appeared as deltas are included. Retried with
+                // backoff (03-F2): this resync is the only way the finished
+                // answer reaches the transcript, so one transient failure
+                // used to hide it until the next run.
+                scope.launch { resyncAfterTerminal() }
             }
 
             else -> {

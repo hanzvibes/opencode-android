@@ -156,6 +156,7 @@
     <string name="chat_retry">Coba lagi</string>
     <string name="chat_load_earlier">Muat pesan sebelumnya</string>
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="stop_unconfirmed">Stop belum terkonfirmasi — ketuk Stop untuk mencoba lagi.</string>
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
@@ -527,6 +528,7 @@
     <string name="fileview_find_next">Cocokan berikutnya</string>
     <string name="fileview_find_close">Tutup pencarian</string>
     <string name="fileview_large_warning">File besar (lebih dari 1 MB). Menampilkan %1$d baris pertama dari %2$d baris — pencarian hanya mencakup pratinjau ini. Muat seluruh file untuk mengedit atau mencari semuanya.</string>
+    <string name="fileview_too_large_to_edit">File ini terlalu besar untuk dibuka untuk diedit.</string>
     <string name="preview_page_of">Halaman %1$d dari %2$d</string>
     <string name="preview_page_prev">Halaman sebelumnya</string>
     <string name="preview_page_next">Halaman berikutnya</string>

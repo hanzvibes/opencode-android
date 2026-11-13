@@ -32,6 +32,25 @@ sealed interface ChatTurnPart {
 }
 
 /**
+ * The part of [streamingText] that is not already rendered (01-F5).
+ *
+ * The streaming text joins every text block of the turn, so after a
+ * reconnect the history already shows the earlier blocks and appending
+ * the whole stream repeats them. [shownText] is those blocks joined with
+ * "\n\n", as the repository joins them. Returns the suffix past what is
+ * shown — or the whole stream when it does not start with what is shown:
+ * then the buffer and the history disagree, and repeating the text is
+ * safer than dropping the new part.
+ */
+internal fun streamingTextSuffix(streamingText: String, shownText: String): String {
+    val stream = streamingText.trim()
+    val shown = shownText.trim()
+    if (shown.isEmpty()) return stream
+    if (!stream.startsWith(shown)) return stream
+    return stream.substring(shown.length).trimStart()
+}
+
+/**
  * Builds chronological turn parts from a message's content blocks, live tools, and streaming text.
  */
 fun buildTurnParts(
@@ -138,10 +157,25 @@ fun buildTurnParts(
     if (!streamingText.isNullOrBlank()) {
         val last = parts.lastOrNull()
         if (last is ChatTurnPart.Text) {
-            // Update the trailing text block with live stream content
-            parts[parts.lastIndex] = ChatTurnPart.Text(streamingText)
+            // 01-F5: the stream joins every text block, so replacing the
+            // trailing block with the whole stream repeats the earlier
+            // blocks when more than one text part exists. Only the part
+            // past the earlier blocks is new for this block.
+            val shownBeforeLast = parts.dropLast(1)
+                .filterIsInstance<ChatTurnPart.Text>()
+                .joinToString("\n\n") { it.markdown }
+            parts[parts.lastIndex] = ChatTurnPart.Text(
+                streamingTextSuffix(streamingText, shownBeforeLast),
+            )
         } else {
-            parts += ChatTurnPart.Text(streamingText)
+            // 01-F5: same root, other branch — the text before the tool is
+            // already rendered as an earlier Text part, so appending the
+            // whole stream repeats it. Append only the suffix past what is
+            // shown; nothing is appended when the stream holds nothing new.
+            val shown = parts.filterIsInstance<ChatTurnPart.Text>()
+                .joinToString("\n\n") { it.markdown }
+            val suffix = streamingTextSuffix(streamingText, shown)
+            if (suffix.isNotBlank()) parts += ChatTurnPart.Text(suffix)
         }
     }
 

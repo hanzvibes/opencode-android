@@ -71,12 +71,20 @@ object LargeFileGuard {
     /**
      * Returns the text to display and the file's full line count. Small files come
      * back untouched; large files come back as their first [PreviewLines] lines.
+     *
+     * [totalLines] is the file's true line count, which may come from the
+     * reader instead of this text: a capped read (59-F5) keeps only a
+     * prefix but still counts the whole file, so the banner never
+     * understates how much was held back.
      */
-    fun preview(content: String): Pair<String, Int> {
-        val lines = content.lines()
-        if (!isLarge(content)) return content to lines.size
-        return lines.take(PreviewLines).joinToString("\n") to lines.size
+    fun preview(text: String, totalLines: Int): Pair<String, Int> {
+        val lines = text.lines()
+        if (!isLarge(text)) return text to totalLines
+        return lines.take(PreviewLines).joinToString("\n") to totalLines
     }
+
+    /** Same as [preview] with the line count read off the text itself. */
+    fun preview(content: String): Pair<String, Int> = preview(content, content.lines().size)
 }
 
 /**

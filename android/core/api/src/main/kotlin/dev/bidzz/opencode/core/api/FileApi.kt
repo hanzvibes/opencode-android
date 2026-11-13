@@ -11,6 +11,8 @@ import dev.bidzz.opencode.core.api.dto.VcsFileStatus
 import dev.bidzz.opencode.core.api.dto.VcsInfo
 import dev.bidzz.opencode.core.api.dto.VcsInfoResponse
 import dev.bidzz.opencode.core.api.dto.VcsStatusResponse
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.URLEncoder
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -18,6 +20,50 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+
+/**
+ * What [FileApi.readText] read, without holding a whole huge file in RAM (59-F5).
+ *
+ * The body is streamed with a cap on what is kept: a 200 MB log no longer
+ * becomes bytes + a UTF-16 string + a lines list (~3x its size) before the
+ * [LargeFileGuard] preview can cut it down. The preview only ever needs
+ * the first 2,000 lines, so [text] holds at most [FILE_READ_CAP_BYTES]
+ * bytes — but [totalBytes] and [totalLines] still describe the whole file,
+ * so the preview banner never understates how much was held back.
+ */
+data class FileTextResult(
+    /** The text kept: the whole file, or its first [FILE_READ_CAP_BYTES] bytes when capped. */
+    val text: String,
+    /** True bytes in the body, kept or not. */
+    val totalBytes: Long,
+    /** Line count of the whole body, in [String.lines] terms. */
+    val totalLines: Int,
+    /** True when [text] stops before the end of the body. */
+    val truncated: Boolean,
+)
+
+/** Bytes [FileApi.readText] keeps before it stops buffering (59-F5): 8 MB. */
+internal const val FILE_READ_CAP_BYTES = 8_388_608
+
+/**
+ * Line count of [bytes] in [String.lines] terms (59-F5): separators are
+ * "\r\n", "\n" and "\r" (a split "\r\n" counts once); an empty input is
+ * one (empty) line, matching `"" .lines().size`.
+ */
+internal fun countLines(bytes: ByteArray): Int {
+    if (bytes.isEmpty()) return 1
+    var breaks = 0
+    var prev = -1
+    for (b in bytes) {
+        val v = b.toInt()
+        when (v) {
+            '\n'.code -> if (prev != '\r'.code) breaks++
+            '\r'.code -> breaks++
+        }
+        prev = v
+    }
+    return breaks + 1
+}
 
 /**
  * Filesystem access through the engine.
@@ -56,8 +102,16 @@ class FileApi(private val client: EngineClient) {
      * replaces malformed sequences with U+FFFD, so editing and saving such a
      * file would write the replacement characters back over the original
      * bytes. A file that is not valid UTF-8 is refused instead.
+     *
+     * The body is streamed with a cap (59-F5): only the first
+     * [FILE_READ_CAP_BYTES] bytes are kept, while the true size and line
+     * count are still measured over the whole body — the old `bytes()`
+     * call loaded the entire file into RAM before the LargeFileGuard
+     * preview could cut it down, so opening one large log could OOM the
+     * app. A capped result must never be edited as if whole: the caller
+     * refuses a full load when [FileTextResult.truncated] is true.
      */
-    suspend fun readText(directory: String, path: String): ApiResult<String> = withContext(Dispatchers.IO) {
+    suspend fun readText(directory: String, path: String): ApiResult<FileTextResult> = withContext(Dispatchers.IO) {
         val url = "/api/fs/read/${path.split('/').joinToString("/") { enc(it) }}?${locationParam(directory)}"
         val request = client.request(url).get().build()
         try {
@@ -71,28 +125,24 @@ class FileApi(private val client: EngineClient) {
                         message = parsed?.message ?: body.take(200).ifBlank { null },
                     )
                 }
-                val bytes = response.body?.bytes() ?: ByteArray(0)
-                if (looksBinary(bytes)) {
+                val stream = response.body?.byteStream()
+                    ?: return@withContext ApiResult.Success(FileTextResult("", 0, 1, false))
+                val read = stream.use { readCapped(it) }
+                if (looksBinary(read.kept)) {
                     // Tagged rather than worded: the screen knows the language, and the byte
                     // count still reaches it through `code`'s sibling field.
                     return@withContext ApiResult.Failure(
                         code = -2,
                         tag = "BinaryFile",
-                        message = bytes.size.toString(),
+                        message = read.totalBytes.toString(),
                     )
                 }
-                val text = runCatching {
-                    Charsets.UTF_8.newDecoder()
-                        .onMalformedInput(CodingErrorAction.REPORT)
-                        .onUnmappableCharacter(CodingErrorAction.REPORT)
-                        .decode(ByteBuffer.wrap(bytes))
-                        .toString()
-                }.getOrNull() ?: return@withContext ApiResult.Failure(
+                val text = decodeCapped(read.kept, read.truncated) ?: return@withContext ApiResult.Failure(
                     code = -3,
                     tag = "NotUtf8",
-                    message = bytes.size.toString(),
+                    message = read.totalBytes.toString(),
                 )
-                ApiResult.Success(text)
+                ApiResult.Success(FileTextResult(text, read.totalBytes, read.totalLines, read.truncated))
             }
         } catch (e: CancellationException) {
             // Cancellation is not a failure (Fase 2, 59-F4): the same
@@ -103,6 +153,70 @@ class FileApi(private val client: EngineClient) {
             ApiResult.Failure(code = 0, message = e.message, cause = e)
         }
     }
+
+    /**
+     * Streams [stream] to the end, keeping at most [FILE_READ_CAP_BYTES]
+     * bytes (59-F5). The true byte count and line count are measured over
+     * the whole body, so a capped read still reports the file's real size.
+     * Line breaks match [String.lines]: "\r\n" counts once even when the
+     * "\r" and "\n" land in different chunks.
+     */
+    private fun readCapped(stream: InputStream): CappedRead {
+        val kept = ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        var totalBytes = 0L
+        var breaks = 0
+        var prev = -1
+        while (true) {
+            val n = stream.read(buf)
+            if (n < 0) break
+            for (i in 0 until n) {
+                val v = buf[i].toInt()
+                when (v) {
+                    '\n'.code -> if (prev != '\r'.code) breaks++
+                    '\r'.code -> breaks++
+                }
+                prev = v
+            }
+            if (kept.size() < FILE_READ_CAP_BYTES) {
+                kept.write(buf, 0, minOf(n, FILE_READ_CAP_BYTES - kept.size()))
+            }
+            totalBytes += n
+        }
+        val totalLines = if (totalBytes == 0L) 1 else breaks + 1
+        return CappedRead(kept.toByteArray(), totalBytes, totalLines, totalBytes > FILE_READ_CAP_BYTES)
+    }
+
+    /**
+     * Strict UTF-8 decode of the kept bytes (item 11). A cap can cut a
+     * multi-byte sequence in half, which is not a malformed file: when
+     * truncated, retry after dropping up to 3 trailing bytes (a UTF-8
+     * sequence is at most 4 bytes). A genuine malformation anywhere else
+     * still fails all attempts and returns null.
+     */
+    private fun decodeCapped(kept: ByteArray, truncated: Boolean): String? {
+        var end = kept.size
+        while (true) {
+            val decoded = runCatching {
+                Charsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(kept, 0, end))
+                    .toString()
+            }.getOrNull()
+            if (decoded != null) return decoded
+            if (!truncated || kept.size - end >= 3) return null
+            end--
+        }
+    }
+
+    /** One streamed read: the kept prefix plus the whole body's measurements. */
+    private data class CappedRead(
+        val kept: ByteArray,
+        val totalBytes: Long,
+        val totalLines: Int,
+        val truncated: Boolean,
+    )
 
     /**
      * A NUL byte in the first 8 KB means the file is not text.

@@ -37,6 +37,9 @@ class ChatRepositoryResyncStreamingTest {
         val eventOut: LinkedBlockingQueue<OutputStream> = LinkedBlockingQueue(),
         /** Answer this 0-based `/message` call with HTTP 500 (-1 = never). */
         val errorOnMessageCall: Int = -1,
+        /** Answer these 0-based `/message` calls with HTTP 500. */
+        val errorOnMessageCalls: Set<Int> =
+            if (errorOnMessageCall >= 0) setOf(errorOnMessageCall) else emptySet(),
     ) : AutoCloseable {
         private val socket = ServerSocket(0, 5, InetAddress.getLoopbackAddress())
         val port: Int get() = socket.localPort
@@ -62,7 +65,7 @@ class ChatRepositoryResyncStreamingTest {
                             }
                             "/api/session/s1/message" in requestLine -> {
                                 val callIndex = messageCalls.getAndIncrement()
-                                if (callIndex == errorOnMessageCall) {
+                                if (callIndex in errorOnMessageCalls) {
                                     val body = """{"error":{"code":500,"message":"boom"}}"""
                                     out.write(
                                         ("HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n" +
@@ -174,10 +177,11 @@ class ChatRepositoryResyncStreamingTest {
 
     @Test
     fun `06-T1 failed resync after the terminal event clears live tools`() {
-        // Open resync: empty history. The terminal resync (call 1) fails
-        // with HTTP 500, so the tool that was running must not stick at
-        // "Running" — the run is over and nothing will ever update it.
-        val stub = Stub(histories = listOf("""{"data":[]}"""), errorOnMessageCall = 1)
+        // Open resync: empty history. Every terminal-resync attempt (calls
+        // 1-3) fails with HTTP 500 — the retry (03-F2) must exhaust itself
+        // before giving up — so the tool that was running must not stick
+        // at "Running": the run is over and nothing will ever update it.
+        val stub = Stub(histories = listOf("""{"data":[]}"""), errorOnMessageCalls = setOf(1, 2, 3))
         val scope = CoroutineScope(Job() + Dispatchers.IO)
         try {
             val client = EngineClient("http://127.0.0.1:${stub.port}", "Basic dXNlcjp4")
@@ -207,6 +211,84 @@ class ChatRepositoryResyncStreamingTest {
                 }
             }
             assertEquals(true, cleared)
+        } finally {
+            scope.cancel()
+            stub.close()
+        }
+    }
+
+    @Test
+    fun `03-F2 terminal resync retries transient failures until the finished answer lands`() {
+        // Open resync (call 0): empty history. The terminal resync fails
+        // twice (calls 1-2, HTTP 500) and succeeds on the third attempt
+        // (call 3): the finished answer must appear instead of hiding
+        // until the next run, with no failure left over.
+        val finished = """{"data":[{"id":"m1","type":"assistant","content":[{"type":"text","text":"Done"}],"time":{"created":1,"completed":2}}]}"""
+        val stub = Stub(
+            histories = listOf("""{"data":[]}""", "", "", finished),
+            errorOnMessageCalls = setOf(1, 2),
+        )
+        val scope = CoroutineScope(Job() + Dispatchers.IO)
+        try {
+            val client = EngineClient("http://127.0.0.1:${stub.port}", "Basic dXNlcjp4")
+            val repository = ChatRepository(SessionApi(client), EventStream(client), scope)
+            repository.open("s1")
+            val stream = stub.eventOut.poll(20, TimeUnit.SECONDS)
+            assertNotNull("event stream never connected", stream)
+            fun sendEvent(json: String) {
+                stream!!.write(("data: $json\n\n").encodeToByteArray())
+                stream.flush()
+            }
+
+            sendEvent("""{"type":"session.execution.succeeded","data":{"sessionID":"s1"}}""")
+            val landed = runBlocking {
+                withTimeoutOrNull(20_000) {
+                    while (repository.state.value.messages.none { it.id == "m1" }) delay(25)
+                    repository.state.value.messages.first { it.id == "m1" }
+                }
+            }
+            assertNotNull("finished answer never landed after retries", landed)
+            assertEquals("Done", landed!!.plainText)
+            assertEquals(null, repository.state.value.lastFailure)
+            assertEquals(false, repository.state.value.resyncFailed)
+        } finally {
+            scope.cancel()
+            stub.close()
+        }
+    }
+
+    @Test
+    fun `01-F4 terminal resync names the failed run's error on the banner`() {
+        // The run died after partial content: the history carries the
+        // assistant message with its error attached, and the terminal
+        // resync must surface it as the failure instead of clearing it.
+        val failed = """{"data":[{"id":"m1","type":"assistant","content":[{"type":"text","text":"Partial "}],"error":{"type":"ProviderError","message":"Provider overloaded"},"time":{"created":1,"completed":2}}]}"""
+        val stub = Stub(histories = listOf("""{"data":[]}""", failed))
+        val scope = CoroutineScope(Job() + Dispatchers.IO)
+        try {
+            val client = EngineClient("http://127.0.0.1:${stub.port}", "Basic dXNlcjp4")
+            val repository = ChatRepository(SessionApi(client), EventStream(client), scope)
+            repository.open("s1")
+            val stream = stub.eventOut.poll(20, TimeUnit.SECONDS)
+            assertNotNull("event stream never connected", stream)
+            fun sendEvent(json: String) {
+                stream!!.write(("data: $json\n\n").encodeToByteArray())
+                stream.flush()
+            }
+
+            sendEvent("""{"type":"session.execution.failed","data":{"sessionID":"s1"}}""")
+            val failure = runBlocking {
+                withTimeoutOrNull(20_000) {
+                    while (repository.state.value.lastFailure == null) delay(25)
+                    repository.state.value.lastFailure
+                }
+            }
+            assertNotNull("failed run produced no banner failure", failure)
+            assertEquals("ProviderError", failure!!.tag)
+            assertEquals("Provider overloaded", failure.message)
+            // A failed run is not a failed resync: Retry must not offer
+            // to re-open the session for it.
+            assertEquals(false, repository.state.value.resyncFailed)
         } finally {
             scope.cancel()
             stub.close()
