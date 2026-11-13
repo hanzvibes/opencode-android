@@ -960,4 +960,11 @@
     <string name="widget_open">Buka</string>
     <string name="widget_open_session_hint">Ketuk Buka untuk melanjutkan sesi</string>
     <string name="widget_no_session">Belum ada sesi</string>
+    <string name="task_delete_title">Hapus tugas</string>
+    <string name="task_delete_message">Apakah Anda yakin ingin menghapus “%1$s”? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="publish_state_publish">Publikasikan</string>
+    <string name="publish_state_success">Berhasil dipublikasikan</string>
+    <string name="publish_state_failed">Gagal dipublikasikan</string>
+    <string name="publish_state_up_to_date">Sudah terbaru</string>
+    <string name="publish_state_unpublished">Belum dipublikasikan</string>
 </resources>

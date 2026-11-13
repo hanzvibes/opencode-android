@@ -30,8 +30,8 @@ import dev.bidzz.opencode.core.api.dto.ArtifactInfo
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.HatchDeleteConfirmationDialog
 import dev.bidzz.opencode.ui.LoadingState
-import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
@@ -145,26 +145,18 @@ fun ArtifactsScreen(
 
     val toDelete = pendingDelete
     if (toDelete != null) {
-        LocalizedAlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingDelete = null
-                    onDelete(toDelete.id)
-                }) {
-                    Text(
-                        text = stringResource(R.string.artifact_remove_confirm),
-                        color = colors.danger,
-                    )
-                }
+        // Batch 1 (Aura full, Opsi B): the Hatch delete sheet instead of
+        // the generic AlertDialog. Same strings and behaviour — dismiss
+        // never deletes, confirm deletes this artifact's stored files.
+        HatchDeleteConfirmationDialog(
+            title = stringResource(R.string.artifact_remove_title),
+            message = stringResource(R.string.artifact_remove_body),
+            confirmLabel = stringResource(R.string.artifact_remove_confirm),
+            onDismiss = { pendingDelete = null },
+            onConfirm = {
+                pendingDelete = null
+                onDelete(toDelete.id)
             },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) {
-                    Text(text = stringResource(R.string.common_cancel))
-                }
-            },
-            title = { Text(text = stringResource(R.string.artifact_remove_title)) },
-            text = { Text(text = stringResource(R.string.artifact_remove_body)) },
         )
     }
 }
