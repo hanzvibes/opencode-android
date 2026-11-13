@@ -100,8 +100,13 @@ class ChatDraftParkingTest {
         val second = QueuedPrompt("sama", "sama")
         val queue = listOf(first, second)
 
+        // The head leaves when it is the sent entry, even with a
+        // same-text entry behind it.
         assertEquals(listOf(second), resolveFlushDrop(queue, first))
-        assertEquals(listOf(first), resolveFlushDrop(queue, second))
+        // The second entry is not the head: nothing drops. (The old
+        // value match dropped the head here too — same words — which is
+        // exactly the bug: the wrong follow-up left the queue.)
+        assertEquals(queue, resolveFlushDrop(queue, second))
     }
 
     @Test
