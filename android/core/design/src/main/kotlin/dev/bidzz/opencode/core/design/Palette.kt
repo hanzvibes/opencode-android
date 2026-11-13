@@ -359,3 +359,77 @@ object Palette {
     val darkProviderNvidia = Color(0xFF76B900)
     val lightProviderNvidia = Color(0xFF5C8A00)
 }
+
+/**
+ * Aura palette — extracted from the Meta Muse app (`com.facebook.aura`
+ * 16.0.0.2.159, `resources.arsc` + dex class names, `Hatch*` UI).
+ *
+ * Clean-room re-type, NOT a copy: the APK's resource names are obfuscated
+ * (`(name removed)`), so these values are the raw hex from `resources.arsc`
+ * given Aura names here; the Optimistic font family and every PNG/WebP
+ * asset stay in the APK and are NOT bundled. Substitutes: Inter (the
+ * Optimistic role) + JetBrains Mono (the Roboto Mono role), already bundled.
+ *
+ * AA rules, verified by computation (see `AuraThemeTest`):
+ * - Text-safe on white AND on [auraSurface] #F6F7F8: [auraBlueText]
+ *   (7.89 / 7.36), [auraMuted] (4.90 / 4.57), [auraPurple] (6.44),
+ *   [auraSuccessText] (7.37 / 6.87).
+ * - [auraBlueFill] and [auraDanger] are AA on white only (4.58 / 4.77)
+ *   and fall just under AA on [auraSurface] (4.27 / 4.45): as text on
+ *   the Aura page, use [lightDangerText] / [auraBlueText] instead.
+ *   As a FILL under white text they are AA on any surface.
+ * - [auraBlue] (3.07 on white) and [auraFaint] (2.93) are NEVER text:
+ *   blue is dots / fills / gradient stops only, faint is decoration only.
+ * - [auraSuccess] #1D873B is the extracted brand green (fill / dot);
+ *   [auraSuccessText] is the same hue darkened for AA text, the same
+ *   move Palette already makes for [lightSuccessText].
+ */
+object AuraPalette {
+    // ---- Facebook blue (extracted scale, alpha steps from resources.arsc) ----
+    /** Bright blue: dots, fills, gradient stops — never text (3.07:1). */
+    val auraBlue = Color(0xFF5890FF)
+    /** Fill under white text (white on it 4.58:1); as text, white only. */
+    val auraBlueFill = Color(0xFF4673CC)
+    /** Text-safe blue (7.89:1 on white, 7.36:1 on #F6F7F8). */
+    val auraBlueText = Color(0xFF355089)
+    /** Light blue: gradient stop + text on navy (9.31:1 on #141823). */
+    val auraBlueLight = Color(0xFF9BBCFF)
+    /** Alpha steps of [auraBlue] for tints (10 / 20 / 40 / 60 / 80%). */
+    val auraBlueAlpha10 = Color(0x1A5890FF)
+    val auraBlueAlpha20 = Color(0x335890FF)
+    val auraBlueAlpha40 = Color(0x665890FF)
+    val auraBlueAlpha60 = Color(0x995890FF)
+    val auraBlueAlpha80 = Color(0xCC5890FF)
+
+    // ---- Material 3 purple (extracted baseline) ----
+    val auraPurple = Color(0xFF6750A4)
+    val auraPurpleContainer = Color(0xFFEADDFF)
+    val auraPurpleLight = Color(0xFFD0BCFF)
+
+    // ---- Aura neutrals ----
+    /** Aura page surface (vs Muse B #F9F9FA). */
+    val auraSurface = Color(0xFFF6F7F8)
+    /** Aura card border (vs Muse B #EBEBEB). */
+    val auraBorder = Color(0xFFE9EAED)
+    /** Muted text, AA on white and on [auraSurface]. */
+    val auraMuted = Color(0xFF6A7180)
+    /** Decoration only, never text (2.93:1 on white). */
+    val auraFaint = Color(0xFF9197A3)
+    /** Near-black text on Aura surfaces (15.97:1 on #F6F7F8). */
+    val auraOnSurface = Color(0xFF1C1B1F)
+
+    // ---- Aura dark navy (dark-theme surfaces, extracted) ----
+    val auraNavy = Color(0xFF141823)
+    val auraNavyDeep = Color(0xFF080A10)
+    val auraSlate = Color(0xFF232937)
+    val auraSlateLight = Color(0xFF373E4D)
+    val auraSlateBorder = Color(0xFF3A465C)
+
+    // ---- Aura semantics ----
+    /** Brand green: fill / dot (white on it 4.58:1). */
+    val auraSuccess = Color(0xFF1D873B)
+    /** Darkened green for AA text (7.37:1 white, 6.87:1 #F6F7F8). */
+    val auraSuccessText = Color(0xFF14632B)
+    /** Google red: AA as text on white only (4.77:1; 4.45:1 on #F6F7F8). */
+    val auraDanger = Color(0xFFD93025)
+}

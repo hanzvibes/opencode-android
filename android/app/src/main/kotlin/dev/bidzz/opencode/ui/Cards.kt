@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
@@ -318,6 +317,10 @@ fun TonalButton(
  * through it was a dead end — 11+ screens showed a red message with no
  * way to try again in place. Callers pass their own refresh callback;
  * the label reuses the chat retry string.
+ *
+ * [meshGradient] (Aura B) draws an [AuraMeshGradient] band above the
+ * text. Only the session-list empty state opts in — an error never gets
+ * the band, and every other screen keeps the plain centred text.
  */
 @Composable
 fun EmptyState(
@@ -325,6 +328,7 @@ fun EmptyState(
     modifier: Modifier = Modifier,
     isError: Boolean = false,
     onRetry: (() -> Unit)? = null,
+    meshGradient: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -339,6 +343,14 @@ fun EmptyState(
                 .widthIn(max = 720.dp)
                 .padding(spacing.xxl),
         ) {
+            if (meshGradient && !isError) {
+                AuraMeshGradient(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(96.dp)
+                        .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.lg)),
+                )
+            }
             Text(
                 text = text,
                 style = OpenCodeTypography.body,
@@ -356,10 +368,10 @@ fun EmptyState(
 }
 
 /**
- * The one loading state for list/detail screens (Opsi B #4c): a centered
- * spinner in the same style as the chat engine-loading spinner
- * (`dims.iconLarge`, 2dp stroke, `colors.accent`) with the loading text
- * below it, capped at the 720dp content width like [EmptyState].
+ * The one loading state for list/detail screens (Opsi B #4c): an Aura
+ * ring ([AuraPullRefreshIndicator], canvas-drawn arc in Aura blue) with
+ * the loading text below it, capped at the 720dp content width like
+ * [EmptyState]. It used to be the M3 spinner; Aura B swaps the ring in.
  *
  * The retry button ([R.string.chat_retry]) appears only after
  * [retryAfterMs] (default 15s) and only when [onRetry] is given: engine
@@ -380,7 +392,6 @@ fun LoadingState(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val dims = OpenCodeTheme.tokens.dimensions
     var showRetry by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(retryAfterMs)
@@ -397,11 +408,10 @@ fun LoadingState(
                 .widthIn(max = 720.dp)
                 .padding(spacing.xxl),
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(dims.iconLarge),
-                strokeWidth = 2.dp,
-                color = colors.accent,
-            )
+            // Aura loading ring (HatchPullToRefresh): a canvas-drawn arc
+            // in Aura blue, not the M3 spinner — the same ring every list
+            // screen shows while it loads.
+            AuraPullRefreshIndicator(progress = null)
             Text(
                 text = text,
                 style = OpenCodeTypography.body,

@@ -38,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -210,11 +209,10 @@ fun DraggableBottomSheet(
                         ),
                 )
 
-                // Putih B sheet edge (Opsi B #41): 16dp top radius + 1dp
-                // border + raised shadow in light; flat + hairline in
-                // dark. whiteCard() itself forces a symmetric radius, so
-                // the treatment is mirrored here with the top-only shape
-                // (the shared whiteCardEdge(shape) extraction is #43).
+                // Aura sheet edge (Opsi B): 16dp top radius + 1dp border +
+                // the two-layer raised Aura shadow in light; flat + hairline
+                // in dark. whiteCard() itself forces a symmetric radius, so
+                // the treatment is mirrored here with the top-only shape.
                 val sheetShape = RoundedCornerShape(
                     topStart = radius.lg,
                     topEnd = radius.lg,
@@ -229,14 +227,8 @@ fun DraggableBottomSheet(
                             sheetShape,
                         )
                 } else {
-                    val shadow = OpenCodeTheme.tokens.shadow.raised
                     Modifier
-                        .shadow(
-                            elevation = shadow.elevation,
-                            shape = sheetShape,
-                            ambientColor = shadow.ambientColor,
-                            spotColor = shadow.spotColor,
-                        )
+                        .auraShadow(OpenCodeTheme.tokens.auraShadow.raised, sheetShape)
                         .clip(sheetShape)
                         .background(colors.surface)
                         .border(

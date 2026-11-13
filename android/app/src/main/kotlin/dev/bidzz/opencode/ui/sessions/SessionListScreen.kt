@@ -333,6 +333,9 @@ fun SessionListPane(
             filteredRows.isEmpty() -> EmptyState(
                 if (query.isBlank()) stringResource(R.string.history_empty)
                 else stringResource(R.string.history_search_no_results, query),
+                // Aura mesh band on the true empty state only — a search
+                // with no results stays plain text.
+                meshGradient = query.isBlank(),
             )
             else -> {
                 val grouped = remember(filteredRows) { groupSessions(filteredRows) }
