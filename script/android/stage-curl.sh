@@ -126,6 +126,14 @@ EXTRACT_DIR="$WORK_DIR/extract"
 PREFIX="$EXTRACT_DIR/data/data/com.termux/files/usr"
 mkdir -p "$DEBS_DIR" "$EXTRACT_DIR" "$JNI_OUT"
 
+# 84-F7: clear this script's own outputs before staging, so a library
+# a newer .deb no longer ships (or that this script no longer stages)
+# does not survive as a stale .so in the shared jniLibs dir. Only the
+# names below are removed — the other scripts' libraries stay untouched.
+rm -f "$JNI_OUT/libcurl-cli.so" "$JNI_OUT/libcurl.so" "$JNI_OUT/libnghttp2.so" \
+    "$JNI_OUT/libnghttp3.so" "$JNI_OUT/libngtcp2.so" "$JNI_OUT/libngtcp2_crypto_ossl.so" \
+    "$JNI_OUT/libssh2.so" "$JNI_OUT/libcrypto.so" "$JNI_OUT/libssl.so" "$JNI_OUT/libz.so"
+
 command -v "$PATCHELF" >/dev/null || { echo "patchelf not found (set --patchelf or install it)" >&2; exit 1; }
 "$PATCHELF" --version
 

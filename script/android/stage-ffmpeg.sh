@@ -278,6 +278,37 @@ EXTRACT_DIR="$WORK_DIR/extract"
 PREFIX="$EXTRACT_DIR/data/data/com.termux/files/usr"
 mkdir -p "$DEBS_DIR" "$EXTRACT_DIR" "$JNI_OUT"
 
+# 84-F7: clear this script's own outputs before staging, so a library
+# a newer .deb no longer ships (or that this script no longer stages)
+# does not survive as a stale .so in the shared jniLibs dir. Only the
+# names below are removed — the other scripts' libraries stay untouched.
+rm -f "$JNI_OUT/libffmpeg.so" "$JNI_OUT/libffprobe.so" "$JNI_OUT/libOpenCL.so" \
+    "$JNI_OUT/libSvtAv1Enc.so" "$JNI_OUT/libXau.so" "$JNI_OUT/libXdmcp.so" \
+    "$JNI_OUT/libandroid-execinfo.so" "$JNI_OUT/libandroid-glob.so" "$JNI_OUT/libandroid-shmem.so" \
+    "$JNI_OUT/libaom.so" "$JNI_OUT/libass.so" "$JNI_OUT/libavcodec.so" "$JNI_OUT/libavdevice.so" \
+    "$JNI_OUT/libavfilter.so" "$JNI_OUT/libavformat.so" "$JNI_OUT/libavutil.so" \
+    "$JNI_OUT/libbluray.so" "$JNI_OUT/libbrotlicommon.so" "$JNI_OUT/libbrotlidec.so" \
+    "$JNI_OUT/libbrotlienc.so" "$JNI_OUT/libbs2b.so" "$JNI_OUT/libc++_shared.so" \
+    "$JNI_OUT/libdav1d.so" "$JNI_OUT/libdvdnav.so" "$JNI_OUT/libdvdread.so" "$JNI_OUT/libfftw3.so" \
+    "$JNI_OUT/libfontconfig.so" "$JNI_OUT/libfreetype.so" "$JNI_OUT/libfribidi.so" \
+    "$JNI_OUT/libglib-2.0.so" "$JNI_OUT/libglslang-default-resource-limits.so" \
+    "$JNI_OUT/libglslang.so" "$JNI_OUT/libgme.so" "$JNI_OUT/libgraphite2.so" \
+    "$JNI_OUT/libharfbuzz.so" "$JNI_OUT/libhwy.so" "$JNI_OUT/libiconv.so" "$JNI_OUT/libjxl.so" \
+    "$JNI_OUT/libjxl_cms.so" "$JNI_OUT/libjxl_threads.so" "$JNI_OUT/liblcms2.so" \
+    "$JNI_OUT/libmp3lame.so" "$JNI_OUT/libmpg123.so" "$JNI_OUT/libmysofa.so" "$JNI_OUT/libogg.so" \
+    "$JNI_OUT/libopencore-amrnb.so" "$JNI_OUT/libopencore-amrwb.so" "$JNI_OUT/libopenmpt.so" \
+    "$JNI_OUT/libopus.so" "$JNI_OUT/libpcre2-8.so" "$JNI_OUT/libplacebo.so" "$JNI_OUT/libpng16.so" \
+    "$JNI_OUT/librav1e.so" "$JNI_OUT/librubberband.so" "$JNI_OUT/libsamplerate.so" \
+    "$JNI_OUT/libsharpyuv.so" "$JNI_OUT/libsodium.so" "$JNI_OUT/libsoxr.so" "$JNI_OUT/libsrt.so" \
+    "$JNI_OUT/libssh.so" "$JNI_OUT/libswresample.so" "$JNI_OUT/libswscale.so" \
+    "$JNI_OUT/libtheoradec.so" "$JNI_OUT/libtheoraenc.so" "$JNI_OUT/libudfread.so" \
+    "$JNI_OUT/libvidstab.so" "$JNI_OUT/libvmaf.so" "$JNI_OUT/libvo-amrwbenc.so" \
+    "$JNI_OUT/libvorbis.so" "$JNI_OUT/libvorbisenc.so" "$JNI_OUT/libvorbisfile.so" \
+    "$JNI_OUT/libvpx.so" "$JNI_OUT/libvulkan.so" "$JNI_OUT/libwebp.so" "$JNI_OUT/libwebpmux.so" \
+    "$JNI_OUT/libx264.so" "$JNI_OUT/libx265.so" "$JNI_OUT/libxcb-shape.so" "$JNI_OUT/libxcb-shm.so" \
+    "$JNI_OUT/libxcb-xfixes.so" "$JNI_OUT/libxcb.so" "$JNI_OUT/libxml2.so" "$JNI_OUT/libxvidcore.so" \
+    "$JNI_OUT/libzimg.so" "$JNI_OUT/libzmq.so"
+
 command -v "$PATCHELF" >/dev/null || { echo "patchelf not found (set --patchelf or install it)" >&2; exit 1; }
 "$PATCHELF" --version
 

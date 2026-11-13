@@ -153,6 +153,17 @@ DEBS_DIR="$WORK_DIR/debs"
 EXTRACT_DIR="$WORK_DIR/extract"
 PREFIX="$EXTRACT_DIR/data/data/com.termux/files/usr"
 mkdir -p "$DEBS_DIR" "$EXTRACT_DIR" "$JNI_OUT"
+
+# 84-F7: clear this script's own outputs before staging, so a library
+# a newer .deb no longer ships (or that this script no longer stages)
+# does not survive as a stale .so in the shared jniLibs dir. Only the
+# names below are removed — the other scripts' libraries stay untouched.
+rm -f "$JNI_OUT/libpython3.so" "$JNI_OUT/libandroid-posix-semaphore.so" \
+    "$JNI_OUT/libandroid-support.so" "$JNI_OUT/libbz2.so" "$JNI_OUT/libcrypto.so" \
+    "$JNI_OUT/libexpat.so" "$JNI_OUT/libffi.so" "$JNI_OUT/libgdbm.so" "$JNI_OUT/libgdbm_compat.so" \
+    "$JNI_OUT/liblzma.so" "$JNI_OUT/libncursesw.so" "$JNI_OUT/libpanelw.so" \
+    "$JNI_OUT/libpython3.14.so" "$JNI_OUT/libreadline.so" "$JNI_OUT/libsqlite3.so" \
+    "$JNI_OUT/libssl.so" "$JNI_OUT/libz.so" "$JNI_OUT/libzstd.so"
 if [ "$WITH_ASSETS" = "1" ]; then
     mkdir -p "$ASSETS_OUT"
 fi
@@ -327,7 +338,9 @@ echo "stage-python done for $ABI"
 
 # --- Assets: stdlib tree (+ pip) -------------------------------------------
 if [ "$WITH_ASSETS" = "1" ]; then
-    rm -rf "$ASSETS_OUT/lib"
+    # 84-F7: wipe the whole assets dir, not just lib/ — a stale stdlib file
+    # from an older python would otherwise linger beside the new tree.
+    rm -rf "$ASSETS_OUT"
     mkdir -p "$ASSETS_OUT/lib"
     cp -r "$PREFIX/lib/python3.14" "$ASSETS_OUT/lib/python3.14"
     # The extension modules are dlopen'd at import time from this tree, so

@@ -5,19 +5,27 @@ plugins {
 
 android {
     namespace = "dev.bidzz.opencode.core.common"
-    compileSdk = 35
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 29
+        minSdk = libs.versions.minSdk.get().toInt()
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.toVersion(libs.versions.java.get())
+        targetCompatibility = JavaVersion.toVersion(libs.versions.java.get())
     }
 
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = libs.versions.java.get()
+    }
+
+    // Unit tests call android.* APIs (Log, Base64, ...) that return default
+    // values on the JVM instead of throwing (62-F8): app and core:api had
+    // this on, the other modules did not, so the same call behaved
+    // differently depending on which module's test ran it.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 

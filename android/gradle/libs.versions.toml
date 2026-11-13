@@ -9,11 +9,25 @@ kotlin = "2.1.0"
 coroutines = "1.9.0"
 serialization = "1.7.3"
 composeBom = "2024.12.01"
-activityCompose = "1.8.2"
+# The Android SDK levels and the Java version live here too (62-F10): the
+# five module build files used to repeat `compileSdk = 35`, `minSdk = 29`
+# and Java 17 as literals, so one module could drift without anyone
+# noticing. Bump a value here and every module follows.
+compileSdk = "35"
+minSdk = "29"
+targetSdk = "35"
+java = "17"
+activityCompose = "1.9.3"
 biometric = "1.1.0"
 fragmentKtx = "1.8.2"
-lifecycle = "2.8.3"
-okhttp = "4.12.0"
+# lifecycle 2.8.7: the Dec-2024 contemporary of composeBom 2024.12.01
+# (63-F5). 2.8.3 predated the BOM set and risked a NoSuchMethodError on a
+# Compose code path calling a newer lifecycle API.
+lifecycle = "2.8.7"
+# OkHttp 4.12.1: one patch above 4.12.0 for CVE-2026-111943 (leaked-CA
+# blocklist, 63-F4). The app's own traffic is loopback-only, so the risk was
+# latent — but a future HTTPS caller would have inherited the hole.
+okhttp = "4.12.1"
 junit = "4.13.2"
 json = "20240303"
 

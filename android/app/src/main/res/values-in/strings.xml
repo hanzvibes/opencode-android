@@ -152,6 +152,11 @@
     <string name="about_github">GitHub</string>
     <string name="about_open_failed">Tidak ada aplikasi di perangkat ini yang bisa membuka tautan itu.</string>
     <string name="about_version">OpenCode Android %1$s</string>
+    <string name="about_licenses_title">Lisensi</string>
+    <string name="about_licenses_notices">Pemberitahuan pihak ketiga</string>
+    <string name="about_licenses_notices_body">Apa saja yang dibundel, di bawah lisensi apa, dan di mana mendapatkan sumbernya.</string>
+    <string name="about_licenses_read_failed">Teks lisensi itu tidak bisa dibaca.</string>
+    <string name="common_close">Tutup</string>
 
     <!-- Chat -->
     <string name="chat_menu">Menu</string>
