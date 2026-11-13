@@ -11,7 +11,7 @@ Upstream is never modified in place inside this repository. The workflow is:
 4. Re-apply after an upstream bump; a patch that no longer applies is a signal
    that upstream changed under us and needs review, not a silent skip.
 
-Pinned upstream: `92b2ca0` — `@opencode/cli` v2.2.2, branch `dev`.
+Pinned upstream: `fedc6f20` — `@opencode/cli` v2.2.7, branch `dev`.
 
 ---
 

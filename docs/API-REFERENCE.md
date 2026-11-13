@@ -1,9 +1,9 @@
 ﻿# OpenCode Engine API Reference
 
-Generated from `packages/protocol/openapi.json` (OpenAPI 3.1.0, 134 paths, 351 schemas).
+Generated from `packages/protocol/openapi.json` (OpenAPI 3.1.0, 139 paths, 497 schemas).
 
-**Not generated into Kotlin on purpose.** 77 schemas use `anyOf` without a discriminator,
-which generators turn into `JsonElement`; 63 schemas are named `*Encoded` and describe
+**Not generated into Kotlin on purpose.** 99 schemas use `anyOf` without a discriminator,
+which generators turn into `JsonElement`; 65 schemas are named `*Encoded` and describe
 Effect's internal serialisation rather than a contract worth committing to. The client in
 `core:api` models only the shapes verified against a live server.
 
@@ -151,6 +151,14 @@ printed to stdout at startup.
 | DELETE | `/api/experimental/schedule/{scheduleID}` | Delete schedule |
 | POST | `/api/experimental/schedule/{scheduleID}/pause` | Pause schedule |
 | POST | `/api/experimental/schedule/{scheduleID}/resume` | Resume schedule |
+| GET | `/api/experimental/artifacts/providers` | List artifact providers |
+| GET | `/api/experimental/artifacts` | List artifacts |
+| POST | `/api/experimental/artifacts` | Create artifact |
+| GET | `/api/experimental/artifacts/{artifactID}` | Read artifact |
+| PATCH | `/api/experimental/artifacts/{artifactID}` | Update artifact |
+| DELETE | `/api/experimental/artifacts/{artifactID}` | Delete artifact |
+| GET | `/api/experimental/artifacts/{artifactID}/view/*` | View local artifact |
+| GET | `/api/experimental/job` | List background jobs |
 | GET | `/api/shell` | List running shell commands |
 | POST | `/api/shell` | Run shell command |
 | GET | `/api/shell/{id}` | Get shell command |
@@ -187,11 +195,22 @@ printed to stdout at startup.
 | `Agent.ID` | string |  |
 | `Agent.Info` | object | id, name, model, request, system, description, mode, hidden, color, steps, permissions |
 | `AgentNotFoundErrorEncoded` | object | _tag, agentID, message |
+| `Artifact.Capability` | string |  |
+| `Artifact.Content` | object | info, files |
+| `Artifact.CreateInput` | object | title, files, entry, provider, sessionID |
+| `Artifact.ID` | string |  |
+| `Artifact.Info` | object | id, provider, sessionID, title, entry, url, time |
+| `Artifact.Provider` | object | id, name, capabilities, default |
+| `Artifact.ProviderIDEncoded` | string |  |
+| `Artifact.Time` | object | created, updated |
+| `Artifact.UpdateInput` | object | title, files, entry, sessionID |
+| `ArtifactNotFoundErrorEncoded` | object | _tag, artifactID, message |
 | `Command.Info` | object | name, description |
 | `CommandExecutionErrorEncoded` | object | _tag, command, message |
 | `CommandNotFoundErrorEncoded` | object | _tag, command, message |
 | `Config.AgentEncoded` | object | model, request, system, description, mode, hidden, color, steps, disabled, permissions |
 | `Config.CommandEncoded` | object | template, description, agent, model, subagent, subtask |
+| `Config.Compaction.Percent` | string |  |
 | `Config.DirectoryEncoded` | object | type, path |
 | `Config.DocumentEncoded` | object | type, path, info |
 | `Config.Entry` | anyOf |  |
@@ -226,31 +245,46 @@ printed to stdout at startup.
 | `Credential.Key` | object | type, key, metadata |
 | `Credential.OAuth` | object | type, methodID, refresh, access, expires, metadata |
 | `Credential.Value` | anyOf |  |
-| `Event.SeqEncoded` | string |  |
+| `Event.ID` | string |  |
+| `Event.Seq` | integer |  |
+| `Event.VersionEncoded_c3ea984aceae` | number |  |
+| `Event.VersionEncoded_c77c5abcb68d` | number |  |
+| `EventLog.Synced` | object | type, aggregateID, seq |
 | `FileDiff.Info` | object | file, patch, additions, deletions, status, more |
 | `FileNotFoundErrorEncoded` | object | _tag, path, message |
 | `FileSystem.Entry` | object | path, type |
 | `FileSystem.Write` | object | path |
 | `ForbiddenErrorEncoded` | object | _tag, message |
 | `Form.Answer` | object |  |
+| `Form.Answer_1` | object |  |
 | `Form.BooleanField` | object | key, title, description, required, hidden, when, type, default |
+| `Form.BooleanField_1` | object | key, title, description, required, hidden, when, type, default |
 | `Form.CreatePayload` | object | id, title, metadata, fields |
 | `Form.Detail` | object | id, sessionID, title, metadata, fields, state |
 | `Form.ExternalField` | object | key, type, url, title, description |
 | `Form.Field` | anyOf |  |
+| `Form.Field_1` | anyOf |  |
 | `Form.Fields` | array |  |
+| `Form.Fields_1` | array |  |
 | `Form.ID` | string |  |
 | `Form.Info` | object | id, sessionID, title, metadata, fields |
+| `Form.Info_1` | object | id, sessionID, title, metadata, fields |
 | `Form.IntegerField` | object | key, title, description, required, hidden, when, type, minimum, maximum, default |
+| `Form.IntegerField_1` | object | key, title, description, required, hidden, when, type, minimum, maximum, default |
 | `Form.Metadata` | object |  |
 | `Form.MultiselectField` | object | key, title, description, required, hidden, when, type, options, minItems, maxItems, custom, default |
+| `Form.MultiselectField_1` | object | key, title, description, required, hidden, when, type, options, minItems, maxItems, custom, default |
 | `Form.NumberField` | object | key, title, description, required, hidden, when, type, minimum, maximum, default |
+| `Form.NumberField_1` | object | key, title, description, required, hidden, when, type, minimum, maximum, default |
 | `Form.Option` | object | value, label, description |
 | `Form.Reply` | object | answer |
 | `Form.State` | anyOf |  |
 | `Form.StringField` | object | key, title, description, required, hidden, when, type, format, minLength, maxLength, pattern, placeholder, default, options, custom |
+| `Form.StringField_1` | object | key, title, description, required, hidden, when, type, format, minLength, maxLength, pattern, placeholder, default, options, custom |
 | `Form.Value` | anyOf |  |
+| `Form.Value_1` | anyOf |  |
 | `Form.When` | object | key, op, value |
+| `Form.When_1` | object | key, op, value |
 | `FormAlreadySettledErrorEncoded` | object | _tag, id, message |
 | `FormInvalidAnswerErrorEncoded` | object | _tag, id, message |
 | `FormNotFoundErrorEncoded` | object | _tag, id, message |
@@ -274,17 +308,20 @@ printed to stdout at startup.
 | `Generate.ImageResult` | object | images, cost, tokens, native |
 | `Generate.Native` | object |  |
 | `Generate.PredicateAnswer` | object | type, name, probability |
-| `Generate.PredicateQuestion` | object | type, name, instructions |
+| `Generate.PredicateQuestion` | object | type, name, instructions, criteria |
 | `Generate.ScoreAnswer` | object | type, name, score, probabilities, confidence |
 | `Generate.ScoreQuestion` | object | type, name, instructions, levels |
 | `Generate.Usage` | object | input, output |
 | `GenerateDecisionsResponse` | object | data |
 | `GenerateImageResponse` | object | data |
 | `GenerateTextResponse` | object | data |
+| `Instruction.Hash` | string |  |
+| `Instruction.Key` | string |  |
 | `InstructionEntry.Info` | object | key, value |
 | `InstructionEntry.Key` | string |  |
+| `InstructionEntry.Snapshot` | array |  |
 | `InstructionEntryValueTooLargeErrorEncoded` | object | _tag, actualBytes, maxBytes, message |
-| `Integration.AttemptEncoded` | object | attemptID, url, instructions, mode, time |
+| `Integration.AttemptEncoded` | object | attemptID, url, instructions, mode, paste, time |
 | `Integration.AttemptID` | string |  |
 | `Integration.AttemptStatus` | anyOf |  |
 | `Integration.CommandAttempt` | object | attemptID, time |
@@ -303,13 +340,21 @@ printed to stdout at startup.
 | `IntegrationNotFoundErrorEncoded` | object | _tag, integrationID, message |
 | `InvalidCursorErrorEncoded` | object | _tag, message |
 | `InvalidRequestErrorEncoded` | object | _tag, message, kind, field |
+| `Job.Image` | object | kind, id, sessionID, status, title, time, path, model |
+| `Job.Info` | anyOf |  |
+| `Job.Kind` | string |  |
+| `Job.Shell` | object | kind, id, sessionID, status, title, time, shellID, command |
+| `Job.Status` | string |  |
+| `Job.Subagent` | object | kind, id, sessionID, status, title, time, childSessionID, agent, description |
+| `Job.Time` | object | started, completed |
 | `Location.PublicInfo` | object | directory, project |
 | `Location.PublicRef` | object | directory |
+| `Location.Ref` | object | directory, workspaceID |
 | `LocationNotFoundErrorEncoded` | object | _tag, location, message |
-| `Mcp.LocalConfigEncoded` | object | type, command, cwd, environment, disabled, codemode, timeout, protocol |
+| `Mcp.LocalConfigEncoded` | object | type, command, cwd, environment, disabled, codemode, timeout, protocol, pool |
 | `Mcp.OAuthConfigEncoded` | object | client_id, client_secret, scope, callback_port, redirect_uri, auth_server_metadata_url |
 | `Mcp.Protocol` | string |  |
-| `Mcp.RemoteConfigEncoded` | object | type, url, headers, oauth, disabled, codemode, timeout, protocol |
+| `Mcp.RemoteConfigEncoded` | object | type, url, headers, oauth, disabled, codemode, timeout, protocol, pool |
 | `Mcp.Resource` | object | server, name, uri, description, mimeType |
 | `Mcp.ResourceCatalog` | object | resources, templates |
 | `Mcp.ResourceTemplate` | object | server, name, uriTemplate, description, mimeType |
@@ -353,11 +398,10 @@ printed to stdout at startup.
 | `PermissionSavedNotFoundErrorEncoded` | object | _tag, id, message |
 | `PersistentPty.CreateInput` | object | command, args, cwd, title, env, size |
 | `PersistentPty.Handoff` | object | directory, instanceID, ticket, expiresAt |
-| `PersistentPty.Info` | object | id, title, command, args, cwd, status, pid, exitCode, sessionID, foregroundProcess, size, output |
-| `PersistentPty.ReadLinesEncoded` | string |  |
+| `PersistentPty.Info` | object | id, title, command, args, cwd, status, pid, exitCode, sessionID, userTitle, foregroundProcess, size, output |
 | `PersistentPty.ReadResult` | object | ptyID, title, cwd, foregroundProcess, screen |
 | `PersistentPty.Snapshot` | object | info, text, checkpoint, cursor |
-| `PersistentPty.UpdateInput` | object | attachmentID, size |
+| `PersistentPty.UpdateInput` | object | attachmentID, size, title |
 | `Plugin.Features` | object | server, tui, rpc, gui |
 | `Plugin.GuiBundle` | object | code, revision, options |
 | `Plugin.ID` | string |  |
@@ -380,8 +424,9 @@ printed to stdout at startup.
 | `Prompt.SkillAttachment` | object | id, name, text, mention |
 | `PromptInput.FileAttachment` | object | uri, source, name, description, mention |
 | `PromptInput.SkillAttachment` | object | id, mention |
-| `Provider.Cache` | object | ttl |
+| `Provider.Cache` | object | ttl, warming |
 | `Provider.CacheTTL` | string |  |
+| `Provider.CacheWarming` | anyOf |  |
 | `Provider.Compaction` | anyOf |  |
 | `Provider.Compatibility` | object | reasoningField, requireReasoning, maxTokensField, requireFinishReason, requireAssistantAfterTool, supportsPromptCacheKey, streamUsage, cacheFormat, mediaInput |
 | `Provider.Encoding` | string |  |
@@ -394,6 +439,7 @@ printed to stdout at startup.
 | `ProviderRequestErrorEncoded` | object | _tag, providerID, reason, message, status, retryAfterMs |
 | `Pty` | object | id, title, command, args, cwd, status, pid, exitCode |
 | `Pty.ID` | string |  |
+| `PtyFeatureUnsupportedErrorEncoded` | object | _tag, feature, message |
 | `PtyNotFoundErrorEncoded` | object | _tag, ptyID, message |
 | `PtyTicket.ConnectToken` | object | ticket, expires_in |
 | `Reference.GitSource` | object | type, repository, branch |
@@ -427,14 +473,17 @@ printed to stdout at startup.
 | `ScheduleNotFoundErrorEncoded` | object | _tag, scheduleID, message |
 | `ServerInfo` | object | version, pid, hostname, urls, paths, capabilities |
 | `ServiceUnavailableErrorEncoded` | object | _tag, message, service |
+| `Session.Event.Durable` | anyOf |  |
 | `Session.ForkBoundary` | anyOf |  |
 | `Session.ID` | string |  |
 | `Session.Inbox.Compaction` | object | id, sessionID, time, type, payload, delivery |
 | `Session.Inbox.CompactionPayload` | - |  |
 | `Session.Inbox.Delivery` | string |  |
 | `Session.Inbox.Info` | anyOf |  |
+| `Session.Inbox.Item` | anyOf |  |
 | `Session.Inbox.Move` | object | id, sessionID, time, type, delivery, payload |
 | `Session.Inbox.MovePayload` | object | projectID, subpath, location |
+| `Session.Inbox.MovePayload_1` | object | location, projectID, subpath |
 | `Session.Inbox.Synthetic` | object | id, sessionID, time, type, payload, delivery |
 | `Session.Inbox.SyntheticPayload` | object | text, description, metadata |
 | `Session.Inbox.User` | object | id, sessionID, time, type, payload, delivery |
@@ -446,6 +495,7 @@ printed to stdout at startup.
 | `Session.Message.Assistant.Retry` | object | attempt, at, error |
 | `Session.Message.Assistant.Text` | object | type, text, native |
 | `Session.Message.Assistant.Tool` | object | type, id, name, executed, native, state, time |
+| `Session.Message.AssistantContent.Encoded` | anyOf |  |
 | `Session.Message.Compaction` | anyOf |  |
 | `Session.Message.Compaction.Completed` | object | type, id, metadata, time, status, reason, model, native, summary, cost, tokens |
 | `Session.Message.Compaction.Failed` | object | type, id, metadata, time, status, reason, error, cost, tokens |
@@ -472,6 +522,7 @@ printed to stdout at startup.
 | `SessionBusyErrorEncoded` | object | _tag, sessionID, message |
 | `SessionGenerateResponse` | object | data |
 | `SessionInterruptResponse` | object | interrupted |
+| `SessionLogItem` | anyOf |  |
 | `SessionLogItemEncoded` | string |  |
 | `SessionMessagesResponse` | object | data, cursor |
 | `SessionNotFoundErrorEncoded` | object | _tag, sessionID, message |
@@ -481,6 +532,8 @@ printed to stdout at startup.
 | `SessionStats.ToolTotals` | object | calls, succeeded, failed, unfinished |
 | `SessionStats.ToolUsage` | object | name, calls, succeeded, failed, unfinished, durationP50 |
 | `SessionStats.Tools` | anyOf |  |
+| `SessionStatus` | anyOf |  |
+| `SessionStatusUpdated` | object | id, created, metadata, type, location, data |
 | `SessionTransfer.Data` | object | info, messages |
 | `SessionsCursor` | string |  |
 | `SessionsResponse` | object | data, cursor |
@@ -504,6 +557,9 @@ printed to stdout at startup.
 | `UsageLimits.Go` | object | rolling, weekly, monthly |
 | `UsageLimits.Info` | object | workspace, go, budgets |
 | `UsageLimits.Meter` | object | percent, limited, resetsAt |
+| `V2Event` | anyOf |  |
+| `V2Event.rpc` | object | id, created, metadata, type, location, data |
+| `V2Event.server.connected` | object | id, metadata, location, type, data |
 | `V2EventEncoded` | string |  |
 | `Vcs.Base` | object | name, ref, source |
 | `Vcs.Branch` | object | current, default |
@@ -527,10 +583,108 @@ printed to stdout at startup.
 | `WebSearch.Provider` | object | id, name |
 | `WebSearch.ResponseEncoded` | object | providerID, results |
 | `WebSearch.Result` | object | url, title, content, time |
+| `Workspace.ID` | string |  |
 | `Worktree.CreateInput` | object | projectID, from, branch, directory, name |
 | `Worktree.Directory` | object | directory, strategy |
 | `Worktree.Info` | object | directory |
 | `Worktree.List` | array |  |
 | `Worktree.RemoveInput` | object | projectID, directory, force |
 | `WorktreeErrorEncoded` | object | _tag, name, data |
+| `agent.updated` | object | id, created, metadata, type, location, data |
+| `artifact.updated` | object | id, created, metadata, type, location, data |
+| `command.updated` | object | id, created, metadata, type, location, data |
+| `config.updated` | object | id, created, metadata, type, location, data |
+| `credential.switched` | object | id, created, metadata, type, location, data |
+| `credential.updated` | object | id, created, metadata, type, location, data |
+| `filesystem.changed` | object | id, created, metadata, type, location, data |
+| `form.cancelled` | object | id, created, metadata, type, location, data |
+| `form.created` | object | id, created, metadata, type, location, data |
+| `form.replied` | object | id, created, metadata, type, location, data |
+| `installation.update-available` | object | id, created, metadata, type, location, data |
+| `installation.updated` | object | id, created, metadata, type, location, data |
+| `integration.updated` | object | id, created, metadata, type, location, data |
+| `location.shutdown` | object | id, created, metadata, type, location, data |
+| `mcp.resources.changed` | object | id, created, metadata, type, location, data |
+| `mcp.status.changed` | object | id, created, metadata, type, location, data |
+| `model.updated` | object | id, created, metadata, type, location, data |
+| `models-dev.refreshed` | object | id, created, metadata, type, location, data |
+| `permission.asked` | object | id, created, metadata, type, location, data |
+| `permission.replied` | object | id, created, metadata, type, location, data |
+| `persistent-pty.added` | object | id, created, metadata, type, location, data |
+| `persistent-pty.removed` | object | id, created, metadata, type, location, data |
+| `persistent-pty.updated` | object | id, created, metadata, type, location, data |
+| `plugin.updated` | object | id, created, metadata, type, location, data |
+| `project.updated` | object | id, created, metadata, type, location, data |
+| `provider.updated` | object | id, created, metadata, type, location, data |
+| `pty.created` | object | id, created, metadata, type, location, data |
+| `pty.deleted` | object | id, created, metadata, type, location, data |
+| `pty.exited` | object | id, created, metadata, type, location, data |
+| `pty.updated` | object | id, created, metadata, type, location, data |
+| `reference.updated` | object | id, created, metadata, type, location, data |
+| `session.agent.selected` | object | id, created, metadata, type, durable, location, data |
+| `session.archived` | object | id, created, metadata, type, durable, location, data |
+| `session.compaction.delta` | object | id, created, metadata, type, location, data |
+| `session.compaction.ended` | object | id, created, metadata, type, durable, location, data |
+| `session.compaction.failed` | object | id, created, metadata, type, durable, location, data |
+| `session.compaction.started` | object | id, created, metadata, type, durable, location, data |
+| `session.created` | object | id, created, metadata, type, durable, location, data |
+| `session.deleted` | object | id, created, metadata, type, durable, location, data |
+| `session.execution.failed` | object | id, created, metadata, type, durable, location, data |
+| `session.execution.interrupted` | object | id, created, metadata, type, durable, location, data |
+| `session.execution.started` | object | id, created, metadata, type, durable, location, data |
+| `session.execution.succeeded` | object | id, created, metadata, type, durable, location, data |
+| `session.forked` | object | id, created, metadata, type, durable, location, data |
+| `session.idle` | object | id, created, metadata, type, location, data |
+| `session.inbox.cancelled` | object | id, created, metadata, type, durable, location, data |
+| `session.inbox.delivered` | object | id, created, metadata, type, durable, location, data |
+| `session.inbox.delivery.changed` | object | id, created, metadata, type, durable, location, data |
+| `session.inbox.enqueued` | object | id, created, metadata, type, durable, location, data |
+| `session.instructions.updated` | object | id, created, metadata, type, durable, location, data |
+| `session.message.content.updated` | object | id, created, metadata, type, durable, location, data |
+| `session.metadata.updated` | object | id, created, metadata, type, durable, location, data |
+| `session.model.selected` | object | id, created, metadata, type, durable, location, data |
+| `session.moved` | object | id, created, metadata, type, durable, location, data |
+| `session.permissions` | object | id, created, metadata, type, durable, location, data |
+| `session.reasoning.delta` | object | id, created, metadata, type, location, data |
+| `session.reasoning.ended` | object | id, created, metadata, type, durable, location, data |
+| `session.reasoning.started` | object | id, created, metadata, type, durable, location, data |
+| `session.renamed` | object | id, created, metadata, type, durable, location, data |
+| `session.retry.scheduled` | object | id, created, metadata, type, durable, location, data |
+| `session.revert.cleared` | object | id, created, metadata, type, durable, location, data |
+| `session.revert.committed` | object | id, created, metadata, type, durable, location, data |
+| `session.revert.staged` | object | id, created, metadata, type, durable, location, data |
+| `session.shell.ended` | object | id, created, metadata, type, durable, location, data |
+| `session.shell.started` | object | id, created, metadata, type, durable, location, data |
+| `session.skill.activated` | object | id, created, metadata, type, durable, location, data |
+| `session.step.ended` | object | id, created, metadata, type, durable, location, data |
+| `session.step.failed` | object | id, created, metadata, type, durable, location, data |
+| `session.step.started` | object | id, created, metadata, type, durable, location, data |
+| `session.step.streamed` | object | id, created, metadata, type, durable, location, data |
+| `session.synthetic` | object | id, created, metadata, type, durable, location, data |
+| `session.text.delta` | object | id, created, metadata, type, location, data |
+| `session.text.ended` | object | id, created, metadata, type, durable, location, data |
+| `session.text.started` | object | id, created, metadata, type, durable, location, data |
+| `session.tool.called` | object | id, created, metadata, type, durable, location, data |
+| `session.tool.failed` | object | id, created, metadata, type, durable, location, data |
+| `session.tool.input.delta` | object | id, created, metadata, type, location, data |
+| `session.tool.input.ended` | object | id, created, metadata, type, durable, location, data |
+| `session.tool.input.started` | object | id, created, metadata, type, durable, location, data |
+| `session.tool.progress` | object | id, created, metadata, type, location, data |
+| `session.tool.success` | object | id, created, metadata, type, durable, location, data |
+| `session.unarchived` | object | id, created, metadata, type, durable, location, data |
+| `session.usage.recorded` | object | id, created, metadata, type, durable, location, data |
+| `session.usage.updated` | object | id, created, metadata, type, location, data |
+| `session.viewed` | object | id, created, metadata, type, durable, location, data |
+| `shell.created` | object | id, created, metadata, type, location, data |
+| `shell.deleted` | object | id, created, metadata, type, location, data |
+| `shell.exited` | object | id, created, metadata, type, location, data |
+| `skill.updated` | object | id, created, metadata, type, location, data |
+| `tui.command.execute` | object | id, created, metadata, type, location, data |
+| `tui.prompt.append` | object | id, created, metadata, type, location, data |
+| `tui.session.select` | object | id, created, metadata, type, location, data |
+| `tui.toast.show` | object | id, created, metadata, type, location, data |
+| `vcs.branch.updated` | object | id, created, metadata, type, location, data |
+| `websearch.updated` | object | id, created, metadata, type, location, data |
+| `worktree.resolved` | object | id, created, metadata, type, durable, location, data |
+| `worktree.updated` | object | id, created, metadata, type, location, data |
 

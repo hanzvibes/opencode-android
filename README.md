@@ -167,7 +167,7 @@ Android 15+ devices with 16 KB memory pages work: every bundled binary is 16 KB 
      alt="Android app process: Jetpack Compose UI → core:api → HTTP + SSE on 127.0.0.1 → OpenCode engine (Bun, compiled to android-arm64, plus git and ripgrep), supervised by core:engine ProcessManager through the foreground EngineService"
      width="900" />
 
-- **Engine.** Upstream `@opencode/*` **v2.2.2**, cross-compiled with Bun for
+- **Engine.** Upstream `@opencode/*` **v2.2.7**, cross-compiled with Bun for
   `linux-arm64-android` and `linux-x64-android`, with a small set of documented
   [patches](engine/patches/README.md). It ships as `libopencode.so` in the APK's native library
   directory, the one place Android lets an app execute code from.

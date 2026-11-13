@@ -143,7 +143,7 @@ freely, subject to the following restrictions:
 ### OpenCode engine — `libopencode.so`
 
 The engine is a compiled Bun binary built from the upstream `@opencode/*`
-packages (v2.2.2). See `engine/README.md` and `engine/patches/` for the exact
+packages (v2.2.7). See `engine/README.md` and `engine/patches/` for the exact
 patches applied. Its licence is the upstream project's licence; check
 `LICENSE` in the upstream repository at the pinned commit.
 
