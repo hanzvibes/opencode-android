@@ -73,6 +73,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
+import dev.bidzz.opencode.ui.rememberHatchComposerGeometry
 import dev.bidzz.opencode.ui.whiteCard
 
 /**
@@ -193,7 +194,10 @@ fun Composer(
     // 16dp surface cap. The old 12dp omnibar shape is gone; a full pill
     // would break plan.md §12, and 16dp plus the shadow is the floating
     // treatment that rule allows.
-    val shape = RoundedCornerShape(radius.lg)
+    // Batch 4 (Aura full): the floating card's padding + radius come
+    // from HatchComposerGeometry — same values (md/sm/lg), one owner.
+    val composerGeometry = rememberHatchComposerGeometry()
+    val shape = RoundedCornerShape(composerGeometry.cornerRadius)
 
     val borderColor by animateColorAsState(
         targetValue = if (isFocused) colors.accent.copy(alpha = 0.70f) else colors.hairline,
@@ -214,7 +218,10 @@ fun Composer(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = spacing.md, vertical = spacing.sm)
+            .padding(
+                horizontal = composerGeometry.horizontalPadding,
+                vertical = composerGeometry.verticalPadding,
+            )
             .animateContentSize(motion.springSmooth())
             .whiteCard()
             .border(borderWidth, borderColor, shape),
