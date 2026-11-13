@@ -49,6 +49,17 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 
 /**
+ * Audit-200 Fase A1 (C-002): LazyColumn key for the result list.
+ *
+ * Two results may share a URL (the engine can return the same link
+ * from two sources), and a key of just the URL then crashes the
+ * screen with a duplicate key. The index qualifies the key, so both
+ * results stay visible. Stable for the common case: the same result
+ * at the same position keeps the same key.
+ */
+fun webSearchResultKey(index: Int, url: String): String = "$index:$url"
+
+/**
  * Direct web search (mockup group 5).
  *
  * One query at a time through the selected provider (or the engine's
@@ -138,7 +149,10 @@ fun WebSearchScreen(
                             .fillMaxSize()
                             .padding(horizontal = spacing.lg),
                     ) {
-                        itemsIndexed(response.results, key = { _, result -> result.url }) { index, result ->
+                        itemsIndexed(
+                            response.results,
+                            key = { index, result -> webSearchResultKey(index, result.url) },
+                        ) { index, result ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             WebSearchRow(
                                 result = result,
