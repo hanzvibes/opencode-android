@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -48,6 +47,28 @@ import dev.bidzz.opencode.ui.SelectorChip
 import dev.bidzz.opencode.ui.StatusDot
 import dev.bidzz.opencode.ui.TextAction
 import dev.bidzz.opencode.ui.message
+
+/**
+ * Audit-200 Fase A1 (C-001, C-003): LazyColumn keys for the server
+ * list and the resource/template catalog.
+ *
+ * The engine is allowed to return the same name twice — the same
+ * server in the global and the project config, or one server exposing
+ * the same resource URI twice — and a key of just the name/URI then
+ * crashes the screen with a duplicate key. The index qualifies the
+ * key, so every row stays visible (deduping would silently hide a
+ * real server or resource). Stable for the common case: the same row
+ * at the same position keeps the same key.
+ */
+fun mcpServerListKey(index: Int, name: String): String = "$index:$name"
+
+/** Catalog resource key: index-qualified, `res:`-prefixed. */
+fun mcpResourceListKey(index: Int, server: String, uri: String): String =
+    "res:$index:$server:$uri"
+
+/** Catalog template key: index-qualified, `tpl:`-prefixed. */
+fun mcpTemplateListKey(index: Int, server: String, uriTemplate: String): String =
+    "tpl:$index:$server:$uriTemplate"
 
 /**
  * MCP servers configured on the engine, with their connection status.
@@ -128,7 +149,10 @@ fun McpServersScreen(
                             .fillMaxSize()
                             .padding(horizontal = spacing.lg),
                     ) {
-                        itemsIndexed(state.servers, key = { _, server -> server.name }) { index, server ->
+                        itemsIndexed(
+                            state.servers,
+                            key = { index, server -> mcpServerListKey(index, server.name) },
+                        ) { index, server ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             McpServerRow(
                                 server = server,
@@ -157,10 +181,12 @@ fun McpServersScreen(
                                     ),
                                 )
                             }
-                            items(
+                            itemsIndexed(
                                 catalog.resources,
-                                key = { resource -> "res:${resource.server}:${resource.uri}" },
-                            ) { resource ->
+                                key = { index, resource ->
+                                    mcpResourceListKey(index, resource.server, resource.uri)
+                                },
+                            ) { _, resource ->
                                 McpResourceRow(
                                     name = resource.name,
                                     server = resource.server,
@@ -169,10 +195,12 @@ fun McpServersScreen(
                                     isTemplate = false,
                                 )
                             }
-                            items(
+                            itemsIndexed(
                                 catalog.templates,
-                                key = { template -> "tpl:${template.server}:${template.uriTemplate}" },
-                            ) { template ->
+                                key = { index, template ->
+                                    mcpTemplateListKey(index, template.server, template.uriTemplate)
+                                },
+                            ) { _, template ->
                                 McpResourceRow(
                                     name = template.name,
                                     server = template.server,
