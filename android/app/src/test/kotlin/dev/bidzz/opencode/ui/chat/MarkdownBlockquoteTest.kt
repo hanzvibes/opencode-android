@@ -26,7 +26,7 @@ class MarkdownBlockquoteTest {
         assertEquals(1, blocks.size)
         val quote = blocks.single() as MdBlock.Blockquote
         assertTrue(quote.spans.any { it is MdSpan.Code && it.text == "rm -rf" })
-        assertTrue(quote.spans.any { it is MdSpan.Bold && it.text == "twice" })
+        assertTrue(quote.spans.any { it is MdSpan.Bold && it.spans == listOf(MdSpan.Text("twice")) })
     }
 
     @Test

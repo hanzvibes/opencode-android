@@ -64,10 +64,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import kotlinx.coroutines.delay
+import java.util.Locale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
@@ -108,7 +110,7 @@ fun MarkdownText(
      */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
 ) {
-    val blocks = remember(markdown) { Markdown.parse(markdown) }
+    val blocks = remember(markdown, streaming) { Markdown.parse(markdown, streaming) }
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
@@ -927,17 +929,22 @@ private fun copyToClipboard(context: Context, text: String) {
     manager.setPrimaryClip(ClipData.newPlainText("code", text))
 }
 
-private fun List<MdSpan>.toUppercase(): List<MdSpan> = map { span ->
+/**
+ * Uppercases prose spans for table headers. Internal (not private) so the
+ * locale rule is unit-testable (04-F11: `uppercase` without a locale turns
+ * "i" into "İ" under tr-TR).
+ */
+internal fun List<MdSpan>.toUppercase(): List<MdSpan> = map { span ->
     when (span) {
-        is MdSpan.Text -> MdSpan.Text(span.text.uppercase())
-        is MdSpan.Bold -> MdSpan.Bold(span.text.uppercase())
-        is MdSpan.Italic -> MdSpan.Italic(span.text.uppercase())
+        is MdSpan.Text -> MdSpan.Text(span.text.uppercase(Locale.ROOT))
+        is MdSpan.Bold -> MdSpan.Bold(span.spans.toUppercase())
+        is MdSpan.Italic -> MdSpan.Italic(span.spans.toUppercase())
         // Code stays verbatim: uppercasing it turns `config.yaml` into
         // `CONFIG.YAML`, which is a different file.
         is MdSpan.Code -> span
-        is MdSpan.Link -> MdSpan.Link(span.text.uppercase(), span.url)
-        is MdSpan.Highlight -> MdSpan.Highlight(span.text.uppercase())
-        is MdSpan.Strikethrough -> MdSpan.Strikethrough(span.text.uppercase())
+        is MdSpan.Link -> MdSpan.Link(span.spans.toUppercase(), span.url)
+        is MdSpan.Highlight -> MdSpan.Highlight(span.spans.toUppercase())
+        is MdSpan.Strikethrough -> MdSpan.Strikethrough(span.spans.toUppercase())
     }
 }
 
@@ -955,70 +962,86 @@ private fun List<MdSpan>.toAnnotated(textColor: Color, onBubble: Boolean = false
     val colors = OpenCodeTheme.colors
 
     return buildAnnotatedString {
-        this@toAnnotated.forEach { span ->
-            when (span) {
-                is MdSpan.Text -> append(span.text)
-                is MdSpan.Bold -> withStyle(
+        appendSpans(this@toAnnotated, textColor, onBubble, colors)
+    }
+}
+
+/**
+ * Appends [spans] with their styles. Formatting spans recurse into their
+ * children (04-F2), so a link inside bold stays a link and code inside
+ * bold stays monospace — the outer style and the inner span compose.
+ */
+private fun AnnotatedString.Builder.appendSpans(
+    spans: List<MdSpan>,
+    textColor: Color,
+    onBubble: Boolean,
+    colors: OpenCodeColors,
+) {
+    spans.forEach { span ->
+        when (span) {
+            is MdSpan.Text -> append(span.text)
+            is MdSpan.Bold -> withStyle(
+                SpanStyle(
+                    fontWeight = FontWeight.Bold,
+                    color = textColor,
+                ),
+            ) {
+                appendSpans(span.spans, textColor, onBubble, colors)
+            }
+            is MdSpan.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                appendSpans(span.spans, textColor, onBubble, colors)
+            }
+            is MdSpan.Code -> withStyle(
+                SpanStyle(
+                    fontFamily = OpenCodeTypography.mono,
+                    // Inline code sits at 12.5sp like block code; the
+                    // shared codeInline token is 13.5sp, larger than
+                    // the block it is supposed to be smaller than.
+                    // The global token is untouched — only prose here.
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    // Surface tones on the neutral bubble too: the old
+                    // translucent white (0.18) was a white-on-blue
+                    // leftover and is near-invisible on surfaceRaised.
+                    background = colors.surfaceVariant.copy(alpha = 0.8f),
+                    color = textColor,
+                    baselineShift = BaselineShift(0.02f),
+                ),
+            ) {
+                // 04-F6: no NBSP padding around the code text any more —
+                // the U+00A0s used to pad the chip visually, but they
+                // landed in the AnnotatedString and were copied with every
+                // selection (" config.yaml " pasted as a wrong filename).
+                append(span.text)
+            }
+            is MdSpan.Highlight -> withStyle(
+                SpanStyle(
+                    // Same white-on-blue leftover as inline code: a
+                    // translucent white wash is invisible on the
+                    // neutral bubble, so both themes use the warning tint.
+                    background = colors.warning.copy(alpha = 0.22f),
+                    color = textColor,
+                    fontWeight = FontWeight.Medium,
+                ),
+            ) {
+                appendSpans(span.spans, textColor, onBubble, colors)
+            }
+            is MdSpan.Strikethrough -> withStyle(
+                SpanStyle(textDecoration = TextDecoration.LineThrough),
+            ) {
+                appendSpans(span.spans, textColor, onBubble, colors)
+            }
+            // withLink makes the span a real tappable link (opened via
+            // the ambient UriHandler); styling alone used to render links
+            // that did nothing when tapped.
+            is MdSpan.Link -> withLink(LinkAnnotation.Url(span.url)) {
+                withStyle(
                     SpanStyle(
-                        fontWeight = FontWeight.Bold,
-                        color = textColor,
+                        color = if (onBubble) textColor else colors.accentText,
+                        textDecoration = TextDecoration.Underline,
                     ),
                 ) {
-                    append(span.text)
-                }
-                is MdSpan.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                    append(span.text)
-                }
-                is MdSpan.Code -> withStyle(
-                    SpanStyle(
-                        fontFamily = OpenCodeTypography.mono,
-                        // Inline code sits at 12.5sp like block code; the
-                        // shared codeInline token is 13.5sp, larger than
-                        // the block it is supposed to be smaller than.
-                        // The global token is untouched — only prose here.
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        // Surface tones on the neutral bubble too: the old
-                        // translucent white (0.18) was a white-on-blue
-                        // leftover and is near-invisible on surfaceRaised.
-                        background = colors.surfaceVariant.copy(alpha = 0.8f),
-                        color = textColor,
-                        baselineShift = BaselineShift(0.02f),
-                    ),
-                ) {
-                    append('\u00A0')
-                    append(span.text)
-                    append('\u00A0')
-                }
-                is MdSpan.Highlight -> withStyle(
-                    SpanStyle(
-                        // Same white-on-blue leftover as inline code: a
-                        // translucent white wash is invisible on the
-                        // neutral bubble, so both themes use the warning tint.
-                        background = colors.warning.copy(alpha = 0.22f),
-                        color = textColor,
-                        fontWeight = FontWeight.Medium,
-                    ),
-                ) {
-                    append(span.text)
-                }
-                is MdSpan.Strikethrough -> withStyle(
-                    SpanStyle(textDecoration = TextDecoration.LineThrough),
-                ) {
-                    append(span.text)
-                }
-                // withLink makes the span a real tappable link (opened via
-                // the ambient UriHandler); styling alone used to render links
-                // that did nothing when tapped.
-                is MdSpan.Link -> withLink(LinkAnnotation.Url(span.url)) {
-                    withStyle(
-                        SpanStyle(
-                            color = if (onBubble) textColor else colors.accentText,
-                            textDecoration = TextDecoration.Underline,
-                        ),
-                    ) {
-                        append(span.text)
-                    }
+                    appendSpans(span.spans, textColor, onBubble, colors)
                 }
             }
         }

@@ -16,7 +16,7 @@ class MarkdownLinkTest {
     @Test
     fun `an https link stays a link`() {
         val links = spans("[docs](https://example.com)").filterIsInstance<MdSpan.Link>()
-        assertEquals(listOf(MdSpan.Link("docs", "https://example.com")), links)
+        assertEquals(listOf(MdSpan.Link(listOf(MdSpan.Text("docs")), "https://example.com")), links)
     }
 
     @Test
@@ -34,11 +34,11 @@ class MarkdownLinkTest {
     @Test
     fun `mailto and tel links stay links`() {
         assertEquals(
-            listOf(MdSpan.Link("mail", "mailto:a@b.com")),
+            listOf(MdSpan.Link(listOf(MdSpan.Text("mail")), "mailto:a@b.com")),
             spans("[mail](mailto:a@b.com)").filterIsInstance<MdSpan.Link>(),
         )
         assertEquals(
-            listOf(MdSpan.Link("call", "tel:+621234567")),
+            listOf(MdSpan.Link(listOf(MdSpan.Text("call")), "tel:+621234567")),
             spans("[call](tel:+621234567)").filterIsInstance<MdSpan.Link>(),
         )
     }

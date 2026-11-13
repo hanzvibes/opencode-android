@@ -59,6 +59,21 @@ data class ExplorerUiState(
      * serving it as complete (item 27).
      */
     val quickOpenFailed: Boolean = false,
+    /**
+     * True when the last index walk stopped on a size limit (35-F9): the
+     * published index holds only the first [QuickOpenMaxFiles] files /
+     * [QuickOpenMaxDirs] directories, so the palette must say so instead
+     * of presenting it as complete. Unlike a failure, retrying the same
+     * walk hits the same limits — the palette shows a note, not a retry.
+     */
+    val quickOpenTruncated: Boolean = false,
+    /**
+     * True when hidden directories are shown in the list (89-F6). Off by
+     * default: `.git`, `.idea`, `.gradle` and friends clutter the list and
+     * the quick-open index skips them — except `.github`/`.vscode`, which
+     * hold workflows and settings the user edits.
+     */
+    val showHidden: Boolean = false,
 ) {
     data class Crumb(val label: String, val path: String)
 }
@@ -70,6 +85,31 @@ private val QuickOpenSkippedDirs: Set<String> = setOf(
     ".git", "node_modules", ".gradle", "build", ".idea", ".dart_tool",
     "target", "dist", "out", "vendor", "Pods", ".cxx",
 )
+
+/**
+ * True when a directory may enter the quick-open index (35-F7): every
+ * directory except the [QuickOpenSkippedDirs] set — including dot-directories
+ * like `.github` and `.vscode`, whose files (workflows, settings) the user
+ * searches for. The walk used to skip ALL dot-directories, so `ci.yml`
+ * under `.github/workflows/` never matched a quick-open query.
+ */
+internal fun shouldIndexDirectory(name: String): Boolean = name !in QuickOpenSkippedDirs
+
+/**
+ * True when a quick-open walk stopped on a size limit instead of finishing
+ * (35-F9): directories were still queued when the file or directory cap was
+ * reached, so the published index is partial.
+ */
+internal fun quickOpenWalkTruncated(queueRemaining: Int, foundSize: Int, dirsVisited: Int): Boolean =
+    queueRemaining > 0 && (foundSize >= QuickOpenMaxFiles || dirsVisited >= QuickOpenMaxDirs)
+
+/**
+ * True when a directory is hidden from the explorer list by default (89-F6):
+ * dot-directories, except `.github` and `.vscode` — workflows and editor
+ * settings the user edits. Dot-FILES (`.gitignore`, `.env`) stay visible.
+ */
+internal fun isHiddenDirectory(name: String, isDirectory: Boolean): Boolean =
+    isDirectory && name.startsWith(".") && name != ".github" && name != ".vscode"
 
 /**
  * File browser over the engine's filesystem API.
@@ -136,7 +176,7 @@ class ExplorerViewModel(
         if (quickOpenLoaded) invalidateQuickOpenIndex()
         val handle = api.handle() ?: return
         quickOpenLoading = true
-        _state.value = _state.value.copy(quickOpenLoading = true, quickOpenFailed = false)
+        _state.value = _state.value.copy(quickOpenLoading = true, quickOpenFailed = false, quickOpenTruncated = false)
 
         quickOpenJob = viewModelScope.launch {
             val files = FileApi(handle.client)
@@ -161,7 +201,7 @@ class ExplorerViewModel(
                 for (entry in entries) {
                     val relative = entry.path.trimEnd('/')
                     if (entry.isDirectory) {
-                        if (entry.name !in QuickOpenSkippedDirs && !entry.name.startsWith(".")) {
+                        if (shouldIndexDirectory(entry.name)) {
                             queue.add(relative)
                         }
                     } else if (found.size < QuickOpenMaxFiles) {
@@ -169,6 +209,9 @@ class ExplorerViewModel(
                     }
                 }
             }
+            // 35-F9: the walk stopped on a size limit, not because the tree
+            // ended — the published index is partial and the palette says so.
+            val truncated = quickOpenWalkTruncated(queue.size, found.size, dirsVisited)
             // The workspace may have changed during the walk: an index built
             // for the old directory must not land on the new one (item 26).
             // The loading flag is still cleared, so the next palette open
@@ -188,6 +231,7 @@ class ExplorerViewModel(
                 quickOpenIndex = found.sortedBy { it.path.lowercase() },
                 quickOpenLoading = false,
                 quickOpenFailed = hadFailure,
+                quickOpenTruncated = truncated,
             )
         }
     }
@@ -208,7 +252,13 @@ class ExplorerViewModel(
             quickOpenIndex = emptyList(),
             quickOpenLoading = false,
             quickOpenFailed = false,
+            quickOpenTruncated = false,
         )
+    }
+
+    /** Shows or hides dot-directories in the explorer list (89-F6). */
+    fun toggleHidden() {
+        _state.value = _state.value.copy(showHidden = !_state.value.showHidden)
     }
 
     fun load() {

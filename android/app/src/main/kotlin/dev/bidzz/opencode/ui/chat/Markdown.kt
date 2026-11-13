@@ -70,12 +70,18 @@ enum class TableAlign {
 /** Inline formatting inside a block. */
 sealed interface MdSpan {
     data class Text(val text: String) : MdSpan
-    data class Bold(val text: String) : MdSpan
-    data class Italic(val text: String) : MdSpan
+    /**
+     * Formatting spans hold child spans, not a raw String (04-F2): a link
+     * or code inside bold — `**see [docs](…) for `rm -rf`** — parses
+     * recursively, so the link stays clickable and the code stays
+     * monospace instead of rendering as raw `[...](...)` markup.
+     */
+    data class Bold(val spans: List<MdSpan>) : MdSpan
+    data class Italic(val spans: List<MdSpan>) : MdSpan
     data class Code(val text: String) : MdSpan
-    data class Link(val text: String, val url: String) : MdSpan
-    data class Highlight(val text: String) : MdSpan
-    data class Strikethrough(val text: String) : MdSpan
+    data class Link(val spans: List<MdSpan>, val url: String) : MdSpan
+    data class Highlight(val spans: List<MdSpan>) : MdSpan
+    data class Strikethrough(val spans: List<MdSpan>) : MdSpan
 }
 
 object Markdown {
@@ -124,8 +130,16 @@ object Markdown {
      *
      * Never throws: malformed markup degrades to literal text, because a chat
      * message that fails to render is worse than one that renders plainly.
+     *
+     * [streaming] is true while the text is still arriving (04-F7): markup
+     * that is not closed yet is rendered as if closed at the end of the
+     * text so far — an unclosed fence's body stays readable prose instead
+     * of swallowing the rest of the answer into one monospace block, and
+     * an unclosed `**` shows its words bold instead of raw asterisks. The
+     * final parse (streaming = false) is unchanged: unclosed markup falls
+     * back to literal text, so nothing is ever lost.
      */
-    fun parse(text: String): List<MdBlock> {
+    fun parse(text: String, streaming: Boolean = false): List<MdBlock> {
         val blocks = mutableListOf<MdBlock>()
         val lines = text.replace("\r\n", "\n").split('\n')
 
@@ -145,7 +159,7 @@ object Markdown {
                     append(if (idx < paragraph.size - 1 && line.endsWith("  ")) line.trimEnd() else line)
                 }
             }.trim()
-            if (joined.isNotEmpty()) blocks += MdBlock.Paragraph(inline(joined))
+            if (joined.isNotEmpty()) blocks += MdBlock.Paragraph(inline(joined, streaming))
             paragraph.clear()
         }
 
@@ -158,18 +172,27 @@ object Markdown {
                 flushParagraph()
                 val marker = fenceMatch.groupValues[1]
                 val lang = fenceMatch.groupValues[2].trim().ifEmpty { null }
-                val body = StringBuilder()
+                val bodyLines = mutableListOf<String>()
                 i++
                 while (i < lines.size && !isClosingFence(lines[i], marker)) {
-                    if (body.isNotEmpty()) body.append('\n')
-                    body.append(lines[i])
+                    bodyLines += lines[i]
                     i++
                 }
+                val closed = i < lines.size
                 // Skip the closing fence when present.
-                if (i < lines.size) i++
-                // Models often open a fence with a blank line; shown, copied and saved it is noise.
-                val code = body.toString().lines().dropWhile { it.isBlank() }.dropLastWhile { it.isBlank() }
-                blocks += MdBlock.Code(lang, code.joinToString("\n"))
+                if (closed) i++
+                if (!closed && streaming) {
+                    // 04-F7: the fence is not closed yet and more text is
+                    // coming — its body is prose-in-progress, not a code
+                    // block, so the rest of the answer is not swallowed
+                    // into monospace until the closer arrives (or the
+                    // final parse, which keeps the old code-block reading).
+                    paragraph += bodyLines
+                } else {
+                    // Models often open a fence with a blank line; shown, copied and saved it is noise.
+                    val code = bodyLines.dropWhile { it.isBlank() }.dropLastWhile { it.isBlank() }
+                    blocks += MdBlock.Code(lang, code.joinToString("\n"))
+                }
                 continue
             }
 
@@ -196,7 +219,7 @@ object Markdown {
                     .replace(Regex("\\s+#+$"), "")
                 blocks += MdBlock.Heading(
                     level = headingMatch.groupValues[1].length,
-                    spans = inline(headingText),
+                    spans = inline(headingText, streaming),
                 )
                 i++
                 continue
@@ -214,7 +237,7 @@ object Markdown {
                 }
                 val quoteText = quoteLines.joinToString("\n").trim()
                 if (quoteText.isNotEmpty()) {
-                    blocks += MdBlock.Blockquote(inline(quoteText))
+                    blocks += MdBlock.Blockquote(inline(quoteText, streaming))
                 }
                 continue
             }
@@ -239,11 +262,11 @@ object Markdown {
                     i++
                 }
                 blocks += MdBlock.Table(
-                    header = header.map { inline(it) },
+                    header = header.map { inline(it, streaming) },
                     rows = rows.map { row ->
                         // Pad or trim so every row has the header's width; the renderer
                         // relies on it to keep columns square.
-                        (0 until width).map { inline(row.getOrElse(it) { "" }) }
+                        (0 until width).map { inline(row.getOrElse(it) { "" }, streaming) }
                     },
                     alignments = alignments,
                 )
@@ -265,7 +288,7 @@ object Markdown {
                         itemLines += lines[i].trim()
                         i++
                     }
-                    items += inline(itemLines.joinToString(" "))
+                    items += inline(itemLines.joinToString(" "), streaming)
                 }
                 blocks += MdBlock.Bullet(items)
                 continue
@@ -288,7 +311,7 @@ object Markdown {
                         itemLines += lines[i].trim()
                         i++
                     }
-                    items += inline(itemLines.joinToString(" "))
+                    items += inline(itemLines.joinToString(" "), streaming)
                 }
                 blocks += MdBlock.Numbered(items, start = start)
                 continue
@@ -314,9 +337,55 @@ object Markdown {
         return cells.isNotEmpty() && cells.all { it.matches(Regex(":?-+:?")) }
     }
 
-    /** Splits a table row into trimmed cells, dropping the optional outer pipes. */
-    private fun splitCells(line: String): List<String> =
-        line.trim().removePrefix("|").removeSuffix("|").split('|').map { it.trim() }
+    /**
+     * Splits a table row into trimmed cells, dropping the optional outer pipes.
+     *
+     * A pipe inside an inline code span (`|`a\|b``) or escaped as `\|` is part
+     * of the cell, not a separator (04-F4) — a plain `split('|')` cut those
+     * cells in two.
+     */
+    internal fun splitCells(line: String): List<String> {
+        val trimmed = line.trim().removePrefix("|").removeSuffix("|")
+        val cells = mutableListOf<String>()
+        val current = StringBuilder()
+        var i = 0
+        var inCode = false
+        var codeRun = 0
+        while (i < trimmed.length) {
+            val c = trimmed[i]
+            when {
+                c == '\\' && i + 1 < trimmed.length &&
+                    (trimmed[i + 1] == '|' || trimmed[i + 1] == '\\') -> {
+                    current.append(trimmed[i + 1])
+                    i += 2
+                }
+                c == '`' -> {
+                    var run = 0
+                    while (i + run < trimmed.length && trimmed[i + run] == '`') run++
+                    if (!inCode) {
+                        inCode = true
+                        codeRun = run
+                    } else if (run == codeRun) {
+                        inCode = false
+                        codeRun = 0
+                    }
+                    repeat(run) { current.append('`') }
+                    i += run
+                }
+                c == '|' && !inCode -> {
+                    cells += current.toString().trim()
+                    current.setLength(0)
+                    i++
+                }
+                else -> {
+                    current.append(c)
+                    i++
+                }
+            }
+        }
+        cells += current.toString().trim()
+        return cells
+    }
 
     /**
      * Splits one line of prose into inline spans.
@@ -324,7 +393,19 @@ object Markdown {
      * Order matters: code first, so `**not bold**` inside backticks stays literal,
      * then links, then emphasis.
      */
-    fun inline(text: String): List<MdSpan> {
+    /**
+     * Splits one line of prose into inline spans.
+     *
+     * Order matters: code first, so `**not bold**` inside backticks stays literal,
+     * then links, then emphasis. Formatting spans recurse into [inline] so
+     * nested markup parses (04-F2).
+     *
+     * [streaming] (04-F7): while the text is still arriving, a delimiter with
+     * no closer yet is treated as closed at the end of the text so far, so
+     * the words render formatted instead of raw. The final parse is
+     * unchanged — unclosed markup falls back to literal text.
+     */
+    fun inline(text: String, streaming: Boolean = false): List<MdSpan> {
         val spans = mutableListOf<MdSpan>()
         var i = 0
         val plain = StringBuilder()
@@ -339,13 +420,30 @@ object Markdown {
         while (i < text.length) {
             val c = text[i]
             when {
-                // Inline code.
+                // Inline code: a run of N backticks closes only on a run of
+                // exactly N (04-F5) — `` ``code`` `` used to leave a stray
+                // backtick on each side.
                 c == '`' -> {
-                    val end = text.indexOf('`', i + 1)
-                    if (end > i + 1) {
+                    var run = 1
+                    while (i + run < text.length && text[i + run] == '`') run++
+                    val end = findCodeClose(text, i + run, run)
+                    if (end >= 0) {
                         flushPlain()
-                        spans += MdSpan.Code(text.substring(i + 1, end))
-                        i = end + 1
+                        var content = text.substring(i + run, end)
+                        // CommonMark: one leading + one trailing space are
+                        // stripped when the content both starts and ends
+                        // with a space and is not all spaces.
+                        if (content.length > 2 && content.startsWith(' ') && content.endsWith(' ') &&
+                            content.any { it != ' ' }
+                        ) {
+                            content = content.substring(1, content.length - 1)
+                        }
+                        spans += MdSpan.Code(content)
+                        i = end + run
+                    } else if (streaming && i + run < text.length) {
+                        flushPlain()
+                        spans += MdSpan.Code(text.substring(i + run))
+                        i = text.length
                     } else {
                         plain.append(c); i++
                     }
@@ -358,8 +456,12 @@ object Markdown {
                     val end = text.indexOf(delim, i + 2)
                     if (end > i + 2) {
                         flushPlain()
-                        spans += MdSpan.Bold(text.substring(i + 2, end))
+                        spans += MdSpan.Bold(inline(text.substring(i + 2, end), streaming))
                         i = end + 2
+                    } else if (streaming && i + 2 < text.length && text[i + 2] != ' ' && text[i + 2] != c) {
+                        flushPlain()
+                        spans += MdSpan.Bold(inline(text.substring(i + 2), streaming))
+                        i = text.length
                     } else {
                         plain.append(c); i++
                     }
@@ -370,8 +472,12 @@ object Markdown {
                     val end = text.indexOf("~~", i + 2)
                     if (end > i + 2) {
                         flushPlain()
-                        spans += MdSpan.Strikethrough(text.substring(i + 2, end))
+                        spans += MdSpan.Strikethrough(inline(text.substring(i + 2, end), streaming))
                         i = end + 2
+                    } else if (streaming && i + 2 < text.length && text[i + 2] != ' ' && text[i + 2] != '~') {
+                        flushPlain()
+                        spans += MdSpan.Strikethrough(inline(text.substring(i + 2), streaming))
+                        i = text.length
                     } else {
                         plain.append(c); i++
                     }
@@ -382,8 +488,12 @@ object Markdown {
                     val end = text.indexOf("==", i + 2)
                     if (end > i + 2) {
                         flushPlain()
-                        spans += MdSpan.Highlight(text.substring(i + 2, end))
+                        spans += MdSpan.Highlight(inline(text.substring(i + 2, end), streaming))
                         i = end + 2
+                    } else if (streaming && i + 2 < text.length && text[i + 2] != ' ' && text[i + 2] != '=') {
+                        flushPlain()
+                        spans += MdSpan.Highlight(inline(text.substring(i + 2), streaming))
+                        i = text.length
                     } else {
                         plain.append(c); i++
                     }
@@ -393,8 +503,12 @@ object Markdown {
                     val end = text.indexOf("</mark>", i + 6, ignoreCase = true)
                     if (end > i + 6) {
                         flushPlain()
-                        spans += MdSpan.Highlight(text.substring(i + 6, end))
+                        spans += MdSpan.Highlight(inline(text.substring(i + 6, end), streaming))
                         i = end + 7
+                    } else if (streaming && i + 6 < text.length && text[i + 6] != ' ') {
+                        flushPlain()
+                        spans += MdSpan.Highlight(inline(text.substring(i + 6), streaming))
+                        i = text.length
                     } else {
                         plain.append(c); i++
                     }
@@ -411,31 +525,33 @@ object Markdown {
                             url = url.dropLast(1)
                         }
                         flushPlain()
-                        spans += MdSpan.Link(url, url)
+                        spans += MdSpan.Link(listOf(MdSpan.Text(url)), url)
                         i += url.length
                     } else {
                         plain.append(c); i++
                     }
                 }
 
-                // Link: [text](url)
+                // Link: [text](url) — see [parseLink] for the details
+                // (04-F1 parens in the URL, 04-F8 `]` in the text, titles,
+                // `<...>` destinations).
                 c == '[' -> {
-                    val close = text.indexOf(']', i + 1)
-                    val open = if (close > 0) text.indexOf('(', close) else -1
-                    val end = if (open > 0) text.indexOf(')', open) else -1
-                    // A URL the app cannot open is not a link at all (item 2):
-                    // it renders as plain text instead of crashing on tap.
-                    if (close > i + 1 && open == close + 1 && end > open &&
-                        isOpenableLink(text.substring(open + 1, end))
-                    ) {
-                        flushPlain()
-                        spans += MdSpan.Link(
-                            text = text.substring(i + 1, close),
-                            url = text.substring(open + 1, end),
-                        )
-                        i = end + 1
-                    } else {
-                        plain.append(c); i++
+                    when (val link = parseLink(text, i, streaming)) {
+                        null -> {
+                            plain.append(c); i++
+                        }
+                        else -> {
+                            flushPlain()
+                            if (link.url != null) {
+                                spans += MdSpan.Link(link.spans, link.url)
+                            } else {
+                                // Streaming fallback: an unclosed link renders
+                                // its words as plain text; the partial URL is
+                                // markup-in-progress, not words.
+                                spans += link.spans
+                            }
+                            i = link.endIndex
+                        }
                     }
                 }
 
@@ -453,8 +569,12 @@ object Markdown {
                         !(c == '_' && end + 1 < text.length && text[end + 1].isLetterOrDigit())
                     if (openerOk && closerOk) {
                         flushPlain()
-                        spans += MdSpan.Italic(text.substring(i + 1, end))
+                        spans += MdSpan.Italic(inline(text.substring(i + 1, end), streaming))
                         i = end + 1
+                    } else if (streaming && openerOk && i + 1 < text.length && text[i + 1] != ' ') {
+                        flushPlain()
+                        spans += MdSpan.Italic(inline(text.substring(i + 1), streaming))
+                        i = text.length
                     } else {
                         plain.append(c); i++
                     }
@@ -467,5 +587,166 @@ object Markdown {
         }
         flushPlain()
         return spans
+    }
+
+    /** Index of the next backtick run of exactly [run] backticks at or after [start], or -1. */
+    private fun findCodeClose(text: String, start: Int, run: Int): Int {
+        var j = start
+        while (j < text.length) {
+            if (text[j] == '`') {
+                var len = 0
+                while (j + len < text.length && text[j + len] == '`') len++
+                if (len == run) return j
+                j += len
+            } else {
+                j++
+            }
+        }
+        return -1
+    }
+
+    /**
+     * One `[text](destination)` starting at [i], or null when the text at
+     * [i] is not a link (the caller then renders the `[` literally).
+     *
+     * 04-F1: the destination is scanned with paren depth, so a URL with
+     * balanced parens — `https://en.wikipedia.org/wiki/Kotlin_(programming_language)`
+     * — is not cut at the first `)`. 04-F8: the link text is scanned with
+     * bracket depth, so `]` inside it does not end the text; destinations
+     * may be `<...>` (spaces and parens allowed) and an optional `"title"`,
+     * `'title'` or `(title)` after the destination is consumed, not shown.
+     * The link text itself is parsed recursively, so `[**bold** text](url)`
+     * keeps its formatting (04-F2).
+     *
+     * A [LinkParse] with a null [LinkParse.url] is the streaming fallback
+     * (04-F7): the link is not closed yet, so its words render as plain
+     * text and the partial destination is dropped until it completes.
+     */
+    private data class LinkParse(val spans: List<MdSpan>, val url: String?, val endIndex: Int)
+
+    private fun parseLink(text: String, i: Int, streaming: Boolean): LinkParse? {
+        // Link text with bracket depth: a nested `[` does not confuse the `]`.
+        var depth = 1
+        var j = i + 1
+        var close = -1
+        while (j < text.length) {
+            val c = text[j]
+            if (c == '\\' && j + 1 < text.length) {
+                j += 2
+                continue
+            }
+            if (c == '[') depth++
+            if (c == ']') {
+                depth--
+                if (depth == 0) {
+                    close = j
+                    break
+                }
+            }
+            j++
+        }
+        if (close < 0) {
+            if (streaming && i + 1 < text.length) {
+                return LinkParse(inline(text.substring(i + 1), streaming), null, text.length)
+            }
+            return null
+        }
+        if (close + 1 >= text.length || text[close + 1] != '(') return null
+        val linkText = text.substring(i + 1, close)
+        // Destination: `<...>` or a paren-balanced run, then an optional title.
+        var k = close + 2
+        while (k < text.length && (text[k] == ' ' || text[k] == '\t')) k++
+        if (k >= text.length) {
+            if (streaming) return LinkParse(inline(linkText, streaming), null, text.length)
+            return null
+        }
+        val url: String
+        var end: Int
+        if (text[k] == '<') {
+            val gt = text.indexOf('>', k + 1)
+            if (gt < 0) {
+                if (streaming) return LinkParse(inline(linkText, streaming), null, text.length)
+                return null
+            }
+            url = text.substring(k + 1, gt)
+            end = gt + 1
+        } else {
+            var parenDepth = 1
+            var m = k
+            var destEnd = -1
+            while (m < text.length) {
+                val c = text[m]
+                if (c == '\\' && m + 1 < text.length) {
+                    m += 2
+                    continue
+                }
+                if (c == '(') parenDepth++
+                if (c == ')') {
+                    parenDepth--
+                    if (parenDepth == 0) {
+                        destEnd = m
+                        break
+                    }
+                }
+                if (c.isWhitespace()) break
+                m++
+            }
+            if (destEnd >= 0) {
+                url = text.substring(k, destEnd)
+                end = destEnd
+            } else if (m >= text.length) {
+                // Ran out of text with no closing ')': the link is
+                // incomplete (04-F7). Streaming shows the words; a final
+                // parse keeps the old behaviour and leaves it literal.
+                if (streaming) return LinkParse(inline(linkText, streaming), null, text.length)
+                return null
+            } else {
+                // Whitespace ended the destination — a title may follow.
+                url = text.substring(k, m)
+                end = m
+            }
+        }
+        // Optional title: "..." / '...' / (...) then the closing ')'.
+        var t = end
+        while (t < text.length && (text[t] == ' ' || text[t] == '\t')) t++
+        if (t < text.length && (text[t] == '"' || text[t] == '\'' || text[t] == '(')) {
+            val openTitle = text[t]
+            val closeTitle = if (openTitle == '(') ')' else openTitle
+            var m = t + 1
+            var titleEnd = -1
+            var titleParenDepth = 0
+            while (m < text.length) {
+                val c = text[m]
+                if (c == '\\' && m + 1 < text.length) {
+                    m += 2
+                    continue
+                }
+                if (openTitle == '(' && c == '(') titleParenDepth++
+                if (c == closeTitle) {
+                    if (openTitle == '(' && titleParenDepth > 0) {
+                        titleParenDepth--
+                        m++
+                        continue
+                    }
+                    titleEnd = m
+                    break
+                }
+                m++
+            }
+            if (titleEnd < 0) {
+                if (streaming) return LinkParse(inline(linkText, streaming), null, text.length)
+                return null
+            }
+            t = titleEnd + 1
+            while (t < text.length && (text[t] == ' ' || text[t] == '\t')) t++
+        }
+        if (t >= text.length || text[t] != ')') {
+            if (streaming) return LinkParse(inline(linkText, streaming), null, text.length)
+            return null
+        }
+        // A URL the app cannot open is not a link at all (item 2): it renders
+        // as plain text instead of crashing on tap.
+        if (!isOpenableLink(url)) return null
+        return LinkParse(inline(linkText, streaming), url, t + 1)
     }
 }

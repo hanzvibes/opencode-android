@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.chat
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,8 +17,10 @@ import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -25,6 +28,7 @@ import dev.bidzz.opencode.core.api.dto.toToolCall
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.util.UUID
 
@@ -1542,6 +1546,42 @@ class ChatViewModel(
     /** Shows a refusal for a file the picker returned but we would not attach. */
     fun reportAttachRefusal(@androidx.annotation.StringRes key: Int, filename: String?) {
         _state.value = _state.value.copy(attachNoticeKey = key, attachNoticeArg = filename)
+    }
+
+    /** Collects system-picker (SAF) results in [viewModelScope] (15-F4). */
+    private var safPicksJob: Job? = null
+
+    /**
+     * Subscribes to picked files from the system file picker and reads each
+     * one in as a composer attachment.
+     *
+     * 15-F4: the collection used to live in a `LaunchedEffect` inside the
+     * chat screen, so leaving the screen mid-read cancelled the read and
+     * the pick vanished without a trace. The view model outlives the chat
+     * composition (it is created in OpenCodeApp, which hosts every
+     * screen), so a read started in chat still lands when the user comes
+     * back. [readFile] is a parameter — not a direct `readSafFile` call —
+     * so tests can drive this with a fake reader: the read itself needs a
+     * `ContentResolver`, which JVM unit tests cannot construct.
+     */
+    fun observeSafPicks(picks: Flow<Uri>, readFile: suspend (Uri) -> SafReadResult) {
+        if (safPicksJob != null) return
+        safPicksJob = viewModelScope.launch {
+            picks.collect { uri ->
+                val result = withContext(Dispatchers.IO) { readFile(uri) }
+                handleSafReadResult(result)
+            }
+        }
+    }
+
+    /** Applies one [SafReadResult]: attach it, or show why it was refused. */
+    internal fun handleSafReadResult(result: SafReadResult) {
+        when (result) {
+            is SafReadResult.Success -> addAttachment(result.file)
+            is SafReadResult.TooLarge -> reportAttachRefusal(R.string.attach_file_too_large, result.name)
+            is SafReadResult.NotText -> reportAttachRefusal(R.string.attach_not_text_file, result.name)
+            is SafReadResult.Unreadable -> reportAttachRefusal(R.string.attach_unreadable_file, result.name)
+        }
     }
 
     /** Dismisses the attachment refusal row above the composer. */

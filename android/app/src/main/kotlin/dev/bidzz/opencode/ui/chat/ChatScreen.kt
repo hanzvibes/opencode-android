@@ -268,11 +268,11 @@ fun ChatScreen(
      * Opens the system file picker for a file outside the workspace (SAF).
      * The launcher lives in MainActivity: a Compose launcher here crashed
      * on launch because the composition has no ActivityResultRegistryOwner.
-     * The picked file arrives on [safFilePicked].
+     * The picked file arrives on the application's flow and is read in by
+     * the view model (15-F4), not here — a LaunchedEffect collector in this
+     * composition died when the user left the screen mid-read.
      */
     onRequestSafFile: () -> Unit = {},
-    /** URIs picked in the system file picker; read in as text below. */
-    safFilePicked: Flow<Uri> = emptyFlow(),
     /**
      * Camera photo (Native C): the system camera hands back a gallery
      * URI; the screen copies it into the workspace and mentions the
@@ -872,33 +872,19 @@ fun ChatScreen(
 
     // System file picker for files outside the workspace (SAF): reached
     // from the "Browse device files" row at the foot of the attach picker.
-    // The launcher lives in MainActivity and the picked URI arrives on
-    // [safFilePicked] — a Compose launcher here crashed on launch because
-    // the composition has no ActivityResultRegistryOwner. OpenDocument
-    // (not GetContent): same contract family the app already uses for the
-    // workspace folder (MainActivity), and it returns a content:// URI the
-    // resolver can read without any storage permission. "*/*" on purpose —
-    // the text check happens after the pick (see readSafFile), so a
-    // .py/.md/.json the provider does not call text/* is still pickable
-    // and a binary is refused with a message, not by being unpickable.
-    // The read runs on IO: a 64 KB file is small, but the resolver can
-    // block on a slow provider. The resolver is read here, in the
-    // composable body — LocalContext.current is a @Composable call and
-    // cannot be used inside the suspend LaunchedEffect below.
+    // The launcher lives in MainActivity and the picked URI arrives on the
+    // application's flow, read in by the view model (15-F4) — a Compose
+    // launcher here crashed on launch because the composition has no
+    // ActivityResultRegistryOwner. OpenDocument (not GetContent): same
+    // contract family the app already uses for the workspace folder
+    // (MainActivity), and it returns a content:// URI the resolver can
+    // read without any storage permission. "*/*" on purpose — the text
+    // check happens after the pick (see readSafFile), so a .py/.md/.json
+    // the provider does not call text/* is still pickable and a binary is
+    // refused with a message, not by being unpickable.
+    // The resolver is read here, in the composable body — LocalContext.current is a @Composable call and
+    // cannot be used inside the drag-and-drop coroutine below.
     val safContentResolver = LocalContext.current.contentResolver
-    LaunchedEffect(safFilePicked) {
-        safFilePicked.collect { uri ->
-            val result = withContext(Dispatchers.IO) {
-                readSafFile(safContentResolver, uri)
-            }
-            when (result) {
-                is SafReadResult.Success -> onAttachmentAdded(result.file)
-                is SafReadResult.TooLarge -> onAttachmentRefused(R.string.attach_file_too_large, result.name)
-                is SafReadResult.NotText -> onAttachmentRefused(R.string.attach_not_text_file, result.name)
-                is SafReadResult.Unreadable -> onAttachmentRefused(R.string.attach_unreadable_file, result.name)
-            }
-        }
-    }
 
     // Drag & drop into the composer (Batch 7): files dropped from another
     // app arrive as content:// URIs and are read with the SAF rules above;

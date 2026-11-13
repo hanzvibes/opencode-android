@@ -76,7 +76,7 @@ class MarkdownTableTest {
         val cell = table.rows[0][0]
         assertTrue("expected a code span, got $cell", cell.any { it is MdSpan.Code && it.text == "read" })
         val bold = table.rows[0][1]
-        assertTrue("expected bold, got $bold", bold.any { it is MdSpan.Bold && it.text == "ok" })
+        assertTrue("expected bold, got $bold", bold.any { it is MdSpan.Bold && it.spans == listOf(MdSpan.Text("ok")) })
     }
 
     @Test
@@ -122,15 +122,15 @@ class MarkdownTableTest {
     fun `parses highlighted text with double equals and mark tags`() {
         val blocks = Markdown.parse("This is ==highlighted== and <mark>marked</mark> text")
         val para = blocks.single() as MdBlock.Paragraph
-        assertTrue(para.spans.any { it is MdSpan.Highlight && it.text == "highlighted" })
-        assertTrue(para.spans.any { it is MdSpan.Highlight && it.text == "marked" })
+        assertTrue(para.spans.any { it is MdSpan.Highlight && it.spans == listOf(MdSpan.Text("highlighted")) })
+        assertTrue(para.spans.any { it is MdSpan.Highlight && it.spans == listOf(MdSpan.Text("marked")) })
     }
 
     @Test
     fun `parses bold with double underscore`() {
         val blocks = Markdown.parse("This is __bold__ text")
         val para = blocks.single() as MdBlock.Paragraph
-        assertTrue(para.spans.any { it is MdSpan.Bold && it.text == "bold" })
+        assertTrue(para.spans.any { it is MdSpan.Bold && it.spans == listOf(MdSpan.Text("bold")) })
     }
 
     @Test
@@ -153,12 +153,12 @@ class MarkdownTableTest {
     private fun List<MdSpan>.text(): String = joinToString("") { span ->
         when (span) {
             is MdSpan.Text -> span.text
-            is MdSpan.Bold -> span.text
-            is MdSpan.Italic -> span.text
+            is MdSpan.Bold -> span.spans.text()
+            is MdSpan.Italic -> span.spans.text()
             is MdSpan.Code -> span.text
-            is MdSpan.Link -> span.text
-            is MdSpan.Highlight -> span.text
-            is MdSpan.Strikethrough -> span.text
+            is MdSpan.Link -> span.spans.text()
+            is MdSpan.Highlight -> span.spans.text()
+            is MdSpan.Strikethrough -> span.spans.text()
         }
     }
 }

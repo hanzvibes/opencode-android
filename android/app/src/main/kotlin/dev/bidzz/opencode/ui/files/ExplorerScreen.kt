@@ -135,6 +135,8 @@ fun ExplorerScreen(
     onFileCancelSwitch: () -> Unit = {},
     /** Starts building the workspace-wide quick-open index (lazy, on first open). */
     onEnsureQuickOpenIndex: () -> Unit = {},
+    /** Shows or hides dot-directories in the list (89-F6). */
+    onToggleHidden: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -143,9 +145,14 @@ fun ExplorerScreen(
     var searchFilter by remember { mutableStateOf("") }
     var quickOpenOpen by remember { mutableStateOf(false) }
 
-    val filteredRows = remember(state.rows, searchFilter) {
+    val filteredRows = remember(state.rows, searchFilter, state.showHidden) {
+        val visible = if (state.showHidden) {
+            state.rows
+        } else {
+            state.rows.filter { !isHiddenDirectory(it.name, it.isDirectory) }
+        }
         val q = searchFilter.trim().lowercase()
-        if (q.isEmpty()) state.rows else state.rows.filter { it.name.lowercase().contains(q) }
+        if (q.isEmpty()) visible else visible.filter { it.name.lowercase().contains(q) }
     }
 
     // One tap target for opening a row, wherever it comes from (list or palette):
@@ -186,6 +193,7 @@ fun ExplorerScreen(
                     },
                     onClose = { quickOpenOpen = false },
                     failed = state.quickOpenFailed,
+                    truncated = state.quickOpenTruncated,
                     onRetry = onEnsureQuickOpenIndex,
                 )
 
@@ -204,6 +212,7 @@ fun ExplorerScreen(
                             onOpenRow = openRow,
                             onBreadcrumb = onBreadcrumb,
                             onRefresh = onRefresh,
+                            onToggleHidden = onToggleHidden,
                         )
                     }
                     Box(
@@ -249,6 +258,7 @@ fun ExplorerScreen(
                     onOpenRow = openRow,
                     onBreadcrumb = onBreadcrumb,
                     onRefresh = onRefresh,
+                    onToggleHidden = onToggleHidden,
                 )
             }
         }
@@ -267,6 +277,7 @@ private fun ExplorerListContent(
     onOpenRow: (FileRow) -> Unit,
     onBreadcrumb: (String) -> Unit,
     onRefresh: () -> Unit,
+    onToggleHidden: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -282,6 +293,30 @@ private fun ExplorerListContent(
             placeholder = stringResource(R.string.explorer_search_hint),
             imeAction = ImeAction.Search,
         )
+    }
+
+    // Hidden directories are hidden by default (89-F6). The toggle only
+    // appears when there is something hidden to reveal — or while hidden
+    // items are shown, so it can be turned back off.
+    val hasHidden = state.rows.any { isHiddenDirectory(it.name, it.isDirectory) }
+    if (hasHidden || state.showHidden) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.lg),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            Text(
+                text = stringResource(
+                    if (state.showHidden) R.string.explorer_hide_hidden else R.string.explorer_show_hidden,
+                ),
+                style = OpenCodeTypography.label,
+                color = colors.accentText,
+                modifier = Modifier
+                    .clickable(role = Role.Button, onClick = onToggleHidden)
+                    .padding(vertical = spacing.xs),
+            )
+        }
     }
 
     state.vcsNote?.let { note ->
@@ -385,6 +420,8 @@ private fun QuickOpenPalette(
     failed: Boolean = false,
     /** Re-runs the walk; only used when the index failed. */
     onRetry: () -> Unit = {},
+    /** True when the walk stopped on a size limit: the index is partial (35-F9). */
+    truncated: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -533,6 +570,19 @@ private fun QuickOpenPalette(
                             .padding(start = spacing.md),
                     )
                 }
+            }
+
+            // A truncated index says so too (35-F9) — but there is no retry
+            // to offer: re-running the same walk stops at the same limits.
+            if (truncated && !loading && !failed) {
+                Text(
+                    text = stringResource(R.string.files_quick_open_truncated),
+                    style = OpenCodeTypography.caption,
+                    color = colors.onSurfaceMuted,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = spacing.md, vertical = spacing.xs),
+                )
             }
 
             when {
