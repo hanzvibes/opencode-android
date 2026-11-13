@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui
 
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.bidzz.opencode.ui.chat.ToolFilter
@@ -29,19 +31,30 @@ import org.junit.Test
  */
 class AuditA2Test {
 
+    // Saver.save is a member with a SaverScope receiver, so it can
+    // only be called with the saver as the (implicit) dispatch receiver
+    // and a scope in scope — the same shape Compose's own saver tests
+    // use. The scope only answers whether a value may be saved, and
+    // TextFieldValue's saver only ever hands it saveable values.
+    private val saverScope = object : SaverScope {
+        override fun canBeSaved(value: Any): Boolean = true
+    }
+
+    private fun Saver<TextFieldValue, Any>.roundTrip(value: TextFieldValue): TextFieldValue? {
+        val saved = with(saverScope) { save(value) } ?: return null
+        return restore(saved)
+    }
+
     @Test
     fun `textfieldvalue saver round-trips text and selection`() {
         val original = TextFieldValue(text = "hello", selection = TextRange(1, 4))
-        val saved = TextFieldValue.Saver.save(original)
-        val restored = TextFieldValue.Saver.restore(saved)
-        assertEquals(original, restored)
+        assertEquals(original, TextFieldValue.Saver.roundTrip(original))
     }
 
     @Test
     fun `textfieldvalue saver round-trips an empty value`() {
         val original = TextFieldValue(text = "", selection = TextRange.Zero)
-        val restored = TextFieldValue.Saver.restore(TextFieldValue.Saver.save(original))
-        assertEquals(original, restored)
+        assertEquals(original, TextFieldValue.Saver.roundTrip(original))
     }
 
     @Test
