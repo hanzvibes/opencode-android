@@ -54,6 +54,10 @@ class EngineDeathClearsMessagesTest {
     @Test
     fun `a stopped engine clears the session id and the messages`() {
         val vm = openSessionWithMessages()
+        // The death branch only runs on a state *change*: the view model
+        // starts STOPPED, so a bare STOPPED is a no-op. Drive it through
+        // RUNNING first — the realistic sequence (the engine was up).
+        vm.onEngineStatus(EngineStatus(EngineState.RUNNING))
 
         vm.onEngineStatus(EngineStatus(EngineState.STOPPED))
 
