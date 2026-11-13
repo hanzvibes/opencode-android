@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
+import dev.bidzz.opencode.ui.setClipboardText
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -852,8 +854,8 @@ fun ToolStep(
                                                     onOpenToolFile(openablePath)
                                                 }
                                                 canCopyPath -> Modifier.clickable(role = Role.Button) {
-                                                    clipboardManager.setText(AnnotatedString(fullPath))
-                                                    pathCopied = true
+                                                    // 65-F4: the check only flips on a real copy.
+                                                    if (setClipboardText(clipboardManager, AnnotatedString(fullPath))) pathCopied = true
                                                 }
                                                 else -> Modifier
                                             }
@@ -1266,8 +1268,8 @@ private fun TerminalConsoleBlock(
                 modifier = Modifier
                     .clip(RoundedCornerShape(radius.xs))
                     .clickable(role = Role.Button) {
-                        clipboardManager.setText(AnnotatedString(copyText))
-                        copied = true
+                        // 65-F4: the check only flips on a real copy.
+                        if (setClipboardText(clipboardManager, AnnotatedString(copyText))) copied = true
                     }
                     .padding(horizontal = spacing.xs, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1769,8 +1771,8 @@ private fun InlineDiffBlock(
                 modifier = Modifier
                     .clip(RoundedCornerShape(radius.xs))
                     .clickable(role = Role.Button) {
-                        clipboardManager.setText(AnnotatedString(patchText))
-                        copied = true
+                        // 65-F4: the check only flips on a real copy.
+                        if (setClipboardText(clipboardManager, AnnotatedString(patchText))) copied = true
                     }
                     .padding(horizontal = spacing.xs, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,

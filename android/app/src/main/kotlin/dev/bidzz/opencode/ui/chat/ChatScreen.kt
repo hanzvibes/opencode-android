@@ -148,6 +148,7 @@ import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.NoticeKind
 import dev.bidzz.opencode.ui.NoticeRow
 import dev.bidzz.opencode.ui.SearchField
+import dev.bidzz.opencode.ui.setClipboardText
 import dev.bidzz.opencode.ui.files.FileRow
 import dev.bidzz.opencode.ui.files.rankQuickOpen
 import dev.bidzz.opencode.ui.PersistentSidebarWidth
@@ -2606,7 +2607,7 @@ private fun EngineStatusDialog(
                         label = stringResource(R.string.chat_status_dialog_workspace),
                         value = fullPath,
                         wrapValue = true,
-                        onCopy = { clipboardManager.setText(AnnotatedString(fullPath)) },
+                        onCopy = { setClipboardText(clipboardManager, AnnotatedString(fullPath)) },
                     )
                     if (!branch.isNullOrBlank()) {
                         // Branch list (Tier 2): the row expands into the
@@ -2807,7 +2808,9 @@ private fun DialogDetailRow(
     label: String,
     value: String,
     wrapValue: Boolean = false,
-    onCopy: (() -> Unit)? = null,
+    // 65-F4: true only when the copy really landed — the row only flips
+    // its check on a real success, never on a skipped or failed copy.
+    onCopy: (() -> Boolean)? = null,
 ) {
     val colors = OpenCodeTheme.colors
     // Stays true while the dialog is open (same pattern as the ToolRow
@@ -2847,7 +2850,7 @@ private fun DialogDetailRow(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .clickable(role = SemanticsRole.Button, onClick = { copied = true; onCopy() })
+                        .clickable(role = SemanticsRole.Button, onClick = { if (onCopy?.invoke() == true) copied = true })
                         // A11y (#8a, report #16): the copy button had a role
                         // but no name — TalkBack announced just "Button".
                         .semantics { contentDescription = copyDescription },

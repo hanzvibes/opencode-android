@@ -42,6 +42,8 @@
     <string name="engine_notif_failed_text">Berhenti tiba-tiba</string>
     <string name="engine_notif_channel_name">Engine</string>
     <string name="engine_notif_channel_desc">Menjaga engine OpenCode lokal tetap berjalan</string>
+    <string name="engine_notif_failure_channel_name">Kegagalan engine</string>
+    <string name="engine_notif_failure_channel_desc">Peringatan saat engine lokal gagal dinyalakan.</string>
 
     <!-- Settings -->
     <string name="settings_title">Pengaturan</string>
@@ -159,6 +161,8 @@
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
     <string name="stop_unconfirmed">Stop belum terkonfirmasi — ketuk Stop untuk mencoba lagi.</string>
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
+    <string name="session_link_gone">Sesi itu sudah tidak ada di engine — link-nya menunjuk ke sesi yang sudah hilang.</string>
+    <string name="session_link_wrong_workspace">Sesi itu milik proyek lain — ganti workspace untuk membukanya.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
     <string name="workspace_too_broad">Folder itu adalah seluruh storage — pilih folder proyek saja.</string>
@@ -468,6 +472,7 @@
     <string name="code_saved">Tersimpan</string>
     <string name="code_copy">Salin</string>
     <string name="code_copied">Tersalin</string>
+    <string name="copy_failed">Gagal menyalin ke clipboard.</string>
     <string name="code_save">Simpan</string>
     <string name="code_save_failed">Tidak bisa menyimpan file.</string>
     <string name="code_save_picker_failed">Tidak bisa membuka dialog simpan.</string>
@@ -828,6 +833,7 @@
     <string name="browser_forward">Maju</string>
     <string name="browser_reload">Muat ulang</string>
     <string name="browser_share">Bagikan tautan</string>
+    <string name="browser_share_failed">Gagal membuka lembar berbagi.</string>
     <string name="browser_open_external">Buka di browser</string>
     <string name="browser_copy_link">Salin tautan</string>
     <string name="browser_copied">Tautan disalin</string>
@@ -839,6 +845,9 @@
     <string name="notification_agent_done_channel">Balasan agent</string>
     <string name="notification_agent_done_title">Agent selesai menjawab</string>
     <string name="notification_agent_done_body">Ketuk untuk membuka sesi</string>
+    <string name="notification_permission_rationale">Notifikasi memberi tahu saat agen selesai bekerja di background.</string>
+    <string name="notification_permission_allow">Izinkan</string>
+    <string name="notification_permission_settings">Notifikasi mati, jadi run yang selesai tidak memberi tahu. Nyalakan di Pengaturan.</string>
     <string name="composer_take_photo">Ambil foto</string>
     <string name="photo_saved">Foto disimpan ke %1$s</string>
     <string name="photo_failed">Foto gagal disimpan</string>

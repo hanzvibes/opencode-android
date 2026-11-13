@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.util.Log
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -108,17 +109,24 @@ private fun urlHostAfterScheme(url: String): String? {
  * Shares plain text through the system chooser. One helper for the
  * browser toolbar and the chat message actions, so both share the same
  * chooser title and the same ActivityNotFound guard.
+ *
+ * Returns false when the chooser could not be opened (audit-100 65-F6):
+ * the caller must say so — the old `runCatching` without `onFailure`
+ * left a tapped Share button doing nothing at all, with no feedback.
  */
-fun shareText(context: Context, text: String) {
+fun shareText(context: Context, text: String): Boolean {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
         putExtra(Intent.EXTRA_TEXT, text)
     }
-    runCatching {
+    return runCatching {
         context.startActivity(
             Intent.createChooser(intent, context.getString(R.string.browser_share)),
         )
-    }
+        true
+    }.onFailure {
+        Log.w("shareText", "could not open the share chooser", it)
+    }.getOrDefault(false)
 }
 
 /**
@@ -259,7 +267,14 @@ fun InAppBrowserScreen(
             BrowserAction(
                 glyph = Glyph.Share,
                 description = stringResource(R.string.browser_share),
-                onClick = { shareText(context, currentUrl) },
+                onClick = {
+                    // 65-F6: a failed chooser used to do nothing at all.
+                    if (!shareText(context, currentUrl)) {
+                        (context.applicationContext as OpenCodeApplication).showSnackbar(
+                            context.getString(R.string.browser_share_failed),
+                        )
+                    }
+                },
             )
             BrowserAction(
                 glyph = Glyph.External,

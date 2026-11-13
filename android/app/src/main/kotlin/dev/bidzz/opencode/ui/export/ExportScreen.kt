@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui.export
 
+import dev.bidzz.opencode.ui.setClipboardText
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -131,9 +133,11 @@ fun ExportScreen(
                                 if (shouldBlockCopy(export.rawJson.length)) {
                                     copyTooLarge = true
                                 } else {
-                                    clipboardManager.setText(AnnotatedString(export.rawJson))
-                                    copied = true
-                                    copyTooLarge = false
+                                    // 65-F4: "Copied" only on a real copy.
+                                    if (setClipboardText(clipboardManager, AnnotatedString(export.rawJson))) {
+                                        copied = true
+                                        copyTooLarge = false
+                                    }
                                 }
                             },
                         ) {

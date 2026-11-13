@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -336,6 +337,34 @@ internal fun shouldOpenAfterResume(
     repositoryChanged: Boolean,
 ): Boolean =
     !repositoryChanged && (attachedSessionID == null || attachedSessionID == targetSessionID)
+
+/**
+ * Whether opening a session must be refused, and with which banner
+ * (56-F2/56-F6). Pure, so it is unit-testable without an engine.
+ *
+ * - [meta] null + [isMissing] (404 / `SessionNotFoundError`): the engine
+ *   says the session is gone — refuse, keep the current session.
+ * - [meta] present but [directoryMatches] false: the session belongs to
+ *   another project — refuse, or prompts would land in the wrong project
+ *   under the active workspace's header (the same class as item 14).
+ * - [directoryMatches] null (older engines report no location): allowed
+ *   through, like onResume — a null location cannot be verified, so it
+ *   must not break the open.
+ * - [meta] null without [isMissing]: a transient failure — allowed
+ *   unchecked, and the resync banner reports the session if it is
+ *   really gone.
+ *
+ * Returns the `@StringRes` banner key, or null to proceed.
+ */
+internal fun sessionOpenRefusal(
+    meta: SessionInfo?,
+    isMissing: Boolean,
+    directoryMatches: Boolean?,
+): Int? = when {
+    meta == null && isMissing -> R.string.session_link_gone
+    meta != null && directoryMatches == false -> R.string.session_link_wrong_workspace
+    else -> null
+}
 
 /**
  * Whether the draft may be cleared after a send succeeded (13-F4).
@@ -2209,6 +2238,18 @@ class ChatViewModel(
 
     /** Loads an existing session. */
     fun openSession(session: SessionInfo) {
+        // 56-F2: the list hands us the session's own location for free —
+        // refuse a cross-workspace pick before parking the composer, the
+        // same check the id-only path does over the network below.
+        val refusal = sessionOpenRefusal(
+            meta = session,
+            isMissing = false,
+            directoryMatches = session.location?.directory?.let { sameDirectory(it, workspace()) },
+        )
+        if (refusal != null) {
+            refuseSessionOpen(refusal, session.id)
+            return
+        }
         // Read-only sync: the session's own model and agent become the
         // active ones, so the header stops showing the previous session's
         // model. selectModel()/selectAgent() are NOT called — they write to
@@ -2248,6 +2289,97 @@ class ChatViewModel(
         // directly and is unaffected by this guard.
         if (sessionID == _state.value.sessionID) return
         val repo = repository ?: return
+        if (fetchMeta) {
+            // 56-F2/56-F6: the id-only path (deep link, widget, notification,
+            // pending open — and the session list, whose rows carry only an
+            // id) must prove the target exists and belongs to the active
+            // workspace BEFORE parking the current composer and switching
+            // state. The old code parked first and asked afterwards: a stale
+            // link evicted the user from their working session, and the
+            // failed id poisoned lastSessionID for the next launch.
+            // The GET is the same one the meta sync below used to make
+            // after opening — moved earlier and reused, so this adds no
+            // extra request.
+            val h = handle
+            if (h == null) {
+                // No handle yet: cannot verify. Fall through to the old
+                // path — the resync banner still reports a gone session.
+                openSessionUnchecked(sessionID, repo, meta = null)
+                return
+            }
+            val attachedAtRequest = repo.state.value.sessionID
+            viewModelScope.launch {
+                when (val result = h.sessions.get(sessionID)) {
+                    is ApiResult.Success -> {
+                        val refusal = sessionOpenRefusal(
+                            meta = result.value,
+                            isMissing = false,
+                            directoryMatches = result.value.location?.directory?.let {
+                                sameDirectory(it, workspace())
+                            },
+                        )
+                        if (!stillOn(attachedAtRequest, repo)) return@launch
+                        if (refusal != null) {
+                            refuseSessionOpen(refusal, sessionID)
+                        } else {
+                            openSessionUnchecked(sessionID, repo, meta = result.value)
+                        }
+                    }
+                    is ApiResult.Failure -> {
+                        if (!stillOn(attachedAtRequest, repo)) return@launch
+                        val refusal = sessionOpenRefusal(
+                            meta = null,
+                            isMissing = result.isSessionMissing,
+                            directoryMatches = null,
+                        )
+                        if (refusal != null) {
+                            refuseSessionOpen(refusal, sessionID)
+                        } else {
+                            // A transient failure (engine mid-restart, a
+                            // dropped connection) must not block a deep
+                            // link: open unchecked and let the resync
+                            // banner report the session if it is really gone.
+                            openSessionUnchecked(sessionID, repo, meta = null)
+                        }
+                    }
+                }
+            }
+            return
+        }
+        openSessionUnchecked(sessionID, repo, meta = null)
+    }
+
+    /**
+     * The user has not switched sessions since the pre-check started
+     * (56-F2/56-F6): the attached session is still the one the check
+     * started from, on the same repository. A late GET result must never
+     * clobber an explicit choice the user made while it was in flight.
+     */
+    private fun stillOn(attachedAtRequest: String?, repo: ChatRepository): Boolean =
+        repository === repo && repo.state.value.sessionID == attachedAtRequest
+
+    /**
+     * Refuses a deep-link / list open without touching the current session
+     * (56-F2/56-F6): no parked composer, no cleared draft, no poisoned
+     * lastSessionID — the banner says why, on the session the user is
+     * still looking at. Also clears a pending deep-link open for this id:
+     * the pending id is only confirmed by onRepoState when the repository
+     * installs it, so a refused id would otherwise stall onResume forever.
+     */
+    private fun refuseSessionOpen(@StringRes failureKey: Int, sessionID: String) {
+        if (pendingOpenSessionID == sessionID) pendingOpenSessionID = null
+        _state.value = _state.value.copy(failureKey = failureKey, retryKind = RetryKind.NONE)
+    }
+
+    /**
+     * The switch itself, after the target has been proven (or when the
+     * caller already holds its info). Parks the outgoing composer, restores
+     * the incoming one, and opens the repository. [meta], when present,
+     * syncs the session's model/agent without a second GET — read-only,
+     * never written back to the engine. A failed read is best-effort:
+     * chat still opens on the previous selection.
+     */
+    private fun openSessionUnchecked(sessionID: String, repo: ChatRepository, meta: SessionInfo?) {
         sessionReloadAttempts = 0
         // A draft belongs to the session it was typed in; opening another
         // session starts with that session's own composer — the outgoing
@@ -2267,29 +2399,16 @@ class ChatViewModel(
             savedStateHandle?.set(DRAFT_KEY, restored.draft)
         }
         repo.open(sessionID)
-        // The id-only path has no SessionInfo to sync from, so the session's
-        // own model/agent are read back (GET /api/session/{id}) and copied
-        // into state — read-only, never written back to the engine. A failed
-        // read is best-effort: chat still opens on the previous selection.
-        if (!fetchMeta) return
-        val h = handle ?: return
-        viewModelScope.launch {
-            when (val result = h.sessions.get(sessionID)) {
-                is ApiResult.Success -> {
-                    // Guarded by the repository's attached session (item 23),
-                    // not the UI state's: opening A then B fast must not let
-                    // A's late GET overwrite B's chip. The repository sets
-                    // its session id synchronously in open(), so this holds
-                    // even before the collector's first emission.
-                    if (repository?.state?.value?.sessionID == sessionID) {
-                        _state.value = _state.value.copy(
-                            activeModel = result.value.model,
-                            activeAgent = result.value.agent,
-                        )
-                    }
-                }
-                is ApiResult.Failure -> Unit
-            }
+        // Guarded by the repository's attached session (item 23), not the
+        // UI state's: opening A then B fast must not let A's late GET
+        // overwrite B's chip. The repository sets its session id
+        // synchronously in open(), so this holds even before the
+        // collector's first emission.
+        if (meta != null && repository?.state?.value?.sessionID == sessionID) {
+            _state.value = _state.value.copy(
+                activeModel = meta.model,
+                activeAgent = meta.agent,
+            )
         }
     }
 

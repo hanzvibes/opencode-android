@@ -42,4 +42,18 @@ class MarkdownLinkTest {
             spans("[call](tel:+621234567)").filterIsInstance<MdSpan.Link>(),
         )
     }
+
+    @Test
+    fun `tel links with MMI or USSD characters are plain text, not links (53-F2)`() {
+        for (url in listOf("tel:*#06#", "tel:*100#", "tel:+62,123", "tel:+62;123")) {
+            assertTrue("expected no link for $url", spans("[x]($url)").none { it is MdSpan.Link })
+        }
+    }
+
+    @Test
+    fun `tel numbers with spaces parens and dashes stay links (53-F2)`() {
+        for (url in listOf("tel:+62 812-3456", "tel:(021) 123456", "tel:0812.345.678")) {
+            assertEquals("expected a link for $url", 1, spans("[x]($url)").filterIsInstance<MdSpan.Link>().size)
+        }
+    }
 }

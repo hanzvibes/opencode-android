@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.RemoteViews
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.OpenCodeApplication
@@ -102,6 +103,13 @@ private fun newSessionPendingIntent(context: Context): PendingIntent {
 private fun openSessionPendingIntent(context: Context, sessionID: String): PendingIntent {
     val intent = Intent(context, MainActivity::class.java).apply {
         action = Intent.ACTION_MAIN
+        // 53-F5: the data URI is part of a PendingIntent's identity —
+        // without it every widget's "Open" was the SAME PendingIntent
+        // (same action, component and requestCode; extras do not count),
+        // so FLAG_UPDATE_CURRENT let the last-updated widget overwrite
+        // EXTRA_SESSION_ID for all of them and every tap opened that
+        // session. Same mechanism as AgentDoneNotifier.
+        data = Uri.parse("opencode://session/$sessionID")
         putExtra(EXTRA_OPENCODE_ACTION, ACTION_OPEN_SESSION)
         putExtra(EXTRA_SESSION_ID, sessionID)
     }

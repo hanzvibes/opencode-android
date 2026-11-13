@@ -23,6 +23,7 @@ import dev.bidzz.opencode.core.api.dto.SingleResponse
 import dev.bidzz.opencode.core.api.dto.UpdateSessionRequest
 import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import kotlinx.serialization.encodeToString
+import java.net.URLEncoder
 
 /**
  * Session endpoints.
@@ -31,6 +32,16 @@ import kotlinx.serialization.encodeToString
  * client's base URL; the client owns auth and timeouts.
  */
 class SessionApi(private val client: EngineClient) {
+
+    /**
+     * Builds an `/api/session/{id}...` path with the id encoded per segment
+     * (audit-100 56-F3, defense in depth): a raw interpolation lets a `/`,
+     * `?` or `#` inside an id reshape the request path. Valid ids (the
+     * `isValidSessionId` charset) pass through unchanged, so legitimate
+     * traffic is byte-identical.
+     */
+    private fun sessionPath(sessionID: String, suffix: String = ""): String =
+        "/api/session/${encodePathSegment(sessionID)}$suffix"
 
     /**
      * Creates a session bound to [directory].
@@ -85,7 +96,7 @@ class SessionApi(private val client: EngineClient) {
      */
     suspend fun prompt(sessionID: String, text: String): ApiResult<SessionMessage> {
         val body = ApiJson.encodeToString(PromptRequest(text = text))
-        val request = client.request("/api/session/$sessionID/prompt")
+        val request = client.request(sessionPath(sessionID, "/prompt"))
             .post(client.jsonBody(body))
             .build()
         return client.execute(request) { raw ->
@@ -120,7 +131,7 @@ class SessionApi(private val client: EngineClient) {
      */
     suspend fun messagesPage(sessionID: String, limit: Int? = null, cursor: String? = null): ApiResult<MessagesResponse> {
         val path = buildString {
-            append("/api/session/").append(sessionID).append("/message")
+            append(sessionPath(sessionID, "/message"))
             val params = listOfNotNull(
                 limit?.let { "limit=$it" },
                 cursor?.let { "cursor=${java.net.URLEncoder.encode(it, "UTF-8")}" },
@@ -150,7 +161,7 @@ class SessionApi(private val client: EngineClient) {
      * lifetime total — just not for what is in the window right now.
      */
     suspend fun context(sessionID: String): ApiResult<List<SessionMessage>> {
-        val request = client.request("/api/session/$sessionID/context").get().build()
+        val request = client.request(sessionPath(sessionID, "/context")).get().build()
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<MessagesResponse>(raw).data
         }
@@ -167,7 +178,7 @@ class SessionApi(private val client: EngineClient) {
      */
     suspend fun diff(sessionID: String, from: String? = null, to: String? = null): ApiResult<List<FileDiffInfo>> {
         val query = buildString {
-            append("/api/session/").append(sessionID).append("/diff")
+            append(sessionPath(sessionID, "/diff"))
             var first = true
             fun param(name: String, value: String) {
                 append(if (first) "?" else "&").append(name).append("=")
@@ -191,7 +202,7 @@ class SessionApi(private val client: EngineClient) {
      */
     suspend fun setModel(sessionID: String, model: ModelRef): ApiResult<Unit> {
         val body = ApiJson.encodeToString(SetModelRequest(model))
-        val request = client.request("/api/session/$sessionID/model")
+        val request = client.request(sessionPath(sessionID, "/model"))
             .post(client.jsonBody(body))
             .build()
         return client.executeUnit(request)
@@ -199,7 +210,7 @@ class SessionApi(private val client: EngineClient) {
 
     /** Stops the running agent loop for this session. */
     suspend fun interrupt(sessionID: String): ApiResult<Unit> {
-        val request = client.request("/api/session/$sessionID/interrupt")
+        val request = client.request(sessionPath(sessionID, "/interrupt"))
             .post(client.emptyBody())
             .build()
         return client.executeUnit(request)
@@ -219,7 +230,7 @@ class SessionApi(private val client: EngineClient) {
         message: String? = null,
     ): ApiResult<Unit> {
         val body = ApiJson.encodeToString(PermissionReplyRequest(decision = decision, message = message))
-        val request = client.request("/api/session/$sessionID/permission/$requestID/reply")
+        val request = client.request(sessionPath(sessionID, "/permission/$requestID/reply"))
             .post(client.jsonBody(body))
             .build()
         return client.executeUnit(request)
@@ -235,7 +246,7 @@ class SessionApi(private val client: EngineClient) {
      * stream event, decoded as [PendingPermission] (unknown fields ignored).
      */
     suspend fun listPermissions(sessionID: String): ApiResult<List<PendingPermission>> {
-        val request = client.request("/api/session/$sessionID/permission").get().build()
+        val request = client.request(sessionPath(sessionID, "/permission")).get().build()
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<PermissionsResponse>(raw).data
         }
@@ -255,7 +266,7 @@ class SessionApi(private val client: EngineClient) {
      * session.ts` at fork pin 92b2ca0).
      */
     suspend fun listForms(sessionID: String): ApiResult<List<FormInfo>> {
-        val request = client.request("/api/session/$sessionID/form").get().build()
+        val request = client.request(sessionPath(sessionID, "/form")).get().build()
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<FormsResponse>(raw).data
         }
@@ -280,7 +291,7 @@ class SessionApi(private val client: EngineClient) {
         answer: Map<String, kotlinx.serialization.json.JsonElement>,
     ): ApiResult<Unit> {
         val body = ApiJson.encodeToString(FormReplyRequest(answer = answer))
-        val request = client.request("/api/session/$sessionID/form/$formID/reply")
+        val request = client.request(sessionPath(sessionID, "/form/$formID/reply"))
             .post(client.jsonBody(body))
             .build()
         return client.executeUnit(request)
@@ -288,7 +299,7 @@ class SessionApi(private val client: EngineClient) {
 
     /** One session's metadata. */
     suspend fun get(sessionID: String): ApiResult<SessionInfo> {
-        val request = client.request("/api/session/$sessionID").get().build()
+        val request = client.request(sessionPath(sessionID)).get().build()
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<SingleResponse<SessionInfo>>(raw).data
         }
@@ -307,7 +318,7 @@ class SessionApi(private val client: EngineClient) {
      */
     suspend fun move(sessionID: String, directory: String): ApiResult<Unit> {
         val body = ApiJson.encodeToString(MoveSessionRequest(directory = directory))
-        val request = client.request("/api/session/$sessionID/move")
+        val request = client.request(sessionPath(sessionID, "/move"))
             .post(client.jsonBody(body))
             .build()
         return client.executeUnit(request)
@@ -325,7 +336,7 @@ class SessionApi(private val client: EngineClient) {
      * [SessionTransferData]); `?sanitize=true` is not sent.
      */
     suspend fun export(sessionID: String): ApiResult<SessionExport> {
-        val request = client.request("/api/experimental/session/$sessionID/export").get().build()
+        val request = client.request("/api/experimental/session/${encodePathSegment(sessionID)}/export").get().build()
         return client.execute(request) { raw ->
             SessionExport(
                 data = ApiJson.decodeFromString<SessionTransferResponse>(raw).data,
@@ -336,19 +347,30 @@ class SessionApi(private val client: EngineClient) {
 
     /** Deletes a session from the engine. */
     suspend fun delete(sessionID: String): ApiResult<Unit> {
-        val request = client.request("/api/session/$sessionID").delete().build()
+        val request = client.request(sessionPath(sessionID)).delete().build()
         return client.executeUnit(request)
     }
 
     /** Renames a session. */
     suspend fun rename(sessionID: String, title: String): ApiResult<Unit> {
         val body = ApiJson.encodeToString(UpdateSessionRequest(title = title))
-        val request = client.request("/api/session/$sessionID")
+        val request = client.request(sessionPath(sessionID))
             .patch(client.jsonBody(body))
             .build()
         return client.executeUnit(request)
     }
 }
+
+/**
+ * Percent-encodes one path segment (audit-100 56-F3, defense in depth).
+ *
+ * `URLEncoder` is form encoding — a space becomes `+`, which is a literal
+ * plus in a path — so `+` is rewritten to `%20`. Valid session ids (the
+ * `isValidSessionId` charset: letters, digits, `_`, `-`, `.`) pass through
+ * unchanged, so legitimate traffic is byte-identical.
+ */
+internal fun encodePathSegment(segment: String): String =
+    URLEncoder.encode(segment, Charsets.UTF_8.name()).replace("+", "%20")
 
 /**
  * A session export: the decoded transcript plus the verbatim JSON it

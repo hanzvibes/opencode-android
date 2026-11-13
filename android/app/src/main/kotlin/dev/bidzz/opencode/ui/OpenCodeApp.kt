@@ -46,6 +46,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -64,6 +65,7 @@ import dev.bidzz.opencode.ui.about.AboutScreen
 import dev.bidzz.opencode.ui.browser.InAppBrowserScreen
 import dev.bidzz.opencode.ui.browser.isBrowsableUrl
 import dev.bidzz.opencode.ui.browser.isForwardableUrl
+import dev.bidzz.opencode.ui.cancelAgentDone
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
@@ -239,6 +241,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // (BottomCenter) below — see the collector in LaunchedEffect(Unit).
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // 69-F14: the snackbar showing when the activity is recreated (fold,
+    // resize, process death). It was already consumed from the flow, so
+    // without this the message — and its action, e.g. Retry — vanished
+    // without a trace. The message survives in saved state and is
+    // re-shown by the collector below; the action lambda cannot survive,
+    // so the re-shown snackbar carries the label but no action.
+    var inflightSnackbarMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var inflightSnackbarActionLabel by rememberSaveable { mutableStateOf<String?>(null) }
+    var inflightSnackbarLong by rememberSaveable { mutableStateOf(false) }
+
     // File open in the files list-detail pane (expanded widths only).
     var selectedFilePath by remember { mutableStateOf<String?>(null) }
 
@@ -398,7 +410,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     }
 
     LaunchedEffect(chatState.sessionID) {
-        chatState.sessionID?.let { app.lastSessionID = it }
+        chatState.sessionID?.let {
+            app.lastSessionID = it
+            // 55-F7: the session is open now — its agent-done notification
+            // (if any) is stale; the user is looking at the answer.
+            cancelAgentDone(app, it)
+        }
     }
 
     // External entries (Native C): shared text and deep links arrive via
@@ -433,14 +450,31 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         }
         // #4d: snackbars, one at a time. showSnackbar suspends until the
         // snackbar is dismissed, so a burst queues in the flow's buffer
-        // (capacity 8) instead of overlapping on screen.
+        // (capacity 16) instead of overlapping on screen.
         launch {
+            // 69-F14: re-show the snackbar that was on screen when the
+            // activity was recreated — its message survived in saved
+            // state, the action did not (see the note at the declaration).
+            inflightSnackbarMessage?.let { message ->
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    actionLabel = inflightSnackbarActionLabel,
+                    duration = if (inflightSnackbarLong) SnackbarDuration.Long else SnackbarDuration.Short,
+                )
+                inflightSnackbarMessage = null
+                inflightSnackbarActionLabel = null
+            }
             app.snackbarRequests.collect { request ->
+                inflightSnackbarMessage = request.message
+                inflightSnackbarActionLabel = request.actionLabel
+                inflightSnackbarLong = request.long
                 val result = snackbarHostState.showSnackbar(
                     message = request.message,
                     actionLabel = request.actionLabel,
                     duration = if (request.long) SnackbarDuration.Long else SnackbarDuration.Short,
                 )
+                inflightSnackbarMessage = null
+                inflightSnackbarActionLabel = null
                 if (result == SnackbarResult.ActionPerformed) request.onAction?.invoke()
             }
         }
