@@ -294,7 +294,7 @@ fun ProvidersScreen(
 
             state.notice?.let {
                 Text(
-                    text = it,
+                    text = stringResource(it.messageRes, *it.args.toTypedArray()),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )

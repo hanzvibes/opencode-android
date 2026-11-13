@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui.files
 
+import java.util.Locale
+
 /**
  * What pressing save means for the file on disk.
  *
@@ -108,19 +110,19 @@ fun findMatches(text: String, query: String, maxMatches: Int = 1_000): List<IntR
 
 /** Quick-open ranking, same ordering as the chat command palette: exact filename, then filename prefix, then filename substring, then path substring. */
 fun rankQuickOpen(files: List<FileRow>, query: String, limit: Int = 50): List<FileRow> {
-    val q = query.trim().lowercase()
+    val q = query.trim().lowercase(Locale.ROOT)
     if (q.isEmpty()) return files.take(limit)
     val exact = mutableListOf<FileRow>()
     val prefix = mutableListOf<FileRow>()
     val nameSubstring = mutableListOf<FileRow>()
     val pathSubstring = mutableListOf<FileRow>()
     for (file in files) {
-        val name = file.name.lowercase()
+        val name = file.name.lowercase(Locale.ROOT)
         when {
             name == q -> exact.add(file)
             name.startsWith(q) -> prefix.add(file)
             name.contains(q) -> nameSubstring.add(file)
-            file.path.lowercase().contains(q) -> pathSubstring.add(file)
+            file.path.lowercase(Locale.ROOT).contains(q) -> pathSubstring.add(file)
         }
     }
     return (exact + prefix + nameSubstring + pathSubstring).take(limit)

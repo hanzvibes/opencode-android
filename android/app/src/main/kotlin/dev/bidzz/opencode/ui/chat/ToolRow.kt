@@ -252,7 +252,12 @@ fun ToolTrace(
                 // Progress as finished/total, so a long run reads as
                 // "Running Read… · 3/5" instead of an open-ended "Running…".
                 if (toolName != null) {
-                    "Running $toolName… · $completed/${tools.size}"
+                    stringResource(
+                        R.string.tool_running_named,
+                        toolName,
+                        completed,
+                        tools.size,
+                    )
                 } else {
                     stringResource(
                         if (tools.size == 1) R.string.tool_steps_one else R.string.tool_steps_other,
@@ -260,9 +265,12 @@ fun ToolTrace(
                     ) + " · $completed/${tools.size}"
                 }
             } else {
-                "Ran " + stringResource(
-                    if (tools.size == 1) R.string.tool_steps_one else R.string.tool_steps_other,
-                    tools.size,
+                stringResource(
+                    R.string.tool_ran,
+                    stringResource(
+                        if (tools.size == 1) R.string.tool_steps_one else R.string.tool_steps_other,
+                        tools.size,
+                    ),
                 )
             }
 

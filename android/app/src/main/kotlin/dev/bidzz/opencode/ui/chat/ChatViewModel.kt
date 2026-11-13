@@ -18,6 +18,7 @@ import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
+import dev.bidzz.opencode.ui.engineDownFailure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -1926,7 +1927,7 @@ class ChatViewModel(
             val name = text.substring(1).substringBefore(' ')
             val args = text.substringAfter(' ', "").trim()
             handle?.commands?.run(sessionID, name, args)
-                ?: ApiResult.Failure(code = -1, message = "Engine is not running")
+                ?: engineDownFailure()
         } else {
             repo.send(text)
         }
@@ -2559,13 +2560,17 @@ private fun ChatState.buildUnmergedMessages(
             // thing the transcript has to answer after a switch goes wrong.
             // The turn keeps its footer (66-F3): a run that died after burning
             // input still spent those tokens, so the error bubble shows them
-            // instead of hiding the cost of the failure.
+            // instead of hiding the cost of the failure. The text itself stays
+            // blank here when the engine gave no message and no type — the
+            // bubble renders the localised "The agent failed" (54-F7) instead
+            // of a hardcoded English sentence, because this mapping has no
+            // Context to resolve a string with.
             message.isAssistant && message.error != null && message.content.isEmpty() ->
                 turnFooterValues(message).let { footer ->
                     result += ChatMessage(
                         id = message.id,
                         role = Role.ERROR,
-                        text = message.error?.message ?: message.error?.type ?: "The agent failed",
+                        text = message.error?.message ?: message.error?.type ?: "",
                         agent = message.agent,
                         model = message.model,
                         createdAtMillis = message.time?.created,

@@ -78,6 +78,7 @@ import dev.bidzz.opencode.ui.pressScale
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
 import dev.bidzz.opencode.ui.message
+import java.util.Locale
 
 /** Expanded width at which the explorer becomes a list-detail split. */
 private val ListDetailBreakpoint = 840.dp
@@ -151,8 +152,8 @@ fun ExplorerScreen(
         } else {
             state.rows.filter { !isHiddenDirectory(it.name, it.isDirectory) }
         }
-        val q = searchFilter.trim().lowercase()
-        if (q.isEmpty()) visible else visible.filter { it.name.lowercase().contains(q) }
+        val q = searchFilter.trim().lowercase(Locale.ROOT)
+        if (q.isEmpty()) visible else visible.filter { it.name.lowercase(Locale.ROOT).contains(q) }
     }
 
     // One tap target for opening a row, wherever it comes from (list or palette):

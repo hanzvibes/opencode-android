@@ -133,7 +133,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -1532,6 +1531,14 @@ fun ChatScreen(
                         commands = state.commands,
                         draft = state.draft,
                         skills = state.skills,
+                        // Localised builtin descriptions (11-F4), so
+                        // searching "/hapus" finds /clear in Indonesian.
+                        // Engine commands and skills have no translation
+                        // and keep matching on their own description.
+                        localizedDescriptions = BUILTIN_SLASH_COMMANDS
+                            .mapNotNull { cmd ->
+                                cmd.descriptionRes?.let { cmd.name to stringResource(it) }
+                            }.toMap(),
                     )
 
                     CommandSuggestions(
@@ -1994,7 +2001,7 @@ private fun statusDotColor(colors: OpenCodeColors, status: Status): Color = when
     Status.IDLE -> colors.neutral
 }
 
-/** "Today" / "Yesterday", otherwise the date — in the device locale. */
+/** "Today" / "Yesterday", otherwise the date — in the app language. */
 @Composable
 private fun dateDividerLabel(millis: Long): String {
     val zone = ZoneId.systemDefault()
@@ -2003,7 +2010,15 @@ private fun dateDividerLabel(millis: Long): String {
     return when (date) {
         today -> stringResource(R.string.date_today)
         today.minusDays(1) -> stringResource(R.string.date_yesterday)
-        else -> date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))
+        // The locale of the wrapped context (92-F10), not the phone's:
+        // a user who pinned the app to Bahasa Indonesia sees "12 Nov 2026"
+        // with Indonesian month abbreviations, whatever the phone is set to.
+        else -> date.format(
+            DateTimeFormatter.ofPattern(
+                "d MMM yyyy",
+                LocalContext.current.resources.configuration.locales[0],
+            ),
+        )
     }
 }
 

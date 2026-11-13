@@ -1,6 +1,7 @@
 package dev.bidzz.opencode
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -36,6 +37,19 @@ class OpenCodeApplication : Application() {
         const val PREFS_NAME = "app"
         /** Last opened session id (also read by the widget). */
         const val KEY_LAST_SESSION = "last_session_id"
+    }
+
+    /**
+     * The app language (92-F2): the whole process reads resources in the
+     * language the user picked — the service's notifications, the widget,
+     * and shortcuts all derive their context from here, so they no longer
+     * fall back to the phone's locale while the UI speaks Indonesian. One
+     * limit: this runs once per process, so a language change reaches
+     * those surfaces after the next process start; the Compose tree
+     * re-wraps on change and updates at once.
+     */
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(LanguageStore.wrap(base, LanguageStore.get(base)))
     }
 
     /** Null until [onCreate] finishes, or when the engine binary is unavailable. */

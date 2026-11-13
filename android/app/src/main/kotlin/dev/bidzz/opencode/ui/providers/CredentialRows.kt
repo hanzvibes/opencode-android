@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui.providers
 
+import androidx.annotation.StringRes
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.CredentialEntry
 
 /**
@@ -53,10 +55,22 @@ fun shortId(id: String): String {
     return if (id.length <= prefix.length + suffix.length) id else "$prefix…$suffix"
 }
 
-/** What the screen says after a delete, which depends on whether the provider survives it. */
-fun afterDeleteNotice(remaining: Int, providerName: String): String =
+/**
+ * What the screen says after a delete, which depends on whether the provider survives it.
+ *
+ * A string resource plus its format args (92-F4), resolved at the render site with
+ * `stringResource` — the same shape as `KeyValidation.Valid/Warning`. A plain
+ * `String` here would force the sentence into English, because this function has no
+ * `Context` and the view model that calls it has none either.
+ */
+data class DeleteNotice(
+    @StringRes val messageRes: Int,
+    val args: List<Any> = emptyList(),
+)
+
+fun afterDeleteNotice(remaining: Int, providerName: String): DeleteNotice =
     if (remaining == 0) {
-        "$providerName has no key left. It will not work until you add one."
+        DeleteNotice(R.string.providers_no_keys_left, listOf(providerName))
     } else {
-        "Key deleted. $remaining left for $providerName."
+        DeleteNotice(R.string.providers_keys_left, listOf(remaining, providerName))
     }

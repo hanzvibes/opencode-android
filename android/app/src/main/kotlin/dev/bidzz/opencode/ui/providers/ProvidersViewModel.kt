@@ -36,7 +36,7 @@ data class ProvidersUiState(
     /** Name of the provider most recently connected, for a transient confirmation. */
     val connected: String? = null,
     /** Transient result of deleting a key, which may have disconnected the provider. */
-    val notice: String? = null,
+    val notice: DeleteNotice? = null,
     /** Google Antigravity OAuth accounts detected from config storage. */
     val antigravityAccounts: List<EngineConfigStore.AntigravityAccount> = emptyList(),
     val activeAntigravityEmail: String? = null,

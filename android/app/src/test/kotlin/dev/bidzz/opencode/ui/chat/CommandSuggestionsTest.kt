@@ -212,6 +212,31 @@ class CommandSuggestionsTest {
     }
 
     @Test
+    fun `filterSlashCommands matches the localised description, not just the English one`() {
+        // 11-F4: the builtin descriptions are English literals, so without the
+        // localised map a user searching in Indonesian finds nothing.
+        val commands = listOf(
+            SlashCommand(name = "clear", description = "Clear conversation messages and reset context"),
+            SlashCommand(name = "test", description = "Run test suite or target test spec"),
+        )
+        val indonesian = mapOf(
+            "clear" to "Hapus pesan percakapan dan reset konteks",
+            "test" to "Jalankan rangkaian tes atau spesifikasi tes",
+        )
+
+        // Without the map, "/hapus" matches nothing: "hapus" is in neither
+        // the English description nor the name.
+        assertTrue(filterSlashCommands(commands, "/hapus").isEmpty())
+
+        // With the map, the same query finds /clear by its Indonesian
+        // description — and "/jalankan" finds /test, which no name or
+        // English description contains.
+        val matches = filterSlashCommands(commands, "/hapus", indonesian)
+        assertEquals(listOf("clear"), matches.map { it.name })
+        assertEquals(listOf("test"), filterSlashCommands(commands, "/jalankan", indonesian).map { it.name })
+    }
+
+    @Test
     fun `buildHighlightedCommandName creates highlighted styled text`() {
         val annotated = buildHighlightedCommandName(
             name = "review",

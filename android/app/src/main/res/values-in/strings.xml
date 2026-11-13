@@ -40,6 +40,9 @@
     <string name="engine_notif_stopping_text">Mematikan</string>
     <string name="engine_notif_failed_title">Engine gagal</string>
     <string name="engine_notif_failed_text">Berhenti tiba-tiba</string>
+    <string name="engine_notif_unavailable_text">Engine tidak tersedia</string>
+    <string name="engine_notif_start_failed_text">Engine gagal dimulai</string>
+    <string name="engine_notif_restart_failed_text">Engine gagal dimulai ulang</string>
     <string name="engine_notif_channel_name">Engine</string>
     <string name="engine_notif_channel_desc">Menjaga engine OpenCode lokal tetap berjalan</string>
     <string name="engine_notif_failure_channel_name">Kegagalan engine</string>
@@ -159,6 +162,7 @@
     <string name="chat_retry">Coba lagi</string>
     <string name="chat_load_earlier">Muat pesan sebelumnya</string>
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="chat_agent_failed">Agen gagal</string>
     <string name="stop_unconfirmed">Stop belum terkonfirmasi — ketuk Stop untuk mencoba lagi.</string>
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="session_link_gone">Sesi itu sudah tidak ada di engine — link-nya menunjuk ke sesi yang sudah hilang.</string>
@@ -239,7 +243,6 @@
     <string name="drawer_all_sessions">Semua sesi</string>
     <string name="drawer_view_all">Lihat semua sesi</string>
     <string name="drawer_diagnostics">Diagnostik</string>
-    <string name="drawer_switch_workspace">Ganti ruang kerja</string>
     <string name="sidebar_collapse">Ciutkan sidebar</string>
     <string name="sidebar_expand">Bentangkan sidebar</string>
     <string name="sidebar_close">Tutup sidebar</string>
@@ -441,6 +444,8 @@
     <string name="streaming_typing">Mengetik…</string>
     <string name="tool_steps_one">%1$d langkah</string>
     <string name="tool_steps_other">%1$d langkah</string>
+    <string name="tool_running_named">Menjalankan %1$s… · %2$d/%3$d</string>
+    <string name="tool_ran">%1$s selesai</string>
     <string name="tool_failed">· %1$d gagal</string>
     <string name="tool_summary_succeeded">%1$d berhasil</string>
     <string name="tool_working">· bekerja</string>
@@ -635,6 +640,8 @@
     <string name="providers_key_valid">Format kunci %1$s terverifikasi (%2$s…)</string>
     <string name="providers_key_warning">Kunci %1$s biasanya diawali %2$s</string>
     <string name="providers_key_valid_generic">Format kunci tampaknya valid (%1$d karakter)</string>
+    <string name="providers_no_keys_left">%1$s tidak punya kunci lagi. Tidak akan berfungsi sampai Anda menambahkan kunci baru.</string>
+    <string name="providers_keys_left">Kunci dihapus. Tersisa %1$d untuk %2$s.</string>
     <string name="providers_subtitle_free_tier">Model tingkat gratis bawaan</string>
     <string name="providers_subtitle_local">Model lokal &amp; kompatibel OpenAI</string>
     <string name="providers_antigravity_title">Google (Gemini &amp; Antigravity)</string>
@@ -793,6 +800,7 @@
     <string name="cmd_undo_desc">Kembalikan perubahan terakhir asisten</string>
     <string name="cmd_help_desc">Tampilkan perintah yang tersedia dan panduan penggunaannya</string>
     <string name="cmd_model_desc">Ganti model atau provider aktif</string>
+    <string name="cmd_agent_desc">Ganti kepribadian atau mode agen aktif</string>
     <string name="fileview_lines_one">%1$d baris</string>
     <string name="fileview_lines_unsaved_one">%1$d baris · belum disimpan</string>
     <string name="fileview_lines_truncated_one">%1$d dari %2$d baris</string>
@@ -837,7 +845,6 @@
     <string name="browser_share">Bagikan tautan</string>
     <string name="browser_share_failed">Gagal membuka lembar berbagi.</string>
     <string name="browser_open_external">Buka di browser</string>
-    <string name="browser_copy_link">Salin tautan</string>
     <string name="browser_copied">Tautan disalin</string>
     <string name="browser_copy_url_description">Salin URL: %1$s</string>
     <string name="browser_download_started">Unduhan dimulai</string>
