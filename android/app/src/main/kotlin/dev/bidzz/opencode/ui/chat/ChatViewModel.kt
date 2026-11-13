@@ -2583,7 +2583,6 @@ class ChatViewModel(
                 stagedRevert = meta.revert,
             )
         }
-        }
     }
 
     /**
