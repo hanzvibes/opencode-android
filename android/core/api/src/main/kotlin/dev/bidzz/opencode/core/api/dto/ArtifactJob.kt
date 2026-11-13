@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  * `packages/schema/src/artifact.ts` + `job.ts`,
  * `packages/server/src/handlers/artifact.ts` + `job.ts`):
  *
- * - Both groups live under `/api/experimental/*` and are experimental:
+ * - Both groups live under `/api/experimental/` and are experimental:
  *   artifacts need `experimental.artifacts` in the Location config
  *   (default off in releases; a disabled engine answers 403
  *   `ForbiddenError`, mapped from `Artifact.DisabledError`).
