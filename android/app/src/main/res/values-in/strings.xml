@@ -659,13 +659,27 @@
     <string name="providers_field_key">Kunci API</string>
     <string name="providers_field_key_hint">Tempel kunci Anda</string>
     <string name="providers_field_models">Model, dipisah koma atau baris baru</string>
-    <string name="providers_field_models_hint">id-model = nama yang tampil di pemilih</string>
+    <string name="providers_field_models_hint">id-model = nama yang tampil di pemilih; tulis \\, untuk koma di dalam nama</string>
+    <string name="providers_field_key_keep">Kosongkan untuk memakai key yang sekarang</string>
+    <string name="providers_custom_name_blank">Masukkan nama untuk provider.</string>
+    <string name="providers_custom_url_invalid">Masukkan base URL lengkap yang diawali https:// atau http://</string>
+    <string name="providers_custom_url_http">http:// hanya boleh untuk alamat di perangkat ini, seperti localhost — kalau tidak, API key terkirim tanpa enkripsi.</string>
+    <string name="providers_custom_key_blank">Masukkan API key.</string>
+    <string name="providers_custom_no_models">Tambahkan minimal satu model.</string>
+    <string name="providers_custom_model_invalid">ID model tidak boleh mengandung spasi.</string>
+    <string name="providers_custom_malformed">Pengaturan provider ini tidak bisa dibaca — edit untuk memperbaikinya.</string>
+    <string name="providers_delete_custom_title">Hapus provider?</string>
+    <string name="providers_delete_custom_body">Hapus %1$s beserta modelnya dari konfigurasi? Engine akan di-restart.</string>
     <string name="providers_save_restart">Simpan &amp; mulai ulang</string>
     <string name="providers_featured_title">Penyedia AI Unggulan</string>
+    <string name="providers_featured_google_subtitle">Gemini API &amp; Antigravity OAuth</string>
     <string name="providers_other_title">Semua Penyedia</string>
     <string name="providers_status_connected">Terhubung</string>
     <string name="providers_status_free_tier">Paket Gratis</string>
     <string name="providers_status_missing_key">Kunci Belum Ada</string>
+    <string name="providers_status_restart_pending">Menunggu restart</string>
+    <string name="providers_manage_keys">Kelola API Key</string>
+    <string name="providers_add_key">Tambah API Key</string>
     <string name="providers_key_empty">Kunci API tidak boleh kosong</string>
     <string name="providers_key_spaces">Kunci tidak boleh berisi spasi</string>
     <string name="providers_key_too_short">Kunci terlalu pendek (min 8 karakter)</string>

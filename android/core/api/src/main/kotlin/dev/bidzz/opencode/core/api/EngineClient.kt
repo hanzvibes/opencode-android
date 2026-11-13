@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -141,6 +143,28 @@ class EngineClient(
     /** Parses a JSON element to [T], returning null instead of throwing. */
     internal inline fun <reified T> JsonElement?.decodeOrNull(): T? =
         this?.let { runCatching { ApiJson.decodeFromJsonElement<T>(kotlinx.serialization.serializer(), it) }.getOrNull() }
+
+    /**
+     * Decodes the `data` array of a list response, skipping malformed entries
+     * instead of failing the whole list (audit-100 38-F1): one entry without
+     * its required `id` — e.g. after an engine upgrade or a third-party
+     * integration with a deviating shape — used to hide every provider and
+     * every credential, although the engine's database was intact. The
+     * skipped count is logged, not silent. A body that is not a list
+     * response at all still throws, so the caller reports it as a failure.
+     */
+    internal inline fun <reified T> decodeDataList(raw: String): List<T> {
+        val array = ApiJson.parseToJsonElement(raw).jsonObject["data"]?.jsonArray
+            ?: return emptyList()
+        var skipped = 0
+        val items = ArrayList<T>(array.size)
+        for (element in array) {
+            val item = element.decodeOrNull<T>()
+            if (item == null) skipped++ else items += item
+        }
+        if (skipped > 0) Log.w(TAG, "skipped $skipped malformed entries in list response")
+        return items
+    }
 }
 
 /**

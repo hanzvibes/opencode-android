@@ -3,7 +3,6 @@ package dev.bidzz.opencode.core.api
 import dev.bidzz.opencode.core.api.dto.CommandInfo
 import dev.bidzz.opencode.core.api.dto.CommandsResponse
 import dev.bidzz.opencode.core.api.dto.ProviderInfo
-import dev.bidzz.opencode.core.api.dto.ProvidersResponse
 import dev.bidzz.opencode.core.api.dto.RunCommandRequest
 import kotlinx.serialization.encodeToString
 
@@ -39,7 +38,7 @@ class ProviderApi(private val client: EngineClient) {
     suspend fun list(): ApiResult<List<ProviderInfo>> {
         val request = client.request("/api/provider").get().build()
         return client.execute(request) { raw ->
-            ApiJson.decodeFromString<ProvidersResponse>(raw).data
+            client.decodeDataList<ProviderInfo>(raw)
         }
     }
 }

@@ -655,13 +655,27 @@
     <string name="providers_field_key">API key</string>
     <string name="providers_field_key_hint">Paste your key</string>
     <string name="providers_field_models">Models, comma or line separated</string>
-    <string name="providers_field_models_hint">model-id = name shown in the picker</string>
+    <string name="providers_field_models_hint">model-id = name shown in the picker; use \\, for a comma in a name</string>
+    <string name="providers_field_key_keep">Leave blank to keep the current key</string>
+    <string name="providers_custom_name_blank">Enter a name for the provider.</string>
+    <string name="providers_custom_url_invalid">Enter a full base URL starting with https:// or http://</string>
+    <string name="providers_custom_url_http">http:// is only allowed for addresses on this device, like localhost — otherwise your API key travels unencrypted.</string>
+    <string name="providers_custom_key_blank">Enter an API key.</string>
+    <string name="providers_custom_no_models">Add at least one model.</string>
+    <string name="providers_custom_model_invalid">Model IDs cannot contain spaces.</string>
+    <string name="providers_custom_malformed">This provider’s settings could not be read — edit it to fix them.</string>
+    <string name="providers_delete_custom_title">Delete provider?</string>
+    <string name="providers_delete_custom_body">Remove %1$s and its models from the config? The engine restarts.</string>
     <string name="providers_save_restart">Save &amp; restart</string>
     <string name="providers_featured_title">Featured AI Providers</string>
+    <string name="providers_featured_google_subtitle">Gemini API &amp; Antigravity OAuth</string>
     <string name="providers_other_title">All Providers</string>
     <string name="providers_status_connected">Connected</string>
     <string name="providers_status_free_tier">Free Tier</string>
     <string name="providers_status_missing_key">Missing Key</string>
+    <string name="providers_status_restart_pending">Restart pending</string>
+    <string name="providers_manage_keys">Manage API Keys</string>
+    <string name="providers_add_key">Add API Key</string>
     <string name="providers_key_empty">API key cannot be empty</string>
     <string name="providers_key_spaces">Key cannot contain spaces</string>
     <string name="providers_key_too_short">Key is too short (min 8 chars)</string>

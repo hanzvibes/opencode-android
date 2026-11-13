@@ -24,6 +24,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,6 +78,8 @@ enum class ProviderStatus {
     CONNECTED,
     FREE_TIER,
     MISSING_KEY,
+    /** Written to the config file; the engine has not re-read it yet (30-F4). */
+    PENDING,
 }
 
 /** Featured provider specification for prominent catalog presentation. */
@@ -126,12 +129,14 @@ private val FEATURED_PROVIDERS = listOf(
     FeaturedProviderDef(
         id = "google",
         name = "Google",
-        subtitle = "Gemini API & Antigravity OAuth",
+        subtitleRes = R.string.providers_featured_google_subtitle,
         brandColor = Color(0xFF4285F4),
     ),
 )
 
 private data class CustomFormInitial(
+    /** Slug of the provider being edited, or null for a new one (30-F2). */
+    val editingId: String? = null,
     val name: String = "",
     val baseURL: String = "",
     val models: String = "",
@@ -149,9 +154,11 @@ fun ProvidersScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onSaveKey: (String, String) -> Unit,
-    onSaveCustom: (String, String, String, String) -> Unit,
+    /** Name, base URL, API key, models text, and the slug being edited (null for a new provider). */
+    onSaveCustom: (String, String, String, String, String?) -> Unit,
     onDeleteCredential: (String, String) -> Unit,
     onReplaceCredential: (String, String, String) -> Unit,
+    onDeleteCustomProvider: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     /** Last Antigravity plugin patch report from the engine supervisor, if any (31-F2). */
     patchReport: AntigravityPatchReport? = null,
@@ -168,7 +175,28 @@ fun ProvidersScreen(
     var confirmDelete by remember { mutableStateOf<Pair<IntegrationInfo, CredentialRow>?>(null) }
     var googleDetailsFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var customFormPrefill by remember { mutableStateOf<CustomFormInitial?>(null) }
+    var confirmDeleteCustomId by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
+
+    // A key save whose dialog is still open (31-F13): the view model sets
+    // busyFor synchronously before launching, so a null busyFor after a
+    // pending save means the outcome is known — the dialog closes and the
+    // screen shows the result (confirmation or failure). The handle-null
+    // path never sets busyFor, so the dialog closes at once, correctly,
+    // with the engine-down banner visible behind it.
+    var pendingKeySave by remember { mutableStateOf<String?>(null) }
+    var pendingReplace by remember { mutableStateOf<Pair<String, String>?>(null) }
+    LaunchedEffect(state.busyFor, pendingKeySave, pendingReplace) {
+        if (pendingKeySave != null && state.busyFor == null) {
+            pendingKeySave = null
+            keyFor = null
+        }
+        if (pendingReplace != null && state.busyFor == null) {
+            pendingReplace = null
+            replaceFor = null
+            manageFor = null
+        }
+    }
 
     LaunchedEffect(Unit) { onRefresh() }
 
@@ -376,13 +404,31 @@ fun ProvidersScreen(
                 )
 
                 state.customProviders.forEach { provider ->
+                    // Tapping a row edits it (30-F2): the dialog prefills
+                    // from the stored entry, and saving keeps its slug.
+                    // A row whose engine restart is still pending must not
+                    // claim CONNECTED (30-F4); a malformed entry (38-F9)
+                    // shows a warning instead of its URL.
+                    val pending = state.restartPendingFor == provider.name
                     ProviderCard(
                         id = provider.id,
                         name = provider.name,
-                        subtitle = provider.baseURL.ifEmpty { provider.id } +
-                            if (provider.models.isEmpty()) "" else stringResource(R.string.providers_models_suffix, provider.models.size),
-                        status = ProviderStatus.CONNECTED,
-                        onClick = null,
+                        subtitle = if (provider.malformed) {
+                            stringResource(R.string.providers_custom_malformed)
+                        } else {
+                            provider.baseURL.ifEmpty { provider.id } +
+                                if (provider.models.isEmpty()) "" else stringResource(R.string.providers_models_suffix, provider.models.size)
+                        },
+                        status = if (pending) ProviderStatus.PENDING else ProviderStatus.CONNECTED,
+                        onClick = {
+                            customFormPrefill = CustomFormInitial(
+                                editingId = provider.id,
+                                name = provider.name,
+                                baseURL = provider.baseURL,
+                                models = provider.models.joinToString("\n"),
+                            )
+                        },
+                        busy = state.busyFor == provider.id,
                     )
                 }
 
@@ -504,8 +550,11 @@ fun ProvidersScreen(
             onDismiss = { keyFor = null },
             onSubmit = { key ->
                 onSaveKey(integration.id, key)
-                keyFor = null
+                // The dialog stays open until the save finishes (31-F13):
+                // the LaunchedEffect above closes it when busyFor clears.
+                pendingKeySave = integration.id
             },
+            busy = state.busyFor == integration.id,
         )
     }
 
@@ -520,6 +569,7 @@ fun ProvidersScreen(
             },
             onReplace = { row -> replaceFor = integration to row },
             onDelete = { row -> confirmDelete = integration to row },
+            busyRowId = state.busyFor,
         )
     }
 
@@ -532,9 +582,9 @@ fun ProvidersScreen(
             onDismiss = { replaceFor = null },
             onSubmit = { key ->
                 onReplaceCredential(integration.id, row.id, key)
-                replaceFor = null
-                manageFor = null
+                pendingReplace = integration.id to row.id
             },
+            busy = state.busyFor == row.id,
         )
     }
 
@@ -763,7 +813,9 @@ fun ProvidersScreen(
                     },
                 ) {
                     Text(
-                        text = if (storedKeys.isNotEmpty()) "Manage API Keys" else "Add API Key",
+                        text = stringResource(
+                            if (storedKeys.isNotEmpty()) R.string.providers_manage_keys else R.string.providers_add_key,
+                        ),
                         color = colors.accentText,
                     )
                 }
@@ -776,10 +828,52 @@ fun ProvidersScreen(
             initialName = initial.name,
             initialBaseURL = initial.baseURL,
             initialModels = initial.models,
+            initialEditingId = initial.editingId,
             onDismiss = { customFormPrefill = null },
-            onSubmit = { name, baseURL, key, models ->
-                onSaveCustom(name, baseURL, key, models)
+            onSubmit = { name, baseURL, key, models, editingId ->
+                onSaveCustom(name, baseURL, key, models, editingId)
                 customFormPrefill = null
+            },
+            onDelete = if (initial.editingId != null) {
+                {
+                    customFormPrefill = null
+                    confirmDeleteCustomId = initial.editingId
+                }
+            } else {
+                null
+            },
+        )
+    }
+
+    confirmDeleteCustomId?.let { customId ->
+        val custom = state.customProviders.firstOrNull { it.id == customId }
+        LocalizedDraggableBottomSheet(
+            onDismiss = { confirmDeleteCustomId = null },
+            initialStop = SheetStop.PEEK,
+            title = {
+                Text(
+                    stringResource(R.string.providers_delete_custom_title),
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                )
+            },
+            content = {
+                Text(
+                    text = stringResource(R.string.providers_delete_custom_body, custom?.name ?: customId),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+            },
+            actions = {
+                TextButton(onClick = { confirmDeleteCustomId = null }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
+                }
+                TextButton(
+                    onClick = {
+                        onDeleteCustomProvider(customId)
+                        confirmDeleteCustomId = null
+                    },
+                ) { Text(stringResource(R.string.common_delete), color = colors.danger) }
             },
         )
     }
@@ -842,6 +936,8 @@ private fun ProviderCard(
     status: ProviderStatus,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    /** An action is in flight for this card (31-F13): show progress, block re-taps. */
+    busy: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -863,7 +959,9 @@ private fun ProviderCard(
                 },
             )
             // A11y (#8b): the card is a button — its name text is the label.
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
+            // While busy the card is not a button at all (31-F13): a second
+            // tap during a save would start a duplicate write.
+            .then(if (onClick != null && !busy) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(horizontal = spacing.md, vertical = spacing.md),
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
         verticalAlignment = Alignment.CenterVertically,
@@ -889,7 +987,13 @@ private fun ProviderCard(
 
         ProviderStatusBadge(status = status)
 
-        if (onClick != null) {
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                strokeWidth = 2.dp,
+                color = colors.accent,
+            )
+        } else if (onClick != null) {
             GlyphIcon(Glyph.ChevronRight, tint = colors.onSurfaceFaint, size = 16.dp)
         }
     }
@@ -1083,6 +1187,12 @@ fun ProviderStatusBadge(
             colors.warning,
             R.string.providers_status_missing_key,
         )
+        ProviderStatus.PENDING -> Quadruple(
+            colors.warning.copy(alpha = 0.12f),
+            colors.warning.copy(alpha = 0.28f),
+            colors.warning,
+            R.string.providers_status_restart_pending,
+        )
     }
 
     Row(
@@ -1174,6 +1284,8 @@ private fun KeyPrompt(
     submitLabel: String,
     onDismiss: () -> Unit,
     onSubmit: (String) -> Unit,
+    /** The save is in flight (31-F13): submit is disabled and spins. */
+    busy: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
@@ -1366,9 +1478,17 @@ private fun KeyPrompt(
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
             }
-            TextButton(onClick = { onSubmit(value.trim()) }, enabled = canSubmit) {
+            TextButton(onClick = { onSubmit(value.trim()) }, enabled = canSubmit && !busy) {
                 // 31-F17: accent as text failed WCAG AA; accentText is the text-safe tone.
-                Text(submitLabel, color = if (canSubmit) colors.accentText else colors.onSurfaceFaint)
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.accent,
+                    )
+                } else {
+                    Text(submitLabel, color = if (canSubmit) colors.accentText else colors.onSurfaceFaint)
+                }
             }
         },
     )
@@ -1383,6 +1503,8 @@ private fun ManageCredentialsDialog(
     onAddKey: () -> Unit,
     onReplace: (CredentialRow) -> Unit,
     onDelete: (CredentialRow) -> Unit,
+    /** Credential id whose delete/replace is in flight (31-F13). */
+    busyRowId: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
@@ -1462,21 +1584,30 @@ private fun ManageCredentialsDialog(
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(spacing.md),
                             modifier = Modifier.padding(top = spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            val rowBusy = busyRowId == row.id
+                            if (rowBusy) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = colors.accent,
+                                )
+                            }
                             Text(
                                 text = stringResource(R.string.providers_replace),
                                 style = OpenCodeTypography.label,
-                                color = colors.accentText,
+                                color = if (rowBusy) colors.onSurfaceFaint else colors.accentText,
                                 modifier = Modifier
-                                    .clickable(role = Role.Button) { onReplace(row) }
+                                    .then(if (rowBusy) Modifier else Modifier.clickable(role = Role.Button) { onReplace(row) })
                                     .padding(vertical = spacing.xxs),
                             )
                             Text(
                                 text = stringResource(R.string.common_delete),
                                 style = OpenCodeTypography.label,
-                                color = colors.danger,
+                                color = if (rowBusy) colors.onSurfaceFaint else colors.danger,
                                 modifier = Modifier
-                                    .clickable(role = Role.Button) { onDelete(row) }
+                                    .then(if (rowBusy) Modifier else Modifier.clickable(role = Role.Button) { onDelete(row) })
                                     .padding(vertical = spacing.xxs),
                             )
                         }
@@ -1511,8 +1642,12 @@ private fun CustomProviderDialog(
     initialName: String = "",
     initialBaseURL: String = "",
     initialModels: String = "",
+    /** Slug of the provider being edited, or null for a new one (30-F2). */
+    initialEditingId: String? = null,
     onDismiss: () -> Unit,
-    onSubmit: (name: String, baseURL: String, apiKey: String, models: String) -> Unit,
+    onSubmit: (name: String, baseURL: String, apiKey: String, models: String, editingId: String?) -> Unit,
+    /** Shown only when editing: opens the delete confirmation (30-F2). */
+    onDelete: (() -> Unit)? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -1528,7 +1663,19 @@ private fun CustomProviderDialog(
     val keyRequester = remember { FocusRequester() }
     val modelsRequester = remember { FocusRequester() }
 
-    val ready = name.isNotBlank() && baseURL.isNotBlank() && apiKey.isNotBlank() && models.isNotBlank()
+    // Editing keeps the stored key unless the user types a new one (30-F2),
+    // so a blank key is fine then — but a new provider needs one.
+    val editing = initialEditingId != null
+    val ready = name.isNotBlank() && baseURL.isNotBlank() && models.isNotBlank() &&
+        (editing || apiKey.isNotBlank())
+    // The same validation the view model enforces (30-F1/31-F12/53-F7),
+    // shown inline once the form is filled: a bad URL or a cleartext
+    // http:// host is refused here, not saved-then-reported-connected.
+    val validationError = if (ready) {
+        validateCustomProvider(name, baseURL, apiKey, models, requireKey = !editing)
+    } else {
+        null
+    }
 
     LocalizedDraggableBottomSheet(
         onDismiss = onDismiss,
@@ -1571,7 +1718,9 @@ private fun CustomProviderDialog(
                 ) { baseURL = it }
                 FormField(
                     label = stringResource(R.string.providers_field_key),
-                    placeholder = stringResource(R.string.providers_field_key_hint),
+                    placeholder = stringResource(
+                        if (editing) R.string.providers_field_key_keep else R.string.providers_field_key_hint,
+                    ),
                     value = apiKey,
                     singleLine = true,
                     secret = true,
@@ -1589,11 +1738,25 @@ private fun CustomProviderDialog(
                     focusRequester = modelsRequester,
                     onImeAction = { focusManager.clearFocus() },
                 ) { models = it }
+                validationError?.let { errorRes ->
+                    NoticeRow(
+                        message = stringResource(errorRes),
+                        kind = NoticeKind.Error,
+                    )
+                }
             }
         },
         actions = {
+            if (onDelete != null) {
+                TextButton(onClick = onDelete) {
+                    Text(stringResource(R.string.common_delete), color = colors.danger)
+                }
+            }
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted) }
-            TextButton(onClick = { onSubmit(name, baseURL, apiKey, models) }, enabled = ready) {
+            TextButton(
+                onClick = { onSubmit(name, baseURL, apiKey, models, initialEditingId) },
+                enabled = ready && validationError == null,
+            ) {
                 Text(stringResource(R.string.providers_save_restart), color = colors.accentText)
             }
         },

@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.engine
 
 import java.io.File
+import java.util.Locale
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -89,6 +90,45 @@ class ModelNamesTest {
     fun `lines and commas both separate`() {
         val parsed = EngineConfigStore.parseModels("one = One\ntwo,\nthree = Three\n")
         assertEquals(listOf("one", "two", "three"), parsed.map { it.id })
+    }
+
+    @Test
+    fun `an escaped comma stays inside the name`() {
+        // 38-F7: "gpt-4 = GPT, 4 Turbo" used to create a ghost model "4 Turbo".
+        val parsed = EngineConfigStore.parseModels("gpt-4 = GPT\\, 4 Turbo, other")
+        assertEquals(
+            listOf(
+                EngineConfigStore.ModelSpec("gpt-4", "GPT, 4 Turbo"),
+                EngineConfigStore.ModelSpec("other", null),
+            ),
+            parsed,
+        )
+    }
+
+    @Test
+    fun `an escaped backslash is a literal backslash`() {
+        val parsed = EngineConfigStore.parseModels("a\\\\b = A\\\\B")
+        assertEquals("a\\b", parsed.single().id)
+        assertEquals("A\\B", parsed.single().name)
+    }
+
+    @Test
+    fun `a lone backslash is kept as-is`() {
+        val parsed = EngineConfigStore.parseModels("a\\b")
+        assertEquals("a\\b", parsed.single().id)
+    }
+
+    @Test
+    fun `slug lowercases with the root locale, not the device one`() {
+        // 38-F6: under tr-TR, "Iron".lowercase() is "ıron", and the slug
+        // regex strips the dotless i, leaving "ron" instead of "iron".
+        val default = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"))
+            assertEquals("iron", EngineConfigStore.slug("Iron"))
+        } finally {
+            Locale.setDefault(default)
+        }
     }
 
     @Test
