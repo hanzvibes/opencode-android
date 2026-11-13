@@ -39,6 +39,7 @@ import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.LoadingState
 import java.io.File
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -96,9 +97,31 @@ private data class DecodedImage(
 )
 
 /**
+ * Audit-200 A4 (C-005): runs one preview step (image decode, PDF open,
+ * page render) and turns a failure into null instead of crashing.
+ * An out-of-memory allocation is a failure like any other here — the
+ * preview shows "Could not open this preview" instead of killing the
+ * app. Cancellation is NOT swallowed: a cancelled render must still
+ * cancel, so its caller can recycle the bitmap it already made.
+ */
+internal fun <T> previewOrNull(block: () -> T): T? {
+    return try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: OutOfMemoryError) {
+        null
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/**
  * Decodes [file] sampled down so its longest side is at most [maxDimension]
  * pixels: a 12 MP phone photo is ~48 MB as ARGB_8888, and the preview only
- * ever shows it fit-to-width. Runs on the caller's thread — call from IO.
+ * ever shows it fit-to-width. Decoded as RGB_565 — half that again, and a
+ * preview never needs an alpha channel. Runs on the caller's thread —
+ * call from IO.
  */
 private fun decodeSampledBitmap(file: File, maxDimension: Int = 2048): DecodedImage? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -108,7 +131,10 @@ private fun decodeSampledBitmap(file: File, maxDimension: Int = 2048): DecodedIm
     if (width <= 0 || height <= 0) return null
     var sampleSize = 1
     while (maxOf(width, height) / sampleSize > maxDimension) sampleSize *= 2
-    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize
+        inPreferredConfig = Bitmap.Config.RGB_565
+    }
     val bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
     return DecodedImage(bitmap, bitmap.width, bitmap.height)
 }
@@ -123,11 +149,7 @@ private fun ImagePreview(path: String, modifier: Modifier = Modifier) {
 
     LaunchedEffect(path) {
         val result = withContext(Dispatchers.IO) {
-            try {
-                decodeSampledBitmap(File(path))
-            } catch (_: Exception) {
-                null
-            }
+            previewOrNull { decodeSampledBitmap(File(path)) }
         }
         if (result == null) failed = true else decoded = result
     }
@@ -192,14 +214,12 @@ private fun PdfPreview(path: String, modifier: Modifier = Modifier) {
 
     LaunchedEffect(path) {
         val opened = withContext(Dispatchers.IO) {
-            try {
+            previewOrNull {
                 val fd = ParcelFileDescriptor.open(
                     File(path),
                     ParcelFileDescriptor.MODE_READ_ONLY,
                 )
                 PdfRenderer(fd)
-            } catch (_: Exception) {
-                null
             }
         }
         if (opened == null) {
@@ -227,20 +247,38 @@ private fun PdfPreview(path: String, modifier: Modifier = Modifier) {
     LaunchedEffect(renderer, pageIndex) {
         val current = renderer ?: return@LaunchedEffect
         if (pageIndex >= current.pageCount) return@LaunchedEffect
-        val rendered = withContext(Dispatchers.IO) {
-            try {
-                current.openPage(pageIndex).use { page ->
-                    val scale = 1600f / maxOf(page.width, page.height)
-                    val width = (page.width * scale).toInt().coerceAtLeast(1)
-                    val height = (page.height * scale).toInt().coerceAtLeast(1)
-                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                        .also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
+        // Audit-200 A4 (C-005): a render cancelled mid-flight (fast page
+        // flips) leaves behind the bitmap it already made — it was never
+        // adopted by state, so the DisposableEffect below never sees it.
+        // Hold it here and recycle it unless the state adopts it. The
+        // assignment happens INSIDE withContext: if the effect is
+        // cancelled after the render finishes, withContext throws before
+        // it returns, and an assignment outside would never run.
+        var produced: Bitmap? = null
+        try {
+            withContext(Dispatchers.IO) {
+                produced = previewOrNull {
+                    current.openPage(pageIndex).use { page ->
+                        val scale = 1600f / maxOf(page.width, page.height)
+                        val width = (page.width * scale).toInt().coerceAtLeast(1)
+                        val height = (page.height * scale).toInt().coerceAtLeast(1)
+                        // RGB_565: half the memory of ARGB_8888; a preview
+                        // never needs an alpha channel.
+                        Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+                            .also { page.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
+                    }
                 }
-            } catch (_: Exception) {
-                null
             }
+            if (produced == null) {
+                failed = true
+            } else {
+                bitmap = produced
+                produced = null // adopted by state; its DisposableEffect owns it now
+            }
+        } catch (e: CancellationException) {
+            produced?.recycle()
+            throw e
         }
-        if (rendered == null) failed = true else bitmap = rendered
     }
 
     Column(modifier = modifier.fillMaxSize()) {
