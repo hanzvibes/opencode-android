@@ -206,6 +206,16 @@
     <string name="chat_status_dialog_close">Tutup</string>
     <string name="dialog_copy_value">Salin %1$s</string>
     <string name="chat_status_dialog_turn_diff">Diff turn</string>
+    <string name="compact_button">Ringkas</string>
+    <string name="fork_session_button">Fork sesi</string>
+    <string name="compact_dialog_title">Ringkas sesi ini?</string>
+    <string name="compact_dialog_body">Riwayat akan diganti dengan ringkasan untuk membebaskan konteks. Turn aslinya tidak bisa dibaca lagi setelah itu.</string>
+    <string name="compact_dialog_confirm">Ringkas</string>
+    <string name="revert_banner_title">Revert sudah disiapkan</string>
+    <string name="revert_banner_files">%1$d file akan dikembalikan seperti sebelum pesan ini.</string>
+    <string name="revert_banner_messages_only">Pesan setelah titik ini akan dihapus. Tidak ada file yang berubah.</string>
+    <string name="revert_commit">Terapkan revert</string>
+    <string name="revert_discard">Batalkan</string>
     <string name="chat_status_desc_ready">Mesin online dan siap menerima perintah.</string>
     <string name="chat_status_desc_working">Mesin sedang menjalankan tugas atau membuat respons.</string>
     <string name="chat_status_desc_starting">Mesin sedang memulai dan menyiapkan koneksi runtime.</string>
@@ -604,6 +614,8 @@
     <string name="message_reply">Balas</string>
     <string name="message_edit">Edit</string>
     <string name="message_resend">Kirim ulang</string>
+    <string name="message_fork">Fork</string>
+    <string name="message_revert">Revert</string>
     <string name="tool_diff_changes">Perubahan</string>
     <string name="tool_diff_show_full">Tampilkan semua diff</string>
     <string name="tool_diff_show_less">Tampilkan lebih sedikit</string>

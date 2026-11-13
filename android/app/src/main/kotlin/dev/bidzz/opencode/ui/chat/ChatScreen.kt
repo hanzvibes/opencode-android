@@ -133,7 +133,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import dev.bidzz.opencode.core.api.ApiResult
+import dev.bidzz.opencode.core.api.dto.revertFilePaths
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -152,6 +154,7 @@ import dev.bidzz.opencode.ui.files.FileRow
 import dev.bidzz.opencode.ui.files.rankQuickOpen
 import dev.bidzz.opencode.ui.PersistentSidebarWidth
 import dev.bidzz.opencode.ui.PrimaryButton
+import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.SheetStop
 import dev.bidzz.opencode.ui.message
@@ -230,6 +233,18 @@ fun ChatScreen(
      * composer in editing mode, and re-send one user message's text. */
     onEditMessage: (String, String) -> Unit = { _, _ -> },
     onResendMessage: (String) -> Unit = {},
+    /** Fork/revert (mockup group 2): fork the session from a user
+     * message, and stage a revert to just before one. */
+    onForkMessage: (String) -> Unit = {},
+    onRevertMessage: (String) -> Unit = {},
+    /** Compact the session (mockup group 2): offered in the header's
+     * status dialog, next to the context meter, behind a confirm. */
+    onCompact: () -> Unit = {},
+    /** Fork the whole session through its latest message. */
+    onForkSession: () -> Unit = {},
+    /** Apply / drop the staged revert shown in the banner. */
+    onCommitRevert: () -> Unit = {},
+    onClearRevert: () -> Unit = {},
     /** Answers a question card without touching the draft (item 9). */
     onAnswerQuestion: suspend (QuestionAnswer) -> Boolean = { false },
     /** Opens a workspace-relative file from a tool step (Fase 1, item 3). */
@@ -1026,6 +1041,10 @@ fun ChatScreen(
                 state.branch ?: detectGitBranch(state.workspacePath)
             }
 
+            // Compact confirm (mockup group 2): the header's status dialog
+            // offers Compact; the confirm lives here so it survives the
+            // status dialog closing first.
+            var showCompactDialog by remember { mutableStateOf(false) }
             ChatHeader(
                 title = headerTitle(state.workspacePath),
                 // The active session's own title, so the header says which
@@ -1070,6 +1089,13 @@ fun ChatScreen(
                 onStatusClick = onStatusClick,
                 onNewSession = onNewSession,
                 onTurnDiff = onTurnDiff,
+                // Compact + whole-session fork (mockup group 2): the
+                // status dialog is where the context meter lives, so the
+                // compact action sits beside it. The header only opens
+                // the confirm; the real action is [onCompact].
+                onCompact = { showCompactDialog = true },
+                compacting = state.compacting,
+                onForkSession = onForkSession,
                 branches = state.branches,
                 branchesLoading = state.branchesLoading,
                 branchesFailed = state.branchesFailed,
@@ -1078,6 +1104,42 @@ fun ChatScreen(
                 vcsDetailsFailed = state.vcsDetailsFailed,
                 onLoadBranches = onLoadBranches,
             )
+
+            if (showCompactDialog) {
+                // Compact is destructive in one direction: the transcript
+                // is replaced by a summary, so it asks first — unlike
+                // fork, which leaves the original session alone.
+                LocalizedAlertDialog(
+                    onDismissRequest = { showCompactDialog = false },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showCompactDialog = false
+                                onCompact()
+                            },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.compact_dialog_confirm),
+                                color = colors.accentText,
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCompactDialog = false }) {
+                            Text(
+                                text = stringResource(R.string.chat_status_dialog_close),
+                                color = colors.onSurfaceMuted,
+                            )
+                        }
+                    },
+                    title = {
+                        Text(text = stringResource(R.string.compact_dialog_title))
+                    },
+                    text = {
+                        Text(text = stringResource(R.string.compact_dialog_body))
+                    },
+                )
+            }
 
             // Pinned status banners: the error and the reconnecting state
             // live here, above the transcript, so they stay visible even
@@ -1339,6 +1401,21 @@ fun ChatScreen(
                                             },
                                             onResend = if (message.role == Role.USER) {
                                                 { onResendMessage(message.id) }
+                                            } else {
+                                                null
+                                            },
+                                            // Fork/revert (mockup group 2):
+                                            // user bubbles only, like edit
+                                            // and resend — the fork boundary
+                                            // and the revert point are user
+                                            // turns.
+                                            onFork = if (message.role == Role.USER) {
+                                                { onForkMessage(message.id) }
+                                            } else {
+                                                null
+                                            },
+                                            onRevert = if (message.role == Role.USER) {
+                                                { onRevertMessage(message.id) }
                                             } else {
                                                 null
                                             },
@@ -1604,6 +1681,22 @@ fun ChatScreen(
                         AttachNoticeRow(
                             message = stringResource(noticeRes),
                             onDismiss = { voiceNoticeRes = null },
+                            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
+                        )
+                    }
+
+                    // A staged session revert (mockup group 2): the revert
+                    // is planned but not applied — the banner names what it
+                    // would undo and offers Apply / Discard. It sits with
+                    // the other above-composer notices so it is visible
+                    // without scrolling, and it cannot be dismissed without
+                    // choosing: discarding IS the dismiss.
+                    state.stagedRevert?.let { staged ->
+                        StagedRevertBanner(
+                            staged = staged,
+                            busy = state.revertBusy,
+                            onCommit = onCommitRevert,
+                            onClear = onClearRevert,
                             modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
                         )
                     }
@@ -2174,6 +2267,86 @@ private fun AttachNoticeRow(
 }
 
 /**
+ * A staged session revert (mockup group 2): planned, not yet applied.
+ * Names how many files the revert would touch (or that it is messages
+ * only) and offers Apply / Discard. Same slim above-composer card as
+ * [AttachNoticeRow], but with two actions instead of a dismiss X —
+ * there is no third option: discarding IS the dismiss.
+ */
+@Composable
+private fun StagedRevertBanner(
+    staged: dev.bidzz.opencode.core.api.dto.SessionRevert,
+    busy: Boolean,
+    onCommit: () -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val radius = OpenCodeTheme.tokens.radius
+    val dims = OpenCodeTheme.tokens.dimensions
+    val fileCount = staged.revertFilePaths().size
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = dims.minTouchTarget)
+            .clip(RoundedCornerShape(radius.md))
+            .background(colors.surface)
+            .border(0.5.dp, colors.warning.copy(alpha = 0.5f), RoundedCornerShape(radius.md))
+            .padding(horizontal = spacing.md, vertical = spacing.xs),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+        ) {
+            GlyphIcon(
+                glyph = Glyph.History,
+                tint = colors.warning,
+                size = 16.dp,
+            )
+            Text(
+                text = stringResource(R.string.revert_banner_title),
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Text(
+            text = if (fileCount > 0) {
+                stringResource(R.string.revert_banner_files, fileCount)
+            } else {
+                stringResource(R.string.revert_banner_messages_only)
+            },
+            style = OpenCodeTypography.caption,
+            color = colors.onSurfaceMuted,
+            modifier = Modifier.padding(start = spacing.md, top = spacing.xxs),
+        )
+        Row(
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            TextButton(
+                onClick = onCommit,
+                enabled = !busy,
+            ) {
+                Text(
+                    text = stringResource(R.string.revert_commit),
+                    color = colors.accentText,
+                )
+            }
+            TextButton(
+                onClick = onClear,
+                enabled = !busy,
+            ) {
+                Text(
+                    text = stringResource(R.string.revert_discard),
+                    color = colors.onSurfaceMuted,
+                )
+            }
+        }
+    }
+}
+
+/**
  * Reconnecting indicator (audit 18): the existing [ChatUiState.connecting]
  * flag, rendered as a slim pinned row under the header while the engine
  * session is being (re)created. No new ViewModel state.
@@ -2261,6 +2434,13 @@ fun ChatHeader(
     contextLimit: Long? = null,
     /** Turn diff (Tier 2); null while no session is open. */
     onTurnDiff: (() -> Unit)? = null,
+    /** Compact (mockup group 2): opens the confirm in the caller; null
+     * while no session is open. */
+    onCompact: (() -> Unit)? = null,
+    /** True while a manual compaction is in flight. */
+    compacting: Boolean = false,
+    /** Fork the whole session (mockup group 2); null while no session is open. */
+    onForkSession: (() -> Unit)? = null,
     /** Branch list (Tier 2); null until loaded, and the list hides. */
     branches: List<String>? = null,
     branchesLoading: Boolean = false,
@@ -2478,6 +2658,9 @@ fun ChatHeader(
             contextUsedTokens = contextUsedTokens,
             contextLimit = contextLimit,
             onTurnDiff = onTurnDiff,
+            onCompact = onCompact,
+            compacting = compacting,
+            onForkSession = onForkSession,
             branches = branches,
             branchesLoading = branchesLoading,
             branchesFailed = branchesFailed,
@@ -2512,6 +2695,14 @@ private fun EngineStatusDialog(
     contextLimit: Long? = null,
     /** Turn diff (Tier 2); null while no session is open, and the entry hides. */
     onTurnDiff: (() -> Unit)? = null,
+    /** Compact (mockup group 2): opens the confirm in the caller; null
+     * while no session is open, and the entry hides. */
+    onCompact: (() -> Unit)? = null,
+    /** True while a manual compaction is in flight. */
+    compacting: Boolean = false,
+    /** Fork the whole session (mockup group 2); null while no session is
+     * open, and the entry hides. */
+    onForkSession: (() -> Unit)? = null,
     /** Branch list (Tier 2); null until loaded, and the list hides. */
     branches: List<String>? = null,
     branchesLoading: Boolean = false,
@@ -2800,6 +2991,48 @@ private fun EngineStatusDialog(
                                 text = stringResource(R.string.chat_status_dialog_turn_diff),
                                 color = colors.accentText,
                             )
+                        }
+                    }
+                }
+
+                // Compact + fork (mockup group 2): the status dialog is
+                // where the context meter lives, so the compact action
+                // sits beside it. Both close the dialog first, like Turn
+                // diff. Compact disables while the agent is busy or a
+                // compaction is already running; fork needs no confirm —
+                // it creates a new session and leaves this one alone.
+                if (onCompact != null || onForkSession != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                    ) {
+                        if (onCompact != null) {
+                            val compactEnabled = !busy && !compacting
+                            TextButton(
+                                onClick = {
+                                    onDismiss()
+                                    onCompact()
+                                },
+                                enabled = compactEnabled,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.compact_button),
+                                    color = if (compactEnabled) colors.accentText else colors.onSurfaceFaint,
+                                )
+                            }
+                        }
+                        if (onForkSession != null) {
+                            TextButton(
+                                onClick = {
+                                    onDismiss()
+                                    onForkSession()
+                                },
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.fork_session_button),
+                                    color = colors.accentText,
+                                )
+                            }
                         }
                     }
                 }

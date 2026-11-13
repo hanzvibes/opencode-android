@@ -16,6 +16,7 @@ import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
+import dev.bidzz.opencode.core.api.newMessageId
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.ui.engineDownFailure
@@ -164,6 +165,14 @@ data class ChatUiState(
      */
     val contextUsedTokens: Long? = null,
     val contextModel: ModelRef? = null,
+    /** True while a fork is in flight. Guards double taps (see [ChatViewModel.forkMessage]). */
+    val forking: Boolean = false,
+    /** True while a manual compaction is in flight. */
+    val compacting: Boolean = false,
+    /** A staged session revert waiting for commit or clear, or null. */
+    val stagedRevert: dev.bidzz.opencode.core.api.dto.SessionRevert? = null,
+    /** True while a revert commit or clear is in flight. */
+    val revertBusy: Boolean = false,
 )
 
 /** One follow-up waiting for the run to end (see [ChatUiState.queuedPrompts]). */
@@ -1712,6 +1721,157 @@ class ChatViewModel(
     }
 
     /**
+     * Forks the session from one user message (`POST /api/session/{id}/fork`,
+     * verified against the pinned engine source at fork pin 92b2ca0 — see
+     * [ForkRequest]): the forked session contains everything up to
+     * (excluding) [messageId], and opens in place of this one. A fork
+     * while the agent is busy is allowed — the fork copies messages, not
+     * the run — but a second fork waits for the first: the [ChatUiState.forking]
+     * guard means a double tap cannot fork twice. A failure is reported
+     * through the error banner; an empty session cannot be forked at all
+     * (the engine answers `InvalidRequestError`, kind `empty_session`).
+     */
+    fun forkMessage(messageId: String) {
+        val sessionID = _state.value.sessionID ?: return
+        val sessions = handle?.sessions ?: return
+        if (_state.value.forking) return
+        _state.value = _state.value.copy(forking = true)
+        viewModelScope.launch {
+            when (val result = sessions.fork(sessionID, before = messageId)) {
+                is ApiResult.Success -> {
+                    _state.value = _state.value.copy(forking = false)
+                    openSession(result.value.id)
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(forking = false)
+                    reportFailure(result)
+                }
+            }
+        }
+    }
+
+    /**
+     * Forks the whole session through its latest message. Same endpoint
+     * as [forkMessage] with no `before`: the fork inherits the parent's
+     * instructions and opens in place of it.
+     */
+    fun forkSession() {
+        val sessionID = _state.value.sessionID ?: return
+        val sessions = handle?.sessions ?: return
+        if (_state.value.forking) return
+        _state.value = _state.value.copy(forking = true)
+        viewModelScope.launch {
+            when (val result = sessions.fork(sessionID)) {
+                is ApiResult.Success -> {
+                    _state.value = _state.value.copy(forking = false)
+                    openSession(result.value.id)
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(forking = false)
+                    reportFailure(result)
+                }
+            }
+        }
+    }
+
+    /**
+     * Compacts the session (`POST /api/session/{id}/compact`, verified
+     * against the pinned engine source — see [CompactRequest]). Only
+     * while idle: a compaction queued behind a run would replace the
+     * transcript under the reader later with no visible trigger, so the
+     * button disables while busy instead. The compaction runs as a fresh
+     * inbox item ([newMessageId], delivery `"queue"`); afterwards the
+     * transcript is reloaded, because the engine replaces the history
+     * with the summary, and the context meter is refreshed.
+     */
+    fun requestCompact() {
+        val sessionID = _state.value.sessionID ?: return
+        val sessions = handle?.sessions ?: return
+        if (_state.value.busy || _state.value.compacting) return
+        _state.value = _state.value.copy(compacting = true)
+        viewModelScope.launch {
+            when (val result = sessions.compact(sessionID, newMessageId())) {
+                is ApiResult.Success -> {
+                    _state.value = _state.value.copy(compacting = false)
+                    reloadSession()
+                    refreshContextUsage()
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(compacting = false)
+                    reportFailure(result)
+                }
+            }
+        }
+    }
+
+    /**
+     * Stages a revert to just before one user message (`POST
+     * /api/session/{id}/revert/stage`, verified against the pinned engine
+     * source — see [RevertStageRequest]). Nothing is undone yet: the
+     * staged revert is shown in a banner until [commitRevert] applies it
+     * or [clearRevert] drops it. Only while idle — staging while the
+     * session is busy fails server-side.
+     */
+    fun stageRevert(messageId: String) {
+        val sessionID = _state.value.sessionID ?: return
+        val sessions = handle?.sessions ?: return
+        if (_state.value.busy || _state.value.revertBusy) return
+        _state.value = _state.value.copy(revertBusy = true)
+        viewModelScope.launch {
+            when (val result = sessions.revertStage(sessionID, messageId)) {
+                is ApiResult.Success -> _state.value = _state.value.copy(
+                    revertBusy = false,
+                    stagedRevert = result.value,
+                )
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(revertBusy = false)
+                    reportFailure(result)
+                }
+            }
+        }
+    }
+
+    /** Applies the staged revert, then reloads the transcript. */
+    fun commitRevert() {
+        val sessionID = _state.value.sessionID ?: return
+        val sessions = handle?.sessions ?: return
+        if (_state.value.stagedRevert == null || _state.value.revertBusy) return
+        _state.value = _state.value.copy(revertBusy = true)
+        viewModelScope.launch {
+            when (val result = sessions.revertCommit(sessionID)) {
+                is ApiResult.Success -> {
+                    _state.value = _state.value.copy(revertBusy = false, stagedRevert = null)
+                    reloadSession()
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(revertBusy = false)
+                    reportFailure(result)
+                }
+            }
+        }
+    }
+
+    /** Drops the staged revert without applying it. */
+    fun clearRevert() {
+        val sessionID = _state.value.sessionID ?: return
+        val sessions = handle?.sessions ?: return
+        if (_state.value.stagedRevert == null || _state.value.revertBusy) return
+        _state.value = _state.value.copy(revertBusy = true)
+        viewModelScope.launch {
+            when (val result = sessions.revertClear(sessionID)) {
+                is ApiResult.Success -> _state.value = _state.value.copy(
+                    revertBusy = false,
+                    stagedRevert = null,
+                )
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(revertBusy = false)
+                    reportFailure(result)
+                }
+            }
+        }
+    }
+
+    /**
      * Answers one question on a question card (audit-70 10-F1, 10-F3,
      * 44-F1). Returns true only when the engine confirmed the reply.
      *
@@ -2233,7 +2393,7 @@ class ChatViewModel(
         // (95-F6): a fresh session is where it belongs, so it comes back
         // as this session's composer instead of starting empty.
         val restored = takeParkedComposer(UNSENT_SESSION_KEY)
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
         if (restored?.draft.isNullOrBlank()) {
             savedStateHandle?.remove<String>(DRAFT_KEY)
         } else {
@@ -2401,7 +2561,7 @@ class ChatViewModel(
         // to the old session's composer and must not survive the switch.
         draftBeforeEdit = null
         val restored = takeParkedComposer(sessionID)
-        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null)
+        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
         if (restored?.draft.isNullOrBlank()) {
             savedStateHandle?.remove<String>(DRAFT_KEY)
         } else {
@@ -2417,6 +2577,10 @@ class ChatViewModel(
             _state.value = _state.value.copy(
                 activeModel = meta.model,
                 activeAgent = meta.agent,
+                // A revert staged earlier (on this device or another client)
+                // is still staged: surface it in the banner instead of
+                // hiding it until the user happens to stage another one.
+                stagedRevert = meta.revert,
             )
         }
     }

@@ -191,6 +191,12 @@ fun MessageBubble(
      * behaviour itself lives in the ViewModel, not here. */
     onEdit: (() -> Unit)? = null,
     onResend: (() -> Unit)? = null,
+    /** Fork/revert (mockup group 2): fork the session from this message,
+     * and stage a revert to just before it. User messages only, like
+     * edit/resend — the fork boundary and the revert point are user
+     * turns. Null hides the pill. */
+    onFork: (() -> Unit)? = null,
+    onRevert: (() -> Unit)? = null,
     /** Per-tool durations in milliseconds, keyed by tool id (Phase 2,
      * finding 20): client-side stamps from the ViewModel. Empty until a
      * tool is seen live; a finished step without one shows no duration. */
@@ -372,6 +378,20 @@ fun MessageBubble(
                                 label = stringResource(R.string.message_resend),
                                 glyph = Glyph.Refresh,
                                 onClick = onResend,
+                            )
+                        }
+                        if (onFork != null) {
+                            TurnActionPill(
+                                label = stringResource(R.string.message_fork),
+                                glyph = Glyph.GitBranch,
+                                onClick = onFork,
+                            )
+                        }
+                        if (onRevert != null) {
+                            TurnActionPill(
+                                label = stringResource(R.string.message_revert),
+                                glyph = Glyph.History,
+                                onClick = onRevert,
                             )
                         }
                     }

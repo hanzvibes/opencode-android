@@ -213,6 +213,16 @@
     <string name="chat_status_dialog_close">Close</string>
     <string name="dialog_copy_value">Copy %1$s</string>
     <string name="chat_status_dialog_turn_diff">Turn diff</string>
+    <string name="compact_button">Compact</string>
+    <string name="fork_session_button">Fork session</string>
+    <string name="compact_dialog_title">Compact this session?</string>
+    <string name="compact_dialog_body">The transcript will be replaced by a summary to free context. The original turns cannot be read back afterwards.</string>
+    <string name="compact_dialog_confirm">Compact</string>
+    <string name="revert_banner_title">Revert staged</string>
+    <string name="revert_banner_files">%1$d files will be restored to how they were before this message.</string>
+    <string name="revert_banner_messages_only">Messages after this point will be removed. No files change.</string>
+    <string name="revert_commit">Apply revert</string>
+    <string name="revert_discard">Discard</string>
     <string name="chat_status_desc_ready">Engine is online and ready for prompts.</string>
     <string name="chat_status_desc_working">Engine is actively running tasks or generating responses.</string>
     <string name="chat_status_desc_starting">Engine is starting up and establishing runtime connections.</string>
@@ -611,6 +621,8 @@
     <string name="message_reply">Reply</string>
     <string name="message_edit">Edit</string>
     <string name="message_resend">Resend</string>
+    <string name="message_fork">Fork</string>
+    <string name="message_revert">Revert</string>
     <string name="tool_diff_changes">Changes</string>
     <string name="tool_diff_show_full">Show full diff</string>
     <string name="tool_diff_show_less">Show less</string>
