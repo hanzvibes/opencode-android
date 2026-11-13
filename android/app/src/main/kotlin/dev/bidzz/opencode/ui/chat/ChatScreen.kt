@@ -147,6 +147,7 @@ import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
 import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.NoticeKind
+import dev.bidzz.opencode.ui.HatchRowSpinner
 import dev.bidzz.opencode.ui.NoticeRow
 import dev.bidzz.opencode.ui.SearchField
 import dev.bidzz.opencode.ui.setClipboardText
@@ -1237,34 +1238,41 @@ fun ChatScreen(
                                         modifier = Modifier.fillMaxWidth().animateItem(),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        Text(
-                                            text = if (state.loadingEarlier) {
-                                                stringResource(R.string.common_loading)
-                                            } else {
-                                                stringResource(R.string.chat_load_earlier)
-                                            },
-                                            style = OpenCodeTypography.caption.copy(
-                                                fontWeight = FontWeight.SemiBold,
-                                            ),
-                                            color = colors.accentText,
-                                            modifier = Modifier
-                                                .clickable(
-                                                    role = SemanticsRole.Button,
-                                                    enabled = !state.loadingEarlier,
-                                                    onClick = {
-                                                        pendingAnchor = listState.captureAnchor()
-                                                        anchorBaseSize = state.messages.size
-                                                        anchorBaseHeadOffset =
-                                                            if (state.hasMoreOlder) 1 else 0
-                                                        anchorSessionId = state.sessionID
-                                                        onLoadEarlier()
-                                                    },
-                                                )
-                                                .padding(
-                                                    horizontal = spacing.md,
-                                                    vertical = spacing.sm,
+                                        // Batch 2 (Aura full): while the
+                                        // older window loads, the plain
+                                        // "Loading…" text is the Hatch row
+                                        // spinner. The idle label keeps its
+                                        // tap + anchor capture untouched.
+                                        if (state.loadingEarlier) {
+                                            HatchRowSpinner(
+                                                label = stringResource(R.string.common_loading),
+                                            )
+                                        } else {
+                                            Text(
+                                                text = stringResource(R.string.chat_load_earlier),
+                                                style = OpenCodeTypography.caption.copy(
+                                                    fontWeight = FontWeight.SemiBold,
                                                 ),
-                                        )
+                                                color = colors.accentText,
+                                                modifier = Modifier
+                                                    .clickable(
+                                                        role = SemanticsRole.Button,
+                                                        enabled = !state.loadingEarlier,
+                                                        onClick = {
+                                                            pendingAnchor = listState.captureAnchor()
+                                                            anchorBaseSize = state.messages.size
+                                                            anchorBaseHeadOffset =
+                                                                if (state.hasMoreOlder) 1 else 0
+                                                            anchorSessionId = state.sessionID
+                                                            onLoadEarlier()
+                                                        },
+                                                    )
+                                                    .padding(
+                                                        horizontal = spacing.md,
+                                                        vertical = spacing.sm,
+                                                    ),
+                                            )
+                                        }
                                     }
                                 }
                             }

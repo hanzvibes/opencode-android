@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +47,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.HatchPaginationIndicator
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.NoticeKind
@@ -442,28 +442,22 @@ fun SessionListPane(
                     // The next page (19-F3): a trailing item, so it scrolls
                     // with the list instead of floating over it. The search
                     // query stays applied — a loaded page is filtered the
-                    // same way as the first one.
+                    // same way as the first one. Batch 2 (Aura full): the
+                    // bare TextButton / "Loading…" text is the Hatch
+                    // pagination footer — Aura ring while the page loads.
                     if (state.hasMoreSessions) {
                         item(key = "load_more") {
-                            Row(
+                            HatchPaginationIndicator(
+                                hasMore = state.hasMoreSessions,
+                                loadingMore = state.loadingMore,
+                                loadMoreLabel = stringResource(R.string.history_load_more),
+                                loadingLabel = stringResource(R.string.common_loading),
+                                onLoadMore = onLoadMore,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .animateItem()
                                     .padding(vertical = spacing.md),
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                if (state.loadingMore) {
-                                    Text(
-                                        text = stringResource(R.string.common_loading),
-                                        style = OpenCodeTypography.body,
-                                        color = colors.onSurfaceFaint,
-                                    )
-                                } else {
-                                    TextButton(onClick = onLoadMore) {
-                                        Text(stringResource(R.string.history_load_more))
-                                    }
-                                }
-                            }
+                            )
                         }
                     }
                 }

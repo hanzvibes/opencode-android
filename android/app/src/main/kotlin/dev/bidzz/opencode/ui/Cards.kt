@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -330,6 +328,13 @@ fun EmptyState(
     onRetry: (() -> Unit)? = null,
     meshGradient: Boolean = false,
 ) {
+    // Batch 2 (Aura full): the error branch is the Hatch error state —
+    // same danger text + retry, plus the danger dot. The plain centred
+    // text below stays for non-error empties only.
+    if (isError) {
+        HatchErrorState(message = text, modifier = modifier, onRetry = onRetry)
+        return
+    }
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     Box(
@@ -489,97 +494,22 @@ fun NoticeRow(
     onRetry: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
 ) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-    val dims = OpenCodeTheme.tokens.dimensions
-    val kindColor = when (kind) {
-        NoticeKind.Error -> colors.danger
-        NoticeKind.Warning -> colors.warning
-        NoticeKind.Info -> colors.accent
-        NoticeKind.Success -> colors.success
-    }
-    val glyph = when (kind) {
-        NoticeKind.Error, NoticeKind.Warning -> Glyph.Warning
-        NoticeKind.Info -> Glyph.Info
-        NoticeKind.Success -> Glyph.Check
-    }
-    val retryLabel = stringResource(R.string.chat_retry)
-    val closeDescription = stringResource(R.string.chat_status_dialog_close)
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(radius.md))
-            .background(kindColor.copy(alpha = 0.12f))
-            .border(0.5.dp, kindColor.copy(alpha = 0.35f), RoundedCornerShape(radius.md))
-            .padding(start = spacing.md, top = spacing.xs, bottom = spacing.xs, end = spacing.xxs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        GlyphIcon(
-            glyph = glyph,
-            tint = kindColor,
-            size = 16.dp,
-        )
-        Text(
-            text = message,
-            style = OpenCodeTypography.bodySmall,
-            color = colors.onSurface,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = spacing.sm),
-        )
-        if (onRetry != null) {
-            Box(
-                modifier = Modifier
-                    .defaultMinSize(minHeight = dims.minTouchTarget)
-                    .clip(RoundedCornerShape(radius.full))
-                    .background(colors.accentFill)
-                    .semantics {
-                        role = Role.Button
-                        contentDescription = retryLabel
-                    }
-                    .clickable(role = Role.Button, onClick = onRetry)
-                    .padding(horizontal = spacing.md),
-                contentAlignment = Alignment.Center,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                ) {
-                    GlyphIcon(
-                        glyph = Glyph.Refresh,
-                        tint = colors.onAccent,
-                        size = 16.dp,
-                    )
-                    Text(
-                        text = retryLabel,
-                        style = OpenCodeTypography.label,
-                        color = colors.onAccent,
-                    )
-                }
-            }
-            Spacer(Modifier.width(spacing.xs))
-        }
-        if (onDismiss != null) {
-            // Dismiss: a full 48dp hit area around the 12dp cross.
-            Box(
-                modifier = Modifier
-                    .size(dims.minTouchTarget)
-                    .clip(CircleShape)
-                    .clickable(role = Role.Button, onClick = onDismiss)
-                    .semantics { contentDescription = closeDescription },
-                contentAlignment = Alignment.Center,
-            ) {
-                GlyphIcon(
-                    glyph = Glyph.Close,
-                    tint = colors.onSurfaceMuted,
-                    size = 12.dp,
-                )
-            }
-        }
-    }
+    // Batch 2 (Aura full): the coloured banner (kind colour at 12%
+    // background + 0.5dp border) is now the Hatch banner — same message,
+    // retry and dismiss behaviour, only the treatment changes. The chat,
+    // Providers and session-list banners all follow from here.
+    HatchInlineBanner(
+        message = message,
+        kind = when (kind) {
+            NoticeKind.Error -> HatchBannerKind.ERROR
+            NoticeKind.Warning -> HatchBannerKind.WARNING
+            NoticeKind.Info -> HatchBannerKind.INFO
+            NoticeKind.Success -> HatchBannerKind.SUCCESS
+        },
+        modifier = modifier,
+        onRetry = onRetry,
+        onDismiss = onDismiss,
+    )
 }
 
 /**
