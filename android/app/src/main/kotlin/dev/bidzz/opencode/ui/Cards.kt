@@ -319,6 +319,9 @@ fun TonalButton(
  * [meshGradient] (Aura B) draws an [AuraMeshGradient] band above the
  * text. Only the session-list empty state opts in — an error never gets
  * the band, and every other screen keeps the plain centred text.
+ * Batch 3 (Aura full): the band is the interactive gradient
+ * ([AuraInteractiveMeshGradient]) — its highlight follows the finger
+ * instead of sitting at the top-start corner.
  */
 @Composable
 fun EmptyState(
@@ -349,7 +352,7 @@ fun EmptyState(
                 .padding(spacing.xxl),
         ) {
             if (meshGradient && !isError) {
-                AuraMeshGradient(
+                AuraInteractiveMeshGradient(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(96.dp)
