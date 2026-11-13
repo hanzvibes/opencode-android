@@ -51,9 +51,21 @@ class MarkdownLinkTest {
     }
 
     @Test
-    fun `tel numbers with spaces parens and dashes stay links (53-F2)`() {
-        for (url in listOf("tel:+62 812-3456", "tel:(021) 123456", "tel:0812.345.678")) {
+    fun `tel numbers with parens and dashes stay links (53-F2)`() {
+        for (url in listOf("tel:(021)123456", "tel:0812.345.678")) {
             assertEquals("expected a link for $url", 1, spans("[x]($url)").filterIsInstance<MdSpan.Link>().size)
         }
+    }
+
+    @Test
+    fun `a spaced tel number passes the openable gate (53-F2)`() {
+        // A raw space cannot appear in a `(...)` link destination — the
+        // parser rejects `[x](tel:+62 812-3456)` before the gate is ever
+        // consulted (pre-existing CommonMark behavior, not this fix).
+        // What 53-F2 owns is the gate itself: a spaced number is a real
+        // number per the Fase 5 regex, MMI/USSD is not.
+        assertTrue(Markdown.isOpenableLink("tel:+62 812-3456"))
+        assertTrue(Markdown.isOpenableLink("tel:(021) 123456"))
+        assertTrue(!Markdown.isOpenableLink("tel:*#06#"))
     }
 }
