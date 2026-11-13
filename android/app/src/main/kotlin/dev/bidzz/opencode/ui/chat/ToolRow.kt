@@ -164,7 +164,12 @@ fun ToolTrace(
     // Timeline filter, kept in rememberSaveable so it survives collapse,
     // rotation and recomposition: collapsing the trace never resets it.
     // Only these four kinds exist — no more are added here.
-    var filter by rememberSaveable { mutableStateOf(ToolFilter.ALL) }
+    // Audit-200 A2: the enum itself is stored by NAME, not by value —
+    // rememberSaveable has no built-in enum saver, and saving the enum
+    // directly crashes on onSaveInstanceState (same class as C-006).
+    // See diffDecisionName below for the same pattern.
+    var filterName by rememberSaveable { mutableStateOf(ToolFilter.ALL.name) }
+    val filter = toolFilterForName(filterName)
 
     // When a run finishes with a failure, open it so an error is never
     // hidden behind the collapsed summary. When a clean run finishes,
@@ -401,7 +406,7 @@ fun ToolTrace(
                     SelectorChip(
                         label = stringResource(option.labelRes),
                         selected = selected,
-                        onClick = { filter = option },
+                        onClick = { filterName = option.name },
                     )
                 }
             }
@@ -444,7 +449,9 @@ internal fun formatClock(millis: Long): String =
         .format(DateTimeFormatter.ofPattern("HH:mm"))
 
 /** The only four timeline filters. Edit covers file writes and edits. */
-private enum class ToolFilter(val labelRes: Int) {
+// Audit-200 A2: internal (was private) so the name-mapping helper
+// below — and its unit test — can see the enum.
+internal enum class ToolFilter(val labelRes: Int) {
     ALL(R.string.tool_filter_all),
     FAILED(R.string.tool_filter_failed),
     EDIT(R.string.tool_filter_edit),
@@ -459,6 +466,14 @@ private enum class ToolFilter(val labelRes: Int) {
         READ -> toolKindFor(call.name) == ToolKind.READ
     }
 }
+
+/**
+ * Audit-200 A2: the [ToolFilter] for a saved name. Unknown names
+ * (an old build's value, a corrupt restore) fall back to [ToolFilter.ALL]
+ * instead of throwing — the filter is a view preference, never data.
+ */
+internal fun toolFilterForName(name: String): ToolFilter =
+    runCatching { ToolFilter.valueOf(name) }.getOrDefault(ToolFilter.ALL)
 
 /**
  * Compact status chip in the summary row.
