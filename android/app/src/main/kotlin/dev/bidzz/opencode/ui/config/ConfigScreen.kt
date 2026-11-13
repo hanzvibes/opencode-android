@@ -66,7 +66,7 @@ fun ConfigScreen(
             )
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
-                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
                 state.entries.isEmpty() -> EmptyState(stringResource(R.string.config_empty))
                 else -> {
                     LazyColumn(

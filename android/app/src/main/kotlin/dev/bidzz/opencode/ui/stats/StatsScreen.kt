@@ -73,8 +73,8 @@ fun StatsScreen(
             )
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
-                state.failure != null || state.stats == null ->
-                    EmptyState(stringResource(R.string.stats_empty))
+                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
+                state.stats == null -> EmptyState(stringResource(R.string.stats_empty))
                 else -> StatsContent(stats = state.stats)
             }
         }

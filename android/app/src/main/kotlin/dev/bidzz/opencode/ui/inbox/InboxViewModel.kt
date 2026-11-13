@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.inbox
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.InboxApi
 import dev.bidzz.opencode.core.api.dto.InboxItem
@@ -68,7 +69,7 @@ class InboxViewModel(
     fun load(sessionID: String) {
         this.sessionID = sessionID
         val handle = api.handle() ?: run {
-            _state.value = InboxUiState(loading = false)
+            _state.value = InboxUiState(loading = false, failure = engineDownFailure())
             return
         }
         _state.value = InboxUiState(loading = true)

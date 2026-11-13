@@ -62,6 +62,7 @@ enum class DiffViewMode { Unified, Split }
 fun DiffScreen(
     state: DiffUiState,
     onBack: () -> Unit,
+    onRetry: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -84,8 +85,8 @@ fun DiffScreen(
         when {
             state.loading -> LoadingState(stringResource(R.string.diff_loading))
             state.gitUnavailable -> EmptyState(stringResource(R.string.diff_git_unavailable), isError = true)
-            state.failure != null -> EmptyState(state.failure.message(), isError = true)
-            state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
+            state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRetry)
+            state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true, onRetry = onRetry)
             state.hunks.isEmpty() -> EmptyState(stringResource(R.string.diff_none))
             mode == DiffViewMode.Unified -> UnifiedDiffView(state = state)
             mode == DiffViewMode.Split -> SplitDiffView(state = state)

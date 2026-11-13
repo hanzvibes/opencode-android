@@ -415,7 +415,10 @@ class FileViewViewModel(
      */
     fun requestLoad(path: String): Boolean {
         val s = _state.value
-        if (path == s.path) return true
+        // Same file, still failed: the tap IS the retry — a failed load
+        // must be reloadable by tapping the file again (audit-100 89-F5).
+        // Same file, loaded fine: no reload, the viewer already shows it.
+        if (path == s.path && !shouldReloadSamePath(s.failure, s.failureKey)) return true
         if (s.dirty) {
             _state.value = s.copy(confirmSwitchTo = path)
             return false
@@ -811,6 +814,15 @@ class DiffViewModel(
         }
     }
 }
+
+/**
+ * Whether tapping the file that is already open should reload it: only
+ * when the current view is a failed load (audit-100 89-F5). A loaded file
+ * needs no reload; a failed one has no other way back — the failure
+ * EmptyState's retry and the re-tap both funnel through `requestLoad`.
+ */
+internal fun shouldReloadSamePath(failure: ApiResult.Failure?, failureKey: Int?): Boolean =
+    failure != null || failureKey != null
 
 /** SHA-256 of [text] as lowercase hex, for draft-basis checks (89-F3). */
 internal fun sha256Hex(text: String): String {

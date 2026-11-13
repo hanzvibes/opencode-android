@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.move
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.SessionApi
 import dev.bidzz.opencode.core.api.dto.ProjectInfo
@@ -51,7 +52,7 @@ class MoveSessionViewModel(
     fun load(sessionID: String) {
         this.sessionID = sessionID
         val handle = api.handle() ?: run {
-            _state.value = MoveSessionUiState(loading = false)
+            _state.value = MoveSessionUiState(loading = false, failure = engineDownFailure())
             return
         }
         _state.value = MoveSessionUiState(loading = true)

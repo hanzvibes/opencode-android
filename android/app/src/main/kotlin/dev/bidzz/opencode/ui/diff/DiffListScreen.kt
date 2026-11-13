@@ -94,6 +94,29 @@ fun DiffListScreen(
                     modifier = Modifier.padding(spacing.xxl),
                 )
             }
+        } else if (filteredList.isEmpty()) {
+            // The filter matched nothing: say so instead of the "N files"
+            // header and the totals strip above an empty list (audit-100
+            // 64-F8). The search field stays — clearing it is the way back.
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (changed.size > 2) {
+                    SearchField(
+                        query = filterQuery,
+                        onQueryChange = { filterQuery = it },
+                        placeholder = stringResource(R.string.diff_filter_hint),
+                        imeAction = ImeAction.Search,
+                    )
+                }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(R.string.diff_filter_no_results, filterQuery.trim()),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurfaceMuted,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(spacing.xxl),
+                    )
+                }
+            }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Filter search bar when there are several files

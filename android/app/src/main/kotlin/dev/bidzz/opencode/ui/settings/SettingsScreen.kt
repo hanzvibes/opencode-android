@@ -64,6 +64,7 @@ import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconBadge
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.SearchField
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SheetStop
@@ -133,6 +134,12 @@ fun SettingsScreen(
     val engineHandle = app.engineApi.handle()
     LaunchedEffect(engineHandle) {
         if (engineHandle == null) {
+            // No engine, no permissions to show — and the empty text must
+            // not claim "no saved permissions yet" (audit-100 64-F10):
+            // record the failure so the section renders the engine-down
+            // error instead. Re-reading happens when the engine attaches
+            // (engineHandle changes) — there is no manual retry here.
+            savedPermissionsFailure = engineDownFailure()
             savedPermissionsLoading = false
             return@LaunchedEffect
         }

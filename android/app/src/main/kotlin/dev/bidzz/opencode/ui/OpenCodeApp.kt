@@ -590,7 +590,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         screen = Screen.Providers
                     },
                     onCreateSample = {
-                        SampleProject.seed(app.workspaceStore.resolve())?.absolutePath
+                        SampleProject.seed(app.workspaceStore.resolve())
                     },
                     onDismiss = {
                         OnboardingStore.markCompleted(hostContext)
@@ -712,6 +712,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     is Screen.Diff -> DiffScreen(
                         state = diffState,
                         onBack = { screen = Screen.DiffList },
+                        onRetry = { diffViewModel.load(target.file) },
                     )
 
                     Screen.SessionDiff -> SessionDiffScreen(
@@ -719,6 +720,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onBack = { screen = Screen.Chat },
                         onOpen = sessionDiffViewModel::openFile,
                         onCloseFile = sessionDiffViewModel::closeFile,
+                        onRetry = { chatState.sessionID?.let { sessionDiffViewModel.load(it) } },
                     )
 
                     is Screen.InAppBrowser -> InAppBrowserScreen(

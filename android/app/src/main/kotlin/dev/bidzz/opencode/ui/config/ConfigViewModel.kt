@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.config
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.ConfigEntry
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,7 +54,7 @@ class ConfigViewModel(
     fun refresh() {
         val handle = api.handle()
         if (handle == null) {
-            _state.value = _state.value.copy(loading = false)
+            _state.value = _state.value.copy(loading = false, failure = engineDownFailure())
             return
         }
         _state.value = _state.value.copy(loading = true, failure = null)

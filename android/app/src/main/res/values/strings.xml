@@ -122,6 +122,7 @@
     <string name="onboarding_project_body">The agent works inside one project folder. Start with the built-in workspace, pick a folder of your own, or create a small sample project to try things out.</string>
     <string name="onboarding_create_sample">Create sample project</string>
     <string name="onboarding_sample_created">Sample project created in %1$s</string>
+    <string name="onboarding_sample_failed">Could not create the sample project: %1$s</string>
     <string name="onboarding_choose_folder">Choose a folder</string>
     <string name="onboarding_use_default">Use the default project</string>
     <string name="onboarding_continue">Continue</string>
@@ -317,6 +318,7 @@
     <string name="export_size">%1$d characters</string>
     <string name="export_copy">Copy JSON</string>
     <string name="export_copied">Copied</string>
+    <string name="export_copy_too_large">This export is too large to copy (%1$d characters).</string>
 
     <!-- Session instructions -->
     <string name="instructions_title">Session instructions</string>
@@ -464,6 +466,9 @@
     <string name="code_copied">Copied</string>
     <string name="code_save">Save</string>
     <string name="code_save_failed">Could not save the file.</string>
+    <string name="code_save_picker_failed">Could not open the save dialog.</string>
+    <string name="directory_picker_failed">Could not open the folder picker.</string>
+    <string name="saf_picker_failed">Could not open the file picker.</string>
     <string name="code_highlight_off">Highlight off (large file)</string>
 
     <!-- Project -->
@@ -541,13 +546,16 @@
     <string name="diff_mode_unified">Unified</string>
     <string name="diff_mode_split">Split</string>
     <string name="diff_filter_hint">Filter changed files…</string>
+    <string name="diff_filter_no_results">No changed files match \"%1$s\"</string>
     <string name="explorer_search_hint">Cari file…</string>
+    <string name="explorer_search_no_results">No files match \"%1$s\"</string>
     <string name="diff_files_changed">%1$d file diubah</string>
     <string name="diff_original">Original</string>
     <string name="diff_modified">Modified</string>
     <string name="difflist_title">Changes (%1$d)</string>
     <string name="difflist_empty">No changes in the working tree.\n\nEither the agent has not edited anything yet, or git is not available.</string>
     <string name="sessiondiff_empty">The latest turn changed no files.</string>
+    <string name="sessiondiff_title">Latest turn diff</string>
 
     <!-- History -->
     <string name="history_title">History</string>
@@ -812,6 +820,7 @@
     <string name="composer_take_photo">Take photo</string>
     <string name="photo_saved">Photo saved to %1$s</string>
     <string name="photo_failed">Couldn\'t save photo</string>
+    <string name="camera_insert_failed">Could not create a photo in the gallery.</string>
     <string name="photo_saved_to_gallery">Photo is in the gallery — the app restarted before it could be attached. Attach it again from the gallery.</string>
     <string name="widget_open">Open</string>
     <string name="widget_open_session_hint">Tap Open to continue the session</string>

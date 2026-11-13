@@ -126,6 +126,7 @@
     <string name="onboarding_project_body">Agen bekerja di dalam satu folder proyek. Mulai dengan workspace bawaan, pilih folder sendiri, atau buat proyek contoh kecil untuk mencoba.</string>
     <string name="onboarding_create_sample">Buat proyek contoh</string>
     <string name="onboarding_sample_created">Proyek contoh dibuat di %1$s</string>
+    <string name="onboarding_sample_failed">Tidak bisa membuat proyek contoh: %1$s</string>
     <string name="onboarding_choose_folder">Pilih folder</string>
     <string name="onboarding_use_default">Pakai proyek bawaan</string>
     <string name="onboarding_continue">Lanjut</string>
@@ -321,6 +322,7 @@
     <string name="export_size">%1$d karakter</string>
     <string name="export_copy">Salin JSON</string>
     <string name="export_copied">Disalin</string>
+    <string name="export_copy_too_large">Ekspor ini terlalu besar untuk disalin (%1$d karakter).</string>
 
     <!-- Instruksi sesi -->
     <string name="instructions_title">Instruksi sesi</string>
@@ -468,6 +470,9 @@
     <string name="code_copied">Tersalin</string>
     <string name="code_save">Simpan</string>
     <string name="code_save_failed">Tidak bisa menyimpan file.</string>
+    <string name="code_save_picker_failed">Tidak bisa membuka dialog simpan.</string>
+    <string name="directory_picker_failed">Tidak bisa membuka pemilih folder.</string>
+    <string name="saf_picker_failed">Tidak bisa membuka pemilih file.</string>
     <string name="code_highlight_off">Highlight mati (berkas besar)</string>
 
     <!-- Project -->
@@ -545,13 +550,16 @@
     <string name="diff_mode_unified">Terpadu</string>
     <string name="diff_mode_split">Berdampingan</string>
     <string name="diff_filter_hint">Filter file yang diubah…</string>
+    <string name="diff_filter_no_results">Tidak ada file berubah yang cocok dengan \"%1$s\"</string>
     <string name="explorer_search_hint">Cari file…</string>
+    <string name="explorer_search_no_results">Tidak ada file yang cocok dengan \"%1$s\"</string>
     <string name="diff_files_changed">%1$d file diubah</string>
     <string name="diff_original">Asli</string>
     <string name="diff_modified">Dimodifikasi</string>
     <string name="difflist_title">Perubahan (%1$d)</string>
     <string name="difflist_empty">Tidak ada perubahan di working tree.\n\nAgen belum mengedit apa pun, atau git tidak tersedia.</string>
     <string name="sessiondiff_empty">Turn terakhir tidak mengubah file apa pun.</string>
+    <string name="sessiondiff_title">Diff giliran terakhir</string>
 
     <!-- History -->
     <string name="history_title">Riwayat</string>
@@ -816,6 +824,7 @@
     <string name="composer_take_photo">Ambil foto</string>
     <string name="photo_saved">Foto disimpan ke %1$s</string>
     <string name="photo_failed">Foto gagal disimpan</string>
+    <string name="camera_insert_failed">Tidak bisa membuat foto di galeri.</string>
     <string name="photo_saved_to_gallery">Foto tersimpan di galeri — app sempat restart sebelum sempat dilampirkan. Lampirkan lagi dari galeri.</string>
     <string name="widget_open">Buka</string>
     <string name="widget_open_session_hint">Ketuk Buka untuk melanjutkan sesi</string>

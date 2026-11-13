@@ -47,8 +47,8 @@ import dev.bidzz.opencode.ui.TonalButton
  * @param hasAllFilesAccess whether the permission step can show its
  *   already-granted state instead of the grant button.
  * @param onCreateSample seeds the sample project; returns the directory it
- *   was seeded into, or null when seeding failed (the button stays, so the
- *   user can retry).
+ *   was seeded into, or the reason seeding failed (the button stays, so the
+ *   user can retry — and the reason is shown instead of silence).
  */
 @Composable
 fun OnboardingScreen(
@@ -57,7 +57,7 @@ fun OnboardingScreen(
     onChooseFolder: () -> Unit,
     onGrantAllFilesAccess: () -> Unit,
     onOpenProviders: () -> Unit,
-    onCreateSample: () -> String?,
+    onCreateSample: () -> SampleProject.SeedResult,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -66,6 +66,7 @@ fun OnboardingScreen(
 
     var step by remember { mutableIntStateOf(0) }
     var samplePath by remember { mutableStateOf<String?>(null) }
+    var sampleError by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -109,7 +110,16 @@ fun OnboardingScreen(
                 0 -> ProjectStep(
                     workspacePath = workspacePath,
                     samplePath = samplePath,
-                    onCreateSample = { samplePath = onCreateSample() },
+                    sampleError = sampleError,
+                    onCreateSample = {
+                        when (val result = onCreateSample()) {
+                            is SampleProject.SeedResult.Created -> {
+                                samplePath = result.dir.absolutePath
+                                sampleError = null
+                            }
+                            is SampleProject.SeedResult.Failed -> sampleError = result.reason
+                        }
+                    },
                     onSampleContinue = { step = 1 },
                     onChooseFolder = {
                         onChooseFolder()
@@ -140,6 +150,7 @@ fun OnboardingScreen(
 private fun ProjectStep(
     workspacePath: String,
     samplePath: String?,
+    sampleError: String?,
     onCreateSample: () -> Unit,
     onSampleContinue: () -> Unit,
     onChooseFolder: () -> Unit,
@@ -164,6 +175,13 @@ private fun ProjectStep(
                 text = stringResource(R.string.onboarding_sample_created, samplePath),
                 style = OpenCodeTypography.bodySmall,
                 color = colors.success,
+            )
+        }
+        sampleError?.let { reason ->
+            Text(
+                text = stringResource(R.string.onboarding_sample_failed, reason),
+                style = OpenCodeTypography.bodySmall,
+                color = colors.danger,
             )
         }
         TonalButton(
