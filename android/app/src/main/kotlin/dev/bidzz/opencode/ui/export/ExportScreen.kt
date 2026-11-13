@@ -37,7 +37,17 @@ import dev.bidzz.opencode.ui.message
  * verbatim JSON the engine sent onto the clipboard, so what the user
  * shares or saves elsewhere is exactly the export. Import is not part
  * of this batch.
+ *
+ * The copy is capped (audit-100 65-F7): a verbatim export can be many
+ * megabytes, and the clipboard crosses a Binder transaction (~1 MB) —
+ * copying an uncapped transcript can throw TransactionTooLarge and
+ * crash the tap. Over the cap the button says so instead of copying.
  */
+internal const val EXPORT_COPY_MAX_CHARS = 500_000
+
+/** True when the export is too large to cross the clipboard safely. */
+internal fun shouldBlockCopy(length: Int): Boolean = length > EXPORT_COPY_MAX_CHARS
+
 @Composable
 fun ExportScreen(
     sessionID: String,
@@ -49,9 +59,11 @@ fun ExportScreen(
     val spacing = OpenCodeTheme.tokens.spacing
     val clipboardManager = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
+    var copyTooLarge by remember { mutableStateOf(false) }
 
     LaunchedEffect(sessionID) {
         copied = false
+        copyTooLarge = false
         onRefresh()
     }
 
@@ -74,7 +86,7 @@ fun ExportScreen(
             )
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
-                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
                 state.export == null -> EmptyState(stringResource(R.string.export_empty))
                 else -> {
                     val export = state.export
@@ -116,8 +128,13 @@ fun ExportScreen(
                     ) {
                         TextButton(
                             onClick = {
-                                clipboardManager.setText(AnnotatedString(export.rawJson))
-                                copied = true
+                                if (shouldBlockCopy(export.rawJson.length)) {
+                                    copyTooLarge = true
+                                } else {
+                                    clipboardManager.setText(AnnotatedString(export.rawJson))
+                                    copied = true
+                                    copyTooLarge = false
+                                }
                             },
                         ) {
                             Text(
@@ -128,6 +145,16 @@ fun ExportScreen(
                                 color = colors.accentText,
                             )
                         }
+                    }
+                    if (copyTooLarge) {
+                        Text(
+                            text = stringResource(R.string.export_copy_too_large, export.rawJson.length),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.danger,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = spacing.xs),
+                        )
                     }
                 }
             }

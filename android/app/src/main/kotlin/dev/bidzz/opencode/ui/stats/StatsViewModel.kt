@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.stats
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.StatsApi
 import dev.bidzz.opencode.core.api.dto.SessionStatsInfo
@@ -78,7 +79,7 @@ class StatsViewModel(
 
     fun refresh() {
         val handle = api.handle() ?: run {
-            _state.value = StatsUiState(loading = false)
+            _state.value = StatsUiState(loading = false, failure = engineDownFailure())
             return
         }
         _state.value = StatsUiState(loading = true)

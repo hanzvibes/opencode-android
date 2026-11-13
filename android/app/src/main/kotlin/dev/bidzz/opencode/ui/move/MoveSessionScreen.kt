@@ -81,7 +81,12 @@ fun MoveSessionScreen(
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.moved -> {
-                    EmptyState(stringResource(R.string.move_done))
+                    // EmptyState's Box is fillMaxSize, so without weight it
+                    // takes the whole Column and the Done button below it
+                    // gets zero height (audit-100 64-F17 — the button was
+                    // unreachable). Weight gives the message the remaining
+                    // space and the button its natural height.
+                    EmptyState(stringResource(R.string.move_done), modifier = Modifier.weight(1f))
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center,

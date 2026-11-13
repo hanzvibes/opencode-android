@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.instructions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.InstructionsApi
 import dev.bidzz.opencode.core.api.dto.InstructionEntry
@@ -78,7 +79,7 @@ class InstructionsViewModel(
     fun load(sessionID: String) {
         this.sessionID = sessionID
         val handle = api.handle() ?: run {
-            _state.value = _state.value.copy(loading = false)
+            _state.value = _state.value.copy(loading = false, failure = engineDownFailure())
             return
         }
         // A reload must not wipe the editor (98-F9): the key/value being typed
@@ -134,7 +135,10 @@ class InstructionsViewModel(
             _state.value = _state.value.copy(keyInvalid = true)
             return
         }
-        val handle = api.handle() ?: return
+        val handle = api.handle() ?: run {
+            _state.value = _state.value.copy(failure = engineDownFailure())
+            return
+        }
         _state.value = _state.value.copy(saving = true, keyInvalid = false, tooLarge = false, failure = null)
         viewModelScope.launch {
             when (val result = InstructionsApi(handle.client).put(sessionID, key, JsonPrimitive(value))) {
@@ -155,7 +159,10 @@ class InstructionsViewModel(
 
     fun delete(entry: InstructionEntry) {
         val sessionID = sessionID ?: return
-        val handle = api.handle() ?: return
+        val handle = api.handle() ?: run {
+            _state.value = _state.value.copy(failure = engineDownFailure())
+            return
+        }
         viewModelScope.launch {
             when (val result = InstructionsApi(handle.client).delete(sessionID, entry.key)) {
                 is ApiResult.Success -> {

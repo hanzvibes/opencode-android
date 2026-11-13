@@ -305,9 +305,21 @@ private fun ExplorerListContent(
 
     when {
         state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
-        state.failure != null -> EmptyState(state.failure.message(), isError = true)
-        state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
+        state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
+        state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true, onRetry = onRefresh)
         state.rows.isEmpty() -> EmptyFolder()
+        // The folder has files but the filter matches none: say so instead
+        // of a bare empty list (audit-100 64-F7). The filter field stays
+        // above, so clearing it is the way back.
+        filteredRows.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = stringResource(R.string.explorer_search_no_results, searchFilter.trim()),
+                style = OpenCodeTypography.body,
+                color = colors.onSurfaceMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(spacing.xxl),
+            )
+        }
         else -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = spacing.lg, vertical = spacing.sm),

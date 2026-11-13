@@ -124,7 +124,12 @@ fun InstructionsScreen(
                         modifier = Modifier.padding(top = spacing.xs),
                     )
                 }
-                if (state.failure != null) {
+                // A load failure with entries already on screen stays an inline
+                // note under the editor (the list is still usable); a failure
+                // with an empty list is the list's own state, with retry
+                // (audit-100 64-F15 — the old code showed the red note AND
+                // the "no instructions" empty state at once).
+                if (state.failure != null && state.entries.isNotEmpty()) {
                     Text(
                         text = state.failure.message(),
                         style = OpenCodeTypography.bodySmall,
@@ -162,6 +167,7 @@ fun InstructionsScreen(
             }
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
+                state.failure != null && state.entries.isEmpty() -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
                 state.entries.isEmpty() -> EmptyState(stringResource(R.string.instructions_empty))
                 else -> {
                     LazyColumn(

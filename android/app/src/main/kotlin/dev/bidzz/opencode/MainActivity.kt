@@ -225,7 +225,13 @@ class MainActivity : FragmentActivity() {
             put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OpenCode")
         }
         val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            ?: return
+            ?: run {
+                // The gallery refused the row: say so instead of a dead
+                // camera tap (audit-100 14-F6).
+                Log.w("MainActivity", "MediaStore insert returned null")
+                (application as OpenCodeApplication).showSnackbar(getString(R.string.camera_insert_failed))
+                return
+            }
         pendingPhotoUri = uri
         pendingPhotoStore.put(uri)
         cameraOpen = true
@@ -354,9 +360,13 @@ class MainActivity : FragmentActivity() {
                 } else {
                     // Best-effort like the SAF launch below (item 5): a
                     // missing DocumentsUI or a finishing activity must not
-                    // crash the app; the folder simply never opens.
+                    // crash the app; the folder simply never opens — and
+                    // the user is told so instead of a dead tap (15-F5).
                     runCatching { pickDirectory.launch(null) }
-                        .onFailure { Log.w("MainActivity", "Directory picker launch failed", it) }
+                        .onFailure {
+                            Log.w("MainActivity", "Directory picker launch failed", it)
+                            app.showSnackbar(getString(R.string.directory_picker_failed))
+                        }
                 }
             }
         }
@@ -369,9 +379,13 @@ class MainActivity : FragmentActivity() {
             app.safFileRequest.collect {
                 // Best-effort: a missing DocumentsUI or a finishing
                 // activity must not crash the app; the chat screen simply
-                // never receives a file.
+                // never receives a file — and the user is told so instead
+                // of a dead tap (15-F5).
                 runCatching { pickSafFile.launch(arrayOf("*/*")) }
-                    .onFailure { Log.w("MainActivity", "SAF picker launch failed", it) }
+                    .onFailure {
+                        Log.w("MainActivity", "SAF picker launch failed", it)
+                        app.showSnackbar(getString(R.string.saf_picker_failed))
+                    }
             }
         }
         lifecycleScope.launch {
@@ -397,6 +411,7 @@ class MainActivity : FragmentActivity() {
                     .onFailure {
                         codeSavePickerOpen = false
                         Log.w("MainActivity", "Code save picker launch failed", it)
+                        app.showSnackbar(getString(R.string.code_save_picker_failed))
                     }
             }
         }

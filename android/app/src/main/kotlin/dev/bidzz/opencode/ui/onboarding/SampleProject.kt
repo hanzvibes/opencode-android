@@ -11,20 +11,26 @@ import java.io.File
  * prompts. Existing files are never overwritten — seeding into a
  * workspace that already has a README leaves it alone.
  *
- * Returns the workspace directory on success, null when nothing could be
- * written (e.g. the directory is not writable).
+ * The result says WHY seeding failed instead of returning null
+ * (audit-100 64-F6): a null with no reason left the onboarding button
+ * stuck on "Create sample" with no explanation.
  */
 object SampleProject {
 
-    fun seed(workspace: File): File? {
+    sealed interface SeedResult {
+        data class Created(val dir: File) : SeedResult
+        data class Failed(val reason: String) : SeedResult
+    }
+
+    fun seed(workspace: File): SeedResult {
         return try {
             workspace.mkdirs()
             writeIfAbsent(File(workspace, "README.md"), README)
             writeIfAbsent(File(workspace, "main.py"), MAIN_PY)
             writeIfAbsent(File(workspace, "TODO.md"), TODO)
-            workspace
-        } catch (_: Exception) {
-            null
+            SeedResult.Created(workspace)
+        } catch (e: Exception) {
+            SeedResult.Failed(e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName)
         }
     }
 

@@ -32,6 +32,7 @@ import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.message
 import dev.bidzz.opencode.ui.stats.formatStatsCost
 import kotlin.math.roundToInt
 
@@ -77,6 +78,7 @@ fun UsageLimitsScreen(
             )
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
+                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
                 state.info == null -> EmptyState(stringResource(R.string.usage_empty))
                 else -> UsageContent(info = state.info)
             }

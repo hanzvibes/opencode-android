@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.UsageApi
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.dto.UsageBudget
 import dev.bidzz.opencode.core.api.dto.UsageLimitsInfo
 import dev.bidzz.opencode.core.api.dto.UsageMeter
@@ -19,6 +20,8 @@ import java.time.format.DateTimeFormatter
 data class UsageLimitsUiState(
     val info: UsageLimitsInfo? = null,
     val loading: Boolean = true,
+    /** What went wrong, as a value; the screen words it in the app's language. */
+    val failure: ApiResult.Failure? = null,
 )
 
 /** A Go meter's used share, 0–1, clamped: the engine promises 0–100. */
@@ -41,11 +44,11 @@ internal fun formatResetDate(millis: Long?): String? {
 /**
  * Usage limits (`GET /api/experimental/usage/limits`).
  *
- * Read-only. A failure and a null answer both land on the empty state:
- * the endpoint is experimental, and a workspace that is not signed in
- * to OpenCode Console has no limits to show — neither is an error the
- * user can act on (Tier 2 context-meter pattern: fail silent, show
- * empty).
+ * Read-only. A failure and a null answer are DIFFERENT states: the endpoint
+ * is experimental, and a workspace that is not signed in to OpenCode Console
+ * has no limits to show — but a failed load must say so instead of accusing
+ * the user of not being signed in (audit-100 64-F14; the old fail-silent
+ * design hid real engine failures behind the "not signed in" text).
  */
 class UsageLimitsViewModel(
     private val api: EngineApi,
@@ -56,7 +59,7 @@ class UsageLimitsViewModel(
 
     fun refresh() {
         val handle = api.handle() ?: run {
-            _state.value = UsageLimitsUiState(loading = false)
+            _state.value = UsageLimitsUiState(loading = false, failure = engineDownFailure())
             return
         }
         _state.value = UsageLimitsUiState(loading = true)
@@ -69,6 +72,7 @@ class UsageLimitsViewModel(
                 is ApiResult.Failure -> _state.value = UsageLimitsUiState(
                     info = null,
                     loading = false,
+                    failure = result,
                 )
             }
         }

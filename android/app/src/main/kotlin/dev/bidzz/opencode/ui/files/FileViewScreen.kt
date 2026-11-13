@@ -274,8 +274,8 @@ fun FileViewScreen(
             when {
                 isPreview -> FilePreview(path = state.path, kind = previewKind)
                 state.loading -> LoadingState(stringResource(R.string.fileview_reading), onRetry = onRetryLoad)
-                state.failure != null -> EmptyState(state.failure.message(), isError = true)
-                state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
+                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRetryLoad)
+                state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true, onRetry = onRetryLoad)
                 state.editing -> CodeEditorPane(
                     draft = state.draft,
                     language = language,

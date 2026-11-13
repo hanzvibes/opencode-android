@@ -12,6 +12,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
+import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
 
 /**
@@ -29,22 +30,35 @@ fun SessionDiffScreen(
     onBack: () -> Unit,
     onOpen: (String) -> Unit,
     onCloseFile: () -> Unit,
+    onRetry: () -> Unit = {},
 ) {
     val selected = state.selected
     if (selected != null) {
         DiffScreen(state = selected, onBack = onCloseFile)
         return
     }
-    when {
-        state.loading -> LoadingState(stringResource(R.string.diff_loading))
-        state.failure != null -> EmptyState(state.failure.message(), isError = true)
-        state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true)
-        state.files.isEmpty() -> EmptyState(stringResource(R.string.sessiondiff_empty))
-        else -> DiffListScreen(
+    // The file list has its own scaffold (DiffListScreen, with the
+    // "Changes (N)" title) — the scaffold here covers only the states
+    // that used to render bare, with no title, no back button and no way
+    // back from a failed load (audit-100 64-F3).
+    if (!state.loading && state.failure == null && state.failureKey == null && state.files.isNotEmpty()) {
+        DiffListScreen(
             changed = state.changed,
             onBack = onBack,
             onOpen = onOpen,
         )
+        return
+    }
+    ScreenScaffold(
+        title = stringResource(R.string.sessiondiff_title),
+        onBack = onBack,
+    ) {
+        when {
+            state.loading -> LoadingState(stringResource(R.string.diff_loading))
+            state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRetry)
+            state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true, onRetry = onRetry)
+            else -> EmptyState(stringResource(R.string.sessiondiff_empty))
+        }
     }
 }
 
