@@ -145,7 +145,7 @@ class EngineConfigStoreJsoncTest {
         val (store, ocDir) = storeWith(
             "opencode.jsonc" to """{"providers": {}}""",
         )
-        assertTrue(store.deleteJsoncConfig())
+        assertEquals(EngineConfigStore.JsoncDeleteResult.Deleted, store.deleteJsoncConfig())
         assertFalse(File(ocDir, "opencode.jsonc").exists())
         val result = store.putOpenAICompatible("probe", "Probe", "https://probe.invalid", "key", emptyList())
         assertEquals(EngineConfigStore.WriteResult.Saved("probe"), result)
@@ -292,5 +292,69 @@ class EngineConfigStoreJsoncTest {
             EngineConfigStore.AntigravityAccountsResult.Missing,
             store.antigravityAccountsResult(),
         )
+    }
+
+    // deleteJsoncConfig (audit-200 A7, DL-002) ---------------------------
+
+    @Test
+    fun `deleting opencode_jsonc writes an identical bak backup before deleting`() {
+        val handWritten = """
+            {
+              // a provider the app never wrote
+              "provider": { "custom": { "options": { "apiKey": "k" } } },
+              "mcp": { "local": { "type": "local", "command": ["npx", "x"] } }
+            }
+        """.trimIndent()
+        val (store, dir) = storeWith("opencode.jsonc" to handWritten)
+
+        assertEquals(EngineConfigStore.JsoncDeleteResult.Deleted, store.deleteJsoncConfig())
+
+        assertFalse(File(dir, "opencode.jsonc").exists())
+        assertEquals(handWritten, File(dir, "opencode.jsonc.bak").readText())
+    }
+
+    @Test
+    fun `deleting a missing jsonc reports Missing and writes no backup`() {
+        val (store, dir) = storeWith()
+
+        assertEquals(EngineConfigStore.JsoncDeleteResult.Missing, store.deleteJsoncConfig())
+
+        assertFalse(File(dir, "opencode.jsonc.bak").exists())
+    }
+
+    @Test
+    fun `deleting overwrites a stale bak with the current file`() {
+        val (store, dir) = storeWith(
+            "opencode.jsonc" to """{ "provider": { "new": {} } }""",
+            "opencode.jsonc.bak" to """{ "provider": { "old": {} } }""",
+        )
+
+        assertEquals(EngineConfigStore.JsoncDeleteResult.Deleted, store.deleteJsoncConfig())
+
+        assertEquals(
+            """{ "provider": { "new": {} } }""",
+            File(dir, "opencode.jsonc.bak").readText(),
+        )
+    }
+
+    @Test
+    fun `deleting the jsonc leaves a shadow opencode_json untouched`() {
+        val shadow = """{ "provider": { "stale": {} } }"""
+        val (store, dir) = storeWith(
+            "opencode.jsonc" to """{ "provider": { "live": {} } }""",
+            "opencode.json" to shadow,
+        )
+
+        assertEquals(EngineConfigStore.JsoncDeleteResult.Deleted, store.deleteJsoncConfig())
+        assertTrue(store.hasJsonConfig())
+
+        assertEquals(shadow, File(dir, "opencode.json").readText())
+    }
+
+    @Test
+    fun `hasJsonConfig is false when no opencode_json exists`() {
+        val (store, _) = storeWith("opencode.jsonc" to "{}")
+
+        assertFalse(store.hasJsonConfig())
     }
 }

@@ -889,6 +889,10 @@
     <string name="providers_name_taken">Penyedia dengan nama ini sudah ada</string>
     <string name="providers_config_jsonc_blocks_write">Penyedia tersimpan di opencode.jsonc, yang tidak ditulis aplikasi ini. Hapus opencode.jsonc agar aplikasi bisa mengelola penyedia.</string>
     <string name="providers_delete_jsonc">Hapus opencode.jsonc</string>
+    <string name="providers_delete_jsonc_title">Hapus opencode.jsonc?</string>
+    <string name="providers_delete_jsonc_body">opencode.jsonc bisa berisi pengaturan yang Anda tulis sendiri — penyedia dan blok MCP yang tidak dikelola aplikasi. Cadangan disimpan dulu sebagai opencode.jsonc.bak, lalu penyedia dikelola di opencode.json.</string>
+    <string name="providers_jsonc_deleted_with_json">opencode.jsonc dihapus. Cadangan disimpan sebagai opencode.jsonc.bak. Penyedia sekarang berasal dari opencode.json.</string>
+    <string name="providers_jsonc_deleted_fresh">opencode.jsonc dihapus. Cadangan disimpan sebagai opencode.jsonc.bak. Penyedia akan dikelola di opencode.json baru.</string>
     <string name="providers_config_unreadable">Berkas konfigurasi %1$s tidak bisa dibaca: %2$s. Daftar penyedia mungkin tidak lengkap.</string>
     <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
     <string name="cmd_init_desc">Inisialisasi workspace atau konfigurasi proyek</string>

@@ -177,6 +177,7 @@ fun ProvidersScreen(
     var googleDetailsFor by remember { mutableStateOf<IntegrationInfo?>(null) }
     var customFormPrefill by remember { mutableStateOf<CustomFormInitial?>(null) }
     var confirmDeleteCustomId by remember { mutableStateOf<String?>(null) }
+    var confirmDeleteJsonc by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
     // A key save whose dialog is still open (31-F13): the view model sets
@@ -259,9 +260,11 @@ fun ProvidersScreen(
                 )
                 // The effective config lives in opencode.jsonc, which the app reads
                 // but never writes (30-F5): offer to delete it so the app can manage
-                // providers in opencode.json again.
+                // providers in opencode.json again. Audit-200 A7 (DL-002): a tap
+                // only opens the confirmation — the file may hold hand-written
+                // settings, and the store writes a .bak backup before deleting.
                 if (it == R.string.providers_config_jsonc_blocks_write) {
-                    TextButton(onClick = onDeleteJsoncConfig) {
+                    TextButton(onClick = { confirmDeleteJsonc = true }) {
                         Text(
                             text = stringResource(R.string.providers_delete_jsonc),
                             color = colors.accentText,
@@ -875,6 +878,41 @@ fun ProvidersScreen(
                         confirmDeleteCustomId = null
                     },
                 ) { Text(stringResource(R.string.common_delete), color = colors.danger) }
+            },
+        )
+    }
+
+    // Audit-200 A7 (DL-002): deleting opencode.jsonc is confirmed here, not
+    // on the tap that offered it — the file may hold hand-written settings
+    // the app never sees, and the delete is only reached after this sheet.
+    if (confirmDeleteJsonc) {
+        LocalizedDraggableBottomSheet(
+            onDismiss = { confirmDeleteJsonc = false },
+            initialStop = SheetStop.PEEK,
+            title = {
+                Text(
+                    stringResource(R.string.providers_delete_jsonc_title),
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                )
+            },
+            content = {
+                Text(
+                    text = stringResource(R.string.providers_delete_jsonc_body),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+            },
+            actions = {
+                TextButton(onClick = { confirmDeleteJsonc = false }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
+                }
+                TextButton(
+                    onClick = {
+                        onDeleteJsoncConfig()
+                        confirmDeleteJsonc = false
+                    },
+                ) { Text(stringResource(R.string.providers_delete_jsonc), color = colors.danger) }
             },
         )
     }

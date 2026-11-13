@@ -230,8 +230,46 @@ class EngineConfigStore(configHome: File) {
         false
     }
 
-    /** Deletes `opencode.jsonc` so the app can manage providers in `opencode.json` again (30-F5/38-F10). */
-    fun deleteJsoncConfig(): Boolean = runCatching { jsoncFile.delete() }.getOrDefault(false)
+    /** Result of deleting `opencode.jsonc` (audit-200 A7, DL-002). */
+    sealed interface JsoncDeleteResult {
+        /** The file is gone; a backup was written to `opencode.jsonc.bak` first. */
+        data object Deleted : JsoncDeleteResult
+
+        /** There was no `opencode.jsonc` to delete — nothing changed. */
+        data object Missing : JsoncDeleteResult
+
+        /** The backup or the delete failed — the file is still there. */
+        data object Failed : JsoncDeleteResult
+    }
+
+    /** Whether `opencode.json` exists — it becomes the effective config once the `.jsonc` is gone. */
+    fun hasJsonConfig(): Boolean = file.isFile
+
+    /**
+     * Deletes `opencode.jsonc` so the app can manage providers in `opencode.json`
+     * again (30-F5/38-F10).
+     *
+     * Audit-200 A7 (DL-002): the file may hold settings written by hand —
+     * providers and MCP blocks the app never sees — so a backup is written
+     * to `opencode.jsonc.bak` FIRST, and the file is only deleted when the
+     * backup landed. A failed backup refuses the delete instead of
+     * destroying the only copy.
+     */
+    fun deleteJsoncConfig(): JsoncDeleteResult {
+        if (!jsoncFile.isFile) return JsoncDeleteResult.Missing
+        val backup = File(dir, "opencode.jsonc.bak")
+        val backedUp = runCatching { jsoncFile.copyTo(backup, overwrite = true) }.isSuccess
+        if (!backedUp) {
+            Log.w(TAG, "Refusing to delete opencode.jsonc: the .bak backup failed")
+            return JsoncDeleteResult.Failed
+        }
+        return if (runCatching { jsoncFile.delete() }.getOrDefault(false)) {
+            JsoncDeleteResult.Deleted
+        } else {
+            Log.w(TAG, "Could not delete opencode.jsonc after writing the .bak backup")
+            JsoncDeleteResult.Failed
+        }
+    }
 
     private fun updateAntigravityFile(mutator: (JSONObject) -> Boolean): Boolean {
         if (!antigravityAccountsFile.isFile) return false

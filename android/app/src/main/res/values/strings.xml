@@ -896,6 +896,10 @@
     <string name="providers_name_taken">A provider with this name already exists</string>
     <string name="providers_config_jsonc_blocks_write">Providers are stored in opencode.jsonc, which this app does not write. Delete opencode.jsonc to let the app manage providers.</string>
     <string name="providers_delete_jsonc">Delete opencode.jsonc</string>
+    <string name="providers_delete_jsonc_title">Delete opencode.jsonc?</string>
+    <string name="providers_delete_jsonc_body">opencode.jsonc may hold settings you wrote by hand — providers and MCP blocks the app does not manage. A backup is saved as opencode.jsonc.bak first, and providers are then managed in opencode.json.</string>
+    <string name="providers_jsonc_deleted_with_json">opencode.jsonc deleted. A backup was saved as opencode.jsonc.bak. Providers now come from opencode.json.</string>
+    <string name="providers_jsonc_deleted_fresh">opencode.jsonc deleted. A backup was saved as opencode.jsonc.bak. Providers will be managed in a new opencode.json.</string>
     <string name="providers_config_unreadable">Config file %1$s could not be read: %2$s. The provider list may be incomplete.</string>
     <string name="providers_stale_key">New key saved for %1$s, but the old one is still stored.</string>
     <string name="cmd_init_desc">Initialize project workspace or configuration</string>
