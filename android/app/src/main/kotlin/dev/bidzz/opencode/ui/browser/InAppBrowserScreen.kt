@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.os.Environment
 import android.util.Log
 import android.webkit.URLUtil
@@ -32,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -148,13 +150,24 @@ fun InAppBrowserScreen(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    var currentUrl by remember { mutableStateOf(url) }
-    var pageTitle by remember { mutableStateOf("") }
-    var progress by remember { mutableIntStateOf(0) }
-    var canGoBack by remember { mutableStateOf(false) }
-    var canGoForward by remember { mutableStateOf(false) }
+    // 69-F13: the browser state survives a recreate (fold, rotation)
+    // instead of reloading the entry URL from scratch. Keyed on the
+    // entry URL so opening a different link resets the display state.
+    var currentUrl by rememberSaveable(url) { mutableStateOf(url) }
+    var pageTitle by rememberSaveable(url) { mutableStateOf("") }
+    var progress by rememberSaveable(url) { mutableIntStateOf(0) }
+    var canGoBack by rememberSaveable(url) { mutableStateOf(false) }
+    var canGoForward by rememberSaveable(url) { mutableStateOf(false) }
 
-    val webView = remember {
+    // The WebView's own history, saved on every finished page (69-F13):
+    // the saved-state registry is snapshotted at onSaveInstanceState,
+    // before onDispose, so saving only in onDispose would be too late.
+    // The URL guards the restore — a bundle from another page must never
+    // win over the entry URL of the page being opened.
+    var savedWebViewUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var savedWebViewState by rememberSaveable { mutableStateOf<Bundle?>(null) }
+
+    val webView = remember(url) {
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -195,6 +208,10 @@ fun InAppBrowserScreen(
                     currentUrl = finishedUrl
                     canGoBack = view.canGoBack()
                     canGoForward = view.canGoForward()
+                    // 69-F13: keep the latest page state saveable, so a
+                    // recreate restores this page and its history.
+                    savedWebViewUrl = finishedUrl
+                    savedWebViewState = Bundle().also { view.saveState(it) }
                 }
             }
             webChromeClient = object : WebChromeClient() {
@@ -231,10 +248,22 @@ fun InAppBrowserScreen(
                     ),
                 )
             }
-            loadUrl(url)
+            // 69-F13: restore the saved page (and its history) when this
+            // is the same URL it was saved from; otherwise load fresh.
+            // A failed restore (null back-forward list) falls back to
+            // loading the entry URL.
+            val savedState = savedWebViewState
+            val restored = savedState != null && savedWebViewUrl == url &&
+                restoreState(savedState) != null
+            if (!restored) {
+                loadUrl(url)
+            }
         }
     }
-    DisposableEffect(Unit) {
+    // Keyed on the instance: a URL change drops the old WebView, and
+    // leaving the screen destroys it — the old DisposableEffect(Unit)
+    // did neither when the remembered instance was replaced.
+    DisposableEffect(webView) {
         onDispose { webView.destroy() }
     }
 

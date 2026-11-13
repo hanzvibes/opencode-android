@@ -78,9 +78,14 @@ class OpenCodeApplication : Application() {
     var lastSessionID: String?
         get() = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_LAST_SESSION, null)
         set(value) {
+            // 69-F10: commit(), not apply() — the id must be on disk before
+            // this returns. A force-stop in the window between a session
+            // switch and the async flush used to lose the remembered
+            // session. One small string write; the setter already runs on
+            // the main thread.
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
                 if (value == null) remove(KEY_LAST_SESSION) else putString(KEY_LAST_SESSION, value)
-            }.apply()
+            }.commit()
         }
 
     /** Fallback status published when the binary never resolved. */
