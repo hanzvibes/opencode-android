@@ -236,6 +236,59 @@ data class ShadowTokens(
     /** White-card edge width: 1dp (colour is [OpenCodeColors.cardBorder]). */
     val cardBorderWidth: Dp = 1.dp,
 )
+
+/**
+ * One Aura shadow: TWO layers, the way Aura draws it (extracted CSS from
+ * the Muse app: `0 1dp 2dp rgba(0,0,0,0.06)` + `0 8dp 24dp rgba(0,0,0,0.05)`).
+ *
+ * Compose's single [Modifier.shadow] collapses two layers into one
+ * elevation (see [ShadowTokens]); Aura keeps both, so [Modifier.auraShadow]
+ * in `ui/Aura.kt` chains two shadow calls — one per layer. Each layer is
+ * a [ShadowSpec] whose elevation is the layer's blur and whose ambient
+ * and spot colours are both the layer's alpha, because a layer has one
+ * alpha, not the ambient/spot split of the collapsed form.
+ */
+@Immutable
+data class AuraShadow(
+    /** Small ambient layer: 6% black, 2dp blur. */
+    val ambient: ShadowSpec,
+    /** Key layer: 5% black, 8dp blur (card) / 16dp (raised). */
+    val key: ShadowSpec,
+)
+
+/**
+ * Aura two-layer shadow tokens (light theme only; dark keeps the flat
+ * hairline treatment, like [ShadowTokens]).
+ */
+@Immutable
+data class AuraShadowTokens(
+    /** Floating Aura card: ambient 2dp / 6% + key 8dp / 5%. */
+    val card: AuraShadow = AuraShadow(
+        ambient = ShadowSpec(
+            elevation = 2.dp,
+            ambientColor = Color(0x0F000000),
+            spotColor = Color(0x0F000000),
+        ),
+        key = ShadowSpec(
+            elevation = 8.dp,
+            ambientColor = Color(0x0D000000),
+            spotColor = Color(0x0D000000),
+        ),
+    ),
+    /** One step above [card]: sheets, dialogs — ambient 4dp + key 16dp. */
+    val raised: AuraShadow = AuraShadow(
+        ambient = ShadowSpec(
+            elevation = 4.dp,
+            ambientColor = Color(0x0F000000),
+            spotColor = Color(0x0F000000),
+        ),
+        key = ShadowSpec(
+            elevation = 16.dp,
+            ambientColor = Color(0x0D000000),
+            spotColor = Color(0x0D000000),
+        ),
+    ),
+)
 @Immutable
 data class Dimensions(
     /** Minimum touch target. Below this, Android accessibility guidance is violated. */
@@ -286,5 +339,7 @@ data class OpenCodeTokens(
     val dimensions: Dimensions = Dimensions(),
     val elevation: Elevation = Elevation(),
     val shadow: ShadowTokens = ShadowTokens(),
+    /** Aura two-layer shadows (see [AuraShadowTokens]). */
+    val auraShadow: AuraShadowTokens = AuraShadowTokens(),
     val alpha: AlphaTokens = AlphaTokens(),
 )

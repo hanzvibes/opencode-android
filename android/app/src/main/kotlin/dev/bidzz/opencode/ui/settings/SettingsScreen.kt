@@ -59,6 +59,7 @@ import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.AppRadioButton
 import dev.bidzz.opencode.ui.AppTag
 import dev.bidzz.opencode.ui.CardGroup
+import dev.bidzz.opencode.ui.HatchSection
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.IconBadge
@@ -738,21 +739,23 @@ private fun EngineStatusCard(
     }
 }
 
-/** A titled group: Apple-style inset uppercase section header above a grouped card surface. */
+/**
+ * A titled group: an Aura section ([HatchSection]) — sentence-case faint
+ * label above an Aura card (two-layer shadow, #E9EAED border in light).
+ * It replaces the Apple-style uppercase header + whiteCard group: same
+ * rows, Aura treatment. Rows carry their own 12dp horizontal padding,
+ * so the card itself gets 0.dp inner padding here.
+ */
 @Composable
 private fun Section(titleRes: Int, content: @Composable ColumnScope.() -> Unit) {
-    val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    Text(
-        text = stringResource(titleRes).uppercase(),
-        style = OpenCodeTypography.caption.copy(letterSpacing = 0.6.sp),
-        color = colors.onSurfaceFaint,
-        modifier = Modifier.padding(start = spacing.sm, top = spacing.xl, bottom = spacing.xs),
+    HatchSection(
+        title = stringResource(titleRes),
+        modifier = Modifier.padding(top = spacing.xl),
+        contentPadding = 0.dp,
+        content = content,
     )
-    // Floating white card (White B): grouped rows sit on #FFFFFF with the
-    // shadow tokens, not on a grey fill, against the #F9F9FA page.
-    CardGroup(content = content)
 }
 
 /**
