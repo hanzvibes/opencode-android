@@ -72,9 +72,11 @@ fun WebSearchScreen(
 
     LaunchedEffect(Unit) { onRefreshProviders() }
 
+    // message() is @Composable, so resolve it here — not inside LaunchedEffect.
+    val failureMessage = state.failure?.message()
     LaunchedEffect(state.failure) {
-        val failure = state.failure ?: return@LaunchedEffect
-        (context.applicationContext as OpenCodeApplication).showSnackbar(failure.message())
+        val message = failureMessage ?: return@LaunchedEffect
+        (context.applicationContext as OpenCodeApplication).showSnackbar(message)
         onClearFailure()
     }
 
