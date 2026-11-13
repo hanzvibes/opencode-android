@@ -916,7 +916,10 @@ fun ToolStep(
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Medium,
                                         ),
-                                        color = colors.toolRunning,
+                                        // 47-F4: the pill text sits on a 12%
+                                        // tint of the same colour — the plain
+                                        // token is only 4.09:1 in dark.
+                                        color = colors.toolRunningText,
                                     )
                                 }
                             }
@@ -935,7 +938,10 @@ fun ToolStep(
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Medium,
                                         ),
-                                        color = colors.danger,
+                                        // 47-F4: same tint problem as the
+                                        // running pill — plain danger is
+                                        // only 4.40:1 in dark.
+                                        color = colors.toolErrorText,
                                     )
                                 }
                             }
@@ -1271,6 +1277,9 @@ private fun TerminalConsoleBlock(
                         // 65-F4: the check only flips on a real copy.
                         if (setClipboardText(clipboardManager, AnnotatedString(copyText))) copied = true
                     }
+                    // 47-F7: a 2.dp vertical pad is only ~18dp tall — the
+                    // minimum touch target is 48dp.
+                    .defaultMinSize(minHeight = 48.dp)
                     .padding(horizontal = spacing.xs, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.xxs),
@@ -1411,13 +1420,17 @@ private fun toolKindFor(name: String): ToolKind = when (name.lowercase()) {
 }
 
 private fun badgeColorForKind(kind: ToolKind, colors: OpenCodeColors): Color = when (kind) {
-    ToolKind.SHELL -> colors.accentText
+    // 47-F3: the badge label is 9sp bold mono on a 14% tint of itself
+    // over the assistant bubble, so the blue kinds use the dedicated
+    // badge text token — accentText is only 4.27:1 (light) / 3.95:1
+    // (dark) there, badgeAccentText is 6.14:1 / 6.77:1.
+    ToolKind.SHELL -> colors.badgeAccentText
     ToolKind.READ -> colors.success
     ToolKind.WRITE -> colors.warning
     ToolKind.EDIT -> colors.warning
-    ToolKind.SEARCH -> colors.syntaxKeyword
+    ToolKind.SEARCH -> colors.badgeAccentText
     ToolKind.LIST -> colors.syntaxNumber
-    ToolKind.FETCH -> colors.accentText
+    ToolKind.FETCH -> colors.badgeAccentText
     ToolKind.OTHER -> colors.onSurfaceMuted
 }
 
@@ -1774,6 +1787,9 @@ private fun InlineDiffBlock(
                         // 65-F4: the check only flips on a real copy.
                         if (setClipboardText(clipboardManager, AnnotatedString(patchText))) copied = true
                     }
+                    // 47-F7: same 48dp minimum touch target as the output
+                    // copy button above.
+                    .defaultMinSize(minHeight = 48.dp)
                     .padding(horizontal = spacing.xs, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.xxs),

@@ -86,6 +86,23 @@ object Palette {
     // #0A84FF is only 3.65:1, so dark fills never use darkAccent itself.
     val darkAccentFill = Color(0xFF0066CC)
 
+    // ---- Text variants for tinted badges/pills (Fase 6j, 47-F3/47-F4) ----
+    // The plain status blues/red fail AA as small text on their own tint
+    // over the assistant bubble (#0A84FF: badge 3.95:1, running pill
+    // 4.09:1; #FF453A failed pill 4.40:1). The lightened variants below
+    // are the text-safe versions for the dark theme; the light theme
+    // keeps its existing AA text tokens for the pills.
+    // Badge kind-label text: 6.77:1 on the badge tint #25343D (14%
+    // #5AC8FA over #1C1C1E). Same value as darkSyntaxKeyword — kept
+    // explicit so a syntax change cannot silently break badge contrast.
+    val darkBadgeAccentText = Color(0xFF5AC8FA)
+    // Running pill text: 7.88:1 on the pill tint #1A2839 (12% #0A84FF
+    // over #1C1C1E).
+    val darkToolRunningText = Color(0xFF5AC8FA)
+    // Failed pill text: 6.56:1 on the pill tint #372121 (12% #FF453A
+    // over #1C1C1E).
+    val darkToolErrorText = Color(0xFFFF8A80)
+
     // NEUTRAL user bubble (Phase 1 §7): not blue. Since Opsi B it is one
     // step ABOVE the assistant bubble (#2C2C30 vs #1C1C1E, 1.22:1) — when
     // both were the raised surface, only position/avatar/tail told the
@@ -199,6 +216,16 @@ object Palette {
     // text or icons. White on #005FCC is 5.98:1 (AA); white on the bright
     // #007AFF is only 4.02:1, so light fills never use lightAccent itself.
     val lightAccentFill = Color(0xFF005FCC)
+
+    // ---- Text variants for tinted badges/pills (Fase 6j, 47-F3/92-F6) ----
+    // Badge kind-label text: accentText #005FCC is only 4.27:1 on the
+    // badge tint #CEDBEC (14% accentText over the assistant bubble
+    // #EFEFF1), so the badge needs its own darker blue: 6.14:1 there.
+    val lightBadgeAccentText = Color(0xFF004A99)
+    // Inverse primary (snackbar action) for the light theme: the dark
+    // accent fill #0066CC is only 3.06:1 on the inverse surface #1C1C1E,
+    // so the snackbar action uses this lighter blue instead: 7.60:1.
+    val lightInversePrimary = Color(0xFF66B2FF)
 
     // ---- Syntax roles for code blocks ----
     // SINGLE source of truth (Phase 1 §5). The slate/violet palette

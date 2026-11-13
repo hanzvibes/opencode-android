@@ -566,7 +566,9 @@ private fun SelectableOptionRow(
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                     fontSize = 13.sp,
                 ),
-                color = if (isSelected) colors.accent else colors.onSurface,
+                // 47-F1: the selected option label is text — accent is
+                // only 3.17:1 on its tint in light.
+                color = if (isSelected) colors.accentText else colors.onSurface,
             )
             if (!option.description.isNullOrBlank()) {
                 Text(
@@ -677,7 +679,9 @@ private fun WriteInOptionRow(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                 ),
-                color = if (isActive) colors.accent else colors.onSurfaceMuted,
+                // 47-F1: the active "Other" label is text — accent is
+                // only 3.34:1 on its tint in light.
+                color = if (isActive) colors.accentText else colors.onSurfaceMuted,
             )
         }
 

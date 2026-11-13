@@ -39,7 +39,7 @@ data class VcsFileStatus(
     val file: String,
     val additions: Int = 0,
     val deletions: Int = 0,
-    /** "added", "deleted" or "modified". */
+    /** "added", "deleted", "modified", "renamed" or "untracked". */
     val status: String,
 )
 

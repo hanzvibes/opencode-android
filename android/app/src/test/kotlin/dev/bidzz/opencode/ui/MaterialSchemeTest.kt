@@ -180,6 +180,22 @@ class MaterialSchemeTest {
     }
 
     @Test
+    fun `inverse primary is AA on inverse surface in both themes`() {
+        // Fase 6j (92-F6): the snackbar action uses inversePrimary on the
+        // inverse surface. The old light value (#0066CC) was only 3.06:1
+        // on #1C1C1E — the one snackbar action in the app (retry saving
+        // code) was the hardest text to read exactly when it mattered.
+        for ((colors, dark) in listOf(darkColors() to true, lightColors() to false)) {
+            val scheme = materialColorScheme(colors, dark)
+            assertTrue(
+                "inversePrimary on inverseSurface is " +
+                    "${contrastRatio(scheme.inversePrimary, scheme.inverseSurface)}, below AA 4.5:1",
+                contrastRatio(scheme.inversePrimary, scheme.inverseSurface) >= 4.5,
+            )
+        }
+    }
+
+    @Test
     fun `outline scrim inverse and tint read own tokens`() {
         for ((colors, dark) in listOf(darkColors() to true, lightColors() to false)) {
             val scheme = materialColorScheme(colors, dark)
@@ -195,7 +211,7 @@ class MaterialSchemeTest {
         val light = materialColorScheme(lightColors(), false)
         assertEquals(Palette.darkSurfaceRaised.toArgb(), light.inverseSurface.toArgb())
         assertEquals(Palette.darkOnSurface.toArgb(), light.inverseOnSurface.toArgb())
-        assertEquals(Palette.darkAccentFill.toArgb(), light.inversePrimary.toArgb())
+        assertEquals(Palette.lightInversePrimary.toArgb(), light.inversePrimary.toArgb())
         val dark = materialColorScheme(darkColors(), true)
         assertEquals(Palette.lightSurfaceRaised.toArgb(), dark.inverseSurface.toArgb())
         assertEquals(Palette.lightOnSurface.toArgb(), dark.inverseOnSurface.toArgb())

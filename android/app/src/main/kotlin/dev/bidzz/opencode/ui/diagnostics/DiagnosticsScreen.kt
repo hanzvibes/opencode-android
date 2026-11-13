@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1322,7 +1323,8 @@ private fun LogTabItem(
         modifier = Modifier
             .clip(RoundedCornerShape(radius.full))
             .background(if (selected) colors.surfaceRaised else Color.Transparent)
-            .clickable(role = Role.Tab, onClick = onClick)
+            // 47-F2: a log tab announces as selected, not a plain button.
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = spacing.md, vertical = spacing.xs),
         contentAlignment = Alignment.Center,
     ) {

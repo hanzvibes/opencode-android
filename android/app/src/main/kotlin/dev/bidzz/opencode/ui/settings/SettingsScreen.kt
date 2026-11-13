@@ -279,7 +279,16 @@ fun SettingsScreen(
     val statsVisible = matchesSettingsQuery(query, statsTitle, statsSubtitle)
     val usageVisible = matchesSettingsQuery(query, usageTitle, usageSubtitle)
     val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible || configVisible || statsVisible || usageVisible
-    val languageVisible = matchesSettingsQuery(query, languageTitle, languageValue)
+    val languageVisible = matchesSettingsQuery(
+        query,
+        languageTitle,
+        // 29-F4: match every language label, not just the active one —
+        // searching for the language you want to switch TO must not hide
+        // the row you need to switch with.
+        languageLabel(AppLanguage.System),
+        languageLabel(AppLanguage.English),
+        languageLabel(AppLanguage.Indonesian),
+    )
     val visibleThemeModes = ThemeMode.entries.filter { mode ->
         matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
     }

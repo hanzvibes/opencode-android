@@ -330,7 +330,9 @@ fun RenameSessionDialog(
                 Text(
                     text = stringResource(R.string.session_action_save),
                     style = OpenCodeTypography.bodyStrong,
-                    color = if (tfv.text.isNotBlank()) colors.accent else colors.onSurfaceFaint,
+                    // 47-F1: the enabled Save label is text — accent is
+                    // only 4.02:1 on white in light.
+                    color = if (tfv.text.isNotBlank()) colors.accentText else colors.onSurfaceFaint,
                 )
             }
         },

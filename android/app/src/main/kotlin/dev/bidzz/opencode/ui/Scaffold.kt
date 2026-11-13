@@ -253,7 +253,9 @@ fun TextAction(
         Text(
             text = label,
             style = OpenCodeTypography.label,
-            color = if (enabled) colors.accent else colors.onSurfaceFaint,
+            // 47-F1: accent #007AFF is only 4.02:1 on white as text —
+            // the text-safe token is accentText (5.98:1).
+            color = if (enabled) colors.accentText else colors.onSurfaceFaint,
         )
     }
 }

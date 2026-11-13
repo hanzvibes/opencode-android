@@ -504,6 +504,8 @@
     <string name="files_status_added">Ditambahkan</string>
     <string name="files_status_modified">Diubah</string>
     <string name="files_status_deleted">Dihapus</string>
+    <string name="files_status_renamed">Diganti nama</string>
+    <string name="files_status_untracked">Belum dilacak</string>
     <string name="fileview_lines">%1$d baris</string>
     <string name="fileview_lines_unsaved">%1$d baris · belum disimpan</string>
     <string name="fileview_saving">Menyimpan…</string>
@@ -837,6 +839,7 @@
     <string name="browser_open_external">Buka di browser</string>
     <string name="browser_copy_link">Salin tautan</string>
     <string name="browser_copied">Tautan disalin</string>
+    <string name="browser_copy_url_description">Salin URL: %1$s</string>
     <string name="browser_download_started">Unduhan dimulai</string>
     <string name="browser_download_failed">Unduhan gagal</string>
     <string name="message_share">Bagikan</string>

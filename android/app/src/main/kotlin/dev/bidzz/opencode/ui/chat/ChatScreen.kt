@@ -3705,7 +3705,10 @@ private fun SessionDrawerItem(
                 Text(
                     text = preview,
                     style = OpenCodeTypography.bodySmall,
-                    color = if (selected) colors.accentText.copy(alpha = 0.75f) else colors.onSurfaceMuted,
+                    // 47-F6: accentText at 0.75 alpha is only 3.69:1 on
+                    // white — the dimming came from the alpha, not the
+                    // token; full accentText is 5.98:1.
+                    color = if (selected) colors.accentText else colors.onSurfaceMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -3715,7 +3718,7 @@ private fun SessionDrawerItem(
                 Text(
                     text = meta,
                     style = OpenCodeTypography.label,
-                    color = if (selected) colors.accentText.copy(alpha = 0.75f) else colors.onSurfaceFaint,
+                    color = if (selected) colors.accentText else colors.onSurfaceFaint,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
