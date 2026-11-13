@@ -42,7 +42,7 @@ class HatchBatch4Test {
         assertEquals(items, hatchReorderedList(items, 1, 1))
         assertEquals(items, hatchReorderedList(items, -1, 1))
         assertEquals(items, hatchReorderedList(items, 0, 3))
-        assertEquals(emptyList<String>(), hatchReorderedList(emptyList(), 0, 0))
+        assertEquals(emptyList<String>(), hatchReorderedList(emptyList<String>(), 0, 0))
     }
 
     @Test
