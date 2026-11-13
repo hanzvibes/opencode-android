@@ -329,7 +329,7 @@ fun ChatScreen(
     val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
     val dims = OpenCodeTheme.tokens.dimensions
-    val listState = rememberLazyListState()
+    val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
@@ -533,7 +533,9 @@ fun ChatScreen(
     // toggled, and the working placeholder had its own hardcoded 0 — so
     // "Thought for 12s" could jump back to "Thinking…" mid-run and the
     // placeholder→turn transition restarted the clock.
-    var busyStartedAtMs by remember { mutableLongStateOf(0L) }
+    // 69-F9: the busy start survives a remount (Chat <-> Sessions), so
+    // the timer keeps counting instead of restarting from 0.
+    var busyStartedAtMs by rememberSaveable { mutableLongStateOf(0L) }
     var busyElapsedSeconds by remember { mutableIntStateOf(0) }
     LaunchedEffect(state.busy) {
         if (state.busy) {
@@ -826,9 +828,11 @@ fun ChatScreen(
     // opens it as a dialog with its own search field, typing @ in the draft
     // opens it inline with the composer as the search field. The mention
     // query is derived from the draft, so no extra composer state is kept.
-    var attachPickerOpen by remember { mutableStateOf(false) }
-    var attachPickerQuery by remember { mutableStateOf("") }
-    var attachSelectedIndex by remember { mutableIntStateOf(0) }
+    // 69-F7: the picker state is saveable, so a recreate does not close
+    // the picker (or clear what was typed in it).
+    var attachPickerOpen by rememberSaveable { mutableStateOf(false) }
+    var attachPickerQuery by rememberSaveable { mutableStateOf("") }
+    var attachSelectedIndex by rememberSaveable { mutableIntStateOf(0) }
 
     val mentionQuery = remember(state.draft) { extractMentionQuery(state.draft) }
     // The command palette wins over a mention: a draft cannot be both, but

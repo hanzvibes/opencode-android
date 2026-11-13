@@ -757,6 +757,14 @@ class ChatViewModel(
                         busy = false,
                         stopping = false,
                         editingMessageId = null,
+                        // 69-F1: the transcript belongs to the dead session.
+                        // Leaving it while the id is null strands the UI:
+                        // onResume refuses to restore the remembered
+                        // session while messages are non-empty, so the
+                        // stale transcript blocks the restore forever.
+                        // The restore re-opens the session and reloads
+                        // the messages from the engine.
+                        messages = emptyList(),
                         // The engine is gone, so a prompt it was waiting on
                         // is dead too (item 22): leaving it would show
                         // buttons that silently do nothing — the repository

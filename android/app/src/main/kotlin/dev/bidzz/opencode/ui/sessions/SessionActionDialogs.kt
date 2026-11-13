@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -249,7 +250,11 @@ fun RenameSessionDialog(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
-    var tfv by remember(initialTitle) {
+    // 69-F7: the rename text survives a recreate (fold, rotation) instead
+    // of resetting to the initial title. TextFieldValue has a Saver, so
+    // rememberSaveable handles it; the initialTitle key still re-inits
+    // the field when a different session is renamed.
+    var tfv by rememberSaveable(initialTitle) {
         mutableStateOf(
             TextFieldValue(
                 text = initialTitle,

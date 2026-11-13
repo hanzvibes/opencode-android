@@ -46,6 +46,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
@@ -151,7 +152,77 @@ internal sealed interface Screen {
     data object EngineConfig : Screen
     data object About : Screen
     data class InAppBrowser(val url: String) : Screen
+
+    /**
+     * Short string key for [ScreenSaver] (audit-100 69-F4): the current
+     * screen survives a recreate instead of resetting to Chat. The
+     * `data class` screens carry one String payload after the colon.
+     */
+    fun toSavedKey(): String = when (this) {
+        Chat -> "chat"
+        Sessions -> "sessions"
+        Projects -> "projects"
+        Files -> "files"
+        is FileView -> "fileview:$path"
+        DiffList -> "difflist"
+        is Diff -> "diff:$file"
+        SessionDiff -> "sessiondiff"
+        is Inbox -> "inbox:$sessionID"
+        is MoveSession -> "movesession:$sessionID"
+        is SessionExport -> "sessionexport:$sessionID"
+        is Instructions -> "instructions:$sessionID"
+        SessionStats -> "sessionstats"
+        UsageLimits -> "usagelimits"
+        Settings -> "settings"
+        Providers -> "providers"
+        Diagnostics -> "diagnostics"
+        McpServers -> "mcpservers"
+        Plugins -> "plugins"
+        Worktrees -> "worktrees"
+        EngineConfig -> "engineconfig"
+        About -> "about"
+        is InAppBrowser -> "browser:$url"
+    }
 }
+
+/** Inverse of [Screen.toSavedKey]; an unknown key falls back to Chat. */
+internal fun screenFromSavedKey(key: String): Screen {
+    // A blank payload is a missing payload (an empty path, session id or
+    // URL names nothing) — it falls back to Chat like an unknown key.
+    val (kind, payload) = key.split(":", limit = 2).let {
+        it[0] to it.getOrNull(1)?.takeIf { part -> part.isNotEmpty() }
+    }
+    return when (kind) {
+        "chat" -> Screen.Chat
+        "sessions" -> Screen.Sessions
+        "projects" -> Screen.Projects
+        "files" -> Screen.Files
+        "fileview" -> payload?.let { Screen.FileView(it) } ?: Screen.Chat
+        "difflist" -> Screen.DiffList
+        "diff" -> payload?.let { Screen.Diff(it) } ?: Screen.Chat
+        "sessiondiff" -> Screen.SessionDiff
+        "inbox" -> payload?.let { Screen.Inbox(it) } ?: Screen.Chat
+        "movesession" -> payload?.let { Screen.MoveSession(it) } ?: Screen.Chat
+        "sessionexport" -> payload?.let { Screen.SessionExport(it) } ?: Screen.Chat
+        "instructions" -> payload?.let { Screen.Instructions(it) } ?: Screen.Chat
+        "sessionstats" -> Screen.SessionStats
+        "usagelimits" -> Screen.UsageLimits
+        "settings" -> Screen.Settings
+        "providers" -> Screen.Providers
+        "diagnostics" -> Screen.Diagnostics
+        "mcpservers" -> Screen.McpServers
+        "plugins" -> Screen.Plugins
+        "worktrees" -> Screen.Worktrees
+        "engineconfig" -> Screen.EngineConfig
+        "about" -> Screen.About
+        "browser" -> payload?.let { Screen.InAppBrowser(it) } ?: Screen.Chat
+        else -> Screen.Chat
+    }
+}
+
+/** Saves the current [Screen] across a recreate (69-F4). */
+internal val ScreenSaver: Saver<Screen, String> =
+    Saver(save = { it.toSavedKey() }, restore = { screenFromSavedKey(it) })
 
 /**
  * Where back goes from [this]: the screen it was opened from.
@@ -234,8 +305,10 @@ internal fun sessionTitleSharedKey(sessionId: String): String = sessionId
 @Composable
 @OptIn(ExperimentalSharedTransitionApi::class)
 fun OpenCodeApp(app: OpenCodeApplication) {
-    var screen by remember { mutableStateOf<Screen>(Screen.Chat) }
-    var sessionScopeToProject by remember { mutableStateOf(true) }
+    // 69-F4: the current screen, the scope toggle and the open file
+    // survive a recreate (fold, rotation) instead of resetting to Chat.
+    var screen by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf<Screen>(Screen.Chat) }
+    var sessionScopeToProject by rememberSaveable { mutableStateOf(true) }
 
     // #4d: one host for every snackbar in the app, overlaid at the root
     // (BottomCenter) below — see the collector in LaunchedEffect(Unit).
@@ -252,7 +325,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     var inflightSnackbarLong by rememberSaveable { mutableStateOf(false) }
 
     // File open in the files list-detail pane (expanded widths only).
-    var selectedFilePath by remember { mutableStateOf<String?>(null) }
+    // 69-F4: saveable, so a recreate does not close the open file.
+    var selectedFilePath by rememberSaveable { mutableStateOf<String?>(null) }
 
     val engineStatus by app.engineStatus.collectAsState()
 
