@@ -417,6 +417,7 @@
     <string name="question_write_in_hint">Ketik jawabanmu di sini…</string>
     <string name="question_submit">Kirim jawaban</string>
     <string name="question_answered">Terjawab</string>
+    <string name="question_expired">Pertanyaan ini sudah tidak bisa dijawab.</string>
     <string name="question_answer_failed">Jawaban gagal terkirim — sudah dikembalikan ke kolom ketik supaya bisa dicoba lagi.</string>
     <string name="bubble_thinking">Berpikir…</string>
     <string name="commands_no_match">Tidak ada perintah yang cocok dengan “%1$s”</string>

@@ -440,6 +440,13 @@ fun Composer(
                     horizontalArrangement = Arrangement.spacedBy(spacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                // The "/" chip stays gated on !busy (14-F3): a command
+                // executes immediately, it is never queued — tapping it
+                // mid-run would fire the command against the running turn.
+                // The three attach chips below are NOT gated: a file picked
+                // while the agent works joins the queued follow-up (the
+                // queue already carries attachments), so disabling them
+                // only made the user wait out the run to attach anything.
                 QuickActionChip(
                     label = "/",
                     glyph = null,
@@ -469,7 +476,7 @@ fun Composer(
                         label = "@",
                         glyph = null,
                         isActive = false,
-                        enabled = enabled && !busy,
+                        enabled = enabled,
                         contentDescription = stringResource(R.string.composer_mention),
                         onClick = { onAttachFile() },
                     )
@@ -480,7 +487,7 @@ fun Composer(
                         label = "",
                         glyph = Glyph.File,
                         isActive = false,
-                        enabled = enabled && !busy,
+                        enabled = enabled,
                         contentDescription = stringResource(R.string.composer_attach),
                         onClick = { onAttachDeviceFile() },
                     )
@@ -491,7 +498,7 @@ fun Composer(
                         label = "",
                         glyph = Glyph.Camera,
                         isActive = false,
-                        enabled = enabled && !busy,
+                        enabled = enabled,
                         contentDescription = stringResource(R.string.composer_take_photo),
                         onClick = { onTakePhoto() },
                     )

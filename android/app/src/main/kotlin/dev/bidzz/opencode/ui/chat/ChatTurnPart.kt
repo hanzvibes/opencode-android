@@ -71,10 +71,17 @@ fun buildTurnParts(
     for (block in content) {
         when (block.type) {
             "reasoning" -> {
-                val rText = block.text?.trim()
-                if (!rText.isNullOrEmpty()) {
-                    if (reasoningBuilder.isNotEmpty()) reasoningBuilder.append("\n\n")
-                    reasoningBuilder.append(rText)
+                // 01-F1: explicitReasoning IS these blocks
+                // (SessionMessage.reasoningText joins the same reasoning
+                // blocks), so appending them again shows the thinking
+                // twice in the disclosure. Only take the blocks when no
+                // explicit text was given.
+                if (explicitReasoning.isNullOrBlank()) {
+                    val rText = block.text?.trim()
+                    if (!rText.isNullOrEmpty()) {
+                        if (reasoningBuilder.isNotEmpty()) reasoningBuilder.append("\n\n")
+                        reasoningBuilder.append(rText)
+                    }
                 }
             }
 
@@ -140,7 +147,15 @@ fun buildTurnParts(
 
     // If still empty, fall back to parsing plain fallbackText (with <think> detection)
     if (parts.isEmpty()) {
-        val parsed = parseThinkingContent(fallbackText, explicitReasoning)
+        // 01-F9 (same root as 01-F1): parseThinkingContent returns the
+        // explicit reasoning back when there is no <think> block, so
+        // passing it while the builder already holds it appends the
+        // same text a second time on reasoning-only turns. Pass it only
+        // when the builder is empty — then it is the only source.
+        val parsed = parseThinkingContent(
+            fallbackText,
+            explicitReasoning.takeIf { reasoningBuilder.isEmpty() },
+        )
         if (!parsed.reasoning.isNullOrBlank()) {
             if (reasoningBuilder.isNotEmpty()) reasoningBuilder.append("\n\n")
             reasoningBuilder.append(parsed.reasoning)

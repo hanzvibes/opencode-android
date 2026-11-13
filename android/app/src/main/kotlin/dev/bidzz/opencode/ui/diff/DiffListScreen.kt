@@ -278,13 +278,31 @@ private fun ChangedFileCardItem(
     }
 }
 
+/**
+ * The one-letter badge for a file's git status (audit-100 Fase 6b, 24-F6):
+ * only the three statuses the engine documents get a letter. Anything
+ * else reads "?" — the old `else -> "M"` labelled an unknown status (a
+ * renamed or untracked file, if the engine ever sends one) as Modified,
+ * which is a lie the user acts on. The engine's status vocabulary is
+ * unverified beyond added/deleted/modified, so no renamed/untracked
+ * letters are hardcoded here.
+ */
+internal fun gitStatusLabel(status: String): String = when (status) {
+    "added" -> "A"
+    "deleted" -> "D"
+    "modified" -> "M"
+    else -> "?"
+}
+
 @Composable
 private fun GitStatusBadge(status: String) {
     val colors = OpenCodeTheme.colors
-    val (tint, label) = when (status) {
-        "added" -> colors.success to "A"
-        "deleted" -> colors.danger to "D"
-        else -> colors.warning to "M"
+    val label = gitStatusLabel(status)
+    val tint = when (label) {
+        "A" -> colors.success
+        "D" -> colors.danger
+        "M" -> colors.warning
+        else -> colors.onSurfaceFaint
     }
     Box(
         modifier = Modifier

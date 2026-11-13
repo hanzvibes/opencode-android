@@ -134,6 +134,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -186,6 +187,13 @@ import kotlinx.coroutines.withContext
 fun ChatScreen(
     state: ChatUiState,
     sessions: List<SessionRow>,
+    /** Session-list load state for the drawer (19-F8): without it the
+     * drawer showed "No sessions yet" while the list was still loading
+     * or had failed — the same root as 64-F2, which the sessions screen
+     * already handles with three states. */
+    sessionsLoading: Boolean = false,
+    sessionsFailure: ApiResult.Failure? = null,
+    sessionsFailureKey: Int? = null,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -357,6 +365,13 @@ fun ChatScreen(
 
     var lastReadMessageCount by remember { mutableStateOf(state.messages.size) }
 
+    // The id behind the count (01-F2): persisted instead of the count, so
+    // prepends and relaunches cannot shift the watermark. Null until the
+    // first restore or advance; kept even when the id is windowed out
+    // (count 0) — loading earlier can bring it back into the window, and
+    // the resolver then lands on the right message again.
+    var lastReadMessageId by remember { mutableStateOf<String?>(null) }
+
     // Read watermark, persisted per session (#6d): the in-memory count died
     // with the process, so returning to a session always showed a phantom
     // unread badge. The store is read on open (see the session effect
@@ -365,9 +380,14 @@ fun ChatScreen(
     // never inside remember {} (that lambda is not a @Composable context).
     val appContext = LocalContext.current.applicationContext
     val readPositionStore = remember { ReadPositionStore(appContext) }
-    fun saveReadCount() {
-        val id = state.sessionID ?: return
-        readPositionStore.putReadCount(id, lastReadMessageCount)
+    fun saveReadPosition(sessionId: String? = state.sessionID) {
+        val id = sessionId ?: return
+        val messageId = lastReadMessageId ?: return
+        // An optimistic bubble ("local:...") is not an engine message: it
+        // will never resolve on reopen, so persisting it would pin the
+        // watermark at 0.
+        if (messageId.startsWith("local:")) return
+        readPositionStore.putReadMessageId(id, messageId)
     }
 
     // Load-earlier anchor (#6d): captured when the reader taps "load
@@ -393,6 +413,19 @@ fun ChatScreen(
                     newHeadOffset = newHeadOffset,
                 )
                 listState.scrollToItem(target, anchor.offset)
+                // The prepend shifted the watermark's index with it (01-F2):
+                // the id is unchanged, but the in-memory count must follow
+                // the message it points past, or the badge counts the newly
+                // loaded messages as unread. Recomputed from the id, not by
+                // shifting the count: a shift would also move a 0 count
+                // (id windowed out) and misplace an id the prepend just
+                // brought back into the window. A "local:" id is skipped —
+                // the optimistic bubble was replaced by the engine echo
+                // under a different id, and the count is already right.
+                val readId = lastReadMessageId
+                if (readId != null && !readId.startsWith("local:")) {
+                    lastReadMessageCount = resolveReadCount(readId, state.messages)
+                }
             }
             pendingAnchor = null
         }
@@ -421,7 +454,8 @@ fun ChatScreen(
     LaunchedEffect(nearBottom, state.messages.size) {
         if (nearBottom) {
             lastReadMessageCount = state.messages.size
-            saveReadCount()
+            lastReadMessageId = state.messages.lastOrNull()?.id
+            saveReadPosition()
         }
     }
 
@@ -487,7 +521,8 @@ fun ChatScreen(
     LaunchedEffect(firstUnreadVisible, firstUnreadIndex) {
         if (firstUnreadVisible && firstUnreadIndex >= 0) {
             lastReadMessageCount = firstUnreadIndex + 1
-            saveReadCount()
+            lastReadMessageId = state.messages.getOrNull(firstUnreadIndex)?.id
+            saveReadPosition()
         }
     }
 
@@ -748,10 +783,13 @@ fun ChatScreen(
     // comment was wrong, both effects ran through the same mutex.
     LaunchedEffect(state.sessionID, state.messages.size) {
         if (state.messages.isNotEmpty() && scrolledSessionID != state.sessionID) {
-            scrolledSessionID?.let { readPositionStore.putReadCount(it, lastReadMessageCount) }
-            val restored = state.sessionID?.let { readPositionStore.getReadCount(it) }
-                ?.coerceIn(0, state.messages.size)
-            lastReadMessageCount = restored ?: state.messages.size
+            scrolledSessionID?.let { saveReadPosition(it) }
+            // The watermark is a message id (01-F2): resolved to a count
+            // against the messages actually in the window — no coerceIn
+            // clamp, a count was exactly what the prepends broke.
+            val restoredId = state.sessionID?.let { readPositionStore.getReadMessageId(it) }
+            lastReadMessageCount = resolveReadCount(restoredId, state.messages)
+            lastReadMessageId = restoredId ?: state.messages.lastOrNull()?.id
             scrolledSessionID = state.sessionID
             val firstUnread = state.messages.withIndex().firstOrNull { (index, message) ->
                 index >= lastReadMessageCount && message.role == Role.ASSISTANT
@@ -1229,8 +1267,12 @@ fun ChatScreen(
                                         // from real dates, not from message order.
                                         val createdAt = message.createdAtMillis
                                         val prevCreatedAt = prevMessage?.createdAtMillis
-                                        val showDateDivider = createdAt != null &&
-                                            (prevCreatedAt == null || !isSameDay(prevCreatedAt, createdAt))
+                                        val showDateDivider = shouldShowDateDivider(
+                                            createdAt,
+                                            prevCreatedAt,
+                                            isFirstInWindow = index == 0,
+                                            hasMoreOlder = state.hasMoreOlder,
+                                        )
                                         if (showDateDivider && createdAt != null) {
                                             // Fades in on entry instead of
                                             // popping in with the message.
@@ -1818,6 +1860,10 @@ fun ChatScreen(
                         projectTitle = headerTitle(state.workspacePath),
                         currentSessionID = state.sessionID,
                         sessions = sessions,
+                        sessionsLoading = sessionsLoading,
+                        sessionsFailure = sessionsFailure,
+                        sessionsFailureKey = sessionsFailureKey,
+                        onRetrySessions = onDrawerOpen,
                         sessionDetails = sessionDetails,
                         engineState = engineState,
                         busy = busy,
@@ -1861,6 +1907,10 @@ fun ChatScreen(
                         projectTitle = headerTitle(state.workspacePath),
                         currentSessionID = state.sessionID,
                         sessions = sessions,
+                        sessionsLoading = sessionsLoading,
+                        sessionsFailure = sessionsFailure,
+                        sessionsFailureKey = sessionsFailureKey,
+                        onRetrySessions = onDrawerOpen,
                         sessionDetails = sessionDetails,
                         engineState = engineState,
                         busy = busy,
@@ -1885,6 +1935,25 @@ fun ChatScreen(
             }
         }
     }
+}
+
+/**
+ * Whether the message at this position starts a date divider (audit-100
+ * Fase 6b, 01-F7): a new day in the transcript gets a labelled hairline.
+ * The first message of a loaded window gets one only when there is nothing
+ * older to load — otherwise its date is not a day boundary, it is just
+ * where the window happened to start, and the divider would sit above a
+ * message whose day-mates are one "Load earlier" tap away.
+ */
+internal fun shouldShowDateDivider(
+    createdAt: Long?,
+    prevCreatedAt: Long?,
+    isFirstInWindow: Boolean,
+    hasMoreOlder: Boolean,
+): Boolean {
+    if (createdAt == null) return false
+    if (isFirstInWindow && hasMoreOlder) return false
+    return prevCreatedAt == null || !isSameDay(prevCreatedAt, createdAt)
 }
 
 private fun isSameDay(aMillis: Long, bMillis: Long): Boolean {
@@ -2812,6 +2881,10 @@ private fun ChatDrawer(
     projectTitle: String,
     currentSessionID: String?,
     sessions: List<SessionRow>,
+    sessionsLoading: Boolean = false,
+    sessionsFailure: ApiResult.Failure? = null,
+    sessionsFailureKey: Int? = null,
+    onRetrySessions: () -> Unit = {},
     sessionDetails: Map<String, SessionDetail>,
     engineState: EngineState,
     busy: Boolean,
@@ -2847,6 +2920,10 @@ private fun ChatDrawer(
                 projectTitle = projectTitle,
                 currentSessionID = currentSessionID,
                 sessions = sessions,
+                sessionsLoading = sessionsLoading,
+                sessionsFailure = sessionsFailure,
+                sessionsFailureKey = sessionsFailureKey,
+                onRetrySessions = onRetrySessions,
                 sessionDetails = sessionDetails,
                 engineState = engineState,
                 busy = busy,
@@ -2892,6 +2969,10 @@ private fun ChatDrawerContent(
     projectTitle: String,
     currentSessionID: String?,
     sessions: List<SessionRow>,
+    sessionsLoading: Boolean = false,
+    sessionsFailure: ApiResult.Failure? = null,
+    sessionsFailureKey: Int? = null,
+    onRetrySessions: () -> Unit = {},
     sessionDetails: Map<String, SessionDetail>,
     engineState: EngineState,
     busy: Boolean,
@@ -3064,6 +3145,11 @@ private fun ChatDrawerContent(
         // centred "No sessions yet" filled the whole middle of the
         // drawer with dead space. The list area still takes the
         // remaining height (weight(1f)) so the footer stays at the bottom.
+        // Three states, mirroring SessionListPane (19-F8): loading, a
+        // failed load with Retry, and truly empty. Loading and failure
+        // only claim the area while no rows exist at all — a refresh over
+        // loaded rows keeps showing them, and a search that matches
+        // nothing still says so instead of crying failure.
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -3076,24 +3162,48 @@ private fun ChatDrawerContent(
                     .padding(horizontal = spacing.lg, vertical = spacing.xl),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(
-                    text = if (sidebarQuery.isBlank()) {
-                        stringResource(R.string.drawer_no_sessions)
-                    } else {
-                        stringResource(R.string.history_search_no_results, sidebarQuery)
-                    },
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.onSurfaceMuted,
-                    textAlign = TextAlign.Center,
-                )
-                if (sidebarQuery.isBlank()) {
-                    Text(
-                        text = stringResource(R.string.sidebar_empty_hint),
-                        style = OpenCodeTypography.caption,
-                        color = colors.onSurfaceFaint,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = spacing.xs),
-                    )
+                when {
+                    sessionsLoading && sessions.isEmpty() -> {
+                        Text(
+                            text = stringResource(R.string.common_loading),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    (sessionsFailure != null || sessionsFailureKey != null) && sessions.isEmpty() -> {
+                        Text(
+                            text = sessionsFailure?.message()
+                                ?: sessionsFailureKey?.let { stringResource(it) }.orEmpty(),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                            textAlign = TextAlign.Center,
+                        )
+                        TextButton(onClick = onRetrySessions) {
+                            Text(stringResource(R.string.chat_retry))
+                        }
+                    }
+                    else -> {
+                        Text(
+                            text = if (sidebarQuery.isBlank()) {
+                                stringResource(R.string.drawer_no_sessions)
+                            } else {
+                                stringResource(R.string.history_search_no_results, sidebarQuery)
+                            },
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (sidebarQuery.isBlank()) {
+                            Text(
+                                text = stringResource(R.string.sidebar_empty_hint),
+                                style = OpenCodeTypography.caption,
+                                color = colors.onSurfaceFaint,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = spacing.xs),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -3271,6 +3381,10 @@ private fun ChatSidebar(
     projectTitle: String,
     currentSessionID: String?,
     sessions: List<SessionRow>,
+    sessionsLoading: Boolean = false,
+    sessionsFailure: ApiResult.Failure? = null,
+    sessionsFailureKey: Int? = null,
+    onRetrySessions: () -> Unit = {},
     sessionDetails: Map<String, SessionDetail>,
     engineState: EngineState,
     busy: Boolean,
@@ -3304,6 +3418,10 @@ private fun ChatSidebar(
             projectTitle = projectTitle,
             currentSessionID = currentSessionID,
             sessions = sessions,
+            sessionsLoading = sessionsLoading,
+            sessionsFailure = sessionsFailure,
+            sessionsFailureKey = sessionsFailureKey,
+            onRetrySessions = onRetrySessions,
             sessionDetails = sessionDetails,
             engineState = engineState,
             busy = busy,

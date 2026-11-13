@@ -132,6 +132,11 @@ fun InlineQuestionCard(
             // "Answered" only when there is actually an answer to show;
             // a finished call with a blank output is not an answered one.
             val sectionDone = sectionResolved != null
+            // A call that is done with no recorded answer is expired
+            // (10-F2): the engine already moved on, so the question can
+            // no longer be answered — showing the form invites a tap that
+            // fails and drops the answer back into the composer.
+            val sectionExpired = call.isDone && sectionResolved == null
             // Keyed per question: without the key, a section's selected
             // option / write-in state could survive into the next question
             // when the list changes.
@@ -142,6 +147,7 @@ fun InlineQuestionCard(
                     totalQuestions = questions.size,
                     isDone = sectionDone,
                     resolvedAnswer = sectionResolved,
+                    isExpired = sectionExpired,
                     onSubmit = { labels, displayText ->
                         // A second tap while the reply is still
                         // travelling is ignored (see `submitting`).
@@ -183,6 +189,7 @@ private fun SingleQuestionSection(
     totalQuestions: Int,
     isDone: Boolean,
     resolvedAnswer: String?,
+    isExpired: Boolean = false,
     onSubmit: (labels: List<String>, displayText: String) -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -323,6 +330,15 @@ private fun SingleQuestionSection(
                 )
             }
         }
+    } else if (isExpired) {
+        // Expired (10-F2): the call finished without this question being
+        // answered. No form — the engine will not accept a reply any more.
+        Text(
+            text = stringResource(R.string.question_expired),
+            style = OpenCodeTypography.caption,
+            color = colors.onSurfaceMuted,
+            modifier = Modifier.padding(top = spacing.xxs),
+        )
     } else {
         // Quick-reply chips (Fase 1, item 1): the short single-choice
         // answers as one-tap chips above the full list. A chip sends at

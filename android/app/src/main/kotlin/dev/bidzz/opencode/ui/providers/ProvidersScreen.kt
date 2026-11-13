@@ -59,6 +59,7 @@ import dev.bidzz.opencode.core.engine.AntigravityPatchOutcome
 import dev.bidzz.opencode.core.engine.AntigravityPatchReport
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.engine.EngineConfigStore
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
@@ -181,8 +182,20 @@ fun ProvidersScreen(
         ) {
             // Free Tier / Unconnected hero notice — a white card (Opsi B
             // #41), not a blue wash: the Sparkle icon keeps the info
-            // signal, the card edge keeps the White B surface.
-            if (state.integrations.none { it.connected } && state.customProviders.isEmpty()) {
+            // signal, the card edge keeps the White B surface. One
+            // definition of "connected" for the whole screen (31-F6): an
+            // Antigravity-only setup is connected, and so is any custom
+            // provider — the old hero ignored both and contradicted the
+            // Google card below it.
+            val anyConnected = state.integrations.any {
+                isProviderConnected(
+                    it.id,
+                    it.connected,
+                    state.customProviders,
+                    state.activeAntigravityEmail,
+                )
+            } || state.customProviders.isNotEmpty() || state.activeAntigravityEmail != null
+            if (!anyConnected) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -283,9 +296,6 @@ fun ProvidersScreen(
                 FEATURED_PROVIDERS.forEach { def ->
                     val integration = findMatchingIntegration(def, state.integrations)
                     val stored = integration?.let { rowsFor(state.credentials, it.id) } ?: emptyList()
-                    val isCustomConfigured = state.customProviders.any {
-                        it.id.contains(def.id, ignoreCase = true) || it.name.contains(def.name, ignoreCase = true)
-                    }
                     val isGoogle = def.id == "google"
                     // Honest badge (31-F1): only an account that is enabled AND has
                     // a refresh token counts as connected. A disabled account, or one
@@ -297,7 +307,16 @@ fun ProvidersScreen(
                     val hasUnusableAntigravity = isGoogle &&
                         state.activeAntigravityEmail == null && state.antigravityAccounts.isNotEmpty()
 
-                    val isConnected = (integration?.connected == true && stored.isNotEmpty()) || isCustomConfigured || (integration?.connected == true) || isAntigravityConnected
+                    // One source of truth for the badge (31-F6): the old
+                    // formula mixed the engine flag, the stored keys and
+                    // Antigravity in a way that read differently from the
+                    // hero and the catalog for the same setup.
+                    val isConnected = isProviderConnected(
+                        def.id,
+                        integration?.connected == true,
+                        state.customProviders,
+                        state.activeAntigravityEmail,
+                    )
                     val status = when {
                         isConnected -> ProviderStatus.CONNECTED
                         def.isFreeTier -> ProviderStatus.FREE_TIER
@@ -434,20 +453,28 @@ fun ProvidersScreen(
 
                 shown.forEach { integration ->
                     val stored = rowsFor(state.credentials, integration.id)
+                    // Same source of truth as the hero and the Featured card
+                    // (31-F6): a provider connected via a custom endpoint
+                    // or Antigravity must not read MISSING_KEY here.
+                    val isConnected = isProviderConnected(
+                        integration.id,
+                        integration.connected,
+                        state.customProviders,
+                        state.activeAntigravityEmail,
+                    )
                     val status = when {
-                        integration.connected -> ProviderStatus.CONNECTED
+                        isConnected -> ProviderStatus.CONNECTED
                         integration.id.equals("opencode", ignoreCase = true) || integration.id.equals("zen", ignoreCase = true) -> ProviderStatus.FREE_TIER
-                        integration.acceptsKey -> ProviderStatus.MISSING_KEY
                         else -> ProviderStatus.MISSING_KEY
                     }
 
                     val detail = when {
-                        integration.connected && stored.isNotEmpty() ->
+                        isConnected && stored.isNotEmpty() ->
                             stringResource(
                                 if (stored.size == 1) R.string.providers_keys_one else R.string.providers_keys_other,
                                 stored.size,
                             )
-                        integration.connected -> stringResource(R.string.providers_state_connected)
+                        isConnected -> stringResource(R.string.providers_state_connected)
                         integration.acceptsKey -> stringResource(R.string.providers_state_add_key)
                         else -> stringResource(R.string.providers_state_no_method)
                     }
@@ -458,7 +485,7 @@ fun ProvidersScreen(
                         subtitle = detail,
                         status = status,
                         onClick = when {
-                            integration.connected && stored.isNotEmpty() -> ({ manageFor = integration })
+                            isConnected && stored.isNotEmpty() -> ({ manageFor = integration })
                             integration.acceptsKey -> ({ keyFor = integration })
                             else -> null
                         },
@@ -758,18 +785,51 @@ fun ProvidersScreen(
     }
 }
 
+/**
+ * Whether a custom provider counts as the given catalog provider being
+ * configured (audit-100 Fase 6b, 31-F16): exact id match only. The old
+ * substring match marked a custom provider named "My Google Proxy" as
+ * Google CONNECTED — a custom endpoint that merely mentions a provider
+ * in its id or name is not that provider.
+ */
+internal fun isCustomConfiguredFor(
+    customProviders: List<EngineConfigStore.CustomProvider>,
+    providerId: String,
+): Boolean = customProviders.any { it.id.equals(providerId, ignoreCase = true) }
+
+/**
+ * One source of truth for "is this provider connected" (31-F6): the hero,
+ * the Featured card and the catalog row used three different definitions,
+ * so one Antigravity-only setup read "No provider connected" in the hero,
+ * CONNECTED on the Google card and MISSING_KEY in the catalog. A provider
+ * is connected when the engine says so, when a custom provider with its
+ * exact id is configured, or — for Google only — when a usable Antigravity
+ * account is active.
+ */
+internal fun isProviderConnected(
+    integrationId: String,
+    integrationConnected: Boolean,
+    customProviders: List<EngineConfigStore.CustomProvider>,
+    activeAntigravityEmail: String?,
+): Boolean {
+    if (integrationConnected) return true
+    if (isCustomConfiguredFor(customProviders, integrationId)) return true
+    return integrationId.equals("google", ignoreCase = true) && activeAntigravityEmail != null
+}
+
 /** Resolves an existing IntegrationInfo matching the given featured provider definition. */
 private fun findMatchingIntegration(def: FeaturedProviderDef, integrations: List<IntegrationInfo>): IntegrationInfo? {
     val defId = def.id.lowercase()
-    val defName = def.name.lowercase()
     return integrations.firstOrNull { info ->
         val id = info.id.lowercase()
-        val name = info.name.lowercase()
         id == defId ||
-            (defId == "google" && (id.contains("gemini") || id.contains("google"))) ||
-            (defId == "opencode" && (id == "zen" || id.contains("opencode"))) ||
-            name.contains(defName) ||
-            (defId == "google" && name.contains("gemini"))
+            // Engine id variants (31-F16): the free-tier provider reports
+            // as "zen", and the Gemini integration as "gemini" — both ARE
+            // the catalog provider, not lookalikes. Anything else must
+            // match exactly: an id or name that merely mentions the
+            // provider ("My Google Proxy") is not it.
+            (defId == "opencode" && id == "zen") ||
+            (defId == "google" && id == "gemini")
     }
 }
 
