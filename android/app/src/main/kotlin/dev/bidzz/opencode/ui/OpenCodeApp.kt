@@ -94,6 +94,10 @@ import dev.bidzz.opencode.ui.files.ExplorerScreen
 import dev.bidzz.opencode.ui.files.ExplorerViewModel
 import dev.bidzz.opencode.ui.files.FileViewScreen
 import dev.bidzz.opencode.ui.files.FileViewViewModel
+import dev.bidzz.opencode.ui.artifacts.ArtifactsScreen
+import dev.bidzz.opencode.ui.artifacts.ArtifactsViewModel
+import dev.bidzz.opencode.ui.jobs.JobsScreen
+import dev.bidzz.opencode.ui.jobs.JobsViewModel
 import dev.bidzz.opencode.ui.mcp.McpServersScreen
 import dev.bidzz.opencode.ui.mcp.McpServersViewModel
 import dev.bidzz.opencode.ui.plugin.PluginsScreen
@@ -148,10 +152,13 @@ internal sealed interface Screen {
     data object Diagnostics : Screen
     data object McpServers : Screen
     data object Plugins : Screen
+    data object Artifacts : Screen
+    data object Jobs : Screen
     data object Worktrees : Screen
     data object EngineConfig : Screen
     data object About : Screen
-    data class InAppBrowser(val url: String) : Screen
+    /** Optional Basic auth for engine URLs (artifact views); public links pass none. */
+    data class InAppBrowser(val url: String, val basicAuth: Pair<String, String>? = null) : Screen
 
     /**
      * Short string key for [ScreenSaver] (audit-100 69-F4): the current
@@ -178,6 +185,8 @@ internal sealed interface Screen {
         Diagnostics -> "diagnostics"
         McpServers -> "mcpservers"
         Plugins -> "plugins"
+        Artifacts -> "artifacts"
+        Jobs -> "jobs"
         Worktrees -> "worktrees"
         EngineConfig -> "engineconfig"
         About -> "about"
@@ -212,6 +221,8 @@ internal fun screenFromSavedKey(key: String): Screen {
         "diagnostics" -> Screen.Diagnostics
         "mcpservers" -> Screen.McpServers
         "plugins" -> Screen.Plugins
+        "artifacts" -> Screen.Artifacts
+        "jobs" -> Screen.Jobs
         "worktrees" -> Screen.Worktrees
         "engineconfig" -> Screen.EngineConfig
         "about" -> Screen.About
@@ -237,6 +248,8 @@ internal fun Screen.parent(): Screen = when (this) {
     Screen.Providers -> Screen.Settings
     Screen.McpServers -> Screen.Settings
     Screen.Plugins -> Screen.Settings
+    Screen.Artifacts -> Screen.Settings
+    Screen.Jobs -> Screen.Settings
     Screen.Worktrees -> Screen.Settings
     Screen.EngineConfig -> Screen.Settings
     is Screen.Inbox -> Screen.Sessions
@@ -260,7 +273,8 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Sessions -> 1
     Screen.Projects, Screen.Files, Screen.Settings, Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
-    Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Worktrees,
+    Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Artifacts, Screen.Jobs,
+    Screen.Worktrees,
     Screen.EngineConfig, Screen.About, is Screen.InAppBrowser,
     is Screen.Inbox, is Screen.MoveSession, is Screen.SessionExport,
     is Screen.Instructions, Screen.SessionStats, Screen.UsageLimits -> 3
@@ -428,6 +442,14 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         PluginsViewModel(app.engineApi)
     })
 
+    val artifactsViewModel: ArtifactsViewModel = viewModel(factory = viewModelFactory { _ ->
+        ArtifactsViewModel()
+    })
+
+    val jobsViewModel: JobsViewModel = viewModel(factory = viewModelFactory { _ ->
+        JobsViewModel()
+    })
+
     val worktreesViewModel: WorktreesViewModel = viewModel(factory = viewModelFactory { _ ->
         WorktreesViewModel(app.engineApi)
     })
@@ -449,6 +471,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val providersState by providersViewModel.state.collectAsState()
     val mcpServersState by mcpServersViewModel.state.collectAsState()
     val pluginsState by pluginsViewModel.state.collectAsState()
+    val artifactsState by artifactsViewModel.state.collectAsState()
+    val jobsState by jobsViewModel.state.collectAsState()
     val worktreesState by worktreesViewModel.state.collectAsState()
     val configState by configViewModel.state.collectAsState()
 
@@ -840,6 +864,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
                     is Screen.InAppBrowser -> InAppBrowserScreen(
                         url = target.url,
+                        basicAuth = target.basicAuth,
                         onBack = { screen = Screen.Chat },
                     )
 
@@ -1040,6 +1065,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onProviders = { screen = Screen.Providers },
                         onMcpServers = { screen = Screen.McpServers },
                         onPlugins = { screen = Screen.Plugins },
+                        onArtifacts = { screen = Screen.Artifacts },
+                        onJobs = { screen = Screen.Jobs },
                         onWorktrees = { screen = Screen.Worktrees },
                         onEngineConfig = { screen = Screen.EngineConfig },
                         onSessionStats = { screen = Screen.SessionStats },
@@ -1085,6 +1112,35 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         state = pluginsState,
                         onBack = { screen = Screen.Settings },
                         onRefresh = pluginsViewModel::refresh,
+                    )
+
+                    Screen.Artifacts -> ArtifactsScreen(
+                        state = artifactsState,
+                        onBack = { screen = Screen.Settings },
+                        onRefresh = artifactsViewModel::refresh,
+                        onOpen = { artifact ->
+                            // The view URL is a relative engine path; the
+                            // browser needs the engine credentials for it
+                            // (Basic auth, like every engine call). The
+                            // list only loads with a running engine, so
+                            // credentials are present whenever this fires.
+                            engineStatus.credentials?.let { creds ->
+                                screen = Screen.InAppBrowser(
+                                    url = creds.baseUrl + artifact.url,
+                                    basicAuth = "opencode" to creds.password,
+                                )
+                            }
+                        },
+                        onDelete = artifactsViewModel::delete,
+                        onClearActionFailure = artifactsViewModel::clearActionFailure,
+                    )
+
+                    Screen.Jobs -> JobsScreen(
+                        state = jobsState,
+                        onBack = { screen = Screen.Settings },
+                        onRefresh = jobsViewModel::refresh,
+                        onKindFilter = jobsViewModel::setKindFilter,
+                        onStatusFilter = jobsViewModel::setStatusFilter,
                     )
 
                     Screen.Worktrees -> WorktreesScreen(

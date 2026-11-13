@@ -2,6 +2,8 @@ package dev.bidzz.opencode.api
 
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.AgentApi
+import dev.bidzz.opencode.core.api.ArtifactApi
+import dev.bidzz.opencode.core.api.JobApi
 import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.CommandApi
 import dev.bidzz.opencode.core.api.CredentialApi
@@ -41,6 +43,8 @@ class EngineApi(private val workspaceDirectory: () -> String) {
         val skills: SkillApi,
         val mcp: McpApi,
         val plugins: PluginApi,
+        val artifacts: ArtifactApi,
+        val jobs: JobApi,
         val projects: ProjectApi,
         val worktrees: WorktreeApi,
         val config: ConfigApi,
@@ -74,6 +78,8 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             skills = SkillApi(client),
             mcp = McpApi(client),
             plugins = PluginApi(client),
+            artifacts = ArtifactApi(client),
+            jobs = JobApi(client),
             projects = ProjectApi(client),
             worktrees = WorktreeApi(client),
             config = ConfigApi(client),
