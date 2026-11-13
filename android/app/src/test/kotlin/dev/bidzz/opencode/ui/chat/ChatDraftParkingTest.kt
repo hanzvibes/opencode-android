@@ -95,6 +95,35 @@ class ChatDraftParkingTest {
     }
 
     @Test
+    fun `DL-001 resolveFlushDrop drops only the sent entry when two share the same text`() {
+        val first = QueuedPrompt("sama", "sama")
+        val second = QueuedPrompt("sama", "sama")
+        val queue = listOf(first, second)
+
+        assertEquals(listOf(second), resolveFlushDrop(queue, first))
+        assertEquals(listOf(first), resolveFlushDrop(queue, second))
+    }
+
+    @Test
+    fun `DL-020 typing after engine death keeps the draft anchored to its session`() {
+        val store = InMemoryParkedComposerStore()
+        val vm = viewModel(store)
+        vm.onRepoState(repoState(sessionID = "s1"))
+        vm.onDraftChange("teks panjang")
+
+        vm.onEngineStatus(EngineStatus(state = EngineState.FAILED))
+
+        // One more keystroke after the death: the anchor must survive it.
+        vm.onDraftChange("teks panjang + cek X")
+
+        vm.newSession()
+
+        // The edited draft stays with s1; the fresh chat starts empty.
+        assertEquals("", vm.state.value.draft)
+        assertEquals("teks panjang + cek X", store.get("s1")?.draft)
+    }
+
+    @Test
     fun `13-F3 starting a second edit restores the original draft on cancel`() {
         val vm = viewModel()
         vm.onDraftChange("A")
