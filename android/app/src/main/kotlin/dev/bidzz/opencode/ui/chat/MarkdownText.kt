@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.core.design.AuraPalette
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -75,7 +76,12 @@ import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.copyPlainText
 
 /**
- * Renders assistant output.
+ * Renders assistant output — the Hatch markdown treatment (Aura full,
+ * Batch 1, Opsi B): links in Aura blue text, the blockquote bar in Aura
+ * blue fill, the code language pill in Aura purple, table headers in
+ * Aura blue text. The light-only Aura colours are guarded by
+ * `colors.isDark`, so the dark theme keeps its own tokens; the parser
+ * ([Markdown]) is untouched.
  *
  * Wrapped in [SelectionContainer] so any text can be selected and copied with the
  * platform gesture; the copy button on code blocks is an addition, not a
@@ -172,7 +178,9 @@ fun MarkdownText(
                                 .drawBehind {
                                     val strokeWidth = 3.dp.toPx()
                                     drawLine(
-                                        color = colors.accent,
+                                        // Hatch: the quote bar is an Aura
+                                        // blue fill — decoration, never text.
+                                        color = AuraPalette.auraBlueFill,
                                         start = Offset(strokeWidth / 2f, 0f),
                                         end = Offset(strokeWidth / 2f, size.height),
                                         strokeWidth = strokeWidth,
@@ -419,13 +427,17 @@ private fun CodeBlock(
                 .padding(horizontal = spacing.sm + 2.dp, vertical = spacing.xs + 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // File icon / Language badge pill
+            // File icon / Language badge pill — Hatch: the Aura purple
+            // container + purple text in light (AA as a pair, see
+            // AuraThemeTest); the dark theme keeps its own fill + text.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.xs + 1.dp),
                 modifier = Modifier
                     .clip(RoundedCornerShape(radius.full))
-                    .background(colors.fill)
+                    .background(
+                        if (colors.isDark) colors.fill else AuraPalette.auraPurpleContainer,
+                    )
                     .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.full))
                     .padding(horizontal = spacing.sm, vertical = spacing.xxs + 1.dp),
             ) {
@@ -441,7 +453,7 @@ private fun CodeBlock(
                         fontWeight = FontWeight.Medium,
                         letterSpacing = 0.15.sp,
                     ),
-                    color = colors.onSurface,
+                    color = if (colors.isDark) colors.onSurface else AuraPalette.auraPurple,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.widthIn(max = 180.dp),
@@ -781,10 +793,15 @@ private fun TableBlock(
                                         fontWeight = FontWeight.SemiBold,
                                         letterSpacing = 0.5.sp,
                                     ),
+                                    // Hatch: table headers in Aura blue text
+                                    // in light (AA on white / the Aura page);
+                                    // on a bubble or in dark keep the old tone.
                                     color = if (onBubble) {
                                         proseColor.copy(alpha = 0.75f)
-                                    } else {
+                                    } else if (colors.isDark) {
                                         colors.onSurfaceMuted
+                                    } else {
+                                        AuraPalette.auraBlueText
                                     },
                                     textAlign = columnAlign(colIdx),
                                 )
@@ -1034,7 +1051,17 @@ private fun AnnotatedString.Builder.appendSpans(
             is MdSpan.Link -> withLink(LinkAnnotation.Url(span.url)) {
                 withStyle(
                     SpanStyle(
-                        color = if (onBubble) textColor else colors.accentText,
+                        // Hatch: links in Aura blue text (7.89:1 on white,
+                        // 7.36:1 on the Aura page) — in the dark theme the
+                        // app's own accent text stays, Aura blue text
+                        // would be dark-on-dark there.
+                        color = if (onBubble) {
+                            textColor
+                        } else if (colors.isDark) {
+                            colors.accentText
+                        } else {
+                            AuraPalette.auraBlueText
+                        },
                         textDecoration = TextDecoration.Underline,
                     ),
                 ) {

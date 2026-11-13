@@ -4,35 +4,17 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
@@ -40,8 +22,8 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
-import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
-import dev.bidzz.opencode.ui.SheetStop
+import dev.bidzz.opencode.ui.HatchDeleteConfirmationDialog
+import dev.bidzz.opencode.ui.HatchRenameDialog
 
 @Composable
 fun SessionActionMenu(
@@ -246,96 +228,15 @@ fun RenameSessionDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    val colors = OpenCodeTheme.colors
-    val spacing = OpenCodeTheme.tokens.spacing
-    val radius = OpenCodeTheme.tokens.radius
-
-    // 69-F7: the rename text survives a recreate (fold, rotation) instead
-    // of resetting to the initial title. TextFieldValue has a Saver, so
-    // rememberSaveable handles it; the initialTitle key still re-inits
-    // the field when a different session is renamed.
-    var tfv by rememberSaveable(initialTitle) {
-        mutableStateOf(
-            TextFieldValue(
-                text = initialTitle,
-                selection = TextRange(0, initialTitle.length),
-            ),
-        )
-    }
-    val focusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-    }
-
-    LocalizedDraggableBottomSheet(
+    // Batch 1 (Aura full, Opsi B): the Hatch rename sheet. Same strings,
+    // same behaviour — focus on open, Done confirms, the field survives
+    // a recreate (69-F7) — only the presentation moved to HatchDialogs.
+    HatchRenameDialog(
+        initialTitle = initialTitle,
+        title = stringResource(R.string.session_rename_title),
+        hint = stringResource(R.string.session_rename_hint),
         onDismiss = onDismiss,
-        initialStop = SheetStop.HALF,
-        title = {
-            Text(
-                text = stringResource(R.string.session_rename_title),
-                style = OpenCodeTypography.title,
-                color = colors.onSurface,
-            )
-        },
-        content = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                BasicTextField(
-                    value = tfv,
-                    onValueChange = { tfv = it },
-                    singleLine = true,
-                    textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
-                    cursorBrush = SolidColor(colors.accent),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (tfv.text.isNotBlank()) {
-                                onConfirm(tfv.text.trim())
-                            }
-                        },
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = spacing.sm)
-                        .clip(RoundedCornerShape(radius.md))
-                        .background(colors.surfaceSunken)
-                        .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
-                        .focusRequester(focusRequester)
-                        .padding(horizontal = spacing.md, vertical = spacing.sm),
-                    decorationBox = { inner ->
-                        if (tfv.text.isEmpty()) {
-                            Text(
-                                text = stringResource(R.string.session_rename_hint),
-                                style = OpenCodeTypography.body,
-                                color = colors.onSurfaceFaint,
-                            )
-                        }
-                        inner()
-                    },
-                )
-            }
-        },
-        actions = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = stringResource(R.string.session_action_cancel),
-                    style = OpenCodeTypography.body,
-                    color = colors.onSurfaceMuted,
-                )
-            }
-            TextButton(
-                onClick = { onConfirm(tfv.text.trim()) },
-                enabled = tfv.text.isNotBlank(),
-            ) {
-                Text(
-                    text = stringResource(R.string.session_action_save),
-                    style = OpenCodeTypography.bodyStrong,
-                    // 47-F1: the enabled Save label is text — accent is
-                    // only 4.02:1 on white in light.
-                    color = if (tfv.text.isNotBlank()) colors.accentText else colors.onSurfaceFaint,
-                )
-            }
-        },
+        onConfirm = onConfirm,
     )
 }
 
@@ -345,44 +246,15 @@ fun DeleteSessionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    val colors = OpenCodeTheme.colors
-
-    LocalizedDraggableBottomSheet(
+    // Batch 1 (Aura full, Opsi B): the Hatch delete sheet. Same strings
+    // and behaviour — the title is shown, not just passed in, because
+    // deleting the wrong session is one tap away when every dialog
+    // reads the same.
+    HatchDeleteConfirmationDialog(
+        title = stringResource(R.string.session_delete_title),
+        message = stringResource(R.string.session_delete_message, sessionTitle),
+        confirmLabel = stringResource(R.string.session_action_delete),
         onDismiss = onDismiss,
-        initialStop = SheetStop.PEEK,
-        title = {
-            Text(
-                text = stringResource(R.string.session_delete_title),
-                style = OpenCodeTypography.title,
-                color = colors.onSurface,
-            )
-        },
-        content = {
-            // The title is shown, not just passed in: deleting the wrong
-            // session is one tap away when every dialog reads the same.
-            Text(
-                text = stringResource(R.string.session_delete_message, sessionTitle),
-                style = OpenCodeTypography.bodySmall,
-                color = colors.onSurfaceMuted,
-                maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            )
-        },
-        actions = {
-            TextButton(onClick = onDismiss) {
-                Text(
-                    text = stringResource(R.string.session_action_cancel),
-                    style = OpenCodeTypography.body,
-                    color = colors.onSurfaceMuted,
-                )
-            }
-            TextButton(onClick = onConfirm) {
-                Text(
-                    text = stringResource(R.string.session_action_delete),
-                    style = OpenCodeTypography.bodyStrong,
-                    color = colors.danger,
-                )
-            }
-        },
+        onConfirm = onConfirm,
     )
 }

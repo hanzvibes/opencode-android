@@ -967,4 +967,11 @@
     <string name="widget_open">Open</string>
     <string name="widget_open_session_hint">Tap Open to continue the session</string>
     <string name="widget_no_session">No recent session</string>
+    <string name="task_delete_title">Delete task</string>
+    <string name="task_delete_message">Are you sure you want to delete “%1$s”? This action cannot be undone.</string>
+    <string name="publish_state_publish">Publish</string>
+    <string name="publish_state_success">Published</string>
+    <string name="publish_state_failed">Publish failed</string>
+    <string name="publish_state_up_to_date">Up to date</string>
+    <string name="publish_state_unpublished">Not published</string>
 </resources>
