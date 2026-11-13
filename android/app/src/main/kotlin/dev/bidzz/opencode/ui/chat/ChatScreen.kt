@@ -1008,6 +1008,11 @@ fun ChatScreen(
                     photoSnackbarContext.getString(R.string.photo_failed),
                 )
             }
+            // Audit-200 A6 (DL-027): the copy is done — success or
+            // failure — so the pending trace may go. Acknowledging only
+            // now is what keeps a death mid-copy recoverable.
+            (photoSnackbarContext.applicationContext as OpenCodeApplication)
+                .acknowledgeCameraPhoto(uri)
         }
     }
 

@@ -73,4 +73,70 @@ class CodeSaveQueueTest {
         assertEquals(emptyList<CodeSaveRequest>(), decodeCodeSaveQueue("bukan-base64!!!"))
         assertEquals(emptyList<CodeSaveRequest>(), decodeCodeSaveQueue("aGVsbG8"))
     }
+
+    @Test
+    fun `DL-025 enqueueFirst puts a retry ahead of newer requests`() {
+        val queue = CodeSaveQueue()
+        queue.enqueue(request("b.kt", "bbb"))
+        queue.enqueue(request("c.kt", "ccc"))
+
+        queue.enqueueFirst(request("a.kt", "aaa"))
+
+        assertEquals(request("a.kt", "aaa"), queue.take())
+        assertEquals(request("b.kt", "bbb"), queue.take())
+        assertEquals(request("c.kt", "ccc"), queue.take())
+    }
+
+    @Test
+    fun `DL-024 enqueueAfterHead keeps the head and jumps the rest`() {
+        val queue = CodeSaveQueue()
+        queue.enqueue(request("b.kt", "bbb"))
+        queue.enqueue(request("c.kt", "ccc"))
+
+        queue.enqueueAfterHead(request("a.kt", "aaa"))
+
+        assertEquals(request("b.kt", "bbb"), queue.take())
+        assertEquals(request("a.kt", "aaa"), queue.take())
+        assertEquals(request("c.kt", "ccc"), queue.take())
+    }
+
+    @Test
+    fun `DL-024 enqueueAfterHead on an empty queue just adds the request`() {
+        val queue = CodeSaveQueue()
+
+        queue.enqueueAfterHead(request("a.kt", "aaa"))
+
+        assertEquals(request("a.kt", "aaa"), queue.take())
+        assertTrue(queue.isEmpty())
+    }
+
+    @Test
+    fun `DL-026 one corrupt entry is dropped while the rest survive`() {
+        val queue = listOf(request("a.kt", "aaa"), request("b.kt", "bbb"), request("c.kt", "ccc"))
+        val encoded = encodeCodeSaveQueue(queue)
+        val parts = encoded.split("\n")
+        val corrupted = listOf(parts[0], "!!!not-base64!!!", parts[2]).joinToString("\n")
+
+        val decoded = decodeCodeSaveQueue(corrupted)
+
+        assertEquals(listOf(request("a.kt", "aaa"), request("c.kt", "ccc")), decoded)
+    }
+
+    @Test
+    fun `DL-026 a queue written by the old whole-blob format still reads back`() {
+        val queue = listOf(request("a.kt", "aaa"), request("b.kt", "bbb"))
+        val legacy = java.io.ByteArrayOutputStream().use { out ->
+            java.io.ObjectOutputStream(out).use { it.writeObject(java.util.ArrayList(queue)) }
+            out.toByteArray()
+        }.let { java.util.Base64.getEncoder().withoutPadding().encodeToString(it) }
+
+        assertEquals(queue, decodeCodeSaveQueue(legacy))
+    }
+
+    @Test
+    fun `DL-026 a one-entry queue round-trips`() {
+        val queue = listOf(request("a.kt", "aaa"))
+
+        assertEquals(queue, decodeCodeSaveQueue(encodeCodeSaveQueue(queue)))
+    }
 }

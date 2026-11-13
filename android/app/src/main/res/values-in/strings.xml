@@ -614,6 +614,10 @@
     <string name="conflict_overwrite">Timpa</string>
     <string name="conflict_reload">Muat ulang</string>
     <string name="conflict_keep">Lanjut mengedit</string>
+    <string name="conflict_changes_title">Yang berubah di penyimpanan</string>
+    <string name="conflict_changes_summary">+%1$d baris ditambahkan, −%2$d baris dihapus sejak editor ini dibuka.</string>
+    <string name="conflict_changes_more">+%1$d baris lagi</string>
+    <string name="conflict_changes_too_large">File terlalu besar untuk menampilkan perubahannya di sini — perubahannya mencakup seluruh file.</string>
 
     <string name="fileview_discard_title">Buang perubahan yang belum disimpan?</string>
     <string name="fileview_discard_body">Anda memiliki perubahan yang belum disimpan. Keluar akan membuangnya.</string>

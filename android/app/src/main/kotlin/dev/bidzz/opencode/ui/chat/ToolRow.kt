@@ -1579,7 +1579,8 @@ private const val DIFF_COLLAPSED_LINES = 10
  * exact instead of silently truncating them. Empty lines at the end of
  * either side (a trailing newline) are not changes.
  */
-private const val DIFF_LCS_LINE_LIMIT = 500
+/** Shared with the file conflict dialog (audit-200 A6, DL-022). */
+internal const val DIFF_LCS_LINE_LIMIT = 500
 
 fun computeDiffHunks(oldText: String, newText: String): List<DiffHunk> {
     val oldLines = oldText.split('\n').dropLastWhile { it.isEmpty() }

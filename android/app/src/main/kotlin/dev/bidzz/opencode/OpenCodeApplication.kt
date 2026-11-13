@@ -316,6 +316,21 @@ class OpenCodeApplication : Application() {
         codeSaveRequest.tryEmit(System.currentTimeMillis())
     }
 
+    /**
+     * Re-queues a code save whose write just failed (audit-200 A6, DL-024,
+     * DL-025): the request survives the snackbar — it is persisted again
+     * at once, so a dismissed snackbar, a rotation or a process death no
+     * longer loses it — and it goes ahead of every request whose picker
+     * has not opened yet. When no picker is open it goes first; while one
+     * is open it goes right behind the head, so that picker's result still
+     * takes the request it was opened for. The snackbar's Retry only
+     * re-opens the picker; it must not enqueue again.
+     */
+    fun requeueFailedCodeSave(filename: String, text: String, pickerOpen: Boolean) {
+        val request = CodeSaveRequest(filename, text)
+        if (pickerOpen) codeSaveQueue.enqueueAfterHead(request) else codeSaveQueue.enqueueFirst(request)
+    }
+
     /** Takes the oldest pending code-save request, if any. */
     fun takePendingCodeSave(): CodeSaveRequest? = codeSaveQueue.take()
 
@@ -396,9 +411,20 @@ class OpenCodeApplication : Application() {
         cameraPhotoPicked.tryEmit(uri)
     }
 
+    /**
+     * Confirms a photo was copied into the workspace (audit-200 A6,
+     * DL-027): MainActivity clears the pending trace on this, not in the
+     * camera callback — the trace must survive until the copy completes.
+     */
+    fun acknowledgeCameraPhoto(uri: Uri) {
+        cameraPhotoCopied.tryEmit(uri)
+    }
+
     val cameraPhotoRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
     /** URIs of photos just taken; the chat screen copies them in. */
     val cameraPhotoPicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+    /** URIs the chat screen finished copying (success or failure). */
+    val cameraPhotoCopied = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
 
     /**
      * In-app snackbar requests (Opsi B #4d): the one replacement for

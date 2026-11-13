@@ -167,11 +167,21 @@ class MainActivity : FragmentActivity() {
                     // A failed save offers one retry: re-open the picker
                     // with the same filename and text, so the user can
                     // pick a different location instead of losing the code.
+                    // Audit-200 A6 (DL-024, DL-025): the failed request is
+                    // re-queued at once — ahead of every request whose
+                    // picker has not opened yet — so a dismissed snackbar,
+                    // a rotation or a process death no longer loses it,
+                    // and the retry does not jump behind newer saves.
+                    // Retry only re-opens the picker; it must not enqueue
+                    // the request a second time.
+                    if (!saved) {
+                        app.requeueFailedCodeSave(pending.filename, pending.text, codeSavePickerOpen)
+                    }
                     app.showSnackbar(
                         getString(if (saved) R.string.code_saved else R.string.code_save_failed),
                         actionLabel = if (saved) null else getString(R.string.chat_retry),
                         onAction = if (saved) null else {
-                            { app.requestCodeSave(pending.filename, pending.text) }
+                            { app.emitCodeSaveRequestIfPending() }
                         },
                     )
                 }
@@ -201,9 +211,14 @@ class MainActivity : FragmentActivity() {
             cameraOpen = false
             val uri = pendingPhotoUri
             pendingPhotoUri = null
-            pendingPhotoStore.clear()
             when {
                 success && uri != null -> {
+                    // Audit-200 A6 (DL-027): the pending trace is NOT
+                    // cleared here — the chat screen is still copying the
+                    // photo into the workspace, and a death mid-copy must
+                    // leave a trace to retry from. Mark it delivered
+                    // instead; the copy's acknowledgement clears it.
+                    pendingPhotoStore.markDelivered()
                     (application as OpenCodeApplication).deliverCameraPhoto(uri)
                 }
                 success -> {
@@ -211,6 +226,7 @@ class MainActivity : FragmentActivity() {
                     // pending URI is gone (15-F6): say so, instead of
                     // silence — the user can attach it again from the
                     // gallery, and the photo itself is not lost.
+                    pendingPhotoStore.clear()
                     (application as OpenCodeApplication).showSnackbar(
                         getString(R.string.photo_saved_to_gallery),
                     )
@@ -219,6 +235,7 @@ class MainActivity : FragmentActivity() {
                     // Cancelled or failed: the MediaStore row the camera
                     // never wrote to must not linger in the gallery as
                     // an empty entry (73-F6).
+                    pendingPhotoStore.clear()
                     runCatching { contentResolver.delete(uri, null, null) }
                 }
             }
@@ -267,10 +284,20 @@ class MainActivity : FragmentActivity() {
         // screen rotated (15-F6): the TakePicture result is re-delivered
         // to this recreated activity, and the callback reads this field.
         pendingPhotoUri = pendingPhotoStore.get()
+        // Audit-200 A6 (DL-027): a photo whose result already arrived but
+        // whose workspace copy never finished — the process died mid-copy
+        // — is delivered again, so the copy runs and the pending trace
+        // clears on its acknowledgement. A photo the camera is still
+        // writing (not marked delivered) is left alone: its result is
+        // still coming through the callback.
+        if (pendingPhotoStore.isDelivered() && pendingPhotoUri != null) {
+            (application as OpenCodeApplication).deliverCameraPhoto(pendingPhotoUri!!)
+        }
 
         requestNotificationPermission()
         (application as OpenCodeApplication).startEngine()
         observeDialogRequests()
+        observeCameraPhotoCopied()
 
         setContent {
             // App lock (Batch 7): read once per launch. Enabling the lock
@@ -359,6 +386,24 @@ class MainActivity : FragmentActivity() {
      * Activity reference, which would leak on rotation. They bump a counter on the
      * Application instead, and this collector turns it into a real dialog.
      */
+    /**
+     * Clears the pending photo trace once the chat screen finished copying
+     * it into the workspace (audit-200 A6, DL-027). The acknowledgement
+     * carries the URI it belongs to, so a stale one cannot clear a newer
+     * photo's trace.
+     */
+    private fun observeCameraPhotoCopied() {
+        val app = application as OpenCodeApplication
+        lifecycleScope.launch {
+            app.cameraPhotoCopied.collect { uri ->
+                if (pendingPhotoStore.get() == uri) {
+                    pendingPhotoStore.clear()
+                    if (pendingPhotoUri == uri) pendingPhotoUri = null
+                }
+            }
+        }
+    }
+
     private fun observeDialogRequests() {
         val app = application as OpenCodeApplication
         lifecycleScope.launch {

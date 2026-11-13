@@ -73,6 +73,14 @@ data class FileViewState(
     val draft: String = "",
     val saving: Boolean = false,
     val conflict: Boolean = false,
+    /**
+     * What the file holds on disk when [conflict] is set (audit-200 A6,
+     * DL-022): the dialog shows the agent's edit against [content] instead
+     * of a blind "the file changed". Null when there is no conflict, or
+     * when the conflict comes from a stale restored draft, whose basis
+     * text is gone (only its hash survives).
+     */
+    val conflictDiskContent: String? = null,
     val saved: Boolean = false,
     /**
      * True when [content] is only the first [LargeFileGuard.PreviewLines] lines of
@@ -459,11 +467,69 @@ fun FileViewScreen(
                 )
             },
             content = {
-                Text(
-                    text = stringResource(R.string.conflict_body),
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.onSurfaceMuted,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    Text(
+                        text = stringResource(R.string.conflict_body),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                    )
+                    // Audit-200 A6 (DL-022): show the agent's edit, not a
+                    // blind "the file changed" — Overwrite must be a
+                    // decision made seeing what would be lost.
+                    val diskContent = state.conflictDiskContent
+                    if (diskContent != null) {
+                        val changes = remember(state.content, diskContent) {
+                            conflictChanges(state.content, diskContent)
+                        }
+                        Text(
+                            text = stringResource(R.string.conflict_changes_title),
+                            style = OpenCodeTypography.title,
+                            color = colors.onSurface,
+                        )
+                        if (changes.tooLarge) {
+                            Text(
+                                text = stringResource(R.string.conflict_changes_too_large),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceMuted,
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(
+                                    R.string.conflict_changes_summary,
+                                    changes.added,
+                                    changes.removed,
+                                ),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceMuted,
+                            )
+                            changes.shownLines.forEach { line ->
+                                Text(
+                                    text = line,
+                                    style = OpenCodeTypography.caption.copy(
+                                        fontFamily = OpenCodeTypography.mono,
+                                    ),
+                                    color = if (line.startsWith("+")) {
+                                        colors.success
+                                    } else {
+                                        colors.diffRemoved
+                                    },
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            if (changes.moreLines > 0) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.conflict_changes_more,
+                                        changes.moreLines,
+                                    ),
+                                    style = OpenCodeTypography.bodySmall,
+                                    color = colors.onSurfaceMuted,
+                                )
+                            }
+                        }
+                    }
+                }
             },
             actions = {
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
