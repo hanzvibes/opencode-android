@@ -216,6 +216,13 @@ fun MessageBubble(
      * and the assistant header row — so each turn carries its own time.
      * Null hides the clock; the date divider already covers the day. */
     createdAtMillis: Long? = null,
+    /**
+     * The engine's error for a turn that still produced partial content
+     * (01-F4): rendered under the turn so a run that died mid-turn does
+     * not look complete. Null when the turn has no error; a turn with no
+     * content at all renders as a [Role.ERROR] bubble instead.
+     */
+    errorText: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -650,6 +657,30 @@ fun MessageBubble(
                         stopReason = stopReason,
                         modifier = Modifier.padding(top = spacing.xs),
                     )
+                }
+
+                // A run that died after partial content (01-F4): the turn
+                // keeps its answer, and the error is named under it
+                // instead of silently dropped — without this the partial
+                // answer looks complete.
+                if (!errorText.isNullOrBlank()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        verticalAlignment = Alignment.Top,
+                        modifier = Modifier.padding(top = spacing.xs),
+                    ) {
+                        GlyphIcon(
+                            glyph = Glyph.Info,
+                            tint = colors.danger,
+                            size = dims.iconSmall,
+                            modifier = Modifier.padding(top = 1.dp),
+                        )
+                        Text(
+                            text = errorText,
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.danger,
+                        )
+                    }
                 }
             }
         }

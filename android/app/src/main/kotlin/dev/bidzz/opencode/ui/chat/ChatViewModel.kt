@@ -17,6 +17,7 @@ import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -24,6 +25,7 @@ import dev.bidzz.opencode.core.api.dto.toToolCall
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.util.UUID
 
 /** What the chat screen renders. */
@@ -247,6 +249,15 @@ data class ChatMessage(
      * so a still-running step can show a live elapsed time. A tool the
      * client never saw live has no entry. */
     val toolStartedAtMillis: Map<String, Long> = emptyMap(),
+    /**
+     * The engine's error for a turn that still produced partial content
+     * (01-F4): the run died mid-turn (e.g. a 429 after some tokens), and
+     * without this the partial answer looks complete. The bubble shows
+     * the text and names the error under it; a turn with no content at
+     * all still becomes a [Role.ERROR] bubble instead. Null when the
+     * engine reported no error for this turn.
+     */
+    val errorText: String? = null,
 )
 
 /** What the busy→idle edge does with the queued follow-ups (Fase 2, 13-F2/17-F1). */
@@ -304,6 +315,35 @@ internal fun resolveDraftAppend(current: String, displayText: String): String {
     if (current.lines().any { it == displayText }) return current
     return if (current.isBlank()) displayText else "$current\n$displayText"
 }
+
+/**
+ * Whether [ChatViewModel.onResume] may still open the remembered session
+ * after its verification GET returns (58-F7).
+ *
+ * The user may have opened another session while the GET was in flight;
+ * opening the remembered one then would clobber their choice. The guard
+ * mirrors [ChatViewModel.openSessionById]'s post-await check (item 23):
+ * only proceed when the repository is still the one the launch captured
+ * and no different session has attached since.
+ */
+internal fun shouldOpenAfterResume(
+    attachedSessionID: String?,
+    targetSessionID: String,
+    repositoryChanged: Boolean,
+): Boolean =
+    !repositoryChanged && (attachedSessionID == null || attachedSessionID == targetSessionID)
+
+/**
+ * Whether the draft may be cleared after a send succeeded (13-F4).
+ *
+ * The old check compared values: a user who retyped the identical text
+ * while the send was in flight lost the retype, because the draft still
+ * equalled what was sent. Identity is what matters, not the value: the
+ * draft may only be cleared when nothing changed it since the send
+ * started ([editsSinceSend] == 0) and it still holds the sent text.
+ */
+internal fun shouldClearSentDraft(currentDraft: String, sentText: String, editsSinceSend: Int): Boolean =
+    editsSinceSend == 0 && currentDraft.trim() == sentText
 
 /** Which parts of the VCS status dialog [ChatViewModel.loadBranches] still needs to load (24-F5). */
 internal data class VcsLoadPlan(val loadBranches: Boolean, val loadDetails: Boolean)
@@ -501,6 +541,17 @@ class ChatViewModel(
     private var draftBeforeEdit: String? = null
 
     /**
+     * Generation counter for the draft (13-F4): every change to the
+     * composer text bumps it — typing, clearing, a programmatic set — so
+     * a send can tell "the draft is still exactly what I sent" from "the
+     * user retyped the same text while I was sending". See
+     * [shouldClearSentDraft].
+     */
+    private var draftEditCount = 0
+    /** [draftEditCount] at the moment the in-flight send started. */
+    private var sentDraftEditCount = 0
+
+    /**
      * Key the live draft was last parked under, or null. After the engine
      * dies the live draft belongs to a session that no longer has an id in
      * state (80-F5): parking it again on the next switch must refresh that
@@ -650,6 +701,10 @@ class ChatViewModel(
                     // session — and the draft would be overwritten by the
                     // next session's composer with no copy anywhere.
                     parkComposer()
+                    // The edit in progress dies with the session too
+                    // (draftBeforeEdit): same staleness as the session
+                    // switches in newSession/openSessionById.
+                    draftBeforeEdit = null
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
@@ -755,6 +810,15 @@ class ChatViewModel(
         ) {
             val overlaid = lastUnmergedMessages.toMutableList()
             applyStreamingOverlay(overlaid, chat.streaming)
+            // A ghost streaming bubble (03-F5): the overlay only adds or
+            // replaces, so an entry that came only from a past overlay — no
+            // history row — and is no longer in the streaming map sticks
+            // after its resync failed and cleared the map, because the
+            // history reference did not change and this path runs. Drop
+            // those; a history message still streaming keeps its row, and
+            // an entry still in the map was just refreshed above.
+            val historyIds = chat.messages.map { it.id }.toSet()
+            overlaid.removeAll { it.streaming && it.id !in historyIds && it.id !in chat.streaming }
             lastUnmergedMessages = overlaid
             return mergeContiguousAssistant(overlaid)
         }
@@ -901,7 +965,7 @@ class ChatViewModel(
             } else if (effectivePending != null || sessionGone(chat.lastFailure)) {
                 RetryKind.NONE
             } else {
-                retryKindFor(chat.lastFailure)
+                retryKindFor(chat.lastFailure, chat.resyncFailed)
             },
             stopping = if (!chat.busy) false else previous.stopping,
             // A new request re-arms the prompt; the same request keeps the
@@ -1102,8 +1166,14 @@ class ChatViewModel(
      * `provider.free-limit` is NOT covered here: it surfaces as a Role.ERROR
      * bubble, not a banner failure, so the banner never sees it.
      */
-    private fun retryKindFor(failure: ApiResult.Failure?): RetryKind {
+    private fun retryKindFor(failure: ApiResult.Failure?, resyncFailed: Boolean = false): RetryKind {
         if (failure == null) return RetryKind.NONE
+        // A failed resync (03-F2) is not a failed send: the prompt already
+        // ran to completion, so RESEND would run it a second time. Re-open
+        // the session instead — it re-fetches the finished answer. This
+        // outranks the code branches below, including RATE_LIMITED, whose
+        // handler only knows how to re-send.
+        if (resyncFailed) return RetryKind.RELOAD_SESSION
         return when {
             // A stream rejected mid-session is a lost connection, not a
             // stale password (item 24): the banner already says "Reopen
@@ -1251,6 +1321,7 @@ class ChatViewModel(
         // entry for a session the user has left (see [lastParkKey]).
         lastParkKey = null
         savedStateHandle?.set(DRAFT_KEY, text)
+        draftEditCount++
         _state.value = _state.value.copy(draft = text)
     }
 
@@ -1258,6 +1329,7 @@ class ChatViewModel(
     private fun clearDraft() {
         lastParkKey = null
         savedStateHandle?.remove<String>(DRAFT_KEY)
+        draftEditCount++
         _state.value = _state.value.copy(draft = "")
     }
 
@@ -1410,6 +1482,10 @@ class ChatViewModel(
         // sees their message at once, and the echo hands over to it later.
         stageOptimistic(fullText)
         sendInFlight = true
+        // Snapshot the draft generation (13-F4): anything the user types
+        // from here on — even the identical text — is new typing, not the
+        // draft this send owns, and must survive the send succeeding.
+        sentDraftEditCount = draftEditCount
         // The session and the repository are captured here, before the
         // coroutine runs: reading them inside sendNow — after a suspension —
         // could pick up a session the user has already left (item 15).
@@ -1783,9 +1859,11 @@ class ChatViewModel(
      * The draft survives the round trip because the user's bubble only appears once the
      * message comes back from the engine — clearing first made a slow send look like the
      * message had been thrown away. Typing during the send wins instead of being erased.
+     * Identity, not value, decides (13-F4): retyping the identical text during the
+     * send bumps [draftEditCount], so the retype is kept even though it equals [sent].
      */
     private fun clearSentDraft(sent: String) {
-        if (_state.value.draft.trim() == sent) {
+        if (shouldClearSentDraft(_state.value.draft, sent, draftEditCount - sentDraftEditCount)) {
             clearDraft()
         }
     }
@@ -1932,7 +2010,25 @@ class ChatViewModel(
         // The collector clears it when busy goes false.
         _state.value = _state.value.copy(stopping = true)
         viewModelScope.launch {
-            when (val result = repo.interrupt()) {
+            // The interrupt POST has its own timeout (17-F10): without it
+            // a hung engine held "Stopping…" until the client's 120s call
+            // timeout, with no way to retry. On timeout the button is
+            // released so Stop can be tapped again — the first POST was
+            // cancelled client-side, and a second interrupt is harmless
+            // if the first still lands server-side.
+            val result = try {
+                withTimeout(STOP_TIMEOUT_MS) { repo.interrupt() }
+            } catch (_: TimeoutCancellationException) {
+                _state.value = _state.value.copy(
+                    stopping = false,
+                    failure = null,
+                    failureKey = R.string.stop_unconfirmed,
+                    retryKind = RetryKind.NONE,
+                    selectionFailure = null,
+                )
+                return@launch
+            }
+            when (result) {
                 is ApiResult.Failure -> {
                     // Stopping the run failed; re-sending the prompt would
                     // not stop anything, so no Retry is offered for it.
@@ -2035,6 +2131,12 @@ class ChatViewModel(
         // Pending attachments go with the draft: they were picked for the old
         // session's message, and the refusal notice with them.
         parkComposer()
+        // The edit in progress dies with the old session (draftBeforeEdit):
+        // its backup belongs to the old composer, and leaving it behind
+        // lets a later Cancel restore the old session's draft into this
+        // one. The edited text itself is parked above as the draft, so
+        // nothing typed is lost — only the pre-edit backup goes.
+        draftBeforeEdit = null
         // Text typed before any session exists lives under the unsent key
         // (95-F6): a fresh session is where it belongs, so it comes back
         // as this session's composer instead of starting empty.
@@ -2100,6 +2202,9 @@ class ChatViewModel(
         // coming back finds the text still there (audit-70 20-F4). No retry
         // target from the previous session: the refusal notice goes with it.
         parkComposer()
+        // Same as newSession (draftBeforeEdit): the pre-edit backup belongs
+        // to the old session's composer and must not survive the switch.
+        draftBeforeEdit = null
         val restored = takeParkedComposer(sessionID)
         _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null)
         if (restored?.draft.isNullOrBlank()) {
@@ -2163,7 +2268,22 @@ class ChatViewModel(
                 is ApiResult.Success -> {
                     val dir = result.value.location?.directory
                     if (dir == null || sameDirectory(dir, workspace())) {
-                        repo.open(target)
+                        // 58-F7: the user may have opened another session
+                        // while this GET was in flight — opening the
+                        // remembered one now would clobber their choice.
+                        // Same post-await guard as openSessionById (item
+                        // 23), on the repository's attached session: the
+                        // repository sets it synchronously in open(), so
+                        // it holds even before the collector's first
+                        // emission.
+                        if (shouldOpenAfterResume(
+                                attachedSessionID = repository?.state?.value?.sessionID,
+                                targetSessionID = target,
+                                repositoryChanged = repository !== repo,
+                            )
+                        ) {
+                            repo.open(target)
+                        }
                     }
                 }
                 is ApiResult.Failure -> Unit
@@ -2214,6 +2334,14 @@ class ChatViewModel(
         private const val SENT_PROMPTS_KEY = "chat_sent_prompts"
         /** Failed reloads before the banner points at a new session (item 24). */
         private const val SESSION_RELOAD_LIMIT = 2
+        /**
+         * How long an interrupt POST may hang before Stop is released for
+         * another tap (17-F10): the client's 120s call timeout left
+         * "Stopping…" stuck for up to two minutes on a hung engine, with
+         * no retry. Fifteen seconds is long enough for a healthy engine
+         * and short enough to notice.
+         */
+        internal const val STOP_TIMEOUT_MS = 15_000L
     }
 }
 
@@ -2305,6 +2433,11 @@ private fun ChatState.buildUnmergedMessages(
                     thinkingSeconds = footer.thinkingSeconds,
                     toolDurations = toolDurations,
                     toolStartedAtMillis = toolStartedAt,
+                    // A failed run with partial content (01-F4): the error
+                    // used to be dropped here — the branch above only
+                    // handles the empty-content case — so the partial
+                    // answer rendered as a complete one.
+                    errorText = message.error?.message ?: message.error?.type,
                 )
             }
             // `idle` markers are engine bookkeeping, not conversation.
@@ -2369,9 +2502,27 @@ private fun applyStreamingOverlay(result: MutableList<ChatMessage>, streaming: M
                 val copy = curr.parts.toMutableList()
                 val last = copy.lastOrNull()
                 if (last is ChatTurnPart.Text) {
-                    copy[copy.lastIndex] = ChatTurnPart.Text(text)
+                    // 01-F5: the streaming text joins every text block of
+                    // the turn, so replacing the trailing block with the
+                    // whole stream repeats the earlier blocks when more
+                    // than one text part exists. Only the part past the
+                    // earlier blocks is new for this block.
+                    val shownBeforeLast = copy.dropLast(1)
+                        .filterIsInstance<ChatTurnPart.Text>()
+                        .joinToString("\n\n") { it.markdown }
+                    copy[copy.lastIndex] = ChatTurnPart.Text(
+                        streamingTextSuffix(text, shownBeforeLast),
+                    )
                 } else {
-                    copy += ChatTurnPart.Text(text)
+                    // 01-F5: same root, other branch — the text before the
+                    // tool is already rendered as an earlier Text part, so
+                    // appending the whole stream repeats it. Append only
+                    // the suffix past what is shown; nothing is appended
+                    // when the stream holds nothing new.
+                    val shown = copy.filterIsInstance<ChatTurnPart.Text>()
+                        .joinToString("\n\n") { it.markdown }
+                    val suffix = streamingTextSuffix(text, shown)
+                    if (suffix.isNotBlank()) copy += ChatTurnPart.Text(suffix)
                 }
                 copy
             } else {
@@ -2426,6 +2577,10 @@ private fun mergeContiguousAssistant(messages: List<ChatMessage>): List<ChatMess
                 thinkingSeconds = msg.thinkingSeconds ?: last.thinkingSeconds,
                 toolDurations = last.toolDurations + msg.toolDurations,
                 toolStartedAtMillis = last.toolStartedAtMillis + msg.toolStartedAtMillis,
+                // A failed run's error (01-F4) survives the merge: the
+                // later chunk is the one that carries it when the error
+                // lands after the partial text.
+                errorText = msg.errorText ?: last.errorText,
             )
         } else {
             merged += msg

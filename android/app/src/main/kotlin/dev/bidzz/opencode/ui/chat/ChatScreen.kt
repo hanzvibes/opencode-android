@@ -1332,6 +1332,9 @@ fun ChatScreen(
                                             usageCostUsd = message.usageCostUsd,
                                             turnDurationMs = message.turnDurationMs,
                                             stopReason = message.stopReason,
+                                            // A failed run with partial content
+                                            // (01-F4): named under the turn.
+                                            errorText = message.errorText,
                                             toolDurations = message.toolDurations,
                                             // Live elapsed time for a running step
                                             // (Fase 2, item 5): the start stamps

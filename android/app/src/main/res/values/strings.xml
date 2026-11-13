@@ -152,6 +152,7 @@
     <string name="chat_retry">Retry</string>
     <string name="chat_load_earlier">Load earlier messages</string>
     <string name="chat_rate_limited_guidance">Rate limited — switch model or wait a moment, then send again.</string>
+    <string name="stop_unconfirmed">Stop not confirmed yet — tap Stop to try again.</string>
     <string name="chat_session_gone_guidance">This session is gone on the engine — start a new session from the drawer.</string>
     <string name="chat_queued_returned">Engine stopped — queued follow-up returned to the composer.</string>
     <string name="workspace_unavailable">Workspace unavailable — using the internal workspace for now. Re-pick it in Projects.</string>
@@ -523,6 +524,7 @@
     <string name="fileview_find_next">Next match</string>
     <string name="fileview_find_close">Close find</string>
     <string name="fileview_large_warning">Large file (over 1 MB). Showing the first %1$d of %2$d lines — find searches this preview only. Load the full file to edit or search it all.</string>
+    <string name="fileview_too_large_to_edit">This file is too large to open for editing.</string>
     <string name="preview_page_of">Page %1$d of %2$d</string>
     <string name="preview_page_prev">Previous page</string>
     <string name="preview_page_next">Next page</string>

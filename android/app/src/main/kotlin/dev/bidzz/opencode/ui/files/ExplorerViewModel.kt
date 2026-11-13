@@ -472,14 +472,27 @@ class FileViewViewModel(
             if (_state.value.path != path) return@launch
             when (result) {
                 is ApiResult.Success -> {
+                    val file = result.value
+                    // A capped read is a preview only (59-F5): loading it
+                    // whole for editing would save the kept prefix over
+                    // the real file. Refuse with a plain-language failure
+                    // instead of silently truncating on save.
+                    if (allowFull && file.truncated) {
+                        _state.value = FileViewState(
+                            loading = false,
+                            path = path,
+                            failureKey = R.string.fileview_too_large_to_edit,
+                        )
+                        return@launch
+                    }
                     // Large files are shown as a preview, never held in full by
                     // default — see LargeFileGuard. The full line count is kept so
                     // the banner can say how much was held back.
-                    val (shown, totalLines) = LargeFileGuard.preview(result.value)
+                    val (shown, totalLines) = LargeFileGuard.preview(file.text, file.totalLines)
                     // Line-based preview: only actually cut when there are more
                     // lines than the preview keeps (see LargeFileGuard).
                     val truncated = !allowFull &&
-                        LargeFileGuard.isLarge(result.value) &&
+                        LargeFileGuard.isLarge(file.text) &&
                         totalLines > LargeFileGuard.PreviewLines
                     // A draft restored after process death comes back with the
                     // file it belongs to; a truncated preview must never
@@ -498,7 +511,7 @@ class FileViewViewModel(
                         restoredEditing = restoredEditing,
                         truncated = truncated,
                         path = path,
-                        diskContent = result.value,
+                        diskContent = file.text,
                         basisHash = restoredBasisHash,
                     )
                     val draftToRestore =
@@ -508,7 +521,7 @@ class FileViewViewModel(
                     _state.value = FileViewState(
                         loading = false,
                         path = path,
-                        content = if (truncated) shown else result.value,
+                        content = if (truncated) shown else file.text,
                         truncated = truncated,
                         totalLines = if (truncated) totalLines else 0,
                         editing = draftToRestore != null || staleDraft != null,
@@ -594,7 +607,7 @@ class FileViewViewModel(
 
         viewModelScope.launch {
             val files = FileApi(handle.client)
-            val onDisk = (files.readText(directory, s.path) as? ApiResult.Success)?.value
+            val onDisk = (files.readText(directory, s.path) as? ApiResult.Success)?.value?.text
             // Discarded while the re-read was in flight (35-F8): never write.
             if (generation != saveGeneration) return@launch
             when (saveAction(s.content, s.draft, onDisk, overwrite)) {
@@ -656,7 +669,7 @@ class FileViewViewModel(
                         // between the pre-write re-read and this write (see
                         // the KDoc above): that edit was already replaced
                         // before this read ran.
-                        val after = (files.readText(directory, s.path) as? ApiResult.Success)?.value
+                        val after = (files.readText(directory, s.path) as? ApiResult.Success)?.value?.text
                         if (after != null && after != s.draft) {
                             if (_state.value.path == s.path) {
                                 _state.value = _state.value.copy(saving = false, conflict = true)
