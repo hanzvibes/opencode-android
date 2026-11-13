@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 
 data class PluginsUiState(
@@ -19,6 +20,17 @@ data class PluginsUiState(
     val loading: Boolean = true,
     /** What went wrong, as a value; the screen words it in the app's language. */
     val failure: ApiResult.Failure? = null,
+    /** True while a check-for-updates is in flight. */
+    val checking: Boolean = false,
+    /** Package targets with an update in flight. */
+    val updatingTargets: Set<String> = emptySet(),
+    /**
+     * What the last action (check / update) got wrong; the screen shows it
+     * once as a snackbar, then clears it. A failed list load goes to
+     * [failure] instead — the two are never confused, because an action
+     * failure must not blank the list.
+     */
+    val actionFailure: ApiResult.Failure? = null,
 )
 
 /** The engine's `Plugin.State.status` variants, as a word the UI can switch on. */
@@ -66,6 +78,20 @@ internal fun pluginSourceLabel(source: JsonObject): String {
     }
 }
 
+/** Whether the engine stamped `outdated: true` on this plugin's source. */
+internal fun PluginInfo.isOutdated(): Boolean =
+    (source["outdated"] as? JsonPrimitive)?.booleanOrNull == true
+
+/**
+ * The package target for a package plugin (e.g. `opencode-anthropic-auth`),
+ * or null for builtin / local / sdk plugins — only package plugins can be
+ * checked or updated.
+ */
+internal fun PluginInfo.packageTarget(): String? {
+    if ((source["type"] as? JsonPrimitive)?.contentOrNull != "package") return null
+    return (source["target"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+}
+
 /** Feature flags a plugin declares, as short words for the row. */
 internal fun PluginInfo.featureWords(): List<String> = buildList {
     if (features.server == true) add("server")
@@ -77,8 +103,14 @@ internal fun PluginInfo.featureWords(): List<String> = buildList {
 /**
  * The engine's server plugins and their status.
  *
- * List-only: checking for updates and updating are writes
- * (`POST /api/plugin/check`, `/api/plugin/update`) the app does not call.
+ * Listing comes from `GET /api/plugin`. Checking for updates
+ * (`POST /api/plugin/check`) and updating (`POST /api/plugin/update`) are
+ * the writes: check answers the full inventory with `outdated: true`
+ * stamped onto the package sources that have an update, so the list is
+ * replaced with the answer; update answers 204, so the list is checked
+ * again afterwards to refresh the flags. Only package plugins can be
+ * checked or updated — builtin, local and sdk plugins never carry
+ * `outdated`, so the UI never offers them an update.
  */
 class PluginsViewModel(
     private val api: EngineApi,
@@ -106,5 +138,61 @@ class PluginsViewModel(
                 )
             }
         }
+    }
+
+    /**
+     * Checks one package plugin for updates (`target`), or every package
+     * plugin when `target` is null. The answer replaces the plugin list
+     * with the `outdated` flags stamped in.
+     */
+    fun checkUpdates(target: String? = null) {
+        val handle = api.handle() ?: return
+        if (_state.value.checking) return
+        _state.value = _state.value.copy(checking = true, actionFailure = null)
+        viewModelScope.launch {
+            when (val result = handle.plugins.check(target)) {
+                is ApiResult.Success -> _state.value = _state.value.copy(
+                    plugins = result.value.sortedBy { it.displayName().lowercase() },
+                    checking = false,
+                )
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    checking = false,
+                    actionFailure = result,
+                )
+            }
+        }
+    }
+
+    /**
+     * Updates package plugins by target. On success the inventory is
+     * checked again so the `outdated` flags refresh; on failure the
+     * update error is reported and no re-check runs.
+     */
+    fun update(targets: List<String>) {
+        val handle = api.handle() ?: return
+        if (targets.isEmpty() || targets.any { it in _state.value.updatingTargets }) return
+        _state.value = _state.value.copy(
+            updatingTargets = _state.value.updatingTargets + targets,
+            actionFailure = null,
+        )
+        viewModelScope.launch {
+            when (val result = handle.plugins.update(targets)) {
+                is ApiResult.Success -> {
+                    _state.value = _state.value.copy(
+                        updatingTargets = _state.value.updatingTargets - targets.toSet(),
+                    )
+                    checkUpdates()
+                }
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    updatingTargets = _state.value.updatingTargets - targets.toSet(),
+                    actionFailure = result,
+                )
+            }
+        }
+    }
+
+    /** The screen calls this after showing [PluginsUiState.actionFailure] once. */
+    fun clearActionFailure() {
+        _state.value = _state.value.copy(actionFailure = null)
     }
 }

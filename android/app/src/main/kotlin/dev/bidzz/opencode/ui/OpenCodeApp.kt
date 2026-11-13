@@ -1079,12 +1079,20 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         state = mcpServersState,
                         onBack = { screen = Screen.Settings },
                         onRefresh = mcpServersViewModel::refresh,
+                        onConnect = mcpServersViewModel::connect,
+                        onDisconnect = mcpServersViewModel::disconnect,
+                        onRemove = mcpServersViewModel::remove,
+                        onAdd = mcpServersViewModel::addServer,
+                        onClearActionFailure = mcpServersViewModel::clearActionFailure,
                     )
 
                     Screen.Plugins -> PluginsScreen(
                         state = pluginsState,
                         onBack = { screen = Screen.Settings },
                         onRefresh = pluginsViewModel::refresh,
+                        onCheckUpdates = { pluginsViewModel.checkUpdates() },
+                        onUpdate = { target -> pluginsViewModel.update(listOf(target)) },
+                        onClearActionFailure = pluginsViewModel::clearActionFailure,
                     )
 
                     Screen.Worktrees -> WorktreesScreen(
