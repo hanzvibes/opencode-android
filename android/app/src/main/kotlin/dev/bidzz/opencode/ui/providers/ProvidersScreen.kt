@@ -66,6 +66,7 @@ import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
 import dev.bidzz.opencode.ui.NoticeKind
 import dev.bidzz.opencode.ui.NoticeRow
+import dev.bidzz.opencode.ui.SecureWindowEffect
 import dev.bidzz.opencode.ui.PrimaryButton
 import dev.bidzz.opencode.ui.SearchField
 import dev.bidzz.opencode.ui.ScreenScaffold
@@ -1298,6 +1299,10 @@ private fun KeyPrompt(
     var value by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
 
+    // 53-F3: while the typed key is visible, block screenshots and the
+    // Recents thumbnail. The flag clears with the reveal.
+    if (showKey) SecureWindowEffect()
+
     val validation = remember(value, integration.id) { validateKey(integration.id, value) }
     val canSubmit = value.isNotBlank() && validation !is KeyValidation.Invalid
 
@@ -1782,6 +1787,10 @@ private fun FormField(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     var showSecret by remember { mutableStateOf(false) }
+
+    // 53-F3: while a secret field is revealed, block screenshots and the
+    // Recents thumbnail. Only when this field is a secret one.
+    if (secret && showSecret) SecureWindowEffect()
 
     Column {
         Text(label, style = OpenCodeTypography.label, color = colors.onSurfaceFaint)

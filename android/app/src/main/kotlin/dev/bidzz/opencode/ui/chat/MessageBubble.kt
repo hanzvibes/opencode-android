@@ -1,7 +1,5 @@
 package dev.bidzz.opencode.ui.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -73,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.api.dto.ToolCall
@@ -84,6 +83,7 @@ import dev.bidzz.opencode.ui.TurnActionPill
 import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.announceForAccessibility
 import dev.bidzz.opencode.ui.browser.shareText
+import dev.bidzz.opencode.ui.copyPlainText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -636,7 +636,14 @@ fun MessageBubble(
                         TurnActionPill(
                             label = stringResource(R.string.message_share),
                             glyph = Glyph.Share,
-                            onClick = { shareText(context, allProse) },
+                            onClick = {
+                                // 65-F6: a failed chooser used to do nothing at all.
+                                if (!shareText(context, allProse)) {
+                                    (context.applicationContext as OpenCodeApplication).showSnackbar(
+                                        context.getString(R.string.browser_share_failed),
+                                    )
+                                }
+                            },
                         )
                     }
                 }
@@ -1078,16 +1085,21 @@ private fun CopyButton(
         label = "copy_pill_content",
     )
     val copiedLabel = stringResource(R.string.code_copied)
+    val copyFailedLabel = stringResource(R.string.copy_failed)
 
     // Copying announces "Copied" once, on the tap — never on recomposition.
+    // The check only flips on a real copy (65-F4): a missing clipboard
+    // service or a failed set used to show "Copied" anyway.
     TurnActionPill(
         label = stringResource(if (copied) R.string.code_copied else R.string.code_copy),
         glyph = Glyph.Copy,
         onClick = {
-            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-            cm?.setPrimaryClip(ClipData.newPlainText("OpenCode", text))
-            copied = true
-            announceForAccessibility(context, copiedLabel)
+            if (copyPlainText(context, "OpenCode", text)) {
+                copied = true
+                announceForAccessibility(context, copiedLabel)
+            } else {
+                announceForAccessibility(context, copyFailedLabel)
+            }
         },
         modifier = modifier,
         background = pillBg,

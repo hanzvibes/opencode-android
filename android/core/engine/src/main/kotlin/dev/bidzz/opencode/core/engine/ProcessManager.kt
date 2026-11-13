@@ -38,6 +38,13 @@ data class EngineCredentials(
             val encoded = android.util.Base64.encodeToString(raw.toByteArray(), android.util.Base64.NO_WRAP)
             return "Basic $encoded"
         }
+
+    /**
+     * Never prints the secret (audit-100 53-F1): the default data-class
+     * `toString()` would put `password=<secret>` — and the base64 header
+     * with it — into any log line that prints the object.
+     */
+    override fun toString(): String = "EngineCredentials(baseUrl=$baseUrl, password=[redacted])"
 }
 
 /** Immutable snapshot of the supervisor's observable state. */
@@ -56,7 +63,18 @@ data class EngineStatus(
      * [AntigravityPatchReport.restartRequired] says a restart is needed.
      */
     val antigravityPatch: AntigravityPatchReport? = null,
-)
+) {
+    /**
+     * Never prints the credentials object (audit-100 53-F1): the default
+     * data-class `toString()` would inline `EngineCredentials.toString()`
+     * — masked since 6h, but the status must not depend on that. Only
+     * whether credentials are present is shown.
+     */
+    override fun toString(): String =
+        "EngineStatus(state=$state, credentials=${if (credentials == null) "null" else "present"}, " +
+            "pid=$pid, port=$port, lastError=$lastError, recentOutput=$recentOutput, " +
+            "antigravityPatch=$antigravityPatch)"
+}
 
 /**
  * Chooses the loopback port the engine listens on.
@@ -161,6 +179,17 @@ class ProcessManager(
     private val process = AtomicReference<Process?>(null)
     private var monitorJob: Job? = null
     private var patchJob: Job? = null
+
+    /**
+     * The password the running engine printed (audit-100 53-F1): the
+     * format-anchored redactor cannot mask a second echo site — an
+     * auth-failure line, a JSON log line — that prints the value without
+     * the `server password` prefix. The value is captured in [awaitReady]
+     * and used for value-anchored masking in [appendOutput] and the
+     * `lastError` path. Reset on every start: a restarted engine prints a
+     * new password, and the old one is dead with it.
+     */
+    private val capturedPassword = AtomicReference<String?>(null)
 
     /** Serialises start/stop/restart against each other. */
     private val lifecycle = Mutex()
@@ -354,6 +383,7 @@ class ProcessManager(
         val deadline = System.currentTimeMillis() + STARTUP_TIMEOUT_MS
         // Written by the stdout thread, read by this one.
         val password = AtomicReference<String?>(null)
+        capturedPassword.set(null)
 
         // Drain output on a background thread so the pipe never fills, and keep the
         // last lines for diagnostics. The password line is picked out here.
@@ -363,7 +393,12 @@ class ProcessManager(
                     lines.forEach { line ->
                         appendOutput(line)
                         if (password.get() == null && line.startsWith(PASSWORD_PREFIX)) {
-                            password.compareAndSet(null, line.removePrefix(PASSWORD_PREFIX).trim())
+                            if (password.compareAndSet(null, line.removePrefix(PASSWORD_PREFIX).trim())) {
+                                // 53-F1: the value itself is now known — later
+                                // lines that echo it without the prefix can be
+                                // masked too (see redactEnginePassword).
+                                capturedPassword.set(password.get())
+                            }
                         }
                     }
                 }
@@ -609,7 +644,7 @@ class ProcessManager(
                 EngineState.DEGRADED -> current.port
                 else -> null
             },
-            lastError = error?.let(::redactEnginePassword),
+            lastError = error?.let { redactEnginePassword(it, capturedPassword.get()) },
             recentOutput = when (next) {
                 EngineState.FAILED, EngineState.STOPPED -> emptyList()
                 else -> current.recentOutput
@@ -621,7 +656,7 @@ class ProcessManager(
     private fun appendOutput(line: String) {
         synchronized(stateLock) {
             _status.value = _status.value.copy(
-                recentOutput = (_status.value.recentOutput + redactEnginePassword(line)).takeLast(MAX_OUTPUT_LINES),
+                recentOutput = (_status.value.recentOutput + redactEnginePassword(line, capturedPassword.get())).takeLast(MAX_OUTPUT_LINES),
             )
         }
     }
@@ -639,19 +674,37 @@ interface HealthCheck {
 }
 
 /**
- * Masks the engine password in a log line (item 18).
+ * Masks the engine password in a log line (item 18, audit-100 53-F1).
  *
  * The engine prints `server password <secret>` to stdout on start; the line
  * must never be stored verbatim — Diagnostics shows recentOutput and copies
  * it to the clipboard, and lastError is built from it. The fact that a
  * password was printed stays visible; the secret does not. The same mask is
  * applied when the engine's own log file is read for display.
+ *
+ * Format-anchored masking alone is not enough: a second echo site (an
+ * auth-failure line, a JSON log line) can print the value without the
+ * prefix. When [password] is known — the supervisor captures it in
+ * `awaitReady` — every occurrence of the value is masked too, including
+ * its `Basic base64("opencode:<password>")` form. The base64 form is masked
+ * first: it never contains the raw value as a substring, but masking the
+ * raw value first could leave a recognisable fragment of the token.
+ *
+ * Public so the failure notification (EngineService, `:app`) can redact the
+ * same way instead of posting exception text verbatim (55-F4).
  */
-internal fun redactEnginePassword(line: String): String {
+fun redactEnginePassword(line: String, password: String? = null): String {
+    var masked = line
+    if (!password.isNullOrEmpty()) {
+        val basic = java.util.Base64.getEncoder()
+            .encodeToString("opencode:$password".toByteArray(Charsets.UTF_8))
+        masked = masked.replace(basic, "[redacted]")
+        masked = masked.replace(password, "[redacted]")
+    }
     val prefix = ProcessManager.PASSWORD_PREFIX
-    val idx = line.indexOf(prefix)
-    if (idx < 0) return line
-    return line.substring(0, idx + prefix.length) + " [redacted]"
+    val idx = masked.indexOf(prefix)
+    if (idx < 0) return masked
+    return masked.substring(0, idx + prefix.length) + " [redacted]"
 }
 
 /**

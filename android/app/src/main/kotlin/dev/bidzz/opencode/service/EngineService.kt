@@ -20,6 +20,7 @@ import dev.bidzz.opencode.core.api.EventStream
 import dev.bidzz.opencode.core.api.EventStreamAuthException
 import dev.bidzz.opencode.core.api.SessionApi
 import dev.bidzz.opencode.core.api.dto.EngineEvent
+import dev.bidzz.opencode.core.engine.redactEnginePassword
 import dev.bidzz.opencode.core.engine.EngineCredentials
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
@@ -84,6 +85,14 @@ class EngineService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val FAILED_NOTIFICATION_ID = 1002
 
+        /**
+         * The failure channel (55-F3): failures must alert, so they get
+         * their own `IMPORTANCE_DEFAULT` channel instead of sharing the
+         * foreground channel's `IMPORTANCE_LOW`. A new id on purpose — a
+         * channel's importance cannot be changed once created.
+         */
+        private const val FAILED_CHANNEL_ID = "engine_failure"
+
         /** Consecutive failures after which the service stops resurrecting itself. */
         private const val RESTART_FAILURE_LIMIT = 3
 
@@ -130,7 +139,13 @@ class EngineService : Service() {
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentIntent(open)
-                .setOngoing(status.state.isAlive)
+                // 55-F5: the service is foreground whenever this notification
+                // exists, in every state — INITIALIZING, FAILED and STOPPING
+                // included. `isAlive` (STARTING/RUNNING/DEGRADED) let the
+                // notification be swiped away mid-startup or mid-failure,
+                // leaving a foreground service with no indicator and no
+                // Stop action until the next status transition.
+                .setOngoing(true)
                 // Silence comes from the channel's IMPORTANCE_LOW; the platform
                 // Notification.Builder has no setSilent, that lives in
                 // NotificationCompat. onlyAlertOnce stops the frequent state
@@ -138,15 +153,15 @@ class EngineService : Service() {
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
 
-            if (status.state.isAlive || status.state == EngineState.STOPPED) {
-                builder.addAction(
-                    Notification.Action.Builder(
-                        null,
-                        context.getString(R.string.composer_stop),
-                        stopPendingIntent(context),
-                    ).build(),
-                )
-            }
+            // 55-F5: the Stop action belongs to every state — a FAILED or
+            // STOPPING service is exactly when the user wants to stop it.
+            builder.addAction(
+                Notification.Action.Builder(
+                    null,
+                    context.getString(R.string.composer_stop),
+                    stopPendingIntent(context),
+                ).build(),
+            )
             return builder.build()
         }
 
@@ -160,17 +175,33 @@ class EngineService : Service() {
 
         private fun ensureChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
-            if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID,
-                    context.getString(R.string.engine_notif_channel_name),
-                    NotificationManager.IMPORTANCE_LOW,
-                ).apply {
-                    description = context.getString(R.string.engine_notif_channel_desc)
-                    setShowBadge(false)
-                },
-            )
+            if (manager.getNotificationChannel(CHANNEL_ID) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        CHANNEL_ID,
+                        context.getString(R.string.engine_notif_channel_name),
+                        NotificationManager.IMPORTANCE_LOW,
+                    ).apply {
+                        description = context.getString(R.string.engine_notif_channel_desc)
+                        setShowBadge(false)
+                    },
+                )
+            }
+            // 55-F3: the failure channel lives apart from the foreground
+            // one, so a failed start actually alerts instead of whispering
+            // through the low-importance channel.
+            if (manager.getNotificationChannel(FAILED_CHANNEL_ID) == null) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        FAILED_CHANNEL_ID,
+                        context.getString(R.string.engine_notif_failure_channel_name),
+                        NotificationManager.IMPORTANCE_DEFAULT,
+                    ).apply {
+                        description = context.getString(R.string.engine_notif_failure_channel_desc)
+                        setShowBadge(false)
+                    },
+                )
+            }
         }
     }
 
@@ -269,6 +300,8 @@ class EngineService : Service() {
     private fun requestStop() {
         if (!stopping.compareAndSet(false, true)) return
         Log.i(TAG, "stop requested")
+        // 55-F1: a stopped service leaves no failure behind either.
+        getSystemService(NotificationManager::class.java)?.cancel(FAILED_NOTIFICATION_ID)
         scope.launch {
             manager?.stop()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -299,7 +332,13 @@ class EngineService : Service() {
                 notificationManager?.notify(NOTIFICATION_ID, buildNotification(this@EngineService, status))
                 // A run that got this far earns a fresh retry budget: the limit counts
                 // consecutive failed *resurrections*, not lifetime failures.
-                if (status.state == EngineState.RUNNING) consecutiveFailures = 0
+                if (status.state == EngineState.RUNNING) {
+                    consecutiveFailures = 0
+                    // 55-F1: the engine is up — a failure notification from
+                    // an earlier attempt is stale now and must not linger
+                    // next to the running one.
+                    notificationManager?.cancel(FAILED_NOTIFICATION_ID)
+                }
                 updateAgentDoneWatcher(status)
                 if (shouldResurrect(status.state, stopping.get(), resurrecting.get(), consecutiveFailures, RESTART_FAILURE_LIMIT)) {
                     resurrect(supervisor)
@@ -391,9 +430,13 @@ class EngineService : Service() {
 
     private fun postFailureNotification(reason: String) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
-        val notification = Notification.Builder(this, CHANNEL_ID)
+        // 55-F4: the reason is exception text — redact it the same way
+        // lastError is redacted (53-F1), so a path or a password value
+        // never reaches the drawer or the lock screen verbatim.
+        // 55-F2: the notification dismisses itself when tapped.
+        val notification = Notification.Builder(this, FAILED_CHANNEL_ID)
             .setContentTitle("Engine could not start")
-            .setContentText(reason)
+            .setContentText(redactEnginePassword(reason))
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentIntent(
                 PendingIntent.getActivity(
@@ -404,12 +447,15 @@ class EngineService : Service() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 ),
             )
+            .setAutoCancel(true)
             .build()
         manager.notify(FAILED_NOTIFICATION_ID, notification)
     }
 
     override fun onDestroy() {
         Log.i(TAG, "service destroyed")
+        // 55-F1: no failure notification outlives the service.
+        getSystemService(NotificationManager::class.java)?.cancel(FAILED_NOTIFICATION_ID)
         statusJob?.cancel()
         scope.cancel()
         // onDestroy cannot suspend, and the engine must not outlive the service:

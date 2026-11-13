@@ -430,12 +430,79 @@ class MainActivity : FragmentActivity() {
      * POST_NOTIFICATIONS on API 33+.
      *
      * Denial is not fatal: the foreground service still runs, its notification is
-     * simply hidden. Asked once, no gating logic.
+     * simply hidden. But the agent-done feature is worthless without it, and the
+     * old code asked blindly on every launch with no explanation and no way back
+     * (55-F9): after two denials the system stops showing the prompt at all, and
+     * the user never learns why no notification ever arrives.
+     *
+     * First ask: the system prompt, directly. Denied once (rationale
+     * available): a snackbar explains why, with an action to ask again.
+     * Denied permanently (asked before, no rationale left): a snackbar
+     * points at Settings. Each hint shows once, then the app stops
+     * nagging — the permission can still be granted from system Settings.
      */
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        val app = application as OpenCodeApplication
+        if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+            if (!notificationRationaleShown()) {
+                markNotificationRationaleShown()
+                app.showSnackbar(
+                    getString(R.string.notification_permission_rationale),
+                    actionLabel = getString(R.string.notification_permission_allow),
+                    long = true,
+                    onAction = { requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                )
+            }
+            return
+        }
+        if (notificationPermissionAsked()) {
+            if (!notificationSettingsHintShown()) {
+                markNotificationSettingsHintShown()
+                app.showSnackbar(
+                    getString(R.string.notification_permission_settings),
+                    actionLabel = getString(R.string.settings_title),
+                    long = true,
+                    onAction = { openAppNotificationSettings() },
+                )
+            }
+            return
+        }
+        markNotificationPermissionAsked()
         requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /** Opens this app's page in system Settings (55-F9). */
+    private fun openAppNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    private fun notificationPrefs() =
+        getSharedPreferences("notification_permission", MODE_PRIVATE)
+
+    private fun notificationPermissionAsked(): Boolean =
+        notificationPrefs().getBoolean("asked", false)
+
+    private fun markNotificationPermissionAsked() {
+        notificationPrefs().edit().putBoolean("asked", true).apply()
+    }
+
+    private fun notificationRationaleShown(): Boolean =
+        notificationPrefs().getBoolean("rationale_shown", false)
+
+    private fun markNotificationRationaleShown() {
+        notificationPrefs().edit().putBoolean("rationale_shown", true).apply()
+    }
+
+    private fun notificationSettingsHintShown(): Boolean =
+        notificationPrefs().getBoolean("settings_hint_shown", false)
+
+    private fun markNotificationSettingsHintShown() {
+        notificationPrefs().edit().putBoolean("settings_hint_shown", true).apply()
     }
 
     /** Unused for now; the workspace picker lives in Settings. */

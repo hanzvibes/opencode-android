@@ -11,6 +11,7 @@ import dev.bidzz.opencode.core.engine.EngineStartupException
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
 import dev.bidzz.opencode.service.EngineService
+import dev.bidzz.opencode.ui.cancelAgentDone
 import dev.bidzz.opencode.ui.chat.CodeSaveQueue
 import dev.bidzz.opencode.ui.chat.CodeSaveRequest
 import dev.bidzz.opencode.ui.chat.SharedPrefsCodeSaveQueueStore
@@ -331,14 +332,25 @@ class OpenCodeApplication : Application() {
      * Same bridge shape as the share above. An id that fails
      * [isValidSessionId] is dropped silently: it came from outside the
      * app and never reaches the engine (Fase 5, 53-F6).
+     *
+     * Returns false when the id could not be queued (56-F4): the old
+     * code ignored the `tryEmit` result, so a second deep link arriving
+     * before the first was consumed vanished without a trace. Opening
+     * the session also cancels its agent-done notification (55-F7) —
+     * the user is looking at the answer now.
      */
-    fun deliverSessionOpen(sessionID: String) {
-        if (!isValidSessionId(sessionID)) return
-        sessionOpenRequested.tryEmit(sessionID)
+    fun deliverSessionOpen(sessionID: String): Boolean {
+        if (!isValidSessionId(sessionID)) return false
+        cancelAgentDone(this, sessionID)
+        val delivered = sessionOpenRequested.tryEmit(sessionID)
+        if (!delivered) {
+            Log.w(TAG, "session open request dropped (buffer full): $sessionID")
+        }
+        return delivered
     }
 
     /** Session ids from deep links; the chat screen opens them. */
-    val sessionOpenRequested = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val sessionOpenRequested = MutableSharedFlow<String>(extraBufferCapacity = 16)
 
     /**
      * A launcher shortcut asked for a fresh session (Native C). Same
@@ -377,10 +389,13 @@ class OpenCodeApplication : Application() {
      * `context.getString` / `stringResource` at the call site), so no
      * @StringRes plumbing is needed.
      *
-     * The buffer holds up to 8 pending requests: while one snackbar is
+     * The buffer holds up to 16 pending requests: while one snackbar is
      * on screen the collector is suspended in `showSnackbar`, and a
      * burst (two quick copies, say) must not silently drop the second
-     * one the way a capacity-1 buffer would.
+     * one the way a capacity-1 buffer would. 16, not 8 (65-F8): a burst
+     * of 9 feedbacks inside ~30s was enough to overflow the old buffer,
+     * and the drop was silent. A drop past 16 is still possible — it is
+     * now logged instead of vanishing (see [showSnackbar]).
      */
     data class SnackbarRequest(
         val message: String,
@@ -390,16 +405,24 @@ class OpenCodeApplication : Application() {
     )
 
     /** Snackbar requests; the root composable shows them one at a time. */
-    val snackbarRequests = MutableSharedFlow<SnackbarRequest>(replay = 0, extraBufferCapacity = 8)
+    val snackbarRequests = MutableSharedFlow<SnackbarRequest>(replay = 0, extraBufferCapacity = 16)
 
-    /** Asks the UI to show a snackbar (dropped only if 8 are already queued). */
+    /**
+     * Asks the UI to show a snackbar. Returns false when the request was
+     * dropped (65-F8): the buffer is full, and the drop is logged so a
+     * lost error message leaves a trace instead of silence.
+     */
     fun showSnackbar(
         message: String,
         actionLabel: String? = null,
         long: Boolean = false,
         onAction: (() -> Unit)? = null,
-    ) {
-        snackbarRequests.tryEmit(SnackbarRequest(message, actionLabel, long, onAction))
+    ): Boolean {
+        val delivered = snackbarRequests.tryEmit(SnackbarRequest(message, actionLabel, long, onAction))
+        if (!delivered) {
+            Log.w(TAG, "snackbar request dropped (buffer full): $message")
+        }
+        return delivered
     }
 
     /**

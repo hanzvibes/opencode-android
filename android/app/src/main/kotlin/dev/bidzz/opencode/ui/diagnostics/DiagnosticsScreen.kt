@@ -1,8 +1,6 @@
 package dev.bidzz.opencode.ui.diagnostics
 
 import android.app.ActivityManager
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.Process
@@ -72,6 +70,8 @@ import dev.bidzz.opencode.ui.AppTag
 import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.SecureWindowEffect
+import dev.bidzz.opencode.ui.copyPlainText
 import dev.bidzz.opencode.ui.IconBadge
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
@@ -254,6 +254,10 @@ fun DiagnosticsScreen(
         }
     }
 
+    // 53-F3: while the password is visible, block screenshots and the
+    // Recents thumbnail. The flag clears with the reveal.
+    if (showPassword) SecureWindowEffect()
+
     // Following pauses the moment the user scrolls up by hand: a manual
     // drag that settles away from the last line turns follow off, so new
     // lines never yank the view out from under the reader. Programmatic
@@ -338,16 +342,23 @@ fun DiagnosticsScreen(
             logLines.takeLast(200).forEach { appendLine(it) }
         }
 
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-        clipboard?.setPrimaryClip(ClipData.newPlainText("OpenCode Diagnostics", report))
-        (context.applicationContext as OpenCodeApplication).showSnackbar(context.getString(R.string.diag_copied_toast))
+        // 65-F4: the "copied" snackbar only fires on a real copy.
+        val copiedMessage = if (copyPlainText(context, "OpenCode Diagnostics", report)) {
+            context.getString(R.string.diag_copied_toast)
+        } else {
+            context.getString(R.string.copy_failed)
+        }
+        (context.applicationContext as OpenCodeApplication).showSnackbar(copiedMessage)
     }
 
     val copyLogs = { lines: List<String> ->
         val text = lines.joinToString("\n")
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-        clipboard?.setPrimaryClip(ClipData.newPlainText("OpenCode Logs", text))
-        (context.applicationContext as OpenCodeApplication).showSnackbar(context.getString(R.string.diag_copied_toast))
+        val copiedMessage = if (copyPlainText(context, "OpenCode Logs", text)) {
+            context.getString(R.string.diag_copied_toast)
+        } else {
+            context.getString(R.string.copy_failed)
+        }
+        (context.applicationContext as OpenCodeApplication).showSnackbar(copiedMessage)
     }
 
     val stateColor = when (status.state) {
@@ -363,7 +374,7 @@ fun DiagnosticsScreen(
         actions = {
             TextAction(
                 label = stringResource(R.string.diag_copy_all),
-                onClick = copyAllDiagnostics,
+                onClick = { copyAllDiagnostics() },
             )
             TextAction(
                 label = stringResource(if (running) R.string.diag_running else R.string.common_refresh),

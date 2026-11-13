@@ -1,7 +1,5 @@
 package dev.bidzz.opencode.ui.chat
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -74,6 +72,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.copyPlainText
 
 /**
  * Renders assistant output.
@@ -495,8 +494,8 @@ private fun CodeBlock(
                             glyph = if (copied) Glyph.Check else Glyph.Copy,
                             done = copied,
                             onClick = {
-                                copyToClipboard(context, code)
-                                copied = true
+                                // 65-F4: the check only flips on a real copy.
+                                if (copyToClipboard(context, code)) copied = true
                             },
                         )
                         // Save (Fase 1, item 4): the whole block, verbatim,
@@ -924,10 +923,8 @@ private fun writeText(context: Context, uri: android.net.Uri, text: String): Boo
     false
 }
 
-private fun copyToClipboard(context: Context, text: String) {
-    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    manager.setPrimaryClip(ClipData.newPlainText("code", text))
-}
+private fun copyToClipboard(context: Context, text: String): Boolean =
+    copyPlainText(context, "code", text)
 
 /**
  * Uppercases prose spans for table headers. Internal (not private) so the

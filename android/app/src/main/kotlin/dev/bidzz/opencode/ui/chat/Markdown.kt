@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
+import dev.bidzz.opencode.ui.browser.isForwardableUrl
+
 /**
  * Minimal markdown for chat messages.
  *
@@ -103,10 +105,22 @@ object Markdown {
      * Anything else — empty, relative, `javascript:`, `intent:`, `file:` —
      * stays plain text instead of a link that crashes on tap, because the
      * default UriHandler throws when no app can handle the URI.
+     *
+     * `tel:` and `mailto:` use the same gate as the tap handler and the
+     * in-app browser ([isForwardableUrl], audit-100 53-F2): a `tel:` link
+     * is only a number — digits, spaces, parentheses, dots, dashes, with
+     * an optional leading `+`. MMI/USSD characters (`*`, `#`, `,`, `;`)
+     * never belong in a dialled number, so `tel:*#06#` is not even
+     * rendered as a link. The tap handler already refused it (Fase 5);
+     * this closes the render side too, so the link never looks tappable.
      */
     internal fun isOpenableLink(url: String): Boolean {
         val scheme = url.substringBefore(':').lowercase()
-        return scheme in openableSchemes && url.length > scheme.length + 1
+        if (scheme !in openableSchemes) return false
+        return when (scheme) {
+            "tel", "mailto" -> isForwardableUrl(url)
+            else -> url.length > scheme.length + 1
+        }
     }
 
     /**
