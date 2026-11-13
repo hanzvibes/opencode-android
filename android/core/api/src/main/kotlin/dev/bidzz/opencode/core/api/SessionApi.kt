@@ -52,14 +52,29 @@ class SessionApi(private val client: EngineClient) {
     }
 
     /** Lists sessions. `directory` narrows to one project when provided. */
-    suspend fun list(directory: String? = null, limit: Int = 50): ApiResult<List<SessionInfo>> {
+    suspend fun list(directory: String? = null, limit: Int = 50): ApiResult<List<SessionInfo>> =
+        when (val page = listPage(directory, limit)) {
+            is ApiResult.Success -> ApiResult.Success(page.value.data)
+            is ApiResult.Failure -> page
+        }
+
+    /**
+     * One page of sessions, with the cursor for the next page (19-F3).
+     *
+     * The envelope's `cursor.next` is the only way past the first 50:
+     * [list] drops it, so sessions 51+ were unreachable from the UI and
+     * their pins could never be unpinned. Pass the previous page's
+     * `cursor.next` as [cursor]; null starts from the newest.
+     */
+    suspend fun listPage(directory: String? = null, limit: Int = 50, cursor: String? = null): ApiResult<SessionsResponse> {
         val query = buildString {
             append("/api/session?limit=").append(limit)
             if (directory != null) append("&directory=").append(java.net.URLEncoder.encode(directory, "UTF-8"))
+            if (cursor != null) append("&cursor=").append(java.net.URLEncoder.encode(cursor, "UTF-8"))
         }
         val request = client.request(query).get().build()
         return client.execute(request) { raw ->
-            ApiJson.decodeFromString<SessionsResponse>(raw).data
+            ApiJson.decodeFromString<SessionsResponse>(raw)
         }
     }
 
@@ -86,14 +101,35 @@ class SessionApi(private val client: EngineClient) {
      * [dev.bidzz.opencode.core.api.ChatRepository] reverses it for display; callers
      * that use this directly must do the same.
      */
-    suspend fun messages(sessionID: String, limit: Int? = null): ApiResult<List<SessionMessage>> {
+    suspend fun messages(sessionID: String, limit: Int? = null): ApiResult<List<SessionMessage>> =
+        when (val page = messagesPage(sessionID, limit)) {
+            is ApiResult.Success -> ApiResult.Success(page.value.data)
+            is ApiResult.Failure -> page
+        }
+
+    /**
+     * One page of messages, with the cursor for the next (older) page
+     * (19-F2).
+     *
+     * The envelope's `cursor.next` walks toward the oldest message: [list]
+     * and [messages] drop it, so a caller that assumed "no limit = whole
+     * history" silently got only the engine's default page when the
+     * engine paginates — and the session preview (the first user message)
+     * came from the wrong end. Pass the previous page's `cursor.next` as
+     * [cursor]; null starts from the newest.
+     */
+    suspend fun messagesPage(sessionID: String, limit: Int? = null, cursor: String? = null): ApiResult<MessagesResponse> {
         val path = buildString {
             append("/api/session/").append(sessionID).append("/message")
-            if (limit != null) append("?limit=").append(limit)
+            val params = listOfNotNull(
+                limit?.let { "limit=$it" },
+                cursor?.let { "cursor=${java.net.URLEncoder.encode(it, "UTF-8")}" },
+            )
+            if (params.isNotEmpty()) append("?").append(params.joinToString("&"))
         }
         val request = client.request(path).get().build()
         return client.execute(request) { raw ->
-            ApiJson.decodeFromString<MessagesResponse>(raw).data
+            ApiJson.decodeFromString<MessagesResponse>(raw)
         }
     }
 

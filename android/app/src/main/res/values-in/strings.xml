@@ -563,6 +563,9 @@
     <string name="history_search_hint">Cari sesi</string>
     <string name="history_search_no_results">Tidak ada sesi yang cocok dengan "%1$s"</string>
     <string name="history_showing">Menampilkan %1$d dari %2$d</string>
+    <string name="history_showing_more">Menampilkan %1$d dari %2$d+ yang dimuat</string>
+    <string name="history_load_more">Muat lebih banyak sesi</string>
+    <string name="history_previews_loading">Pratinjau masih dimuat — hasil pencarian bisa bertambah.</string>
 
     <!-- Pembatas tanggal, status terkirim, balas, riwayat prompt (audit C) -->
     <string name="date_today">Hari ini</string>

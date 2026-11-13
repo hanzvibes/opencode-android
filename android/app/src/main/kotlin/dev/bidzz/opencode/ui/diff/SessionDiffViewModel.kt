@@ -51,20 +51,33 @@ class SessionDiffViewModel(
     /** In-flight diff load, cancelled when another session's diff is asked for. */
     private var loadJob: Job? = null
 
+    /**
+     * Increments on every load(): a load whose network call was already in
+     * flight when a newer load started must drop its result instead of
+     * overwriting the newer session's diff. Cancellation alone does not
+     * cover it — a blocked HTTP call returns after its job was cancelled,
+     * and the code after it still runs (80-F10; the same generation guard
+     * SessionListViewModel.load uses for the list).
+     */
+    private var loadGeneration = 0
+
     fun load(sessionID: String) {
         val handle = api.handle() ?: run {
             _state.value = SessionDiffUiState(loading = false, failureKey = R.string.error_engine_not_running)
             return
         }
+        val generation = ++loadGeneration
         _state.value = SessionDiffUiState(loading = true)
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             when (val result = SessionApi(handle.client).diff(sessionID)) {
                 is ApiResult.Success -> {
+                    if (generation != loadGeneration) return@launch
                     _state.value = SessionDiffUiState(loading = false, files = result.value)
                 }
                 is ApiResult.Failure -> {
+                    if (generation != loadGeneration) return@launch
                     _state.value = SessionDiffUiState(loading = false, failure = result)
                 }
             }

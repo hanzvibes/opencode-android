@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.sessions
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
@@ -126,5 +127,60 @@ class SessionGroupTest {
     fun `query with no match returns an empty list`() {
         val rows = listOf(session("1"), session("2"))
         assertTrue(filterSessionRows(rows, "zzz-no-such-session").isEmpty())
+    }
+
+    @Test
+    fun `80-F8 an Indonesian status query matches the English engine outcome`() {
+        val detail = SessionDetail(preview = null, model = null, status = "failed")
+        val row = session("a", timestamp = now)
+
+        assertTrue(matchesSessionQuery("gagal", row, detail))
+        assertTrue(matchesSessionQuery("failed", row, detail))
+        assertTrue(matchesSessionQuery("error", row, detail))
+    }
+
+    @Test
+    fun `80-F8 a succeeded outcome is searchable as berhasil`() {
+        val detail = SessionDetail(preview = null, model = null, status = "succeeded")
+        val row = session("a", timestamp = now)
+
+        assertTrue(matchesSessionQuery("berhasil", row, detail))
+        assertTrue(matchesSessionQuery("selesai", row, detail))
+        assertTrue(matchesSessionQuery("succeeded", row, detail))
+    }
+
+    @Test
+    fun `80-F8 an unknown outcome stays searchable under its own word`() {
+        val detail = SessionDetail(preview = null, model = null, status = "interrupted")
+        val row = session("a", timestamp = now)
+
+        assertTrue(matchesSessionQuery("interrupted", row, detail))
+        assertTrue(!matchesSessionQuery("gagal", row, detail))
+    }
+
+    @Test
+    fun `80-F12 a 3-hour-old session at 01 00 is yesterday by the calendar`() {
+        val earlyMorning = Calendar.getInstance().apply {
+            set(2026, Calendar.NOVEMBER, 10, 1, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val threeHoursAgo = session("late", age = SessionAge(AgeUnit.HOURS, 3))
+        val groups = groupSessions(listOf(threeHoursAgo), nowMillis = earlyMorning)
+
+        assertEquals(listOf(threeHoursAgo), groups[SessionDateGroup.YESTERDAY])
+        assertNull(groups[SessionDateGroup.TODAY])
+    }
+
+    @Test
+    fun `80-F12 the estimate keeps the old fallback buckets at midday`() {
+        val sYest = session("yest", age = SessionAge(AgeUnit.DAYS, 1))
+        val s7Days = session("7d", age = SessionAge(AgeUnit.DAYS, 5))
+        val sOld = session("old", age = SessionAge(AgeUnit.MONTHS, 2))
+
+        val groups = groupSessions(listOf(sYest, s7Days, sOld), nowMillis = now)
+
+        assertEquals(listOf(sYest), groups[SessionDateGroup.YESTERDAY])
+        assertEquals(listOf(s7Days), groups[SessionDateGroup.PREVIOUS_7_DAYS])
+        assertEquals(listOf(sOld), groups[SessionDateGroup.OLDER])
     }
 }

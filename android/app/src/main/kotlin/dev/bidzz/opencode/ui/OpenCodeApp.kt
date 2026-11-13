@@ -265,6 +265,25 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val chatState by chatViewModel.state.collectAsState()
     val sessionsState by sessionViewModel.state.collectAsState()
 
+    /**
+     * Deletes a session from every entry point (80-F1/80-F6): the chat
+     * moves away from the session and its parked composer is pruned ONLY
+     * after the engine confirms the delete. The old call sites called
+     * newSession() first, so a failed delete left the session alive with
+     * its live view destroyed — and the draft parked under the deleted id
+     * sat in the store forever. `chatState` is read when the callback
+     * runs, not when the delete is tapped, so a session opened meanwhile
+     * is not abandoned.
+     */
+    val onDeleteSession: (String) -> Unit = { id ->
+        sessionViewModel.delete(id) { deletedId ->
+            if (chatState.sessionID == deletedId) {
+                chatViewModel.newSession()
+            }
+            chatViewModel.pruneParkedSession(deletedId)
+        }
+    }
+
     val explorerViewModel: ExplorerViewModel = viewModel(factory = viewModelFactory { _ ->
         ExplorerViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
     })
@@ -724,14 +743,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 onOpen = { row -> chatViewModel.openSession(row.id) },
                                 onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
                                 onRename = { row, newTitle ->
-                                    sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
+                                    sessionViewModel.rename(row.id, newTitle)
                                 },
-                                onDelete = { row ->
-                                    if (chatState.sessionID == row.id) {
-                                        chatViewModel.newSession()
-                                    }
-                                    sessionViewModel.delete(row.id, sessionScopeToProject)
-                                },
+                                onDelete = { row -> onDeleteSession(row.id) },
                                 onTogglePin = { row ->
                                     sessionViewModel.togglePin(row.id)
                                 },
@@ -755,7 +769,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 selectedSessionId = chatState.sessionID,
                                 onRefresh = { sessionViewModel.load(sessionScopeToProject) },
                                 onDismissDeleteFailure = sessionViewModel::clearDeleteFailure,
+                                onDismissRenameFailure = sessionViewModel::clearRenameFailure,
                                 onDismissLoadFailure = sessionViewModel::clearLoadFailure,
+                                onLoadMore = sessionViewModel::loadMore,
                                 // Shared-element pilot: NO flight here. This pane
                                 // and the detail chat beside it are composed at
                                 // the same time, so the same session title would
@@ -823,14 +839,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 screen = Screen.Chat
                             },
                             onRename = { row, newTitle ->
-                                sessionViewModel.rename(row.id, newTitle, sessionScopeToProject)
+                                sessionViewModel.rename(row.id, newTitle)
                             },
-                            onDelete = { row ->
-                                if (chatState.sessionID == row.id) {
-                                    chatViewModel.newSession()
-                                }
-                                sessionViewModel.delete(row.id, sessionScopeToProject)
-                            },
+                            onDelete = { row -> onDeleteSession(row.id) },
                             onTogglePin = { row ->
                                 sessionViewModel.togglePin(row.id)
                             },
@@ -852,7 +863,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                             },
                             onRefresh = { sessionViewModel.load(sessionScopeToProject) },
                             onDismissDeleteFailure = sessionViewModel::clearDeleteFailure,
+                            onDismissRenameFailure = sessionViewModel::clearRenameFailure,
                             onDismissLoadFailure = sessionViewModel::clearLoadFailure,
+                            onLoadMore = sessionViewModel::loadMore,
                             // Shared-element pilot: the full-screen list is the
                             // origin side of the session-title flight.
                             sharedTransitionScope = sharedTransitionScope,
@@ -1116,13 +1129,18 @@ private fun ChatDestination(
         onDiagnosticsClick = { onNavigate(Screen.Diagnostics) },
         onAboutClick = { onNavigate(Screen.About) },
         onRenameSession = { id, title ->
-            sessionViewModel.rename(id, title, sessionScopeToProject)
+            sessionViewModel.rename(id, title)
         },
         onDeleteSession = { id ->
-            if (chatState.sessionID == id) {
-                chatViewModel.newSession()
+            // Same rule as the shared handler in OpenCodeApp (80-F1/80-F6):
+            // move away and prune the parked composer only after the
+            // engine confirms the delete.
+            sessionViewModel.delete(id) { deletedId ->
+                if (chatState.sessionID == deletedId) {
+                    chatViewModel.newSession()
+                }
+                chatViewModel.pruneParkedSession(deletedId)
             }
-            sessionViewModel.delete(id, sessionScopeToProject)
         },
         onTogglePinSession = { id ->
             sessionViewModel.togglePin(id)
