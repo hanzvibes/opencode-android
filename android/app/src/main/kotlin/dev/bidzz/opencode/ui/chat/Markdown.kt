@@ -694,6 +694,12 @@ object Markdown {
             if (destEnd >= 0) {
                 url = text.substring(k, destEnd)
                 end = destEnd
+            } else if (m >= text.length) {
+                // Ran out of text with no closing ')': the link is
+                // incomplete (04-F7). Streaming shows the words; a final
+                // parse keeps the old behaviour and leaves it literal.
+                if (streaming) return LinkParse(inline(linkText, streaming), null, text.length)
+                return null
             } else {
                 // Whitespace ended the destination — a title may follow.
                 url = text.substring(k, m)

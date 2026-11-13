@@ -61,8 +61,11 @@ internal const val FILE_READ_CAP_BYTES = 8_388_608
  * through here too — the guard lives in one place, not per call-site.
  */
 fun normalizeRelativePath(path: String): String? {
+    val normalized = path.replace('\\', '/')
+    // An absolute path can never be inside the workspace (35-F6).
+    if (normalized.startsWith('/')) return null
     val segments = ArrayDeque<String>()
-    for (raw in path.replace('\\', '/').split('/')) {
+    for (raw in normalized.split('/')) {
         when (raw) {
             "", "." -> Unit
             ".." -> if (segments.isEmpty()) return null else segments.removeLast()
