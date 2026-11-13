@@ -132,6 +132,15 @@ EXTRACT_DIR="$WORK_DIR/extract"
 PREFIX="$EXTRACT_DIR/data/data/com.termux/files/usr"
 mkdir -p "$DEBS_DIR" "$EXTRACT_DIR" "$JNI_OUT"
 
+# 84-F7: clear this script's own outputs before staging, so a library
+# a newer .deb no longer ships (or that this script no longer stages)
+# does not survive as a stale .so in the shared jniLibs dir. Only the
+# names below are removed — the other scripts' libraries stay untouched.
+rm -f "$JNI_OUT/libxz.so" "$JNI_OUT/libtar.so" "$JNI_OUT/libar.so" "$JNI_OUT/liblzma.so" \
+    "$JNI_OUT/libacl.so" "$JNI_OUT/libandroid-glob.so" "$JNI_OUT/libandroid-selinux.so" \
+    "$JNI_OUT/libiconv.so" "$JNI_OUT/libpcre2-8.so" "$JNI_OUT/libbfd.so" "$JNI_OUT/libzstd.so" \
+    "$JNI_OUT/libsframe.so" "$JNI_OUT/libz.so"
+
 command -v "$PATCHELF" >/dev/null || { echo "patchelf not found (set --patchelf or install it)" >&2; exit 1; }
 "$PATCHELF" --version
 

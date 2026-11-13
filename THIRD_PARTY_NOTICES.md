@@ -1,5 +1,9 @@
 # Third-party notices
 
+> This file is also bundled in the APK at `assets/THIRD_PARTY_NOTICES.md`
+> (byte-identical copy — CI fails if the two drift) so the About screen can
+> show it offline. Edit this file, then copy it over.
+
 OpenCode Android bundles third-party software. This file lists what is shipped,
 under which licence, and where the corresponding source can be obtained.
 

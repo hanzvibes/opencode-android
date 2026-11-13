@@ -114,6 +114,14 @@ DEBS_DIR="$WORK_DIR/debs"
 EXTRACT_DIR="$WORK_DIR/extract"
 PREFIX="$EXTRACT_DIR/data/data/com.termux/files/usr"
 mkdir -p "$DEBS_DIR" "$EXTRACT_DIR" "$JNI_OUT"
+
+# 84-F7: clear this script's own outputs before staging, so a library
+# a newer .deb no longer ships (or that this script no longer stages)
+# does not survive as a stale .so in the shared jniLibs dir. Only the
+# names below are removed — the other scripts' libraries stay untouched.
+rm -f "$JNI_OUT/libnode.so" "$JNI_OUT/libicudata.so" "$JNI_OUT/libicui18n.so" "$JNI_OUT/libicuuc.so" \
+    "$JNI_OUT/libcrypto.so" "$JNI_OUT/libssl.so" "$JNI_OUT/libc++_shared.so" "$JNI_OUT/libcares.so" \
+    "$JNI_OUT/libsqlite3.so" "$JNI_OUT/libz.so"
 if [ "$WITH_ASSETS" = "1" ]; then
     mkdir -p "$ASSETS_OUT"
 fi
@@ -255,7 +263,9 @@ echo "$ABI node closure: $total B (target ~101.9 MiB incl. npm assets)"
 
 # --- Assets: npm tree + corepack + CA bundle --------------------------------
 if [ "$WITH_ASSETS" = "1" ]; then
-    rm -rf "$ASSETS_OUT/lib" "$ASSETS_OUT/etc"
+    # 84-F7: wipe the whole assets dir, not just lib/ and etc/ — a file a
+    # newer npm no longer ships would otherwise linger at the top level.
+    rm -rf "$ASSETS_OUT"
     mkdir -p "$ASSETS_OUT/lib/node_modules" "$ASSETS_OUT/etc/tls"
     cp -r "$PREFIX/lib/node_modules/npm" "$ASSETS_OUT/lib/node_modules/npm"
     cp -r "$PREFIX/lib/node_modules/corepack" "$ASSETS_OUT/lib/node_modules/corepack"

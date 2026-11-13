@@ -79,12 +79,12 @@ fun resolveVersionNameSuffix(): String {
 
 android {
     namespace = "dev.bidzz.opencode"
-    compileSdk = 35
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
         applicationId = "dev.bidzz.opencode"
-        minSdk = 29
-        targetSdk = 35
+        minSdk = libs.versions.minSdk.get().toInt()
+        targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = resolveVersionCode()
         versionName = "0.1.1+${resolveVersionNameSuffix()}"
 
@@ -127,12 +127,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.toVersion(libs.versions.java.get())
+        targetCompatibility = JavaVersion.toVersion(libs.versions.java.get())
     }
 
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = libs.versions.java.get()
     }
 
     buildFeatures {

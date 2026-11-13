@@ -1,6 +1,18 @@
 #!/bin/sh
 #
-# Runs the same pipeline as .github/workflows/ci.yml on a developer machine.
+# Runs the CI pipeline (.github/workflows/ci.yml) on a developer machine:
+# unit tests, lint, staging of the native engine + Termux libraries, and
+# both the debug and the release assemble (audit-100 Fase 6 batch 6l,
+# 84-F8/62-F4 — this used to run only tests + assembleDebug while claiming
+# to be "the same pipeline as CI", so release-only failures slipped through).
+#
+# What still differs from CI, honestly stated:
+# - It builds the WORKING TREE, not a clean tarball: uncommitted changes
+#   are included, and the versionCode comes from the local git history.
+# - It never publishes anything (no workflow artifacts, no GitHub release).
+# - The Gradle cache is the local one, not actions/setup-gradle.
+# - The engine-in-git guard runs first, like in CI, so a staged native
+#   binary is caught before anything is built.
 #
 # Why this exists: the workflow pulls the engine out of the upstream release
 # APKs, so "just run CI locally" means downloading ~200 MB and executing it.
@@ -9,8 +21,10 @@
 # workflow uses, and every downloaded artifact is verified before it is used.
 #
 # Usage:
-#   ./script/ci/run-local.sh                 # tests + stage + assembleDebug
+#   ./script/ci/run-local.sh                 # tests + lint + stage + debug + release
 #   ./script/ci/run-local.sh --skip-tests    # skip the unit test run
+#   ./script/ci/run-local.sh --skip-lint     # skip the lint run
+#   ./script/ci/run-local.sh --skip-release  # skip assembleRelease (debug only)
 #   ./script/ci/run-local.sh --skip-stage    # assemble with whatever is staged
 #   ./script/ci/run-local.sh --stage-only    # stage the native libs, stop there
 #   ./script/ci/run-local.sh --help
@@ -46,8 +60,10 @@ X86_64_SHA256="9c60f84fb8fbde85b4d3d9a651cbeef2b16827a9784718d784c5f536266579d9"
 
 CACHE_DIR="$REPO_ROOT/.cache/ci-apks"
 RUN_TESTS=1
+RUN_LINT=1
 RUN_STAGE=1
 RUN_ASSEMBLE=1
+RUN_RELEASE=1
 
 log()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
@@ -55,11 +71,13 @@ die()  { printf '\n\033[31merror: %s\033[0m\n' "$*" >&2; exit 1; }
 
 usage() {
     cat <<'EOF'
-Runs the same pipeline as .github/workflows/ci.yml on a developer machine.
+Runs the CI pipeline (.github/workflows/ci.yml) on a developer machine.
 
 Usage:
-  ./script/ci/run-local.sh                 # tests + stage + assembleDebug
+  ./script/ci/run-local.sh                 # tests + lint + stage + debug + release
   ./script/ci/run-local.sh --skip-tests    # skip the unit test run
+  ./script/ci/run-local.sh --skip-lint     # skip the lint run
+  ./script/ci/run-local.sh --skip-release  # skip assembleRelease (debug only)
   ./script/ci/run-local.sh --skip-stage    # assemble with whatever is staged
   ./script/ci/run-local.sh --stage-only    # stage the native libs, stop there
   ./script/ci/run-local.sh --help
@@ -73,8 +91,10 @@ EOF
 while [ $# -gt 0 ]; do
     case "$1" in
         --skip-tests)   RUN_TESTS=0 ;;
+        --skip-lint)    RUN_LINT=0 ;;
+        --skip-release) RUN_RELEASE=0 ;;
         --skip-stage)   RUN_STAGE=0 ;;
-        --stage-only)   RUN_TESTS=0; RUN_ASSEMBLE=0 ;;
+        --stage-only)   RUN_TESTS=0; RUN_LINT=0; RUN_ASSEMBLE=0; RUN_RELEASE=0 ;;
         -h|--help)      usage ;;
         *)              die "unknown option: $1 (try --help)" ;;
     esac
@@ -89,7 +109,7 @@ need unzip
 need od
 
 # The JDK is only needed for the Gradle steps, not for staging the natives.
-if [ "$RUN_TESTS" = "1" ] || [ "$RUN_ASSEMBLE" = "1" ]; then
+if [ "$RUN_TESTS" = "1" ] || [ "$RUN_LINT" = "1" ] || [ "$RUN_ASSEMBLE" = "1" ]; then
     need java
 fi
 
@@ -104,6 +124,12 @@ fi
 
 if [ ! -x "android/gradlew" ]; then
     die "android/gradlew is missing or not executable"
+fi
+
+# The engine-in-git guard, FIRST, like in CI (62-F6): a staged native binary
+# must fail the run before anything is built or published.
+if git ls-files | grep -qE 'jniLibs/.*\.so$'; then
+    die "a staged native binary was committed to git (jniLibs/*.so is gitignored for a reason)"
 fi
 
 # -------------------------------------------------------------------- stage --
@@ -152,10 +178,21 @@ stage_natives() {
     arm64_apk=$(fetch arm64-v8a "$ARM64_SHA256")
     x86_apk=$(fetch x86_64 "$X86_64_SHA256")
 
+    # 84-F7: clear BOTH output dirs once, before any staging writes into
+    # them — the engine and every Termux script below share these dirs, so
+    # a library a newer upstream APK or .deb no longer ships would
+    # otherwise survive as a stale .so and ship inside the next APK.
+    # (The per-script self-clean inside each stage script covers the same
+    # ground for its own outputs; this covers libraries no script stages
+    # anymore at all.)
     for abi in arm64-v8a x86_64; do
         dest="$REPO_ROOT/android/app/src/main/jniLibs/$abi"
         mkdir -p "$dest"
         rm -f "$dest"/*.so
+    done
+
+    for abi in arm64-v8a x86_64; do
+        dest="$REPO_ROOT/android/app/src/main/jniLibs/$abi"
 
         case "$abi" in
             arm64-v8a) expected=b700 ;;
@@ -224,6 +261,50 @@ stage_natives() {
     bash "$REPO_ROOT/script/android/stage-curl.sh" --abi x86_64 \
         --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
         --patchelf "${PATCHELF:-patchelf}"
+
+    # python3 + pip (Termux): staged from pinned .deb files by the same
+    # script CI runs (patchelf via PATCHELF as above). The stdlib tree (+
+    # pip) goes to assets/python/ on arm64 only, like in CI.
+    log "Staging python3 + pip from Termux"
+    bash "$REPO_ROOT/script/android/stage-python.sh" --abi arm64-v8a \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/arm64-v8a" \
+        --assets-out "$REPO_ROOT/android/app/src/main/assets/python" \
+        --patchelf "${PATCHELF:-patchelf}"
+    bash "$REPO_ROOT/script/android/stage-python.sh" --abi x86_64 \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
+        --no-assets \
+        --patchelf "${PATCHELF:-patchelf}"
+
+    # jq (Termux): staged from pinned .deb files by the same script CI
+    # runs (patchelf via PATCHELF as above).
+    log "Staging jq from Termux"
+    bash "$REPO_ROOT/script/android/stage-jq.sh" --abi arm64-v8a \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/arm64-v8a" \
+        --patchelf "${PATCHELF:-patchelf}"
+    bash "$REPO_ROOT/script/android/stage-jq.sh" --abi x86_64 \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
+        --patchelf "${PATCHELF:-patchelf}"
+
+    # ffmpeg + ffprobe (Termux): staged from pinned .deb files by the same
+    # script CI runs (patchelf via PATCHELF as above).
+    log "Staging ffmpeg + ffprobe from Termux"
+    bash "$REPO_ROOT/script/android/stage-ffmpeg.sh" --abi arm64-v8a \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/arm64-v8a" \
+        --patchelf "${PATCHELF:-patchelf}"
+    bash "$REPO_ROOT/script/android/stage-ffmpeg.sh" --abi x86_64 \
+        --jni-out "$REPO_ROOT/android/app/src/main/jniLibs/x86_64" \
+        --patchelf "${PATCHELF:-patchelf}"
+
+    # Language servers (TypeScript + Python): staged by the same script CI
+    # runs (pinned tarballs, SHA512, no ABI).
+    log "Staging language servers from npm"
+    bash "$REPO_ROOT/script/android/stage-lsp.sh" \
+        --assets-out "$REPO_ROOT/android/app/src/main/assets/lsp"
+
+    # 84-F7: the gate, same as CI — every .so in jniLibs must be one the
+    # stage scripts produce (or one of the engine's own libraries).
+    log "Verifying jniLibs holds only staged libraries"
+    bash "$REPO_ROOT/script/ci/check-jni-manifest.sh" "$REPO_ROOT/android/app/src/main/jniLibs"
 }
 
 # ------------------------------------------------------------------- build --
@@ -233,6 +314,11 @@ run_tests() {
     ( cd android && ./gradlew test --no-daemon )
 }
 
+run_lint() {
+    log "Lint"
+    ( cd android && ./gradlew lint --no-daemon )
+}
+
 assemble() {
     log "Assemble debug APKs"
     ( cd android && ./gradlew :app:assembleDebug --no-daemon )
@@ -240,12 +326,26 @@ assemble() {
         [ -f "$apk" ] || continue
         info "$apk"
     done
+    if [ "$RUN_RELEASE" = "1" ]; then
+        # Release-only failures (R8, shrinkResources) used to hide behind a
+        # debug-only local run — CI builds the release on every run, so this
+        # does too (84-F8). Opt out with --skip-release, not by forgetting.
+        log "Assemble release APKs"
+        ( cd android && ./gradlew :app:assembleRelease --no-daemon )
+        for apk in android/app/build/outputs/apk/release/*.apk; do
+            [ -f "$apk" ] || continue
+            info "$apk"
+        done
+    fi
 }
 
 # -------------------------------------------------------------------- main --
 
 if [ "$RUN_TESTS" = "1" ]; then
     run_tests
+fi
+if [ "$RUN_LINT" = "1" ]; then
+    run_lint
 fi
 if [ "$RUN_STAGE" = "1" ]; then
     stage_natives

@@ -159,6 +159,11 @@
     <string name="about_github">GitHub</string>
     <string name="about_open_failed">Nothing on this device can open that link.</string>
     <string name="about_version">OpenCode Android %1$s</string>
+    <string name="about_licenses_title">Licenses</string>
+    <string name="about_licenses_notices">Third-party notices</string>
+    <string name="about_licenses_notices_body">What is bundled, under which license, and where to get the source.</string>
+    <string name="about_licenses_read_failed">That license text could not be read.</string>
+    <string name="common_close">Close</string>
 
     <!-- Chat -->
     <string name="chat_menu">Menu</string>
