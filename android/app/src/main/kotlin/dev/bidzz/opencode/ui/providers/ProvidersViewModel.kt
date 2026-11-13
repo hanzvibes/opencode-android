@@ -97,7 +97,9 @@ internal fun validateCustomProvider(
 /** True for hosts whose traffic never leaves the device (53-F7). */
 internal fun isLoopbackHost(host: String): Boolean {
     val lower = host.lowercase(Locale.ROOT)
-    return lower == "localhost" || lower == "127.0.0.1" || lower == "::1"
+    // java.net.URI keeps the brackets on an IPv6 literal host ("[::1]"),
+    // so both forms must match.
+    return lower == "localhost" || lower == "127.0.0.1" || lower == "::1" || lower == "[::1]"
 }
 
 /**

@@ -107,6 +107,8 @@ class ProvidersValidationTest {
         assertTrue(isLoopbackHost("LOCALHOST"))
         assertTrue(isLoopbackHost("127.0.0.1"))
         assertTrue(isLoopbackHost("::1"))
+        // java.net.URI keeps the brackets on an IPv6 literal host.
+        assertTrue(isLoopbackHost("[::1]"))
         assertFalse(isLoopbackHost("api.example.com"))
         assertFalse(isLoopbackHost("127.0.0.2"))
     }
