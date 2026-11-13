@@ -96,8 +96,12 @@ import dev.bidzz.opencode.ui.files.FileViewScreen
 import dev.bidzz.opencode.ui.files.FileViewViewModel
 import dev.bidzz.opencode.ui.artifacts.ArtifactsScreen
 import dev.bidzz.opencode.ui.artifacts.ArtifactsViewModel
+import dev.bidzz.opencode.ui.generate.GenerateScreen
+import dev.bidzz.opencode.ui.generate.GenerateViewModel
 import dev.bidzz.opencode.ui.jobs.JobsScreen
 import dev.bidzz.opencode.ui.jobs.JobsViewModel
+import dev.bidzz.opencode.ui.websearch.WebSearchScreen
+import dev.bidzz.opencode.ui.websearch.WebSearchViewModel
 import dev.bidzz.opencode.ui.mcp.McpServersScreen
 import dev.bidzz.opencode.ui.mcp.McpServersViewModel
 import dev.bidzz.opencode.ui.plugin.PluginsScreen
@@ -154,6 +158,8 @@ internal sealed interface Screen {
     data object Plugins : Screen
     data object Artifacts : Screen
     data object Jobs : Screen
+    data object Generate : Screen
+    data object WebSearch : Screen
     data object Worktrees : Screen
     data object EngineConfig : Screen
     data object About : Screen
@@ -187,6 +193,8 @@ internal sealed interface Screen {
         Plugins -> "plugins"
         Artifacts -> "artifacts"
         Jobs -> "jobs"
+        Generate -> "generate"
+        WebSearch -> "websearch"
         Worktrees -> "worktrees"
         EngineConfig -> "engineconfig"
         About -> "about"
@@ -223,6 +231,8 @@ internal fun screenFromSavedKey(key: String): Screen {
         "plugins" -> Screen.Plugins
         "artifacts" -> Screen.Artifacts
         "jobs" -> Screen.Jobs
+        "generate" -> Screen.Generate
+        "websearch" -> Screen.WebSearch
         "worktrees" -> Screen.Worktrees
         "engineconfig" -> Screen.EngineConfig
         "about" -> Screen.About
@@ -250,6 +260,8 @@ internal fun Screen.parent(): Screen = when (this) {
     Screen.Plugins -> Screen.Settings
     Screen.Artifacts -> Screen.Settings
     Screen.Jobs -> Screen.Settings
+    Screen.Generate -> Screen.Settings
+    Screen.WebSearch -> Screen.Settings
     Screen.Worktrees -> Screen.Settings
     Screen.EngineConfig -> Screen.Settings
     is Screen.Inbox -> Screen.Sessions
@@ -274,6 +286,7 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Projects, Screen.Files, Screen.Settings, Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Artifacts, Screen.Jobs,
+    Screen.Generate, Screen.WebSearch,
     Screen.Worktrees,
     Screen.EngineConfig, Screen.About, is Screen.InAppBrowser,
     is Screen.Inbox, is Screen.MoveSession, is Screen.SessionExport,
@@ -450,6 +463,15 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         JobsViewModel(app.engineApi)
     })
 
+    val generateViewModel: GenerateViewModel = viewModel(factory = viewModelFactory { _ ->
+        GenerateViewModel(app.engineApi)
+    })
+
+    val webSearchViewModel: WebSearchViewModel = viewModel(factory = viewModelFactory { _ ->
+        WebSearchViewModel(app.engineApi)
+    }
+    })
+
     val worktreesViewModel: WorktreesViewModel = viewModel(factory = viewModelFactory { _ ->
         WorktreesViewModel(app.engineApi)
     })
@@ -473,6 +495,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val pluginsState by pluginsViewModel.state.collectAsState()
     val artifactsState by artifactsViewModel.state.collectAsState()
     val jobsState by jobsViewModel.state.collectAsState()
+    val generateState by generateViewModel.state.collectAsState()
+    val webSearchState by webSearchViewModel.state.collectAsState()
     val worktreesState by worktreesViewModel.state.collectAsState()
     val configState by configViewModel.state.collectAsState()
 
@@ -1067,6 +1091,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onPlugins = { screen = Screen.Plugins },
                         onArtifacts = { screen = Screen.Artifacts },
                         onJobs = { screen = Screen.Jobs },
+                        onGenerate = { screen = Screen.Generate },
+                        onWebSearch = { screen = Screen.WebSearch },
                         onWorktrees = { screen = Screen.Worktrees },
                         onEngineConfig = { screen = Screen.EngineConfig },
                         onSessionStats = { screen = Screen.SessionStats },
@@ -1149,6 +1175,30 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onRefresh = jobsViewModel::refresh,
                         onKindFilter = jobsViewModel::setKindFilter,
                         onStatusFilter = jobsViewModel::setStatusFilter,
+                    )
+
+                    Screen.Generate -> GenerateScreen(
+                        state = generateState,
+                        onBack = { screen = Screen.Settings },
+                        onRefreshModels = generateViewModel::refreshModels,
+                        onPromptChange = generateViewModel::setPrompt,
+                        onModeChange = generateViewModel::setMode,
+                        onModelChange = generateViewModel::setModel,
+                        onAspectChange = generateViewModel::setAspect,
+                        onResolutionChange = generateViewModel::setResolution,
+                        onGenerate = generateViewModel::generate,
+                        onClearFailure = generateViewModel::clearFailure,
+                    )
+
+                    Screen.WebSearch -> WebSearchScreen(
+                        state = webSearchState,
+                        onBack = { screen = Screen.Settings },
+                        onRefreshProviders = webSearchViewModel::refreshProviders,
+                        onQueryChange = webSearchViewModel::setQuery,
+                        onProviderChange = webSearchViewModel::setProvider,
+                        onSearch = webSearchViewModel::search,
+                        onOpenUrl = { url -> screen = Screen.InAppBrowser(url) },
+                        onClearFailure = webSearchViewModel::clearFailure,
                     )
 
                     Screen.Worktrees -> WorktreesScreen(

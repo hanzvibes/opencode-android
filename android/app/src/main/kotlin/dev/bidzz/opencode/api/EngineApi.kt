@@ -12,6 +12,8 @@ import dev.bidzz.opencode.core.api.EventStream
 import dev.bidzz.opencode.core.api.IntegrationApi
 import dev.bidzz.opencode.core.api.ModelApi
 import dev.bidzz.opencode.core.api.McpApi
+import dev.bidzz.opencode.core.api.GenerateApi
+import dev.bidzz.opencode.core.api.WebSearchApi
 import dev.bidzz.opencode.core.api.PermissionApi
 import dev.bidzz.opencode.core.api.ConfigApi
 import dev.bidzz.opencode.core.api.PluginApi
@@ -45,6 +47,8 @@ class EngineApi(private val workspaceDirectory: () -> String) {
         val plugins: PluginApi,
         val artifacts: ArtifactApi,
         val jobs: JobApi,
+        val generate: GenerateApi,
+        val websearch: WebSearchApi,
         val projects: ProjectApi,
         val worktrees: WorktreeApi,
         val config: ConfigApi,
@@ -80,6 +84,8 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             plugins = PluginApi(client),
             artifacts = ArtifactApi(client),
             jobs = JobApi(client),
+            generate = GenerateApi(client),
+            websearch = WebSearchApi(client),
             projects = ProjectApi(client),
             worktrees = WorktreeApi(client),
             config = ConfigApi(client),
