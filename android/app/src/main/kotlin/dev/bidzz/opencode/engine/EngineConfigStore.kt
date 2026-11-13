@@ -7,6 +7,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.util.Locale
 import org.json.JSONObject
 
 /**
@@ -62,7 +63,20 @@ class EngineConfigStore(configHome: File) {
         private set
 
     /** One custom provider as stored in the config file. Never carries the key. */
-    data class CustomProvider(val id: String, val name: String, val baseURL: String, val models: List<String>)
+    data class CustomProvider(
+        val id: String,
+        val name: String,
+        val baseURL: String,
+        val models: List<String>,
+        /**
+         * True when the stored entry's `settings` or `models` is present but
+         * not an object (38-F9): a hand-edited config may hold e.g.
+         * `"settings": "disabled"` or `"models": ["gpt-4"]`. The old code
+         * silently showed an empty base URL and no models, as if the
+         * provider were unconfigured; the row now shows a warning instead.
+         */
+        val malformed: Boolean = false,
+    )
 
     /**
      * A model the user listed: its id, and the name to show for it.
@@ -97,11 +111,22 @@ class EngineConfigStore(configHome: File) {
         return providers.keys().asSequence().mapNotNull { id ->
             val entry = providers.optJSONObject(id) ?: return@mapNotNull null
             val settings = entry.optJSONObject("settings")
+            val modelsObj = entry.optJSONObject("models")
+            // A hand-edited config may hold settings/models in a non-object
+            // shape (38-F9): the old code silently showed an empty base URL
+            // and no models, as if the provider were unconfigured. Flag it
+            // instead — the row shows a warning and the log names the entry.
+            val malformed = (entry.has("settings") && settings == null) ||
+                (entry.has("models") && modelsObj == null)
+            if (malformed) {
+                Log.w(TAG, "custom provider '$id' has non-object settings/models; showing as malformed")
+            }
             CustomProvider(
                 id = id,
                 name = entry.optString("name").ifEmpty { id },
                 baseURL = settings?.optString("baseURL").orEmpty(),
-                models = entry.optJSONObject("models")?.keys()?.asSequence()?.toList() ?: emptyList(),
+                models = modelsObj?.keys()?.asSequence()?.toList() ?: emptyList(),
+                malformed = malformed,
             )
         }.toList()
     }
@@ -235,14 +260,17 @@ class EngineConfigStore(configHome: File) {
      *
      * [id] becomes the provider key the model IDs are namespaced under, so it must be a
      * slug; [apiKey] is written into `settings` because that is where this engine version
-     * reads it — `Config.Provider.Info` has no `apiKey` field of its own.
+     * reads it — `Config.Provider.Info` has no `apiKey` field of its own. A `null`
+     * [apiKey] keeps the stored key (30-F2): editing a provider must not force the
+     * user to retype a key the app never shows them. Saving a *new* provider with a
+     * `null` key is refused — the caller validates first, so this is a guard, not a path.
      */
     @Throws(IOException::class)
     fun putOpenAICompatible(
         id: String,
         name: String,
         baseURL: String,
-        apiKey: String,
+        apiKey: String?,
         models: List<ModelSpec>,
     ): WriteResult {
         val (rootOrNull, source) = readRootAndSource()
@@ -272,10 +300,16 @@ class EngineConfigStore(configHome: File) {
         val entry = JSONObject()
         entry.put("name", name)
         entry.put("package", PACKAGE)
-        entry.put(
-            "settings",
-            JSONObject().put("baseURL", baseURL.trimEnd('/')).put("apiKey", apiKey),
-        )
+        val settings = JSONObject().put("baseURL", baseURL.trimEnd('/'))
+        if (apiKey != null) {
+            settings.put("apiKey", apiKey)
+        } else {
+            // Editing without retyping the key (30-F2): keep the stored one.
+            val kept = providers.optJSONObject(id)?.optJSONObject("settings")?.optString("apiKey")
+            if (kept.isNullOrEmpty()) throw IOException("Cannot save provider '$id' without an API key")
+            settings.put("apiKey", kept)
+        }
+        entry.put("settings", settings)
         val modelMap = JSONObject()
         models.forEach { spec ->
             // A bare `{}` means "inherit whatever the provider knows about this model";
@@ -291,6 +325,25 @@ class EngineConfigStore(configHome: File) {
         write(root)
         Log.i(TAG, "configured custom provider '$id' -> $baseURL (${models.size} models)")
         return WriteResult.Saved(id)
+    }
+
+    /**
+     * Removes a custom provider entry (30-F2). Returns false when the id is
+     * not present. Refuses when the effective config lives in `.jsonc`, like
+     * [putOpenAICompatible] — deleting from the shadowed `.json` would change
+     * nothing the engine reads, so the caller reports it as a blocked write.
+     */
+    @Throws(IOException::class)
+    fun deleteCustomProvider(id: String): Boolean {
+        val (rootOrNull, source) = readRootAndSource()
+        val root = rootOrNull ?: return false
+        if (source == jsoncFile) throw JsoncBlockedException()
+        val providers = root.optJSONObject("providers") ?: return false
+        if (!providers.has(id)) return false
+        providers.remove(id)
+        write(root)
+        Log.i(TAG, "removed custom provider '$id'")
+        return true
     }
 
     private fun readRoot(): JSONObject? = readRootAndSource().first
@@ -458,7 +511,9 @@ class EngineConfigStore(configHome: File) {
 
         /** Turns a display name into the provider key models get namespaced under. */
         fun slug(name: String): String {
-            val base = name.lowercase()
+            // Locale.ROOT (38-F6): under tr-TR, "Iron".lowercase() is "ıron"
+            // and the regex below turns it into "ron", not "iron".
+            val base = name.lowercase(Locale.ROOT)
                 .replace(Regex("[^a-z0-9]+"), "-")
                 .trim('-')
             return base.ifEmpty { "custom" }
@@ -472,18 +527,53 @@ class EngineConfigStore(configHome: File) {
          * first position and the last name given for it — and a bare repeat does not erase
          * a name already supplied, because typing the same model twice again is a likelier
          * typo than a deliberate way to un-name it.
+         *
+         * A comma inside a name is escaped as `\,` (38-F7): `gpt-4 = GPT\, 4 Turbo`
+         * is one model, not a ghost model `4 Turbo`. `\\` is a literal backslash;
+         * any other backslash is kept as-is.
          */
         fun parseModels(text: String): List<ModelSpec> {
             val names = LinkedHashMap<String, String?>()
-            for (item in text.split(',', '\n')) {
-                val piece = item.trim()
-                if (piece.isEmpty()) continue
-                val id = piece.substringBefore('=', piece).trim()
+            for (piece in splitModelList(text)) {
+                val trimmed = piece.trim()
+                if (trimmed.isEmpty()) continue
+                val id = trimmed.substringBefore('=', trimmed).trim()
                 if (id.isEmpty()) continue
-                val given = piece.substringAfter('=', "").trim()
+                val given = trimmed.substringAfter('=', "").trim()
                 names[id] = if (given.isNotEmpty()) given else names[id]
             }
             return names.map { (id, name) -> ModelSpec(id, name) }
+        }
+
+        /**
+         * Splits a model list on commas and newlines, honouring backslash escapes
+         * (38-F7): `\,` is a literal comma inside an id or a name, `\\` a literal
+         * backslash. The escape is consumed, so the caller never sees it.
+         */
+        private fun splitModelList(text: String): List<String> {
+            val pieces = ArrayList<String>()
+            val current = StringBuilder()
+            var i = 0
+            while (i < text.length) {
+                val c = text[i]
+                when {
+                    c == '\\' && i + 1 < text.length && (text[i + 1] == ',' || text[i + 1] == '\\') -> {
+                        current.append(text[i + 1])
+                        i += 2
+                    }
+                    c == ',' || c == '\n' -> {
+                        pieces += current.toString()
+                        current.clear()
+                        i++
+                    }
+                    else -> {
+                        current.append(c)
+                        i++
+                    }
+                }
+            }
+            pieces += current.toString()
+            return pieces
         }
     }
 }

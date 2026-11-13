@@ -8,10 +8,15 @@ import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.CredentialEntry
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
 import dev.bidzz.opencode.engine.EngineConfigStore
+import dev.bidzz.opencode.ui.engineDownFailure
+import java.net.URI
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ProvidersUiState(
     val integrations: List<IntegrationInfo> = emptyList(),
@@ -39,7 +44,75 @@ data class ProvidersUiState(
     val antigravityAccountsCorrupt: Boolean = false,
     /** The engine config file could not be read at all (30-F3): which file, and why. */
     val configProblem: EngineConfigStore.ConfigReadProblem? = null,
+    /**
+     * Name of the custom provider whose engine restart is still pending
+     * (30-F4): the provider is written to the config file, but the engine
+     * has not re-read it yet, so its row must not claim CONNECTED. Cleared
+     * by the next screen-entry refresh.
+     */
+    val restartPendingFor: String? = null,
 )
+
+/**
+ * Validates a custom OpenAI-compatible provider form (30-F1/31-F12/53-F7).
+ *
+ * Returns the string resource of the first rule broken, or null when the form
+ * is acceptable. The dialog and [ProvidersViewModel.saveCustomProvider] share
+ * this function, so the inline error and the enforced rule cannot drift apart.
+ *
+ * Rules: the name must not be blank; the base URL must parse with an `http` or
+ * `https` scheme and a host; `http` is only allowed for a loopback host
+ * (53-F7 — otherwise the API key travels in cleartext); the model list must
+ * parse to at least one model whose id has no whitespace. A new provider also
+ * needs a key; editing one does not ([requireKey] false keeps the stored key).
+ */
+internal fun validateCustomProvider(
+    name: String,
+    baseURL: String,
+    apiKey: String,
+    modelsText: String,
+    requireKey: Boolean = true,
+): Int? {
+    if (name.isBlank()) return R.string.providers_custom_name_blank
+    val url = baseURL.trim()
+    val uri = runCatching { URI(url) }.getOrNull()
+    val scheme = uri?.scheme?.lowercase(Locale.ROOT)
+    val host = uri?.host
+    if ((scheme != "http" && scheme != "https") || host.isNullOrBlank()) {
+        return R.string.providers_custom_url_invalid
+    }
+    // http:// sends the API key in cleartext (53-F7): only loopback is safe.
+    if (scheme == "http" && !isLoopbackHost(host)) {
+        return R.string.providers_custom_url_http
+    }
+    if (requireKey && apiKey.isBlank()) return R.string.providers_custom_key_blank
+    val models = EngineConfigStore.parseModels(modelsText)
+    if (models.isEmpty()) return R.string.providers_custom_no_models
+    if (models.any { spec -> spec.id.any { it.isWhitespace() } }) {
+        return R.string.providers_custom_model_invalid
+    }
+    return null
+}
+
+/** True for hosts whose traffic never leaves the device (53-F7). */
+internal fun isLoopbackHost(host: String): Boolean {
+    val lower = host.lowercase(Locale.ROOT)
+    // java.net.URI keeps the brackets on an IPv6 literal host ("[::1]"),
+    // so both forms must match.
+    return lower == "localhost" || lower == "127.0.0.1" || lower == "::1" || lower == "[::1]"
+}
+
+/**
+ * True when [id] is already taken by another custom provider (30-F2): the
+ * store keys by slug, so a name whose slug collides would silently
+ * overwrite that provider's URL, key, and models. The provider being
+ * edited keeps its own slug.
+ */
+internal fun isNameTaken(
+    existing: List<EngineConfigStore.CustomProvider>,
+    id: String,
+    editingId: String?,
+): Boolean = existing.any { it.id == id && it.id != editingId }
 
 /**
  * Lists the engine's providers and stores credentials.
@@ -61,33 +134,56 @@ class ProvidersViewModel(
     private val _state = MutableStateFlow(ProvidersUiState())
     val state: StateFlow<ProvidersUiState> = _state.asStateFlow()
 
-    fun refresh() {
-        // Read the config first and independently: it is on disk, so it is worth showing
-        // even while the engine is down.
-        val agResult = runCatching { configStore.antigravityAccountsResult() }
-            .getOrDefault(EngineConfigStore.AntigravityAccountsResult.Missing)
-        val agAccounts = (agResult as? EngineConfigStore.AntigravityAccountsResult.Ok)?.accounts ?: emptyList()
-        val activeAg = configStore.activeAntigravityAccount()
-        // customProviders() runs readRoot() first, which records the problem when the
-        // config file is unreadable — read it back after, not before.
-        val custom = runCatching { configStore.customProviders() }.getOrDefault(emptyList())
-        _state.value = _state.value.copy(
-            customProviders = custom,
-            antigravityAccounts = agAccounts,
-            activeAntigravityEmail = activeAg?.email,
-            antigravityAccountsCorrupt = agResult is EngineConfigStore.AntigravityAccountsResult.Corrupt,
-            configProblem = configStore.lastConfigReadProblem,
-        )
-        val h = api.handle() ?: return
-        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null)
-        viewModelScope.launch { reload(h) }
+    /**
+     * Re-reads the config file and, unless [reloadEngine] is false, the engine's
+     * catalog and credentials.
+     *
+     * The disk reads run on [Dispatchers.IO] (30-F6): the old version did them
+     * synchronously on the caller thread, i.e. the main thread from the screen's
+     * `LaunchedEffect` and from every save path. Callers that restart the engine
+     * pass `reloadEngine = false`: the engine is about to die, so a reload
+     * racing the restart would report a spurious failure (31-F9 family) — the
+     * catalog is untouched by a config-file change anyway, and the next
+     * screen-entry refresh re-reads it.
+     */
+    fun refresh(preserveRestartPending: Boolean = false, reloadEngine: Boolean = true) {
+        viewModelScope.launch {
+            // Read the config first and independently: it is on disk, so it is worth showing
+            // even while the engine is down.
+            val agResult = withContext(Dispatchers.IO) {
+                runCatching { configStore.antigravityAccountsResult() }
+                    .getOrDefault(EngineConfigStore.AntigravityAccountsResult.Missing)
+            }
+            val agAccounts = (agResult as? EngineConfigStore.AntigravityAccountsResult.Ok)?.accounts ?: emptyList()
+            val activeAg = withContext(Dispatchers.IO) { configStore.activeAntigravityAccount() }
+            // customProviders() runs readRoot() first, which records the problem when the
+            // config file is unreadable — read it back after, not before.
+            val custom = withContext(Dispatchers.IO) {
+                runCatching { configStore.customProviders() }.getOrDefault(emptyList())
+            }
+            _state.value = _state.value.copy(
+                customProviders = custom,
+                antigravityAccounts = agAccounts,
+                activeAntigravityEmail = activeAg?.email,
+                antigravityAccountsCorrupt = agResult is EngineConfigStore.AntigravityAccountsResult.Corrupt,
+                configProblem = configStore.lastConfigReadProblem,
+                restartPendingFor = if (preserveRestartPending) _state.value.restartPendingFor else null,
+            )
+            if (!reloadEngine) return@launch
+            val h = api.handle() ?: return@launch
+            _state.value = _state.value.copy(loading = true, failure = null, failureKey = null)
+            reload(h)
+        }
     }
 
     /** Stores [key] for a catalog provider and re-reads so its row updates. */
     fun saveKey(integrationID: String, key: String) {
         if (key.isBlank()) return
-        val h = api.handle() ?: return
-        _state.value = _state.value.copy(busyFor = integrationID, failure = null, failureKey = null, connected = null, notice = null)
+        val h = api.handle() ?: run {
+            reportEngineDown()
+            return
+        }
+        _state.value = beginAction(integrationID)
         viewModelScope.launch {
             when (val result = h.credentialStore.createKey(integrationID, key.trim())) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
@@ -97,7 +193,15 @@ class ProvidersViewModel(
                 is ApiResult.Success -> {
                     val name = providerName(integrationID)
                     reload(h)
-                    _state.value = _state.value.copy(busyFor = null, connected = name)
+                    // The save succeeded: a reload failure must not leave the
+                    // green confirmation and a red error on screen together
+                    // (31-F9). The list refreshes on the next entry.
+                    _state.value = _state.value.copy(
+                        busyFor = null,
+                        connected = name,
+                        failure = null,
+                        failureKey = null,
+                    )
                 }
             }
         }
@@ -111,9 +215,12 @@ class ProvidersViewModel(
      * one, which is why the count is re-read from the engine instead of decremented.
      */
     fun deleteCredential(integrationID: String, credentialID: String) {
-        val h = api.handle() ?: return
+        val h = api.handle() ?: run {
+            reportEngineDown()
+            return
+        }
         val name = providerName(integrationID)
-        _state.value = _state.value.copy(busyFor = credentialID, failure = null, failureKey = null, connected = null, notice = null)
+        _state.value = beginAction(credentialID)
         viewModelScope.launch {
             when (val result = h.credentialStore.remove(credentialID)) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
@@ -125,6 +232,8 @@ class ProvidersViewModel(
                     _state.value = _state.value.copy(
                         busyFor = null,
                         notice = afterDeleteNotice(rowsFor(_state.value.credentials, integrationID).size, name),
+                        failure = null,
+                        failureKey = null,
                     )
                 }
             }
@@ -139,9 +248,12 @@ class ProvidersViewModel(
      */
     fun replaceCredential(integrationID: String, credentialID: String, key: String) {
         if (key.isBlank()) return
-        val h = api.handle() ?: return
+        val h = api.handle() ?: run {
+            reportEngineDown()
+            return
+        }
         val name = providerName(integrationID)
-        _state.value = _state.value.copy(busyFor = credentialID, failure = null, failureKey = null, connected = null, notice = null)
+        _state.value = beginAction(credentialID)
         viewModelScope.launch {
             when (val created = h.credentialStore.createKey(integrationID, key.trim())) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
@@ -156,7 +268,8 @@ class ProvidersViewModel(
                     _state.value = _state.value.copy(
                         busyFor = null,
                         connected = name,
-                        failure = _state.value.failure,
+                        failure = null,
+                        failureKey = null,
                         staleKeyRemains = stale != null,
                     )
                 }
@@ -169,46 +282,118 @@ class ProvidersViewModel(
      *
      * The restart is not optional: providers are resolved at startup, so without it the
      * form appears to succeed while the model never reaches the picker.
+     *
+     * [editingId] is the slug of the provider being edited, or null for a new one:
+     * editing keeps its own slug (30-F2) and a blank key keeps the stored key,
+     * while a new provider with the same slug as another entry is rejected.
+     * The row shows "restart pending", not CONNECTED, until the next refresh
+     * (30-F4): the engine has not re-read the config yet.
      */
-    fun saveCustomProvider(name: String, baseURL: String, apiKey: String, modelsText: String) {
+    fun saveCustomProvider(
+        name: String,
+        baseURL: String,
+        apiKey: String,
+        modelsText: String,
+        editingId: String? = null,
+    ) {
         val trimmedName = name.trim()
-        val id = EngineConfigStore.slug(trimmedName)
-        val models = EngineConfigStore.parseModels(modelsText)
-        // A name whose slug already exists would silently overwrite that
-        // provider's URL, key, and models (item 13): the store keys by
-        // slug, so "My Provider" and "my-provider" are the same entry.
-        // There is no edit flow, so rejecting is safe — renaming the new
-        // provider is the only way to keep both.
-        val existing = runCatching { configStore.customProviders() }.getOrDefault(emptyList())
-        if (existing.any { it.id == id }) {
-            _state.value = _state.value.copy(failureKey = R.string.providers_name_taken)
-            return
-        }
-        _state.value = _state.value.copy(busyFor = id, failure = null, failureKey = null, connected = null, notice = null)
-
-        val outcome = runCatching {
-            configStore.putOpenAICompatible(id, trimmedName, baseURL.trim(), apiKey.trim(), models)
-        }
-        val written = outcome.getOrNull()
-        if (written == null) {
-            val blocked = outcome.exceptionOrNull() is EngineConfigStore.JsoncBlockedException
+        // Validate before any disk write or restart (30-F1/31-F12/53-F7).
+        validateCustomProvider(trimmedName, baseURL, apiKey, modelsText, requireKey = editingId == null)?.let { key ->
             _state.value = _state.value.copy(
                 busyFor = null,
-                failureKey = if (blocked) {
-                    R.string.providers_config_jsonc_blocks_write
-                } else {
-                    R.string.providers_config_write_failed
-                },
+                failureKey = key,
+                connected = null,
+                notice = null,
+                staleKeyRemains = false,
             )
             return
         }
-        _state.value = _state.value.copy(
-            busyFor = null,
-            connected = trimmedName,
-            failureKey = null,
-        )
-        refresh()
-        restartEngine()
+        val id = EngineConfigStore.slug(trimmedName)
+        val models = EngineConfigStore.parseModels(modelsText)
+        // A blank key while editing keeps the stored key (30-F2); a new
+        // provider always has one — the validation above enforced it.
+        val keyToStore = apiKey.trim().ifEmpty { null }
+        _state.value = beginAction(id)
+        viewModelScope.launch {
+            val existing = withContext(Dispatchers.IO) {
+                runCatching { configStore.customProviders() }.getOrDefault(emptyList())
+            }
+            // A name whose slug already exists would silently overwrite that
+            // provider's URL, key, and models: the store keys by slug, so
+            // "My Provider" and "my-provider" are the same entry. Reject,
+            // unless the slug is the one being edited (30-F2).
+            if (isNameTaken(existing, id, editingId)) {
+                _state.value = _state.value.copy(
+                    busyFor = null,
+                    failureKey = R.string.providers_name_taken,
+                    connected = null,
+                    notice = null,
+                    staleKeyRemains = false,
+                )
+                return@launch
+            }
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    configStore.putOpenAICompatible(id, trimmedName, baseURL.trim(), keyToStore, models)
+                }
+            }
+            val written = outcome.getOrNull()
+            if (written == null) {
+                val blocked = outcome.exceptionOrNull() is EngineConfigStore.JsoncBlockedException
+                _state.value = _state.value.copy(
+                    busyFor = null,
+                    failureKey = if (blocked) {
+                        R.string.providers_config_jsonc_blocks_write
+                    } else {
+                        R.string.providers_config_write_failed
+                    },
+                    connected = null,
+                    notice = null,
+                    staleKeyRemains = false,
+                )
+                return@launch
+            }
+            _state.value = _state.value.copy(
+                busyFor = null,
+                restartPendingFor = trimmedName,
+                connected = null,
+                failureKey = null,
+            )
+            refresh(preserveRestartPending = true, reloadEngine = false)
+            restartEngine()
+        }
+    }
+
+    /**
+     * Deletes a custom provider, then restarts the engine (30-F2). The row
+     * disappearing is the confirmation; there is no key to re-enter.
+     */
+    fun deleteCustomProvider(id: String) {
+        _state.value = beginAction(id)
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching { configStore.deleteCustomProvider(id) }
+            }
+            val deleted = outcome.getOrNull() ?: false
+            if (!deleted) {
+                val blocked = outcome.exceptionOrNull() is EngineConfigStore.JsoncBlockedException
+                _state.value = _state.value.copy(
+                    busyFor = null,
+                    failureKey = if (blocked) {
+                        R.string.providers_config_jsonc_blocks_write
+                    } else {
+                        R.string.providers_config_write_failed
+                    },
+                    connected = null,
+                    notice = null,
+                    staleKeyRemains = false,
+                )
+                return@launch
+            }
+            _state.value = _state.value.copy(busyFor = null)
+            refresh(reloadEngine = false)
+            restartEngine()
+        }
     }
 
     /**
@@ -217,22 +402,38 @@ class ProvidersViewModel(
      * picks the account up.
      */
     fun selectAntigravityAccount(id: String) {
-        if (!configStore.setAntigravityActiveAccount(id)) {
-            _state.value = _state.value.copy(failureKey = R.string.providers_config_write_failed)
-            return
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { configStore.setAntigravityActiveAccount(id) }
+            if (!ok) {
+                _state.value = _state.value.copy(
+                    failureKey = R.string.providers_config_write_failed,
+                    connected = null,
+                    notice = null,
+                    staleKeyRemains = false,
+                )
+                return@launch
+            }
+            refresh(reloadEngine = false)
+            restartEngine()
         }
-        refresh()
-        restartEngine()
     }
 
     /** Enables or disables one Antigravity account, then restarts the engine (31-F5). */
     fun setAntigravityAccountEnabled(id: String, enabled: Boolean) {
-        if (!configStore.setAntigravityAccountEnabled(id, enabled)) {
-            _state.value = _state.value.copy(failureKey = R.string.providers_config_write_failed)
-            return
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { configStore.setAntigravityAccountEnabled(id, enabled) }
+            if (!ok) {
+                _state.value = _state.value.copy(
+                    failureKey = R.string.providers_config_write_failed,
+                    connected = null,
+                    notice = null,
+                    staleKeyRemains = false,
+                )
+                return@launch
+            }
+            refresh(reloadEngine = false)
+            restartEngine()
         }
-        refresh()
-        restartEngine()
     }
 
     /**
@@ -241,12 +442,50 @@ class ProvidersViewModel(
      * config lives in `.jsonc`.
      */
     fun deleteJsoncConfig() {
-        if (configStore.deleteJsoncConfig()) {
-            _state.value = _state.value.copy(failureKey = null)
-            refresh()
-        } else {
-            _state.value = _state.value.copy(failureKey = R.string.providers_config_write_failed)
+        viewModelScope.launch {
+            val deleted = withContext(Dispatchers.IO) { configStore.deleteJsoncConfig() }
+            if (deleted) {
+                _state.value = _state.value.copy(failureKey = null)
+                refresh()
+            } else {
+                _state.value = _state.value.copy(
+                    failureKey = R.string.providers_config_write_failed,
+                    connected = null,
+                    notice = null,
+                    staleKeyRemains = false,
+                )
+            }
         }
+    }
+
+    /**
+     * State at the start of an action: busy for one target, with no outcome
+     * inherited from the previous action (31-F14) — an old green "Connected"
+     * must not survive next to a new red error.
+     */
+    private fun beginAction(busyFor: String?): ProvidersUiState =
+        _state.value.copy(
+            busyFor = busyFor,
+            failure = null,
+            failureKey = null,
+            connected = null,
+            notice = null,
+            staleKeyRemains = false,
+        )
+
+    /**
+     * The engine is down: report it instead of silently doing nothing (31-F7).
+     * The old code returned without touching state, so the dialog had already
+     * closed and the screen showed nothing at all.
+     */
+    private fun reportEngineDown() {
+        _state.value = _state.value.copy(
+            failure = engineDownFailure(),
+            failureKey = null,
+            connected = null,
+            notice = null,
+            staleKeyRemains = false,
+        )
     }
 
     private fun providerName(integrationID: String): String =

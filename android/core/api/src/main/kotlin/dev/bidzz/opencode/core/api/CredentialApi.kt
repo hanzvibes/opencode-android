@@ -2,9 +2,7 @@ package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.CredentialCreateRequest
 import dev.bidzz.opencode.core.api.dto.CredentialEntry
-import dev.bidzz.opencode.core.api.dto.CredentialsResponse
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
-import dev.bidzz.opencode.core.api.dto.IntegrationsResponse
 import dev.bidzz.opencode.core.api.dto.KeyValue
 import dev.bidzz.opencode.core.api.dto.SingleResponse
 import kotlinx.serialization.encodeToString
@@ -15,7 +13,7 @@ class IntegrationApi(private val client: EngineClient) {
     suspend fun list(): ApiResult<List<IntegrationInfo>> {
         val request = client.request("/api/integration").get().build()
         return client.execute(request) { raw ->
-            ApiJson.decodeFromString<IntegrationsResponse>(raw).data
+            client.decodeDataList<IntegrationInfo>(raw)
         }
     }
 }
@@ -33,7 +31,7 @@ class CredentialApi(private val client: EngineClient) {
     suspend fun list(): ApiResult<List<CredentialEntry>> {
         val request = client.request("/api/credential").get().build()
         return client.execute(request) { raw ->
-            ApiJson.decodeFromString<CredentialsResponse>(raw).data
+            client.decodeDataList<CredentialEntry>(raw)
         }
     }
 
