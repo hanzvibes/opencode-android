@@ -85,4 +85,39 @@ class ParkedComposerStoreTest {
         assertEquals(composer(), store.get("s1"))
         assertTrue(store.get("s1")?.queued?.size == 2)
     }
+
+    /**
+     * Audit-200 A3 (C-007, PROVEN): a composer parked before Fase 1a
+     * has no `queued` field in its stored bytes; Java deserialization
+     * fills the missing field with null instead of the Kotlin default.
+     * The bytes of a pre-1a build cannot be produced from this class
+     * anymore, so the test reproduces that null field directly with
+     * reflection and proves the read boundary normalizes it and the
+     * flush path survives it.
+     */
+    private fun pre1aComposer(): ParkedComposer {
+        val composer = ParkedComposer("draft lama", emptyList())
+        val field = ParkedComposer::class.java.getDeclaredField("queued")
+        field.isAccessible = true
+        field.set(composer, null)
+        return composer
+    }
+
+    @Test
+    fun `decode of a pre-1a composer treats a null queue as empty`() {
+        val decoded = decodeParkedComposer(encodeParkedComposer(pre1aComposer()))
+
+        assertEquals("draft lama", decoded?.draft)
+        assertEquals(emptyList<QueuedPrompt>(), decoded?.queued)
+    }
+
+    @Test
+    fun `removeQueued on a pre-1a composer does not crash and keeps the draft`() {
+        val store = InMemoryParkedComposerStore()
+        store.put("s1", pre1aComposer())
+
+        store.removeQueued("s1", QueuedPrompt("follow-up", "follow-up"))
+
+        assertEquals("draft lama", store.get("s1")?.draft)
+    }
 }

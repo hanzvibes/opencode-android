@@ -72,8 +72,17 @@ interface ParkedComposerStore {
      */
     fun removeQueued(sessionId: String, entry: QueuedPrompt) {
         val current = get(sessionId) ?: return
-        val kept = current.queued.filter { it != entry }
-        if (kept.size == current.queued.size) return
+        // Audit-200 A3 (C-007, PROVEN): a composer parked before Fase 1a
+        // has no `queued` field in its stored bytes, and Java
+        // deserialization bypasses the constructor — so the Kotlin
+        // default never applies and the field reads back null at runtime.
+        // Treat it as an empty queue instead of crashing on the first
+        // flush after the update. (`current.queued` is non-null in the
+        // type system, so the null test goes through `Any?`.)
+        val queued: List<QueuedPrompt> =
+            if ((current.queued as Any?) == null) emptyList() else current.queued
+        val kept = queued.filter { it != entry }
+        if (kept.size == queued.size) return
         if (current.draft.isBlank() && current.attachments.isEmpty() && kept.isEmpty()) {
             remove(sessionId)
         } else {
@@ -135,7 +144,13 @@ internal fun encodeParkedComposer(composer: ParkedComposer): String {
 internal fun decodeParkedComposer(encoded: String): ParkedComposer? {
     return try {
         val bytes = Base64.getDecoder().decode(encoded)
-        ObjectInputStream(ByteArrayInputStream(bytes)).use { it.readObject() as? ParkedComposer }
+        val decoded = ObjectInputStream(ByteArrayInputStream(bytes)).use {
+            it.readObject() as? ParkedComposer
+        } ?: return null
+        // Audit-200 A3 (C-007): the same null-queue case as
+        // removeQueued — normalize at the read boundary so every reader
+        // sees a real list, and the entry self-heals on the next write.
+        if ((decoded.queued as Any?) == null) decoded.copy(queued = emptyList()) else decoded
     } catch (_: Exception) {
         null
     }
