@@ -160,6 +160,7 @@ val BUILTIN_SLASH_COMMANDS: List<SlashCommand> = listOf(
     SlashCommand(
         name = "agent",
         description = "Switch active agent personality or mode",
+        descriptionRes = R.string.cmd_agent_desc,
         parameterHint = "<name>",
         glyph = Glyph.Sliders,
     ),
@@ -285,8 +286,18 @@ fun extractCommandQuery(draft: String): String {
  * Filters commands against the draft query with intelligent ranking.
  *
  * Exact matches > Prefix matches > Substring matches > Description matches.
+ *
+ * Description matching reads [descriptions] — the localised description per
+ * command name (11-F4) — falling back to the command's own (English)
+ * description for engine commands and skills, which have no translation.
+ * Without the map, searching "/hapus" finds nothing even in Indonesian,
+ * because every builtin description is English.
  */
-fun filterSlashCommands(commands: List<SlashCommand>, draft: String): List<SlashCommand> {
+fun filterSlashCommands(
+    commands: List<SlashCommand>,
+    draft: String,
+    descriptions: Map<String, String> = emptyMap(),
+): List<SlashCommand> {
     if (!draft.startsWith("/")) return emptyList()
     if (draft.contains(' ')) return emptyList()
     val query = extractCommandQuery(draft)
@@ -299,11 +310,12 @@ fun filterSlashCommands(commands: List<SlashCommand>, draft: String): List<Slash
 
     for (cmd in commands) {
         val nameLower = cmd.name.lowercase()
+        val description = descriptions[nameLower] ?: cmd.description
         when {
             nameLower == query -> exact.add(cmd)
             nameLower.startsWith(query) -> prefix.add(cmd)
             nameLower.contains(query) -> substring.add(cmd)
-            cmd.description.contains(query, ignoreCase = true) ||
+            description.contains(query, ignoreCase = true) ||
                 (cmd.parameterHint?.contains(query, ignoreCase = true) == true) -> other.add(cmd)
         }
     }
@@ -368,6 +380,14 @@ class CommandPaletteState(
     var rawCommands by mutableStateOf(initialCommands)
     var rawSkills by mutableStateOf(initialSkills)
 
+    /**
+     * Localised descriptions per command name, set by the composable that
+     * owns this state (11-F4). Description matching in [matches] reads
+     * these; engine commands and skills have no translation and fall back
+     * to their own description.
+     */
+    var localizedDescriptions: Map<String, String> by mutableStateOf(emptyMap())
+
     val allCommands: List<SlashCommand>
         get() = resolveSlashCommands(rawCommands, rawSkills)
 
@@ -375,7 +395,7 @@ class CommandPaletteState(
         get() = isCommandPaletteActive(rawDraft)
 
     val matches: List<SlashCommand>
-        get() = filterSlashCommands(allCommands, rawDraft)
+        get() = filterSlashCommands(allCommands, rawDraft, localizedDescriptions)
 
     var selectedIndex by mutableIntStateOf(0)
         private set
@@ -462,11 +482,13 @@ fun rememberCommandPaletteState(
     commands: List<CommandInfo>,
     draft: String,
     skills: List<SkillInfo> = emptyList(),
+    localizedDescriptions: Map<String, String> = emptyMap(),
 ): CommandPaletteState {
     val state = remember { CommandPaletteState(commands, draft, skills) }
     state.rawDraft = draft
     state.rawCommands = commands
     state.rawSkills = skills
+    state.localizedDescriptions = localizedDescriptions
 
     val matches = state.matches
     LaunchedEffect(matches) {

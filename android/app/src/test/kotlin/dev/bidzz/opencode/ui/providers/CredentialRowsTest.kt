@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.providers
 
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.CredentialEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -92,15 +93,15 @@ class CredentialRowsTest {
     @Test
     fun `losing the last key disconnects the provider`() {
         val notice = afterDeleteNotice(0, "302.AI")
-        assertTrue(notice, notice.contains("no key left"))
-        assertTrue(notice, notice.contains("until you add one"))
+        assertEquals(R.string.providers_no_keys_left, notice.messageRes)
+        assertEquals(listOf("302.AI"), notice.args)
     }
 
     @Test
     fun `losing one of several keys keeps the provider usable`() {
         val notice = afterDeleteNotice(2, "302.AI")
-        assertTrue(notice, notice.contains("2 left"))
-        assertFalse(notice, notice.contains("no key left"))
+        assertEquals(R.string.providers_keys_left, notice.messageRes)
+        assertEquals(listOf(2, "302.AI"), notice.args)
     }
 
     @Test

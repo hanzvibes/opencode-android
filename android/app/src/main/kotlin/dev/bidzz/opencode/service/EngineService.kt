@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import androidx.annotation.StringRes
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
@@ -20,7 +21,6 @@ import dev.bidzz.opencode.core.api.EventStream
 import dev.bidzz.opencode.core.api.EventStreamAuthException
 import dev.bidzz.opencode.core.api.SessionApi
 import dev.bidzz.opencode.core.api.dto.EngineEvent
-import dev.bidzz.opencode.core.engine.redactEnginePassword
 import dev.bidzz.opencode.core.engine.EngineCredentials
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
@@ -246,7 +246,7 @@ class EngineService : Service() {
         val supervisor = manager
         if (supervisor == null) {
             Log.e(TAG, "no supervisor; stopping service")
-            postFailureNotification("Engine unavailable")
+            postFailureNotification(R.string.engine_notif_unavailable_text)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -263,7 +263,7 @@ class EngineService : Service() {
                 }.onFailure { e ->
                     consecutiveFailures++
                     Log.e(TAG, "engine restart failed", e)
-                    postFailureNotification(e.message ?: "Engine failed to restart")
+                    postFailureNotification(R.string.engine_notif_restart_failed_text)
                 }
             }
             return START_STICKY
@@ -284,7 +284,7 @@ class EngineService : Service() {
             }.onFailure { e ->
                 consecutiveFailures++
                 Log.e(TAG, "engine start failed ($consecutiveFailures/$RESTART_FAILURE_LIMIT)", e)
-                postFailureNotification(e.message ?: "Engine failed to start")
+                postFailureNotification(R.string.engine_notif_start_failed_text)
                 if (consecutiveFailures >= RESTART_FAILURE_LIMIT) {
                     // Returning START_STICKY with a permanently failing start is a
                     // battery-draining crash loop. Give up and let the user retry.
@@ -422,21 +422,26 @@ class EngineService : Service() {
                 .onFailure { e ->
                     Log.e(TAG, "resurrect failed: ${e.message}")
                     if (consecutiveFailures >= RESTART_FAILURE_LIMIT) {
-                        postFailureNotification(e.message ?: "Engine failed to restart")
+                        postFailureNotification(R.string.engine_notif_restart_failed_text)
                     }
                 }
         }
     }
 
-    private fun postFailureNotification(reason: String) {
+    /**
+     * The failure notification (92-F3): the title and the text are string
+     * resources in the app language (the service context is wrapped by the
+     * Application's `attachBaseContext`, 92-F2). The exception's own words
+     * are NOT shown — they stay in the log at the call site, where they are
+     * already recorded with the exception — because exception text is
+     * English, and it can also carry a path or a password value (55-F4).
+     */
+    private fun postFailureNotification(@StringRes textRes: Int) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
-        // 55-F4: the reason is exception text — redact it the same way
-        // lastError is redacted (53-F1), so a path or a password value
-        // never reaches the drawer or the lock screen verbatim.
         // 55-F2: the notification dismisses itself when tapped.
         val notification = Notification.Builder(this, FAILED_CHANNEL_ID)
-            .setContentTitle("Engine could not start")
-            .setContentText(redactEnginePassword(reason))
+            .setContentTitle(getString(R.string.engine_notif_failed_title))
+            .setContentText(getString(textRes))
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentIntent(
                 PendingIntent.getActivity(

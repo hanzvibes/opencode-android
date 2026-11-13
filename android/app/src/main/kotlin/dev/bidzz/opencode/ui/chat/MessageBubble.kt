@@ -720,7 +720,14 @@ fun MessageBubble(
                     Column(modifier = Modifier.weight(1f, fill = false)) {
                         SelectionContainer {
                             Text(
-                                text = markdown,
+                                // A failed run with no message and no error
+                                // type (54-F7): the view model leaves the
+                                // text blank rather than hardcoding English,
+                                // and the bubble shows the sentence in the
+                                // app language instead of an empty red box.
+                                text = markdown.ifBlank {
+                                    stringResource(R.string.chat_agent_failed)
+                                },
                                 style = OpenCodeTypography.bodySmall,
                                 color = colors.danger,
                             )

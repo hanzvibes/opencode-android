@@ -27,8 +27,12 @@ enum class AppLanguage(val code: String, val tag: String?) {
  *
  * Applied inside Compose (see `OpenCodeApp`) rather than by recreating the activity, so
  * picking a language in Settings changes the text at once and keeps the screen the user is on.
- * The platform's per-app language API needs API 33 and the AppCompat backport needs an
- * `AppCompatActivity`; this app targets API 29 and uses `ComponentActivity`.
+ * The same wrap is applied to the base context of `MainActivity` and
+ * `OpenCodeApplication` (92-F2), so the surfaces outside the Compose tree — service
+ * notifications, the widget, shortcuts, and the activity's own `getString` calls — read
+ * in the picked language too. The platform's per-app language API needs API 33 and the
+ * AppCompat backport needs an `AppCompatActivity`; this app targets API 29 and uses
+ * `ComponentActivity`.
  */
 object LanguageStore {
     private const val PREFS = "app_settings"

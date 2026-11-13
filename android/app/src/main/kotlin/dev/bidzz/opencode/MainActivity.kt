@@ -2,6 +2,7 @@ package dev.bidzz.opencode
 
 import android.Manifest
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -47,6 +48,16 @@ import kotlinx.coroutines.withContext
  * (Batch 7) uses androidx BiometricPrompt, which requires one.
  */
 class MainActivity : FragmentActivity() {
+
+    /**
+     * The app language (92-F2): the activity's own resources — every
+     * `getString` here, the snackbars included — read in the language the
+     * user picked, not the phone's. The Compose tree wraps its context
+     * separately (see `OpenCodeApp`); this covers everything outside it.
+     */
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(LanguageStore.wrap(base, LanguageStore.get(base)))
+    }
 
     /**
      * App lock (Batch 7): whether the lock screen has been passed since

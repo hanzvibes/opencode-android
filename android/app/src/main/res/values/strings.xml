@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+        Some strings are intentionally identical in values/ and values-in/ (92-F12):
+        proper nouns (GitHub, OpenCode Go, STDOUT), technical terms Indonesian uses
+        as-is (Model, Shell, Branch, Diff, Edit, Root, Menu, Normal, Info, Error,
+        Pro, Compaction, Steer), and format-only strings ("%1$s · %2$ds"). They are
+        not missing translations. If a value here ever gains a real Indonesian
+        translation, it leaves this list — and an English value that reads as
+        Indonesian is a bug, not a member of it (the 2026-11-13 pass fixed 33 such
+        strings, mostly engine_notif_* and providers_antigravity_*, that had been
+        copied into this file in Indonesian).
+    -->
     <!-- Common -->
     <string name="common_back">Back</string>
     <string name="common_on">On</string>
@@ -24,20 +35,23 @@
     <string name="engine_state_stopping">stopping</string>
     <string name="engine_state_failed">failed</string>
     <string name="engine_state_stopped">stopped</string>
-    <string name="engine_notif_stopped_title">Engine berhenti</string>
-    <string name="engine_notif_stopped_text">Tidak berjalan</string>
-    <string name="engine_notif_starting_title">Engine memulai</string>
-    <string name="engine_notif_preparing_text">Menyiapkan environment</string>
-    <string name="engine_notif_waiting_text">Menunggu server</string>
-    <string name="engine_notif_running_title">Engine berjalan</string>
-    <string name="engine_notif_unhealthy_title">Engine tidak sehat</string>
-    <string name="engine_notif_health_failing_text">Pemeriksaan kesehatan gagal</string>
-    <string name="engine_notif_stopping_title">Engine sedang berhenti</string>
-    <string name="engine_notif_stopping_text">Mematikan</string>
-    <string name="engine_notif_failed_title">Engine gagal</string>
-    <string name="engine_notif_failed_text">Berhenti tiba-tiba</string>
+    <string name="engine_notif_stopped_title">Engine stopped</string>
+    <string name="engine_notif_stopped_text">Not running</string>
+    <string name="engine_notif_starting_title">Engine starting</string>
+    <string name="engine_notif_preparing_text">Preparing environment</string>
+    <string name="engine_notif_waiting_text">Waiting for server</string>
+    <string name="engine_notif_running_title">Engine running</string>
+    <string name="engine_notif_unhealthy_title">Engine unhealthy</string>
+    <string name="engine_notif_health_failing_text">Health check failing</string>
+    <string name="engine_notif_stopping_title">Engine stopping</string>
+    <string name="engine_notif_stopping_text">Shutting down</string>
+    <string name="engine_notif_failed_title">Engine failed</string>
+    <string name="engine_notif_failed_text">Stopped unexpectedly</string>
+    <string name="engine_notif_unavailable_text">Engine unavailable</string>
+    <string name="engine_notif_start_failed_text">Engine failed to start</string>
+    <string name="engine_notif_restart_failed_text">Engine failed to restart</string>
     <string name="engine_notif_channel_name">Engine</string>
-    <string name="engine_notif_channel_desc">Menjaga engine OpenCode lokal tetap berjalan</string>
+    <string name="engine_notif_channel_desc">Keeps the local OpenCode engine running</string>
     <string name="engine_notif_failure_channel_name">Engine failures</string>
     <string name="engine_notif_failure_channel_desc">Alerts when the local engine fails to start.</string>
 
@@ -155,6 +169,7 @@
     <string name="chat_retry">Retry</string>
     <string name="chat_load_earlier">Load earlier messages</string>
     <string name="chat_rate_limited_guidance">Rate limited — switch model or wait a moment, then send again.</string>
+    <string name="chat_agent_failed">The agent failed</string>
     <string name="stop_unconfirmed">Stop not confirmed yet — tap Stop to try again.</string>
     <string name="chat_session_gone_guidance">This session is gone on the engine — start a new session from the drawer.</string>
     <string name="session_link_gone">That session is gone on the engine — the link points to a session that no longer exists.</string>
@@ -235,7 +250,6 @@
     <string name="drawer_all_sessions">All sessions</string>
     <string name="drawer_view_all">View all sessions</string>
     <string name="drawer_diagnostics">Diagnostics</string>
-    <string name="drawer_switch_workspace">Switch workspace</string>
     <string name="sidebar_collapse">Collapse sidebar</string>
     <string name="sidebar_expand">Expand sidebar</string>
     <string name="sidebar_close">Close sidebar</string>
@@ -423,20 +437,22 @@
     <string name="question_expired">This question can no longer be answered.</string>
     <string name="question_answer_failed">The answer could not be sent — it is back in the composer so you can retry.</string>
     <string name="bubble_thinking">Thinking…</string>
-    <string name="commands_no_match">Tidak ada perintah yang cocok dengan “%1$s”</string>
-    <string name="commands_standard">Perintah standar: %1$s</string>
-    <string name="commands_palette">Palet perintah</string>
-    <string name="chat_agent_mode">Mode agen</string>
-    <string name="chat_select_model">Pilih model</string>
+    <string name="commands_no_match">No command matches “%1$s”</string>
+    <string name="commands_standard">Standard commands: %1$s</string>
+    <string name="commands_palette">Command palette</string>
+    <string name="chat_agent_mode">Agent mode</string>
+    <string name="chat_select_model">Select model</string>
     <string name="chat_mode_label">Mode: %1$s</string>
     <string name="chat_mode_fallback">Mode</string>
     <string name="chat_model_label">Model: %1$s</string>
     <string name="chat_model_fallback">Model</string>
-    <string name="chat_models_available">%1$d tersedia</string>
-    <string name="bubble_thought_for">Berpikir selama %1$d dtk</string>
+    <string name="chat_models_available">%1$d available</string>
+    <string name="bubble_thought_for">Thought for %1$d s</string>
     <string name="streaming_typing">Typing…</string>
     <string name="tool_steps_one">%1$d step</string>
     <string name="tool_steps_other">%1$d steps</string>
+    <string name="tool_running_named">Running %1$s… · %2$d/%3$d</string>
+    <string name="tool_ran">Ran %1$s</string>
     <string name="tool_failed">· %1$d failed</string>
     <string name="tool_summary_succeeded">%1$d succeeded</string>
     <string name="tool_working">· working</string>
@@ -556,11 +572,11 @@
     <string name="diff_mode_split">Split</string>
     <string name="diff_filter_hint">Filter changed files…</string>
     <string name="diff_filter_no_results">No changed files match \"%1$s\"</string>
-    <string name="explorer_search_hint">Cari file…</string>
+    <string name="explorer_search_hint">Search files…</string>
     <string name="explorer_search_no_results">No files match \"%1$s\"</string>
     <string name="explorer_show_hidden">Show hidden</string>
     <string name="explorer_hide_hidden">Hide hidden</string>
-    <string name="diff_files_changed">%1$d file diubah</string>
+    <string name="diff_files_changed">%1$d files changed</string>
     <string name="diff_original">Original</string>
     <string name="diff_modified">Modified</string>
     <string name="difflist_title">Changes (%1$d)</string>
@@ -628,19 +644,21 @@
     <string name="providers_delete_body">%1$s (%2$s) will be removed from the engine\'s database.</string>
     <string name="providers_delete_last">It is the only key for %1$s, which will stop working until another is added.</string>
     <string name="providers_keys_for">Keys for %1$s</string>
-    <string name="providers_key_valid">Format kunci %1$s terverifikasi (%2$s…)</string>
-    <string name="providers_key_warning">Kunci %1$s biasanya diawali %2$s</string>
-    <string name="providers_key_valid_generic">Format kunci tampaknya valid (%1$d karakter)</string>
-    <string name="providers_subtitle_free_tier">Model tingkat gratis bawaan</string>
-    <string name="providers_subtitle_local">Model lokal &amp; kompatibel OpenAI</string>
+    <string name="providers_key_valid">%1$s key format verified (%2$s…)</string>
+    <string name="providers_key_warning">%1$s keys usually begin with %2$s</string>
+    <string name="providers_key_valid_generic">Key format appears valid (%1$d characters)</string>
+    <string name="providers_no_keys_left">%1$s has no key left. It will not work until you add one.</string>
+    <string name="providers_keys_left">Key deleted. %1$d left for %2$s.</string>
+    <string name="providers_subtitle_free_tier">Built-in free-tier models</string>
+    <string name="providers_subtitle_local">Local &amp;amp; OpenAI-compatible models</string>
     <string name="providers_antigravity_title">Google (Gemini &amp; Antigravity)</string>
-    <string name="providers_antigravity_connected">Antigravity OAuth: Terhubung</string>
-    <string name="providers_antigravity_active_account">Akun aktif: %1$s</string>
-    <string name="providers_antigravity_models_note">Model seperti %1$s diautentikasi via token Google Antigravity OAuth secara otomatis. Tidak perlu API key.</string>
-    <string name="providers_antigravity_use_key">Gunakan Gemini dengan Google API Key Anda, atau konfigurasi Antigravity OAuth di konfigurasi engine.</string>
-    <string name="providers_gemini_keys_configured">%1$d kunci API Gemini telah dikonfigurasi.</string>
+    <string name="providers_antigravity_connected">Antigravity OAuth: Connected</string>
+    <string name="providers_antigravity_active_account">Active account: %1$s</string>
+    <string name="providers_antigravity_models_note">Models like %1$s authenticate automatically via the Google Antigravity OAuth token. No API key needed.</string>
+    <string name="providers_antigravity_use_key">Use Gemini with your Google API key, or configure Antigravity OAuth in the engine config.</string>
+    <string name="providers_gemini_keys_configured">%1$d Gemini API keys configured.</string>
     <string name="providers_antigravity_oauth_account">Antigravity OAuth (%1$s)</string>
-    <string name="providers_antigravity_connected_plain">Antigravity Terhubung</string>
+    <string name="providers_antigravity_connected_plain">Antigravity Connected</string>
     <string name="providers_antigravity_needs_attention">Antigravity OAuth needs attention</string>
     <string name="providers_antigravity_needs_attention_hint">An account is saved but none can be used: disabled, or without a refresh token. Pick a usable account below, or reconnect OAuth in the engine config.</string>
     <string name="providers_antigravity_corrupt">Antigravity accounts file is corrupt — OAuth accounts could not be read.</string>
@@ -789,6 +807,7 @@
     <string name="cmd_undo_desc">Revert last assistant modifications</string>
     <string name="cmd_help_desc">Show available commands and usage guide</string>
     <string name="cmd_model_desc">Switch active model or provider</string>
+    <string name="cmd_agent_desc">Switch active agent personality or mode</string>
     <string name="fileview_lines_one">%1$d line</string>
     <string name="fileview_lines_unsaved_one">%1$d line · unsaved</string>
     <string name="fileview_lines_truncated_one">%1$d of %2$d line</string>
@@ -833,7 +852,6 @@
     <string name="browser_share">Share link</string>
     <string name="browser_share_failed">Couldn\'t open the share sheet.</string>
     <string name="browser_open_external">Open in browser</string>
-    <string name="browser_copy_link">Copy link</string>
     <string name="browser_copied">Link copied</string>
     <string name="browser_copy_url_description">Copy URL: %1$s</string>
     <string name="browser_download_started">Download started</string>

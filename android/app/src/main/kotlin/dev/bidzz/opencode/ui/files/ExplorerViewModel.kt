@@ -12,6 +12,7 @@ import dev.bidzz.opencode.core.api.dto.FileDiffInfo
 import dev.bidzz.opencode.core.api.dto.FsEntry
 import dev.bidzz.opencode.core.api.dto.VcsFileStatus
 import java.security.MessageDigest
+import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -228,7 +229,7 @@ class ExplorerViewModel(
             quickOpenLoaded = !hadFailure
             quickOpenDirectory = directory
             _state.value = _state.value.copy(
-                quickOpenIndex = found.sortedBy { it.path.lowercase() },
+                quickOpenIndex = found.sortedBy { it.path.lowercase(Locale.ROOT) },
                 quickOpenLoading = false,
                 quickOpenFailed = hadFailure,
                 quickOpenTruncated = truncated,
@@ -352,7 +353,7 @@ class ExplorerViewModel(
                     deletions = status?.deletions ?: 0,
                 )
             }
-            .sortedWith(compareByDescending<FileRow> { it.isDirectory }.thenBy { it.name.lowercase() })
+            .sortedWith(compareByDescending<FileRow> { it.isDirectory }.thenBy { it.name.lowercase(Locale.ROOT) })
     }
 
     private fun buildCrumbs(path: String): List<ExplorerUiState.Crumb> {
