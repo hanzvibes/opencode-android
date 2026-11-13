@@ -112,6 +112,8 @@ fun SettingsScreen(
     onPlugins: () -> Unit,
     onArtifacts: () -> Unit,
     onJobs: () -> Unit,
+    onGenerate: () -> Unit,
+    onWebSearch: () -> Unit,
     onWorktrees: () -> Unit,
     onEngineConfig: () -> Unit,
     onSessionStats: () -> Unit,
@@ -217,6 +219,10 @@ fun SettingsScreen(
     val artifactSubtitle = stringResource(R.string.artifact_body)
     val jobTitle = stringResource(R.string.job_title)
     val jobSubtitle = stringResource(R.string.job_body)
+    val generateTitle = stringResource(R.string.generate_title)
+    val generateSubtitle = stringResource(R.string.generate_body)
+    val webSearchTitle = stringResource(R.string.websearch_title)
+    val webSearchSubtitle = stringResource(R.string.websearch_body)
     val worktreeTitle = stringResource(R.string.worktree_title)
     val worktreeSubtitle = stringResource(R.string.worktree_body)
     val configTitle = stringResource(R.string.config_title)
@@ -283,11 +289,13 @@ fun SettingsScreen(
     val pluginVisible = matchesSettingsQuery(query, pluginTitle, pluginSubtitle)
     val artifactVisible = matchesSettingsQuery(query, artifactTitle, artifactSubtitle)
     val jobVisible = matchesSettingsQuery(query, jobTitle, jobSubtitle)
+    val generateVisible = matchesSettingsQuery(query, generateTitle, generateSubtitle)
+    val webSearchVisible = matchesSettingsQuery(query, webSearchTitle, webSearchSubtitle)
     val worktreeVisible = matchesSettingsQuery(query, worktreeTitle, worktreeSubtitle)
     val configVisible = matchesSettingsQuery(query, configTitle, configSubtitle)
     val statsVisible = matchesSettingsQuery(query, statsTitle, statsSubtitle)
     val usageVisible = matchesSettingsQuery(query, usageTitle, usageSubtitle)
-    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || artifactVisible || jobVisible || worktreeVisible || configVisible || statsVisible || usageVisible
+    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || artifactVisible || jobVisible || generateVisible || webSearchVisible || worktreeVisible || configVisible || statsVisible || usageVisible
     val languageVisible = matchesSettingsQuery(
         query,
         languageTitle,
@@ -505,6 +513,22 @@ fun SettingsScreen(
                             title = jobTitle,
                             subtitle = jobSubtitle,
                             onClick = onJobs,
+                        )
+                    }
+                    if (generateVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Sparkles,
+                            title = generateTitle,
+                            subtitle = generateSubtitle,
+                            onClick = onGenerate,
+                        )
+                    }
+                    if (webSearchVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Globe,
+                            title = webSearchTitle,
+                            subtitle = webSearchSubtitle,
+                            onClick = onWebSearch,
                         )
                     }
                     if (worktreeVisible) {
