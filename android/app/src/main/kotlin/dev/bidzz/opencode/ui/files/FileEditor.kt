@@ -143,6 +143,23 @@ object LargeFileGuard {
 }
 
 /**
+ * "512 B", "1 KB", "1.5 MB", "8 MB" — the size shown for a file the read
+ * capped (audit-200 A8, DL-005). One decimal, with a trailing ".0" dropped.
+ */
+internal fun formatFileBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = arrayOf("KB", "MB", "GB")
+    var value = bytes / 1024.0
+    var unit = 0
+    while (value >= 1024.0 && unit < units.lastIndex) {
+        value /= 1024.0
+        unit++
+    }
+    val text = String.format(Locale.US, "%.1f", value).removeSuffix(".0")
+    return "$text ${units[unit]}"
+}
+
+/**
  * Plain-text, case-insensitive find over the text actually loaded. Matches never
  * overlap; the list is capped at [maxMatches] so a one-character query in a big
  * file cannot build an unbounded list. Callers show the cap (e.g. "1000+") and,

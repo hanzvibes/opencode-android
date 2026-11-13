@@ -84,12 +84,22 @@ data class FileViewState(
     val saved: Boolean = false,
     /**
      * True when [content] is only the first [LargeFileGuard.PreviewLines] lines of
-     * a file over [LargeFileGuard.MaxChars]. Find searches this preview only and
-     * editing is blocked until the full file is loaded.
+     * a file over [LargeFileGuard.MaxChars] — or only the first 8 MB the
+     * engine's read keeps, whatever the line count says (audit-200 A8,
+     * DL-005: a 9 MB file with one line used to look whole and editable).
+     * Find searches this preview only and editing is blocked; a capped
+     * file cannot be loaded in full at all, so its banner offers no
+     * Load-full action.
      */
     val truncated: Boolean = false,
     /** The file's full line count while [truncated]; 0 otherwise. */
     val totalLines: Int = 0,
+    /**
+     * The file's full byte size while [truncated] by the 8 MB read cap;
+     * 0 when the read was not capped. The banner names the real size
+     * instead of counting lines that were never read.
+     */
+    val totalBytes: Long = 0,
     /**
      * A file the user asked to open while the current draft is unsaved
      * (item 10). The switch is held — the viewer keeps showing the current
@@ -275,6 +285,7 @@ fun FileViewScreen(
             LargeFileBanner(
                 shownLines = lineCount,
                 totalLines = state.totalLines,
+                totalBytes = state.totalBytes,
                 onLoadFull = onLoadFull,
             )
         }
@@ -364,6 +375,7 @@ fun FileViewScreen(
             onBack = handleBack,
             subtitle = when {
                 state.dirty -> stringResource(if (lineCount == 1) R.string.fileview_lines_unsaved_one else R.string.fileview_lines_unsaved, lineCount)
+                state.truncated && state.totalBytes > 0 -> stringResource(R.string.fileview_lines_truncated_capped, formatFileBytes(state.totalBytes))
                 state.truncated -> stringResource(if (lineCount == 1) R.string.fileview_lines_truncated_one else R.string.fileview_lines_truncated, lineCount, state.totalLines)
                 shownText.isNotEmpty() -> stringResource(if (lineCount == 1) R.string.fileview_lines_one else R.string.fileview_lines, lineCount)
                 else -> null
@@ -546,9 +558,15 @@ fun FileViewScreen(
     }
 }
 
-/** Warning shown for a truncated file, with the explicit opt-in to load it all. */
+/**
+ * Warning shown for a truncated file, with the explicit opt-in to load it
+ * all — unless the read itself was capped at 8 MB (audit-200 A8, DL-005):
+ * a capped file cannot be loaded in full at all, so its banner says how
+ * big the file really is and offers no Load-full action that could only
+ * fail. [totalBytes] is the file's full size, 0 when the read was not capped.
+ */
 @Composable
-private fun LargeFileBanner(shownLines: Int, totalLines: Int, onLoadFull: () -> Unit) {
+private fun LargeFileBanner(shownLines: Int, totalLines: Int, totalBytes: Long, onLoadFull: () -> Unit) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
@@ -562,15 +580,21 @@ private fun LargeFileBanner(shownLines: Int, totalLines: Int, onLoadFull: () -> 
             .padding(horizontal = spacing.md, vertical = spacing.sm),
     ) {
         Text(
-            text = stringResource(R.string.fileview_large_warning, shownLines, totalLines),
+            text = if (totalBytes > 0) {
+                stringResource(R.string.fileview_large_warning_capped, formatFileBytes(totalBytes))
+            } else {
+                stringResource(R.string.fileview_large_warning, shownLines, totalLines)
+            },
             style = OpenCodeTypography.bodySmall,
             color = colors.onSurface,
         )
-        TextAction(
-            label = stringResource(R.string.fileview_load_full),
-            onClick = onLoadFull,
-            modifier = Modifier.padding(top = spacing.xs),
-        )
+        if (totalBytes <= 0) {
+            TextAction(
+                label = stringResource(R.string.fileview_load_full),
+                onClick = onLoadFull,
+                modifier = Modifier.padding(top = spacing.xs),
+            )
+        }
     }
 }
 
