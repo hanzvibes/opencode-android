@@ -39,8 +39,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -332,6 +334,14 @@ fun InAppBrowserScreen(
                         context.getString(R.string.browser_copied),
                     )
                 }
+                // 92-F11: without a description TalkBack only reads the
+                // raw URL — it never says the row copies on tap.
+                .semantics {
+                    contentDescription = context.getString(
+                        R.string.browser_copy_url_description,
+                        currentUrl,
+                    )
+                }
                 .padding(horizontal = spacing.md, vertical = spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -354,7 +364,16 @@ fun InAppBrowserScreen(
         if (progress in 1..99) {
             LinearProgressIndicator(
                 progress = { progress / 100f },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 92-F11: the load progress is announced to TalkBack
+                    // (the indicator's own semantics do not carry it).
+                    .semantics {
+                        progressBarRangeInfo = ProgressBarRangeInfo(
+                            progress / 100f,
+                            0f..1f,
+                        )
+                    },
                 color = colors.accent,
                 trackColor = colors.hairline,
             )

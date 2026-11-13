@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -173,7 +174,10 @@ fun IconBadge(
     size: Dp = 32.dp,
 ) {
     val colors = OpenCodeTheme.colors
-    val fg = tint ?: if (background != null) Color.White else colors.onSurface.copy(alpha = 0.85f)
+    // 47-F5: the default foreground is chosen from the background's
+    // luminance — white on a light background (Diagnostics #34C759,
+    // #FF9500, #30B0C7) is only 2.2:1. An explicit tint still wins.
+    val fg = tint ?: if (background != null) foregroundForBackground(background) else colors.onSurface.copy(alpha = 0.85f)
     val bg = background ?: colors.fill
     Box(
         modifier = modifier
@@ -185,6 +189,19 @@ fun IconBadge(
         GlyphIcon(glyph, tint = fg, size = size * 0.53f)
     }
 }
+
+/**
+ * Foreground for an icon on an arbitrary solid [background] (47-F5).
+ *
+ * White is unreadable on light badge backgrounds (2.2:1 on #34C759 /
+ * #FF9500 / #30B0C7), so the foreground follows the background's
+ * relative luminance: a near-black glyph on light backgrounds
+ * (8.9:1 / 9.0:1 / 7.7:1 on those three), white on dark ones (5.98:1
+ * on #005FCC, 5.57:1 on #0066CC). The 0.179 threshold is where black
+ * and white text trade places in contrast against the background.
+ */
+internal fun foregroundForBackground(background: Color): Color =
+    if (background.luminance() > 0.179f) Color(0xFF0B0B0C) else Color.White
 
 /** Hairline between two rows of a card; [inset] lines it up under the text, not the icon. */
 @Composable
@@ -610,6 +627,10 @@ fun SearchField(
             modifier = Modifier
                 .weight(1f)
                 .padding(start = spacing.sm)
+                // 19-F10/29-F10: without a label TalkBack announces
+                // nothing for an empty field — the visible placeholder
+                // is the label (it differs per screen).
+                .semantics { contentDescription = placeholder }
                 .onFocusChanged { isFocused = it.isFocused },
             decorationBox = { inner ->
                 if (query.isEmpty()) {

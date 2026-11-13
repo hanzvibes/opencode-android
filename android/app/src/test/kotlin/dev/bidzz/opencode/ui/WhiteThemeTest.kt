@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.OpenCodeTokens
@@ -158,6 +159,11 @@ class WhiteThemeTest {
         "syntaxFunction" to Palette.lightSyntaxFunction,
         "syntaxType" to Palette.lightSyntaxType,
         "toolPending" to Palette.lightToolPending,
+        // Fase 6j (47-F3/47-F4): the badge and pill text tokens. Light
+        // running/failed pill text reuses the existing tool tokens.
+        "badgeAccentText" to Palette.lightBadgeAccentText,
+        "toolRunningText" to Palette.lightToolRunning,
+        "toolErrorText" to Palette.lightToolError,
     )
 
     @Test
@@ -211,6 +217,27 @@ class WhiteThemeTest {
         // The fill is its own token, not an alias of the bright accent:
         // aliasing it back to #007AFF would silently reintroduce 4.02:1.
         assertTrue(Palette.lightAccentFill.toArgb() != Palette.lightAccent.toArgb())
+    }
+
+    @Test
+    fun `badge text and snackbar action pass AA on their tinted and inverse backgrounds`() {
+        // Fase 6j (47-F3/92-F6): the badge label sits on a 14% tint of
+        // accentText over the assistant bubble, and the snackbar action
+        // sits on the inverse surface — both are backgrounds the plain
+        // token audit above does not cover.
+        val badgeTint = Palette.lightAccentText.copy(alpha = 0.14f)
+            .compositeOver(Palette.lightAssistantBubble)
+        assertTrue(
+            "badgeAccentText on its tint is " +
+                "${contrastRatio(Palette.lightBadgeAccentText, badgeTint)}, below AA 4.5:1",
+            contrastRatio(Palette.lightBadgeAccentText, badgeTint) >= 4.5,
+        )
+        assertEquals(0xFF66B2FF.toInt(), Palette.lightInversePrimary.toArgb())
+        assertTrue(
+            "lightInversePrimary on inverseSurface is " +
+                "${contrastRatio(Palette.lightInversePrimary, Palette.darkSurfaceRaised)}, below AA 4.5:1",
+            contrastRatio(Palette.lightInversePrimary, Palette.darkSurfaceRaised) >= 4.5,
+        )
     }
 
     // ---- WCAG relative luminance, straight from the spec ----

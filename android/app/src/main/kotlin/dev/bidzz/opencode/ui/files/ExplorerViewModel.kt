@@ -23,7 +23,7 @@ data class FileRow(
     val path: String,
     val name: String,
     val isDirectory: Boolean,
-    /** Git status for this file, when it changed: "added", "modified", "deleted". */
+    /** Git status for this file, when it changed: "added", "modified", "deleted", "renamed" or "untracked". */
     val gitStatus: String? = null,
     val additions: Int = 0,
     val deletions: Int = 0,

@@ -12,6 +12,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -759,10 +760,9 @@ private fun CommandSuggestionRow(
         modifier = modifier
             .fillMaxWidth()
             .background(rowBackground)
-            .clickable(
-                role = Role.Button,
-                onClick = onPick,
-            )
+            // 47-F2: the keyboard-highlighted command is the Enter target —
+            // TalkBack announces it as selected, not a plain button.
+            .selectable(selected = isSelected, role = Role.Button, onClick = onPick)
             .padding(horizontal = spacing.md, vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(spacing.md),
@@ -815,7 +815,9 @@ private fun CommandSuggestionRow(
                             text = command.parameterHint,
                             style = OpenCodeTypography.code,
                             fontSize = 11.sp,
-                            color = if (isSelected) colors.accent else colors.onSurfaceMuted,
+                            // 47-F1: the selected parameter hint is text —
+                            // accent is only 3.75:1 on sunken in light.
+                            color = if (isSelected) colors.accentText else colors.onSurfaceMuted,
                         )
                     }
                 }

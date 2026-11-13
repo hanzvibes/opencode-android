@@ -500,6 +500,8 @@
     <string name="files_status_added">Added</string>
     <string name="files_status_modified">Modified</string>
     <string name="files_status_deleted">Deleted</string>
+    <string name="files_status_renamed">Renamed</string>
+    <string name="files_status_untracked">Untracked</string>
     <string name="fileview_lines">%1$d lines</string>
     <string name="fileview_lines_unsaved">%1$d lines · unsaved</string>
     <string name="fileview_saving">Saving…</string>
@@ -833,6 +835,7 @@
     <string name="browser_open_external">Open in browser</string>
     <string name="browser_copy_link">Copy link</string>
     <string name="browser_copied">Link copied</string>
+    <string name="browser_copy_url_description">Copy URL: %1$s</string>
     <string name="browser_download_started">Download started</string>
     <string name="browser_download_failed">Download failed</string>
     <string name="message_share">Share</string>

@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 import dev.bidzz.opencode.core.design.Palette
 import org.junit.Assert.assertEquals
@@ -59,6 +60,37 @@ class DarkThemeTest {
                 contrastRatio(Palette.darkOnSurfaceFaint, surface) >= 4.5,
             )
         }
+    }
+
+    @Test
+    fun `badge and pill text tokens pass AA on their dark tints`() {
+        // Fase 6j (47-F3/47-F4): the badge label sits on a 14% tint of
+        // itself over the assistant bubble, and the status pills sit on
+        // a 12% tint of the status colour over the same bubble. The plain
+        // tokens fail there (badge 3.95:1, running pill 4.09:1, failed
+        // pill 4.40:1); the text variants below must stay AA.
+        val bubble = Palette.darkAssistantBubble
+        val badgeTint = Palette.darkBadgeAccentText.copy(alpha = 0.14f)
+            .compositeOver(bubble)
+        assertTrue(
+            "dark badgeAccentText on its tint is " +
+                "${contrastRatio(Palette.darkBadgeAccentText, badgeTint)}, below AA 4.5:1",
+            contrastRatio(Palette.darkBadgeAccentText, badgeTint) >= 4.5,
+        )
+        val runningTint = Palette.darkAccent.copy(alpha = 0.12f)
+            .compositeOver(bubble)
+        assertTrue(
+            "dark toolRunningText on the running pill tint is " +
+                "${contrastRatio(Palette.darkToolRunningText, runningTint)}, below AA 4.5:1",
+            contrastRatio(Palette.darkToolRunningText, runningTint) >= 4.5,
+        )
+        val failedTint = Palette.danger.copy(alpha = 0.12f)
+            .compositeOver(bubble)
+        assertTrue(
+            "dark toolErrorText on the failed pill tint is " +
+                "${contrastRatio(Palette.darkToolErrorText, failedTint)}, below AA 4.5:1",
+            contrastRatio(Palette.darkToolErrorText, failedTint) >= 4.5,
+        )
     }
 
     // ---- WCAG relative luminance, straight from the spec (mirrors WhiteThemeTest) ----

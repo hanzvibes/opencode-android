@@ -2,7 +2,7 @@ package dev.bidzz.opencode.ui.diff
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -72,7 +72,7 @@ fun DiffScreen(
         title = state.file.substringAfterLast('/'),
         onBack = onBack,
         subtitle = if (state.hunks.isNotEmpty()) "+${state.additions} −${state.deletions}" else null,
-        subtitleColor = if (state.hunks.isNotEmpty()) colors.accent else null,
+        subtitleColor = if (state.hunks.isNotEmpty()) colors.accentText else null,
         actions = {
             if (state.hunks.isNotEmpty()) {
                 DiffModeSelector(
@@ -139,14 +139,16 @@ private fun ModeOptionChip(
         modifier = Modifier
             .clip(RoundedCornerShape(radius))
             .background(if (selected) colors.surfaceRaised else Color.Transparent)
-            .clickable(role = Role.Button, onClick = onClick)
+            // 47-F2: a mode tab announces as selected, not a plain button.
+            .selectable(selected = selected, role = Role.Button, onClick = onClick)
             .padding(horizontal = spacing.sm + 2.dp, vertical = spacing.xxs),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             style = OpenCodeTypography.caption.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium),
-            color = if (selected) colors.accent else colors.onSurfaceMuted,
+            // 47-F1: accent as text is only 4.02:1 on white in light.
+            color = if (selected) colors.accentText else colors.onSurfaceMuted,
         )
     }
 }

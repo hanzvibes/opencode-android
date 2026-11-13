@@ -148,6 +148,24 @@ data class OpenCodeColors(
     val toolWarningBg: Color = warning.copy(alpha = 0.14f),
     val toolPending: Color = onSurfaceMuted,
     val toolPendingBg: Color = fill,
+    /**
+     * Text-safe blue for the tool-kind badge (47-F3): the kind label is
+     * 9sp bold mono on a 14% tint of itself over the assistant bubble.
+     * Light #004A99 is 6.14:1 on the tint #CEDBEC (accentText #005FCC
+     * is only 4.27:1 there); dark #5AC8FA is 6.77:1 on #25343D
+     * (accent #0A84FF is only 3.95:1 there).
+     */
+    val badgeAccentText: Color = accentText,
+    /**
+     * Text-safe variants of [toolRunning] / [toolError] for the status
+     * pills (47-F4): the pill text sits on a 12% tint of the same colour
+     * over the assistant bubble. In light the plain tokens already pass
+     * (running 4.50:1, failed 4.71:1); in dark they fail (running
+     * 4.09:1, failed 4.40:1), so dark uses the lightened variants
+     * (running 7.88:1 on #1A2839, failed 6.56:1 on #372121).
+     */
+    val toolRunningText: Color = toolRunning,
+    val toolErrorText: Color = toolError,
 
     // ---- Unified Diff semantic colors (+/-) ----
     val diffAdded: Color = success,
@@ -338,6 +356,9 @@ private val DarkColors = OpenCodeColors(
     toolWarningBg = Palette.darkToolWarningBg,
     toolPending = Palette.darkToolPending,
     toolPendingBg = Palette.darkToolPendingBg,
+    badgeAccentText = Palette.darkBadgeAccentText,
+    toolRunningText = Palette.darkToolRunningText,
+    toolErrorText = Palette.darkToolErrorText,
     diffAdded = Palette.darkDiffAdded,
     diffAddedBg = Palette.darkDiffAddedBg,
     diffAddedGutter = Palette.darkDiffAddedGutter,
@@ -410,6 +431,9 @@ private val LightColors = OpenCodeColors(
     toolWarningBg = Palette.lightToolWarningBg,
     toolPending = Palette.lightToolPending,
     toolPendingBg = Palette.lightToolPendingBg,
+    badgeAccentText = Palette.lightBadgeAccentText,
+    toolRunningText = Palette.lightToolRunning,
+    toolErrorText = Palette.lightToolError,
     diffAdded = Palette.lightDiffAdded,
     diffAddedBg = Palette.lightDiffAddedBg,
     diffAddedGutter = Palette.lightDiffAddedGutter,
@@ -493,6 +517,9 @@ private fun OpenCodeColors.animated(animationSpec: AnimationSpec<Color>): OpenCo
     toolWarningBg = animateColorAsState(toolWarningBg, animationSpec, label = "toolWarningBg").value,
     toolPending = animateColorAsState(toolPending, animationSpec, label = "toolPending").value,
     toolPendingBg = animateColorAsState(toolPendingBg, animationSpec, label = "toolPendingBg").value,
+    badgeAccentText = animateColorAsState(badgeAccentText, animationSpec, label = "badgeAccentText").value,
+    toolRunningText = animateColorAsState(toolRunningText, animationSpec, label = "toolRunningText").value,
+    toolErrorText = animateColorAsState(toolErrorText, animationSpec, label = "toolErrorText").value,
     diffAdded = animateColorAsState(diffAdded, animationSpec, label = "diffAdded").value,
     diffAddedBg = animateColorAsState(diffAddedBg, animationSpec, label = "diffAddedBg").value,
     diffAddedGutter = animateColorAsState(diffAddedGutter, animationSpec, label = "diffAddedGutter").value,
@@ -563,7 +590,7 @@ fun materialColorScheme(colors: OpenCodeColors, darkTheme: Boolean): ColorScheme
     // Inverse roles are the opposite theme's ladder, for Snackbars.
     val inverseSurface = if (darkTheme) Palette.lightSurfaceRaised else Palette.darkSurfaceRaised
     val inverseOnSurface = if (darkTheme) Palette.lightOnSurface else Palette.darkOnSurface
-    val inversePrimary = if (darkTheme) Palette.lightAccentFill else Palette.darkAccentFill
+    val inversePrimary = if (darkTheme) Palette.lightAccentFill else Palette.lightInversePrimary
     return if (darkTheme) {
         darkColorScheme(
             primary = colors.accentFill,

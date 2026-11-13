@@ -7,6 +7,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -583,6 +585,13 @@ private fun SessionRowItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 56.dp)
+                // 47-F2: the open session announces as selected. The row
+                // keeps its explicit clickable (shared interaction source
+                // with the press handling), so `selected` is published via
+                // semantics directly — the same pattern as the chat drawer.
+                // (`this.` is required: the parameter shadows the
+                // semantics property.)
+                .semantics { this.selected = selected }
                 .clickable(
                     interactionSource = rowPressSource,
                     indication = LocalIndication.current,
@@ -681,7 +690,8 @@ private fun ScopeChip(label: String, selected: Boolean, onClick: () -> Unit) {
             .clip(RoundedCornerShape(radius.full))
             .background(if (selected) colors.accent.copy(alpha = 0.16f) else colors.fill)
             .border(0.5.dp, if (selected) colors.accent else colors.hairline, RoundedCornerShape(radius.full))
-            .clickable(role = Role.Button, onClick = onClick)
+            // 47-F2: a scope chip announces as selected, not a plain button.
+            .selectable(selected = selected, role = Role.Button, onClick = onClick)
             .padding(horizontal = spacing.md, vertical = spacing.xs + spacing.xxs),
     ) {
         Text(

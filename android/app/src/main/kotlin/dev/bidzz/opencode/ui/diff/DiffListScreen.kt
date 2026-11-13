@@ -82,7 +82,7 @@ fun DiffListScreen(
         title = stringResource(R.string.difflist_title, changed.size),
         onBack = onBack,
         subtitle = if (changed.isNotEmpty()) "+$totalAdditions −$totalDeletions" else null,
-        subtitleColor = if (changed.isNotEmpty()) colors.accent else null,
+        subtitleColor = if (changed.isNotEmpty()) colors.accentText else null,
     ) {
         if (changed.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

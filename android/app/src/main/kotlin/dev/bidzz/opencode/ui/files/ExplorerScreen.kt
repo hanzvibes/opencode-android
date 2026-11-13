@@ -727,7 +727,9 @@ private fun Crumb(label: String, current: Boolean, glyph: Glyph? = null, onClick
             Text(
                 text = label,
                 style = OpenCodeTypography.caption.copy(fontWeight = if (current) FontWeight.Bold else FontWeight.Medium),
-                color = if (current) colors.accent else colors.onSurfaceMuted,
+                // 47-F1: the current crumb is text — accent is only 3.27:1
+                // on its own tint in light.
+                color = if (current) colors.accentText else colors.onSurfaceMuted,
                 maxLines = 1,
                 modifier = Modifier.padding(start = if (glyph != null) spacing.xs else 0.dp),
             )
@@ -869,6 +871,10 @@ private fun GitBadge(status: String, modifier: Modifier = Modifier) {
         when (status) {
             "added" -> R.string.files_status_added
             "deleted" -> R.string.files_status_deleted
+            // 24-GitBadge: "renamed" fell through to the else branch and
+            // was read as "modified" — and so was "untracked".
+            "renamed" -> R.string.files_status_renamed
+            "untracked" -> R.string.files_status_untracked
             else -> R.string.files_status_modified
         },
     )
