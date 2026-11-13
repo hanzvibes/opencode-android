@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.engine.EngineBinary
 import dev.bidzz.opencode.core.engine.EngineEnvironment
 import dev.bidzz.opencode.core.engine.EngineStartupException
@@ -219,19 +220,35 @@ class OpenCodeApplication : Application() {
     val workspaceFolderRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
     val allFilesAccessRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
 
-    /** Opens the system file picker for a file outside the workspace (SAF). The result arrives in the activity. */
+    /**
+     * Opens the system file picker for a file outside the workspace (SAF). The result arrives in the activity.
+     *
+     * 14-F5: the request flow holds 8 pending taps, and a tap that still
+     * cannot be queued tells the user instead of vanishing — the old
+     * buffer-1 `tryEmit` dropped the third pick of a burst silently.
+     */
     fun requestSafFile() {
-        safFileRequest.tryEmit(System.currentTimeMillis())
+        if (!safFileRequest.tryEmit(System.currentTimeMillis())) {
+            showSnackbar(getString(R.string.saf_picker_failed))
+        }
     }
 
-    /** Delivers the URI picked in the system file picker. */
+    /**
+     * Delivers the URI picked in the system file picker.
+     *
+     * 14-F5: the picked flow holds 8 pending URIs (the reader is serial,
+     * so a slow provider leaves only the buffer for the next picks), and a
+     * pick that still cannot be queued tells the user instead of vanishing.
+     */
     fun deliverSafFile(uri: Uri) {
-        safFilePicked.tryEmit(uri)
+        if (!safFilePicked.tryEmit(uri)) {
+            showSnackbar(getString(R.string.saf_file_dropped))
+        }
     }
 
-    val safFileRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
-    /** URIs picked in the system file picker; the chat screen reads them in as text. */
-    val safFilePicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+    val safFileRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 8)
+    /** URIs picked in the system file picker; the chat view model reads them in as text. */
+    val safFilePicked = MutableSharedFlow<Uri>(extraBufferCapacity = 8)
 
     /**
      * Voice input (Composer C): asks MainActivity to request the

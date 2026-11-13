@@ -469,6 +469,7 @@
     <string name="code_save_picker_failed">Could not open the save dialog.</string>
     <string name="directory_picker_failed">Could not open the folder picker.</string>
     <string name="saf_picker_failed">Could not open the file picker.</string>
+    <string name="saf_file_dropped">Could not attach that file — try picking it again.</string>
     <string name="code_highlight_off">Highlight off (large file)</string>
 
     <!-- Project -->
@@ -518,6 +519,7 @@
     <string name="files_quick_open_loading">Indexing workspace files…</string>
     <string name="files_quick_open_results">%1$d of %2$d files</string>
     <string name="files_quick_open_failed">Some folders couldn’t be indexed — results may be incomplete.</string>
+    <string name="files_quick_open_truncated">Only the first 2,000 files are indexed — some files may be missing.</string>
     <string name="files_quick_open_close">Close quick open</string>
     <string name="files_detail_empty">Select a file to view it here.</string>
     <string name="fileview_find">Find</string>
@@ -549,6 +551,8 @@
     <string name="diff_filter_no_results">No changed files match \"%1$s\"</string>
     <string name="explorer_search_hint">Cari file…</string>
     <string name="explorer_search_no_results">No files match \"%1$s\"</string>
+    <string name="explorer_show_hidden">Show hidden</string>
+    <string name="explorer_hide_hidden">Hide hidden</string>
     <string name="diff_files_changed">%1$d file diubah</string>
     <string name="diff_original">Original</string>
     <string name="diff_modified">Modified</string>

@@ -68,6 +68,7 @@ import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
 import dev.bidzz.opencode.ui.chat.SharedPrefsParkedComposerStore
+import dev.bidzz.opencode.ui.chat.readSafFile
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
 import dev.bidzz.opencode.ui.diff.DiffListScreen
 import dev.bidzz.opencode.ui.diff.DiffScreen
@@ -406,6 +407,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // starts a fresh session with the text as the draft (editable before
     // sending); a deep link opens its session.
     LaunchedEffect(Unit) {
+        // 15-F4: the SAF collector lives in the view model, not the chat
+        // screen — a read started in chat survives leaving the screen.
+        chatViewModel.observeSafPicks(app.safFilePicked) { uri ->
+            readSafFile(app.contentResolver, uri)
+        }
         launch {
             app.sharedTextReceived.collect { text ->
                 chatViewModel.newSession()
@@ -686,6 +692,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onFileConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
                         onFileCancelSwitch = fileViewModel::cancelSwitch,
                         onEnsureQuickOpenIndex = explorerViewModel::ensureQuickOpenIndex,
+                        onToggleHidden = explorerViewModel::toggleHidden,
                     )
 
                     is Screen.FileView -> FileViewScreen(
@@ -1119,7 +1126,6 @@ private fun ChatDestination(
         onAttachmentRefused = { key, filename -> chatViewModel.reportAttachRefusal(key, filename) },
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
         onRequestSafFile = app::requestSafFile,
-        safFilePicked = app.safFilePicked,
         onRequestCameraPhoto = app::requestCameraPhoto,
         cameraPhotoPicked = app.cameraPhotoPicked,
         onRequestVoicePermission = app::requestVoicePermission,

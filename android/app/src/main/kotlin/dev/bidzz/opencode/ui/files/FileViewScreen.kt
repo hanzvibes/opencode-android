@@ -100,6 +100,17 @@ data class FileViewState(
 private val CodeLineHeight = 20.sp
 
 /**
+ * True when the file-switch dialog may show (89-F4): the conflict dialog
+ * is not showing. A save from the switch can itself raise a conflict, so
+ * the two dialogs are exclusive — the held switch is kept in the view
+ * model and reappears once the conflict is resolved. The caller checks
+ * `pendingSwitch != null` itself, so the smart cast survives at the use
+ * site (a null check hidden inside this function would not).
+ */
+internal fun shouldShowSwitchDialog(pendingSwitch: String, conflict: Boolean, editing: Boolean): Boolean =
+    !(conflict && editing)
+
+/**
  * Code viewer and editor with:
  * - Line number gutter synced to scroll
  * - Syntax highlighting for keywords, strings, numbers, and comments
@@ -391,8 +402,13 @@ fun FileViewScreen(
     // unsaved, so the new file is not loaded until they choose. Save writes
     // the draft first and the view model opens the held file on success;
     // Discard drops the draft and opens it now; Cancel keeps this file.
+    // 89-F4: the switch dialog is exclusive with the conflict dialog — a
+    // save from the switch can itself raise a conflict, and two stacked
+    // bottom sheets leave the user choosing between contradictory actions.
+    // The held switch is kept in the view model, so it reappears once the
+    // conflict is resolved.
     val pendingSwitch = state.confirmSwitchTo
-    if (pendingSwitch != null) {
+    if (pendingSwitch != null && shouldShowSwitchDialog(pendingSwitch, state.conflict, state.editing)) {
         LocalizedDraggableBottomSheet(
             onDismiss = onCancelSwitch,
             initialStop = SheetStop.PEEK,

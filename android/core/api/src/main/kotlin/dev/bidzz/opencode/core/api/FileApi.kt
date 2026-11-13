@@ -46,6 +46,42 @@ data class FileTextResult(
 internal const val FILE_READ_CAP_BYTES = 8_388_608
 
 /**
+ * Normalises a workspace-relative path, or null when it escapes the workspace.
+ *
+ * A path is resolved lexically, segment by segment: `.` and empty segments are
+ * dropped, `..` pops the previous segment, and a `..` with nothing left to pop
+ * means the path climbs out of the workspace. Backslashes are separators too
+ * (a Windows-style `a\..\secret.txt` must not slip past a `/`-only check).
+ * An empty path normalises to "" — the workspace root itself.
+ *
+ * Audit-100 35-F5/F6: the engine resolves paths server-side, but nothing on
+ * the client ever checked them, so one careless call-site could hand
+ * `writeText` a path outside the workspace. [FileApi] validates every path
+ * through here, and [relativizeToWorkspace] (ToolFilePath.kt) normalises
+ * through here too — the guard lives in one place, not per call-site.
+ */
+fun normalizeRelativePath(path: String): String? {
+    val segments = ArrayDeque<String>()
+    for (raw in path.replace('\\', '/').split('/')) {
+        when (raw) {
+            "", "." -> Unit
+            ".." -> if (segments.isEmpty()) return null else segments.removeLast()
+            else -> segments.addLast(raw)
+        }
+    }
+    return segments.joinToString("/")
+}
+
+/**
+ * Rejects a path that [normalizeRelativePath] cannot keep inside the
+ * workspace, as a [Failure] the UI can show verbatim (`SERVER_MESSAGE`):
+ * the guard is client-side, so there is no engine message to report.
+ * An empty path is the workspace root and passes.
+ */
+internal fun invalidPathFailure(path: String): ApiResult.Failure =
+    ApiResult.Failure(code = -1, tag = "InvalidPath", message = "Path escapes the workspace: $path")
+
+/**
  * Line count of [bytes] in [String.lines] terms (59-F5): separators are
  * "\r\n", "\n" and "\r" (a split "\r\n" counts once); an empty input is
  * one (empty) line, matching `"" .lines().size`.
@@ -80,10 +116,11 @@ class FileApi(private val client: EngineClient) {
      * [path] is relative to [directory]; empty means the directory itself.
      */
     suspend fun list(directory: String, path: String = ""): ApiResult<List<FsEntry>> {
+        val safe = normalizeRelativePath(path) ?: return invalidPathFailure(path)
         val query = buildString {
             append("/api/fs/list?")
             append(locationParam(directory))
-            if (path.isNotEmpty()) append("&path=").append(enc(path))
+            if (safe.isNotEmpty()) append("&path=").append(enc(safe))
         }
         val request = client.request(query).get().build()
         return client.execute(request) { raw ->
@@ -112,7 +149,8 @@ class FileApi(private val client: EngineClient) {
      * refuses a full load when [FileTextResult.truncated] is true.
      */
     suspend fun readText(directory: String, path: String): ApiResult<FileTextResult> = withContext(Dispatchers.IO) {
-        val url = "/api/fs/read/${path.split('/').joinToString("/") { enc(it) }}?${locationParam(directory)}"
+        val safe = normalizeRelativePath(path) ?: return@withContext invalidPathFailure(path)
+        val url = "/api/fs/read/${safe.split('/').joinToString("/") { enc(it) }}?${locationParam(directory)}"
         val request = client.request(url).get().build()
         try {
             client.streaming().newCall(request).await().use { response ->
@@ -238,7 +276,8 @@ class FileApi(private val client: EngineClient) {
      * declares binary, so a JSON envelope here would be rejected rather than parsed.
      */
     suspend fun writeText(directory: String, path: String, content: String): ApiResult<Unit> {
-        val request = client.request(writeUrl(directory, path)).post(client.bytesBody(content)).build()
+        val safe = normalizeRelativePath(path) ?: return invalidPathFailure(path)
+        val request = client.request(writeUrl(directory, safe)).post(client.bytesBody(content)).build()
         return client.executeUnit(request)
     }
 

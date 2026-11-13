@@ -98,4 +98,26 @@ class ToolFilePathTest {
         assertNull(relativizeToWorkspace("/storage/emulated/0/proj/x.kt", null))
         assertEquals("src/x.kt", relativizeToWorkspace("src/x.kt", null))
     }
+
+    @Test
+    fun `35-F5 parent climbs in the middle of a relative path are refused`() {
+        assertNull(relativizeToWorkspace("a/../../secret.txt", "/ws"))
+        assertNull(relativizeToWorkspace("./../secret.txt", "/ws"))
+        assertNull(relativizeToWorkspace(".//../secret.txt", "/ws"))
+        assertNull(relativizeToWorkspace("a/b/../../../secret.txt", "/ws"))
+    }
+
+    @Test
+    fun `35-F5 parent climbs after the workspace prefix are refused`() {
+        assertNull(relativizeToWorkspace("/ws/../secret.txt", "/ws"))
+        assertNull(relativizeToWorkspace("/ws/./../secret.txt", "/ws"))
+        assertNull(relativizeToWorkspace("/ws/a/../../secret.txt", "/ws"))
+    }
+
+    @Test
+    fun `35-F5 dot segments that stay inside still relativize`() {
+        assertEquals("a/c.txt", relativizeToWorkspace("a/b/../c.txt", "/ws"))
+        assertEquals("a/b.txt", relativizeToWorkspace("/ws/a/./b.txt", "/ws"))
+        assertEquals("a/b.txt", relativizeToWorkspace("a//b.txt", "/ws"))
+    }
 }

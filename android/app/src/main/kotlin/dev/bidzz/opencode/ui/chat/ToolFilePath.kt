@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import dev.bidzz.opencode.core.api.dto.ToolCall
+import dev.bidzz.opencode.core.api.normalizeRelativePath
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -76,9 +77,11 @@ fun relativizeToWorkspace(path: String, workspacePath: String?): String? {
             ?: return null
         if (normalized == workspace) return null
         if (!normalized.startsWith("$workspace/")) return null
-        return normalized.removePrefix("$workspace/")
+        // 35-F5: the remainder is normalised too — "/ws/../secret.txt"
+        // used to return "../secret.txt" unchecked.
+        return normalizeRelativePath(normalized.removePrefix("$workspace/"))
     }
-    val stripped = normalized.removePrefix("./")
-    if (stripped.isBlank() || stripped == ".." || stripped.startsWith("../")) return null
-    return stripped
+    // 35-F5: a leading "../" was the only thing rejected — "a/../../secret.txt"
+    // and "./../secret.txt" slipped through. Normalise the whole path instead.
+    return normalizeRelativePath(normalized)?.takeIf { it.isNotEmpty() }
 }
