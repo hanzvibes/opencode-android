@@ -201,7 +201,14 @@ internal fun hatchTiltAngles(
     if (size.width <= 0 || size.height <= 0) return HatchTiltAngles(0f, 0f)
     val nx = (pointer.x / size.width * 2f - 1f).coerceIn(-1f, 1f)
     val ny = (pointer.y / size.height * 2f - 1f).coerceIn(-1f, 1f)
-    return HatchTiltAngles(rotationX = -ny * maxDegrees, rotationY = nx * maxDegrees)
+    val rotationX = -ny * maxDegrees
+    val rotationY = nx * maxDegrees
+    // -0.0f must read as 0.0f: data-class equality tells them apart,
+    // and the flat centre should be exactly (0, 0).
+    return HatchTiltAngles(
+        rotationX = if (rotationX == 0f) 0f else rotationX,
+        rotationY = if (rotationY == 0f) 0f else rotationY,
+    )
 }
 
 /**
