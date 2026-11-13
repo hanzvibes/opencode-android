@@ -549,11 +549,15 @@ class FileViewViewModel(
                     // default — see LargeFileGuard. The full line count is kept so
                     // the banner can say how much was held back.
                     val (shown, totalLines) = LargeFileGuard.preview(file.text, file.totalLines)
-                    // Line-based preview: only actually cut when there are more
-                    // lines than the preview keeps (see LargeFileGuard).
-                    val truncated = !allowFull &&
-                        LargeFileGuard.isLarge(file.text) &&
-                        totalLines > LargeFileGuard.PreviewLines
+                    // A capped read is a preview too: the engine kept only the
+                    // first 8 MB, so the tail is missing whatever the line
+                    // count says (audit-200 A8, DL-005).
+                    val truncated = resolveTruncatedPreview(
+                        cappedRead = file.truncated,
+                        allowFull = allowFull,
+                        text = file.text,
+                        totalLines = totalLines,
+                    )
                     // A draft restored after process death comes back with the
                     // file it belongs to; a truncated preview must never
                     // become a draft, so a restored draft is only applied to
@@ -593,6 +597,7 @@ class FileViewViewModel(
                         content = if (truncated) shown else file.text,
                         truncated = truncated,
                         totalLines = if (truncated) totalLines else 0,
+                        totalBytes = if (file.truncated) file.totalBytes else 0,
                         editing = draftToRestore != null || staleDraft != null,
                         draft = draftToRestore ?: staleDraft ?: "",
                         conflict = staleDraft != null,
@@ -898,6 +903,25 @@ class DiffViewModel(
  * needs no reload; a failed one has no other way back — the failure
  * EmptyState's retry and the re-tap both funnel through `requestLoad`.
  */
+/**
+ * Whether this load must be treated as a truncated preview (audit-200 A8,
+ * DL-005). A capped read never holds the whole file: the engine kept only
+ * the first 8 MB, so the tail is missing whatever the line count says. A
+ * 9 MB file with one line used to look whole and editable — one Save then
+ * wrote the 8 MB prefix over it. The line-based preview cut only applies
+ * to uncapped reads; a capped read is truncated even when the user asked
+ * for the full file (the caller refuses that case with a failure first).
+ */
+internal fun resolveTruncatedPreview(
+    cappedRead: Boolean,
+    allowFull: Boolean,
+    text: String,
+    totalLines: Int,
+): Boolean {
+    if (cappedRead) return true
+    return !allowFull && LargeFileGuard.isLarge(text) && totalLines > LargeFileGuard.PreviewLines
+}
+
 internal fun shouldReloadSamePath(failure: ApiResult.Failure?, failureKey: Int?): Boolean =
     failure != null || failureKey != null
 

@@ -644,6 +644,8 @@
     <string name="fileview_find_next">Cocokan berikutnya</string>
     <string name="fileview_find_close">Tutup pencarian</string>
     <string name="fileview_large_warning">File besar (lebih dari 1 MB). Menampilkan %1$d baris pertama dari %2$d baris — pencarian hanya mencakup pratinjau ini. Muat seluruh file untuk mengedit atau mencari semuanya.</string>
+    <string name="fileview_large_warning_capped">File ini %1$s — hanya awalnya yang bisa dibaca, jadi pratinjau ini bukan seluruh file. File di atas batas baca 8 MB tidak bisa diedit di sini.</string>
+    <string name="fileview_lines_truncated_capped">Bagian awal dari %1$s</string>
     <string name="fileview_too_large_to_edit">File ini terlalu besar untuk dibuka untuk diedit.</string>
     <string name="preview_page_of">Halaman %1$d dari %2$d</string>
     <string name="preview_page_prev">Halaman sebelumnya</string>
