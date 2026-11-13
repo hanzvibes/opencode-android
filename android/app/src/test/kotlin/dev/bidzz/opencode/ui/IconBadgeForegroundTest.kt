@@ -40,13 +40,28 @@ class IconBadgeForegroundTest {
     fun `dark fills keep a white foreground`() {
         // The accent fills that carry white text elsewhere: white stays
         // AA on them (5.98:1 on #005FCC, 5.57:1 on #0066CC).
-        for (bg in listOf(0xFF005FCC, 0xFF0066CC, 0xFF0A84FF, 0xFF000000)) {
+        for (bg in listOf(0xFF005FCC, 0xFF0066CC, 0xFF000000)) {
             assertEquals(
                 Color.White.toArgb(),
                 foregroundForBackground(Color(bg)).toArgb(),
             )
             assertTrue(contrastRatio(foregroundForBackground(Color(bg)), Color(bg)) >= 4.5)
         }
+    }
+
+    @Test
+    fun `the bright dark accent gets a dark foreground, not white`() {
+        // #0A84FF is bright enough (luminance 0.238, above the 0.179
+        // threshold) that white on it is only 3.65:1 — the palette
+        // itself forbids white text on it. The dark glyph is 5.39:1.
+        assertEquals(
+            Color(0xFF0B0B0C).toArgb(),
+            foregroundForBackground(Color(0xFF0A84FF)).toArgb(),
+        )
+        assertTrue(contrastRatio(Color.White, Color(0xFF0A84FF)) < 4.5)
+        assertTrue(
+            contrastRatio(foregroundForBackground(Color(0xFF0A84FF)), Color(0xFF0A84FF)) >= 4.5,
+        )
     }
 
     // ---- WCAG relative luminance, straight from the spec (mirrors WhiteThemeTest) ----
