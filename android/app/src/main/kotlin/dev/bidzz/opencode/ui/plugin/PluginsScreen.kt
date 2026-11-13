@@ -64,9 +64,11 @@ fun PluginsScreen(
     LaunchedEffect(Unit) { onRefresh() }
 
     // Action failures arrive as values; show once, then clear.
+    // message() is @Composable, so resolve it here — not inside LaunchedEffect.
+    val actionFailureMessage = state.actionFailure?.message()
     LaunchedEffect(state.actionFailure) {
-        val failure = state.actionFailure ?: return@LaunchedEffect
-        (context.applicationContext as OpenCodeApplication).showSnackbar(failure.message())
+        val message = actionFailureMessage ?: return@LaunchedEffect
+        (context.applicationContext as OpenCodeApplication).showSnackbar(message)
         onClearActionFailure()
     }
 
