@@ -110,6 +110,8 @@ fun SettingsScreen(
     onProviders: () -> Unit,
     onMcpServers: () -> Unit,
     onPlugins: () -> Unit,
+    onArtifacts: () -> Unit,
+    onJobs: () -> Unit,
     onWorktrees: () -> Unit,
     onEngineConfig: () -> Unit,
     onSessionStats: () -> Unit,
@@ -211,6 +213,10 @@ fun SettingsScreen(
     val mcpSubtitle = stringResource(R.string.mcp_body)
     val pluginTitle = stringResource(R.string.plugin_title)
     val pluginSubtitle = stringResource(R.string.plugin_body)
+    val artifactTitle = stringResource(R.string.artifact_title)
+    val artifactSubtitle = stringResource(R.string.artifact_body)
+    val jobTitle = stringResource(R.string.job_title)
+    val jobSubtitle = stringResource(R.string.job_body)
     val worktreeTitle = stringResource(R.string.worktree_title)
     val worktreeSubtitle = stringResource(R.string.worktree_body)
     val configTitle = stringResource(R.string.config_title)
@@ -275,11 +281,13 @@ fun SettingsScreen(
     )
     val mcpVisible = matchesSettingsQuery(query, mcpTitle, mcpSubtitle)
     val pluginVisible = matchesSettingsQuery(query, pluginTitle, pluginSubtitle)
+    val artifactVisible = matchesSettingsQuery(query, artifactTitle, artifactSubtitle)
+    val jobVisible = matchesSettingsQuery(query, jobTitle, jobSubtitle)
     val worktreeVisible = matchesSettingsQuery(query, worktreeTitle, worktreeSubtitle)
     val configVisible = matchesSettingsQuery(query, configTitle, configSubtitle)
     val statsVisible = matchesSettingsQuery(query, statsTitle, statsSubtitle)
     val usageVisible = matchesSettingsQuery(query, usageTitle, usageSubtitle)
-    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || worktreeVisible || configVisible || statsVisible || usageVisible
+    val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || artifactVisible || jobVisible || worktreeVisible || configVisible || statsVisible || usageVisible
     val languageVisible = matchesSettingsQuery(
         query,
         languageTitle,
@@ -481,6 +489,22 @@ fun SettingsScreen(
                             title = pluginTitle,
                             subtitle = pluginSubtitle,
                             onClick = onPlugins,
+                        )
+                    }
+                    if (artifactVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Globe,
+                            title = artifactTitle,
+                            subtitle = artifactSubtitle,
+                            onClick = onArtifacts,
+                        )
+                    }
+                    if (jobVisible) {
+                        SettingsRow(
+                            glyph = Glyph.Pulse,
+                            title = jobTitle,
+                            subtitle = jobSubtitle,
+                            onClick = onJobs,
                         )
                     }
                     if (worktreeVisible) {

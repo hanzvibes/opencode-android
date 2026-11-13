@@ -14,6 +14,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.HttpAuthHandler
 import dev.bidzz.opencode.OpenCodeApplication
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -147,6 +148,8 @@ fun shareText(context: Context, text: String): Boolean {
 fun InAppBrowserScreen(
     url: String,
     onBack: () -> Unit,
+    /** Basic auth for engine URLs (artifact views); null for public links. */
+    basicAuth: Pair<String, String>? = null,
 ) {
     val context = LocalContext.current
     val colors = OpenCodeTheme.colors
@@ -214,6 +217,24 @@ fun InAppBrowserScreen(
                     // recreate restores this page and its history.
                     savedWebViewUrl = finishedUrl
                     savedWebViewState = Bundle().also { view.saveState(it) }
+                }
+
+                override fun onReceivedHttpAuthRequest(
+                    view: WebView,
+                    handler: HttpAuthHandler,
+                    host: String,
+                    realm: String,
+                ) {
+                    // Engine URLs (artifact views) challenge for Basic
+                    // auth; the caller supplies the engine credentials.
+                    // Public links pass none and keep the default
+                    // behaviour (the challenge is not answered).
+                    val auth = basicAuth
+                    if (auth != null) {
+                        handler.proceed(auth.first, auth.second)
+                    } else {
+                        super.onReceivedHttpAuthRequest(view, handler, host, realm)
+                    }
                 }
             }
             webChromeClient = object : WebChromeClient() {
