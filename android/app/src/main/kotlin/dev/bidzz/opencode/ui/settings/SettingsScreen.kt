@@ -531,8 +531,6 @@ fun SettingsScreen(
                             onClick = onWebSearch,
                         )
                     }
-                        )
-                    }
                     if (worktreeVisible) {
                         SettingsRow(
                             glyph = Glyph.GitBranch,

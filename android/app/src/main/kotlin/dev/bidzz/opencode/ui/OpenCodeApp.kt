@@ -469,7 +469,6 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
     val webSearchViewModel: WebSearchViewModel = viewModel(factory = viewModelFactory { _ ->
         WebSearchViewModel(app.engineApi)
-    }
     })
 
     val worktreesViewModel: WorktreesViewModel = viewModel(factory = viewModelFactory { _ ->
