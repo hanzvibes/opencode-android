@@ -33,8 +33,8 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
-import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.Glyph
+import dev.bidzz.opencode.ui.HatchFilePreviewUnavailableCard
 import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.LoadingState
 import java.io.File
@@ -137,9 +137,8 @@ private fun ImagePreview(path: String, modifier: Modifier = Modifier) {
 
     Box(modifier = modifier.fillMaxSize()) {
         when {
-            failed -> EmptyState(
-                stringResource(R.string.preview_load_failed),
-                isError = true,
+            failed -> HatchFilePreviewUnavailableCard(
+                message = stringResource(R.string.preview_load_failed),
             )
             decoded == null -> LoadingState(stringResource(R.string.fileview_reading))
             else -> {
@@ -247,9 +246,8 @@ private fun PdfPreview(path: String, modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
-                failed -> EmptyState(
-                    stringResource(R.string.preview_load_failed),
-                    isError = true,
+                failed -> HatchFilePreviewUnavailableCard(
+                    message = stringResource(R.string.preview_load_failed),
                 )
                 bitmap == null -> LoadingState(stringResource(R.string.fileview_reading))
                 else -> {

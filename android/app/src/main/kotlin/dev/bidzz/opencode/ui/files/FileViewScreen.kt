@@ -53,6 +53,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.HatchEditFileButton
 import dev.bidzz.opencode.ui.IconAction
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.LocalizedDraggableBottomSheet
@@ -227,7 +228,10 @@ fun FileViewScreen(
                 onClick = { findOpen = !findOpen },
             )
             if (!state.truncated) {
-                TextAction(label = stringResource(R.string.fileview_edit), onClick = onStartEdit)
+                HatchEditFileButton(
+                    label = stringResource(R.string.fileview_edit),
+                    onClick = onStartEdit,
+                )
             }
         }
     }
