@@ -68,7 +68,8 @@ interface ParkedComposerStore {
      * copy must go too — otherwise reopening the session would flush the
      * same follow-up a second time. A no-op when the entry is not there.
      * An entry whose draft, attachments and queue are all empty afterwards
-     * is removed entirely.
+     * is removed entirely. Matched by id (audit-200 A5, DL-001), not by
+     * value: duplicate follow-ups with the same words are distinct entries.
      */
     fun removeQueued(sessionId: String, entry: QueuedPrompt) {
         val current = get(sessionId) ?: return
@@ -81,7 +82,7 @@ interface ParkedComposerStore {
         // type system, so the null test goes through `Any?`.)
         val queued: List<QueuedPrompt> =
             if ((current.queued as Any?) == null) emptyList() else current.queued
-        val kept = queued.filter { it != entry }
+        val kept = queued.filter { it.id != entry.id }
         if (kept.size == queued.size) return
         if (current.draft.isBlank() && current.attachments.isEmpty() && kept.isEmpty()) {
             remove(sessionId)
@@ -89,6 +90,13 @@ interface ParkedComposerStore {
             put(sessionId, current.copy(queued = kept))
         }
     }
+
+    /**
+     * True when a stored entry for [sessionId] exists but cannot be
+     * decoded (audit-200 A5, DL-008). The in-memory store never has
+     * unreadable entries; the SharedPreferences store overrides this.
+     */
+    fun hasUnreadableEntry(sessionId: String): Boolean = false
 }
 
 /** In-memory store: the default for unit tests, and what a view model constructed without a store uses. */
@@ -118,11 +126,20 @@ class SharedPrefsParkedComposerStore(context: Context) : ParkedComposerStore {
     }
 
     override fun put(sessionId: String, composer: ParkedComposer) {
-        prefs.edit().putString(KEY_PREFIX + sessionId, encodeParkedComposer(composer)).apply()
+        // Audit-200 A5 (DL-004, PROVEN): commit(), not apply() — a park
+        // must be on disk before the session switch returns, or a
+        // force-stop in the next instant loses it. Same small cost as
+        // the lastSessionID write, which the codebase already commits.
+        prefs.edit().putString(KEY_PREFIX + sessionId, encodeParkedComposer(composer)).commit()
     }
 
     override fun remove(sessionId: String) {
-        prefs.edit().remove(KEY_PREFIX + sessionId).apply()
+        prefs.edit().remove(KEY_PREFIX + sessionId).commit()
+    }
+
+    override fun hasUnreadableEntry(sessionId: String): Boolean {
+        val encoded = prefs.getString(KEY_PREFIX + sessionId, null) ?: return false
+        return decodeParkedComposer(encoded) == null
     }
 }
 
@@ -140,6 +157,23 @@ internal fun encodeParkedComposer(composer: ParkedComposer): String {
     return Base64.getEncoder().withoutPadding().encodeToString(bytes)
 }
 
+/**
+ * Merges two parked composers (audit-200 A5, DL-009): the drafts join
+ * with a blank line between non-blank parts, attachments union by id,
+ * queues concatenate — ids are unique, so nothing is lost or doubled.
+ * Callers pass decoded composers (see [decodeParkedComposer]).
+ */
+internal fun mergeParkedComposers(first: ParkedComposer, second: ParkedComposer): ParkedComposer {
+    val draft = listOf(first.draft, second.draft)
+        .filter { it.isNotBlank() }
+        .joinToString("\n")
+    return ParkedComposer(
+        draft = draft,
+        attachments = (first.attachments + second.attachments).distinctBy { it.id },
+        queued = first.queued + second.queued,
+    )
+}
+
 /** Decodes a stored composer, or null when the bytes are not one anymore. */
 internal fun decodeParkedComposer(encoded: String): ParkedComposer? {
     return try {
@@ -147,10 +181,16 @@ internal fun decodeParkedComposer(encoded: String): ParkedComposer? {
         val decoded = ObjectInputStream(ByteArrayInputStream(bytes)).use {
             it.readObject() as? ParkedComposer
         } ?: return null
-        // Audit-200 A3 (C-007): the same null-queue case as
-        // removeQueued — normalize at the read boundary so every reader
-        // sees a real list, and the entry self-heals on the next write.
-        if ((decoded.queued as Any?) == null) decoded.copy(queued = emptyList()) else decoded
+        // Audit-200 A3 (C-007) + A5 (DL-001): normalize at the read
+        // boundary so every reader sees a real list with real ids, and
+        // the entry self-heals on the next write. A composer parked
+        // before Fase 1a has no `queued` field (null at runtime); one
+        // parked before ids existed has entries with null ids — the
+        // same deserialization bypass in both cases.
+        val queuedNull = (decoded.queued as Any?) == null
+        val queued: List<QueuedPrompt> = if (queuedNull) emptyList() else decoded.queued
+        val fixed = queued.withUniqueIds()
+        if (!queuedNull && fixed == queued) decoded else decoded.copy(queued = fixed)
     } catch (_: Exception) {
         null
     }

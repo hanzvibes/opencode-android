@@ -188,6 +188,15 @@ data class QueuedPrompt(
      * [fullText] directly, so these are never baked a second time.
      */
     val attachments: List<AttachedFile> = emptyList(),
+    /**
+     * Unique identity (audit-200 A5, DL-001): entries are matched by [id],
+     * never by text — two follow-ups with the same words are two different
+     * follow-ups, and removing one must not remove both. Fresh entries get
+     * a random id at construction; entries read back from storage written
+     * before ids existed carry a null id at runtime (Java deserialization
+     * fills the missing field with null) and get one from [withUniqueIds].
+     */
+    val id: String = UUID.randomUUID().toString(),
 ) : java.io.Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -195,14 +204,26 @@ data class QueuedPrompt(
 }
 
 /**
+ * Gives every entry without an id one (audit-200 A5, DL-001): entries
+ * read back from storage written before [QueuedPrompt.id] existed have a
+ * null id at runtime. Entries that already have one keep it, so a second
+ * pass is a no-op.
+ */
+internal fun List<QueuedPrompt>.withUniqueIds(): List<QueuedPrompt> =
+    map { entry ->
+        if ((entry.id as Any?) == null) entry.copy(id = UUID.randomUUID().toString()) else entry
+    }
+
+/**
  * Drops the flushed head entry after the engine accepted it (13-F1). Pure,
  * so the rule is unit-tested here rather than through a send: the head
  * leaves only when it is the entry that was sent — a different head (the
  * user queued more while the send was in flight) stays put, and a null
- * entry drops nothing.
+ * entry drops nothing. Matched by id (audit-200 A5, DL-001), not by value:
+ * a head with the same words as the sent entry is a different follow-up.
  */
 internal fun resolveFlushDrop(queue: List<QueuedPrompt>, sent: QueuedPrompt?): List<QueuedPrompt> =
-    if (sent != null && queue.firstOrNull() == sent) queue.drop(1) else queue
+    if (sent != null && queue.firstOrNull()?.id == sent.id) queue.drop(1) else queue
 
 /** What the error banner's Retry button does for the current failure. */
 enum class RetryKind {
@@ -463,6 +484,10 @@ class ChatViewModel(
      */
     private val restoredQueue: List<QueuedPrompt> =
         savedStateHandle?.get<ArrayList<QueuedPrompt>>(QUEUE_KEY)?.toList().orEmpty()
+            // Audit-200 A5 (DL-001): a queue saved before ids existed
+            // carries null ids at runtime; give them ids before anything
+            // matches on them.
+            .withUniqueIds()
     private val restoredAttachments: List<AttachedFile> =
         savedStateHandle?.get<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)?.toList().orEmpty()
     private val restoredLastSent: String? = savedStateHandle?.get<String>(LAST_SENT_KEY)
@@ -655,15 +680,40 @@ class ChatViewModel(
     /**
      * Drops the parked composer for a deleted session (80-F6).
      *
-     * A draft parked under a session that is then deleted can never be
-     * restored — the session is gone from every list — so the entry
-     * would sit in the store forever. Called only after the engine
-     * confirms the delete; a failed delete keeps the parked draft, since
-     * the session (and its row) comes back.
+     * Called only after the engine confirms the delete; a failed delete
+     * keeps the parked draft, since the session (and its row) comes back.
+     * Audit-200 A5 (DL-009): an unsent draft/queue for the deleted
+     * session is still the user's words — it moves to the unsent key
+     * (merging with anything already waiting there) instead of being
+     * destroyed, so the next fresh chat brings it back.
      */
     fun pruneParkedSession(sessionID: String) {
+        val parked = parkedStore.get(sessionID)
         parkedStore.remove(sessionID)
         if (lastParkKey == sessionID) lastParkKey = null
+        if (parked != null &&
+            (parked.draft.isNotBlank() || parked.attachments.isNotEmpty() || parked.queued.isNotEmpty())
+        ) {
+            val existing = parkedStore.get(UNSENT_SESSION_KEY)
+            parkedStore.put(
+                UNSENT_SESSION_KEY,
+                if (existing == null) parked else mergeParkedComposers(existing, parked),
+            )
+        }
+    }
+
+    /**
+     * Reports a parked composer that exists on disk but cannot be decoded
+     * (audit-200 A5, DL-008): the saved draft is already unrecoverable,
+     * so the user is told once via the error banner and the corrupt entry
+     * is dropped so the notice does not repeat on every open. Returns
+     * true when a notice was shown.
+     */
+    private fun reportUnreadableParked(sessionID: String): Boolean {
+        if (!parkedStore.hasUnreadableEntry(sessionID)) return false
+        parkedStore.remove(sessionID)
+        _state.value = _state.value.copy(failureKey = R.string.chat_parked_unreadable)
+        return true
     }
 
     /**
@@ -675,6 +725,13 @@ class ChatViewModel(
      */
     private var flushingEntry: QueuedPrompt? = null
 
+    /** Takes the entry the flush is sending, if one is in flight. */
+    private fun takeFlushingEntry(): QueuedPrompt? {
+        val entry = flushingEntry ?: return null
+        flushingEntry = null
+        return entry
+    }
+
     /**
      * Settles a flushed entry once the send resolves. On success the head
      * entry leaves the live queue and its parked copy goes too, so
@@ -683,12 +740,23 @@ class ChatViewModel(
      * switched away since) for the next run to end or the next retry.
      */
     private fun settleFlushedEntry(sessionID: String?, sent: Boolean) {
-        val entry = flushingEntry ?: return
-        flushingEntry = null
+        val entry = takeFlushingEntry() ?: return
         if (!sent) return
         _state.value = _state.value.copy(
             queuedPrompts = resolveFlushDrop(_state.value.queuedPrompts, entry),
         )
+        if (sessionID != null) parkedStore.removeQueued(sessionID, entry)
+    }
+
+    /**
+     * Settles a flushed entry against the parked copy only (audit-200 A5,
+     * DL-007): the send succeeded, but the user has since switched
+     * sessions — the live queue now belongs to the new session, so the
+     * head entry leaves only the old session's parked copy and the live
+     * state is left alone.
+     */
+    private fun settleFlushedEntryParkedOnly(sessionID: String?) {
+        val entry = takeFlushingEntry() ?: return
         if (sessionID != null) parkedStore.removeQueued(sessionID, entry)
     }
 
@@ -1384,7 +1452,12 @@ class ChatViewModel(
         // longer matches the live draft, so the next park must file it
         // under the live session (or the unsent key), not refresh a stale
         // entry for a session the user has left (see [lastParkKey]).
-        lastParkKey = null
+        // Audit-200 A5 (DL-020): only while a live session owns the draft.
+        // After the engine dies the session id is null and the draft still
+        // belongs to lastParkKey's session — clearing the anchor here files
+        // the edited draft under the unsent key, where New Chat picks it
+        // up, while the old session keeps a stale snapshot.
+        if (_state.value.sessionID != null) lastParkKey = null
         savedStateHandle?.set(DRAFT_KEY, text)
         draftEditCount++
         _state.value = _state.value.copy(draft = text)
@@ -1392,7 +1465,11 @@ class ChatViewModel(
 
     /** Clears the draft in both the UI state and the saved-state handle. */
     private fun clearDraft() {
-        lastParkKey = null
+        // Audit-200 A5 (DL-020): same anchor rule as onDraftChange — a
+        // clear with no live session must not drop the anchor either;
+        // the next park then removes the anchored entry instead of
+        // leaving a stale snapshot behind.
+        if (_state.value.sessionID != null) lastParkKey = null
         savedStateHandle?.remove<String>(DRAFT_KEY)
         draftEditCount++
         _state.value = _state.value.copy(draft = "")
@@ -2098,9 +2175,23 @@ class ChatViewModel(
                 settleFlushedEntry(sessionID, sent = false)
             }
             is ApiResult.Success -> {
-                clearSentDraft(typedText)
-                clearSentAttachments(attachments)
-                settleFlushedEntry(sessionID, sent = true)
+                // Audit-200 A5 (DL-007, DL-030): the session may have
+                // changed while the send was in flight. The guards above
+                // only cover a switch before the await — re-check here,
+                // before touching live state. A success that belongs to
+                // the old session settles its parked copy only (the
+                // optimistic bubble is removed by its unique id, so it
+                // cannot take a new session's message with it); the new
+                // session's live draft, attachments and queue are not
+                // ours to clear.
+                if (repository !== repo || repo.state.value.sessionID != sessionID) {
+                    clearOptimistic()
+                    settleFlushedEntryParkedOnly(sessionID)
+                } else {
+                    clearSentDraft(typedText)
+                    clearSentAttachments(attachments)
+                    settleFlushedEntry(sessionID, sent = true)
+                }
             }
         }
     }
@@ -2394,6 +2485,9 @@ class ChatViewModel(
         // as this session's composer instead of starting empty.
         val restored = takeParkedComposer(UNSENT_SESSION_KEY)
         _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
+        // Audit-200 A5 (DL-008): after the copy above resets the banner,
+        // so the notice survives.
+        reportUnreadableParked(UNSENT_SESSION_KEY)
         if (restored?.draft.isNullOrBlank()) {
             savedStateHandle?.remove<String>(DRAFT_KEY)
         } else {
@@ -2561,6 +2655,13 @@ class ChatViewModel(
         // to the old session's composer and must not survive the switch.
         draftBeforeEdit = null
         val restored = takeParkedComposer(sessionID)
+        // Audit-200 A5 (DL-008): a parked composer that cannot be decoded
+        // is reported instead of silently coming back empty.
+        reportUnreadableParked(sessionID)
+        // Audit-200 A5 (DL-030): the visible draft changed under any
+        // in-flight send, so its post-send clear must not fire on the
+        // restored text.
+        draftEditCount++
         _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
         if (restored?.draft.isNullOrBlank()) {
             savedStateHandle?.remove<String>(DRAFT_KEY)

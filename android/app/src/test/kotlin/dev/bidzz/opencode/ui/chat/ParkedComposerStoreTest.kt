@@ -29,9 +29,12 @@ class ParkedComposerStoreTest {
 
     @Test
     fun `encode then decode returns the same composer`() {
-        val decoded = decodeParkedComposer(encodeParkedComposer(composer()))
+        // Audit-200 A5 (DL-001): entries carry random ids now, so the
+        // expected value must be the same instance, not a fresh build.
+        val original = composer()
+        val decoded = decodeParkedComposer(encodeParkedComposer(original))
 
-        assertEquals(composer(), decoded)
+        assertEquals(original, decoded)
     }
 
     @Test
@@ -43,10 +46,11 @@ class ParkedComposerStoreTest {
     @Test
     fun `in-memory store puts gets and removes`() {
         val store = InMemoryParkedComposerStore()
+        val original = composer()
 
-        store.put("s1", composer())
+        store.put("s1", original)
 
-        assertEquals(composer(), store.get("s1"))
+        assertEquals(original, store.get("s1"))
         store.remove("s1")
         assertNull(store.get("s1"))
     }
@@ -77,13 +81,26 @@ class ParkedComposerStoreTest {
     @Test
     fun `removeQueued is a no-op when the entry is absent`() {
         val store = InMemoryParkedComposerStore()
-        store.put("s1", composer())
+        val original = composer()
+        store.put("s1", original)
 
         store.removeQueued("s1", QueuedPrompt("tidak ada", "tidak ada"))
         store.removeQueued("tidak ada", QueuedPrompt("satu", "satu"))
 
-        assertEquals(composer(), store.get("s1"))
+        assertEquals(original, store.get("s1"))
         assertTrue(store.get("s1")?.queued?.size == 2)
+    }
+
+    @Test
+    fun `DL-001 removeQueued drops only one entry when two share the same text`() {
+        val store = InMemoryParkedComposerStore()
+        val first = QueuedPrompt("sama", "sama")
+        val second = QueuedPrompt("sama", "sama")
+        store.put("s1", ParkedComposer("", emptyList(), listOf(first, second)))
+
+        store.removeQueued("s1", first)
+
+        assertEquals(listOf(second), store.get("s1")?.queued)
     }
 
     /**

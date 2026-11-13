@@ -257,6 +257,7 @@
     <string name="session_link_gone">That session is gone on the engine — the link points to a session that no longer exists.</string>
     <string name="session_link_wrong_workspace">That session belongs to another project — switch workspace to open it.</string>
     <string name="chat_queued_returned">Engine stopped — queued follow-up returned to the composer.</string>
+    <string name="chat_parked_unreadable">Saved draft could not be read.</string>
     <string name="workspace_unavailable">Workspace unavailable — using the internal workspace for now. Re-pick it in Projects.</string>
     <string name="workspace_too_broad">That folder is the whole storage — pick a project folder instead.</string>
     <string name="a11y_run_finished">Run finished</string>

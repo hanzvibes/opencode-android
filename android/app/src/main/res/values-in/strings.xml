@@ -250,6 +250,7 @@
     <string name="session_link_gone">Sesi itu sudah tidak ada di engine — link-nya menunjuk ke sesi yang sudah hilang.</string>
     <string name="session_link_wrong_workspace">Sesi itu milik proyek lain — ganti workspace untuk membukanya.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
+    <string name="chat_parked_unreadable">Draft tersimpan tidak bisa dibaca.</string>
     <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
     <string name="workspace_too_broad">Folder itu adalah seluruh storage — pilih folder proyek saja.</string>
     <string name="a11y_run_finished">Proses selesai</string>
