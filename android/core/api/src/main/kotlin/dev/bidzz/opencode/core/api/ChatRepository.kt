@@ -330,8 +330,11 @@ class ChatRepository(
      * event (03-F2/01-F4): the finished answer only arrives through it,
      * and a failed run's error is only visible in the history it returns.
      */
-    private suspend fun resync(fromTerminal: Boolean = false) {
-        val id = sessionID ?: return
+    /** What one [resync] call did — the terminal retry loop decides on this, not on the state it left behind (see [resyncAfterTerminal]). */
+    private enum class ResyncOutcome { SUCCEEDED, FAILED, SKIPPED }
+
+    private suspend fun resync(fromTerminal: Boolean = false): ResyncOutcome {
+        val id = sessionID ?: return ResyncOutcome.SKIPPED
         when (val result = sessionApi.messages(id, limit = messageLimit)) {
             is ApiResult.Success -> {
                 // The session may have changed while the call was in flight:
@@ -339,7 +342,7 @@ class ChatRepository(
                 // scope, not the stream job, so close() does not cancel it.
                 // An old transcript must never overwrite the new session's
                 // (item 26) — and neither must its failure or permission.
-                if (sessionID != id) return
+                if (sessionID != id) return ResyncOutcome.SKIPPED
                 // The engine returns history newest-first (idle, assistant, user...).
                 // Reversing here means the UI and every consumer can assume
                 // oldest-first, which is the only order a chat transcript can use.
@@ -419,7 +422,7 @@ class ChatRepository(
                 // prompt that fails again when answered.
                 when (val pending = sessionApi.listPermissions(id)) {
                     is ApiResult.Success -> {
-                        if (sessionID != id) return
+                        if (sessionID != id) return ResyncOutcome.SUCCEEDED
                         pending.value.firstOrNull()?.let { request ->
                             if (shouldRestorePermission(
                                     requestId = request.id,
@@ -435,9 +438,10 @@ class ChatRepository(
                     }
                     is ApiResult.Failure -> Log.w(TAG, "permission restore failed: ${pending.message}")
                 }
+                return ResyncOutcome.SUCCEEDED
             }
             is ApiResult.Failure -> {
-                if (sessionID != id) return
+                if (sessionID != id) return ResyncOutcome.SKIPPED
                 Log.w(TAG, "resync failed: ${result.message}")
                 // A failed resync must not leave the streaming entry behind:
                 // the run is over, no more deltas are coming, and the entry
@@ -463,6 +467,7 @@ class ChatRepository(
                     streaming = emptyMap(),
                     liveTools = emptyMap(),
                 )
+                return ResyncOutcome.FAILED
             }
         }
     }
@@ -472,20 +477,27 @@ class ChatRepository(
      *
      * The finished answer only reaches the transcript through this resync,
      * so one transient failure used to hide it until the next run. Retries
-     * while the failure is a NEW one from this resync: success clears
-     * [ChatState.lastFailure], and a session change leaves it untouched
-     * (the early return) — either way there is nothing left to fetch.
-     * Gives up after [TERMINAL_RESYNC_ATTEMPTS]; the banner (with its
-     * RELOAD_SESSION retry) is already set by the failed resync.
+     * while resync() reports FAILED; success and a session change (SKIPPED)
+     * both stop the loop. Gives up after [TERMINAL_RESYNC_ATTEMPTS]; the
+     * banner (with its RELOAD_SESSION retry) is already set by the failed
+     * resync.
+     *
+     * The loop decides on the outcome resync() reports, never on whether
+     * [ChatState.lastFailure] changed: two identical failures (same
+     * code/tag/message) are equal as values, so a MutableStateFlow
+     * conflates them and keeps the first instance — an identity check
+     * would read "unchanged" and give up after the first retry even
+     * though the next attempt never ran.
      */
     private suspend fun resyncAfterTerminal() {
         repeat(TERMINAL_RESYNC_ATTEMPTS) { attempt ->
-            val before = _state.value.lastFailure
-            resync(fromTerminal = true)
-            val after = _state.value.lastFailure
-            if (after == null || after === before) return
-            if (attempt + 1 < TERMINAL_RESYNC_ATTEMPTS) {
-                delay(TERMINAL_RESYNC_DELAYS_MS[attempt])
+            when (resync(fromTerminal = true)) {
+                ResyncOutcome.SUCCEEDED, ResyncOutcome.SKIPPED -> return
+                ResyncOutcome.FAILED -> {
+                    if (attempt + 1 < TERMINAL_RESYNC_ATTEMPTS) {
+                        delay(TERMINAL_RESYNC_DELAYS_MS[attempt])
+                    }
+                }
             }
         }
     }
