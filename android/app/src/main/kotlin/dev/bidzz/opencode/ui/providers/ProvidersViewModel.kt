@@ -440,20 +440,44 @@ class ProvidersViewModel(
      * Deletes `opencode.jsonc` so the app can manage providers in `opencode.json`
      * again (30-F5/38-F10). Offered when a save was refused because the effective
      * config lives in `.jsonc`.
+     *
+     * Audit-200 A7 (DL-002): the screen asks first, and the store writes a
+     * `.jsonc.bak` backup before deleting — the file may hold hand-written
+     * providers and MCP blocks. The notice names the backup and says where
+     * providers now come from, so an existing `opencode.json` is never
+     * silently switched on: its content may be stale, and the user should
+     * know the list they see comes from it. (`refresh()` keeps the notice;
+     * it only clears the failure key.)
      */
     fun deleteJsoncConfig() {
         viewModelScope.launch {
-            val deleted = withContext(Dispatchers.IO) { configStore.deleteJsoncConfig() }
-            if (deleted) {
-                _state.value = _state.value.copy(failureKey = null)
-                refresh()
-            } else {
-                _state.value = _state.value.copy(
-                    failureKey = R.string.providers_config_write_failed,
-                    connected = null,
-                    notice = null,
-                    staleKeyRemains = false,
-                )
+            val outcome = withContext(Dispatchers.IO) { configStore.deleteJsoncConfig() }
+            when (outcome) {
+                EngineConfigStore.JsoncDeleteResult.Deleted -> {
+                    val fromJson = withContext(Dispatchers.IO) { configStore.hasJsonConfig() }
+                    _state.value = _state.value.copy(
+                        failureKey = null,
+                        notice = DeleteNotice(
+                            if (fromJson) R.string.providers_jsonc_deleted_with_json
+                            else R.string.providers_jsonc_deleted_fresh,
+                        ),
+                    )
+                    refresh()
+                }
+                EngineConfigStore.JsoncDeleteResult.Missing -> {
+                    // Already gone (deleted elsewhere): the goal state is
+                    // reached, so clear the failure and show what is there.
+                    _state.value = _state.value.copy(failureKey = null)
+                    refresh()
+                }
+                EngineConfigStore.JsoncDeleteResult.Failed -> {
+                    _state.value = _state.value.copy(
+                        failureKey = R.string.providers_config_write_failed,
+                        connected = null,
+                        notice = null,
+                        staleKeyRemains = false,
+                    )
+                }
             }
         }
     }
