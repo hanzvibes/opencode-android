@@ -18,8 +18,8 @@ commit into a gitignored cache directory and patched on demand.
 |---|---|
 | Repository | https://github.com/anomalyco/opencode |
 | Branch | `dev` |
-| Commit | `92b2ca0` |
-| Package version | `2.2.2` (`@opencode/core`, `server`, `cli`, `protocol`, `sdk`) |
+| Commit | `fedc6f20` |
+| Package version | `2.2.7` (`@opencode/core`, `server`, `cli`, `protocol`, `sdk`) |
 | License | MIT |
 | Dependency count | 1.777 packages (`bun install --ignore-scripts`, 551 s) |
 
@@ -30,10 +30,10 @@ patch but is not a shipping target.
 
 ## Why the engine is not ported to Kotlin
 
-Upstream v2.2.2 is roughly 45 packages: agent orchestration, provider
+Upstream v2.2.7 is roughly 45 packages: agent orchestration, provider
 integration, session management, tool execution, permission handling,
 configuration, plugin/MCP integration, persistence, and an Effect-based HTTP
-server with 134 OpenAPI paths. Rewriting that in Kotlin would be a different
+server with 139 OpenAPI paths. Rewriting that in Kotlin would be a different
 product with different behaviour, and it would drift from upstream permanently.
 
 Kotlin is the Android host: lifecycle, UI, process supervision, and the API
