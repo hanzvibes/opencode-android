@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -91,8 +92,12 @@ fun SessionListScreen(
     onRefresh: () -> Unit = {},
     /** Dismisses the failed-delete banner. */
     onDismissDeleteFailure: () -> Unit = {},
+    /** Dismisses the failed-rename banner. */
+    onDismissRenameFailure: () -> Unit = {},
     /** Dismisses a load-failure banner shown over a non-empty list. */
     onDismissLoadFailure: () -> Unit = {},
+    /** Loads the next page of sessions (19-F3). */
+    onLoadMore: () -> Unit = {},
     /**
      * Animation C shared-element pilot: the scopes for the session-title
      * flight to the chat header. Null disables the flight (the expanded
@@ -124,7 +129,9 @@ fun SessionListScreen(
             details = details,
             onRefresh = onRefresh,
             onDismissDeleteFailure = onDismissDeleteFailure,
+            onDismissRenameFailure = onDismissRenameFailure,
             onDismissLoadFailure = onDismissLoadFailure,
+            onLoadMore = onLoadMore,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
             modifier = Modifier.fillMaxSize(),
@@ -160,8 +167,12 @@ fun SessionListPane(
     onRefresh: () -> Unit = {},
     /** Dismisses the failed-delete banner. */
     onDismissDeleteFailure: () -> Unit = {},
+    /** Dismisses the failed-rename banner. */
+    onDismissRenameFailure: () -> Unit = {},
     /** Dismisses a load-failure banner shown over a non-empty list. */
     onDismissLoadFailure: () -> Unit = {},
+    /** Loads the next page of sessions (19-F3). */
+    onLoadMore: () -> Unit = {},
     /**
      * Animation C shared-element pilot: the scopes for the session-title
      * flight to the chat header. Null disables the flight (the expanded
@@ -246,15 +257,40 @@ fun SessionListPane(
         // (19-F7/65-F1/80-F2): the row the delete just restored must stay
         // on screen, with a retry for that same session. A load failure
         // with rows already loaded gets the same treatment — only an
-        // empty list earns the full-screen error below.
+        // empty list earns the full-screen error below. A failed rename
+        // (65-F2/80-F3) is a banner of the same shape: the row is reverted
+        // and the retry re-sends the same title. A delete or rename that
+        // never ran because the engine is down (65-F3) has no failure
+        // value, only a message key — the banner shows either.
         val deleteFailure = state.deleteFailure
-        if (deleteFailure != null) {
+        val deleteFailureKey = state.deleteFailureKey
+        if (deleteFailure != null || deleteFailureKey != null) {
             val failedRow = state.rows.find { it.id == state.deleteFailedSessionID }
             NoticeRow(
-                message = deleteFailure.message(),
+                message = deleteFailure?.message()
+                    ?: deleteFailureKey?.let { stringResource(it) }.orEmpty(),
                 kind = NoticeKind.Error,
                 onRetry = failedRow?.let { row -> { onDelete(row) } },
                 onDismiss = onDismissDeleteFailure,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 720.dp)
+                    .align(Alignment.CenterHorizontally)
+                    .padding(horizontal = spacing.lg, vertical = spacing.xs),
+            )
+        } else if (state.renameFailure != null || state.renameFailureKey != null) {
+            val failedRow = state.rows.find { it.id == state.renameFailedSessionID }
+            val failedTitle = state.renameFailedTitle
+            NoticeRow(
+                message = state.renameFailure?.message()
+                    ?: state.renameFailureKey?.let { stringResource(it) }.orEmpty(),
+                kind = NoticeKind.Error,
+                onRetry = if (failedRow != null && failedTitle != null) {
+                    { onRename(failedRow, failedTitle) }
+                } else {
+                    null
+                },
+                onDismiss = onDismissRenameFailure,
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 720.dp)
@@ -299,10 +335,15 @@ fun SessionListPane(
             else -> {
                 val grouped = remember(filteredRows) { groupSessions(filteredRows) }
 
-                // The list endpoint caps at 50 with no pagination, so the
-                // count names what was loaded, not the whole history.
+                // The list is paged at 50 (19-F3): while a next page
+                // exists, the count names what was loaded, not the whole
+                // history — "Showing 3 of 50" used to read as a total.
                 Text(
-                    text = stringResource(R.string.history_showing, filteredRows.size, state.rows.size),
+                    text = if (state.hasMoreSessions) {
+                        stringResource(R.string.history_showing_more, filteredRows.size, state.rows.size)
+                    } else {
+                        stringResource(R.string.history_showing, filteredRows.size, state.rows.size)
+                    },
                     style = OpenCodeTypography.caption,
                     color = colors.onSurfaceFaint,
                     modifier = Modifier
@@ -311,6 +352,24 @@ fun SessionListPane(
                         .align(Alignment.CenterHorizontally)
                         .padding(horizontal = spacing.lg, vertical = spacing.xs),
                 )
+
+                // Search matches previews only once they land (80-F8), and
+                // the previews arrive one session at a time — without a
+                // word about it, a query reads "no match" and the rows show
+                // up seconds later. The note shows only while searching
+                // and only while some listed session still has no detail.
+                if (query.isNotBlank() && state.rows.any { details[it.id] == null }) {
+                    Text(
+                        text = stringResource(R.string.history_previews_loading),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceFaint,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 720.dp)
+                            .align(Alignment.CenterHorizontally)
+                            .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                    )
+                }
 
                 LazyColumn(
                     modifier = Modifier
@@ -373,6 +432,33 @@ fun SessionListPane(
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
                             )
+                        }
+                    }
+                    // The next page (19-F3): a trailing item, so it scrolls
+                    // with the list instead of floating over it. The search
+                    // query stays applied — a loaded page is filtered the
+                    // same way as the first one.
+                    if (state.hasMoreSessions) {
+                        item(key = "load_more") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateItem()
+                                    .padding(vertical = spacing.md),
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                if (state.loadingMore) {
+                                    Text(
+                                        text = stringResource(R.string.common_loading),
+                                        style = OpenCodeTypography.body,
+                                        color = colors.onSurfaceFaint,
+                                    )
+                                } else {
+                                    TextButton(onClick = onLoadMore) {
+                                        Text(stringResource(R.string.history_load_more))
+                                    }
+                                }
+                            }
                         }
                     }
                 }

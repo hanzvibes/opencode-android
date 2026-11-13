@@ -559,6 +559,9 @@
     <string name="history_search_hint">Search sessions</string>
     <string name="history_search_no_results">No sessions match "%1$s"</string>
     <string name="history_showing">Showing %1$d of %2$d</string>
+    <string name="history_showing_more">Showing %1$d of %2$d+ loaded</string>
+    <string name="history_load_more">Load more sessions</string>
+    <string name="history_previews_loading">Previews still loading — search results may grow.</string>
 
     <!-- Date dividers, delivery status, reply, prompt history (audit C) -->
     <string name="date_today">Today</string>

@@ -610,6 +610,20 @@ class ChatViewModel(
     }
 
     /**
+     * Drops the parked composer for a deleted session (80-F6).
+     *
+     * A draft parked under a session that is then deleted can never be
+     * restored — the session is gone from every list — so the entry
+     * would sit in the store forever. Called only after the engine
+     * confirms the delete; a failed delete keeps the parked draft, since
+     * the session (and its row) comes back.
+     */
+    fun pruneParkedSession(sessionID: String) {
+        parkedStore.remove(sessionID)
+        if (lastParkKey == sessionID) lastParkKey = null
+    }
+
+    /**
      * The follow-up the flush is currently sending (13-F1). It stays at
      * the head of the queue until the engine answers: dropping it first
      * meant a failed send lost the text with no way back, and the rest of

@@ -14,6 +14,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/** One page of sessions (19-F3). */
+internal const val SESSION_PAGE_SIZE = 50
+
+/** One page of messages while walking toward a session's first user message (19-F2). */
+internal const val PREVIEW_PAGE_SIZE = 50
+
 /** How long ago something happened, as a unit and a count; the screen words it in the user's language. */
 enum class AgeUnit { NOW, MINUTES, HOURS, DAYS, MONTHS }
 
@@ -52,6 +58,20 @@ data class SessionListUiState(
     val deleteFailure: ApiResult.Failure? = null,
     /** The session the failed delete was for, so the banner can retry it. */
     val deleteFailedSessionID: String? = null,
+    /** A message with no failure behind it for a failed delete, e.g. the engine never started (65-F3). */
+    val deleteFailureKey: Int? = null,
+    /** A failed rename (65-F2/80-F3), kept separate like [deleteFailure]: the row is reverted, the banner explains why. */
+    val renameFailure: ApiResult.Failure? = null,
+    /** The session the failed rename was for, so the banner can retry it. */
+    val renameFailedSessionID: String? = null,
+    /** The title the failed rename tried to set, so the banner can retry it. */
+    val renameFailedTitle: String? = null,
+    /** A message with no failure behind it for a failed rename, e.g. the engine never started. */
+    val renameFailureKey: Int? = null,
+    /** More pages exist past the first 50 (19-F3); the screen offers "Load more". */
+    val hasMoreSessions: Boolean = false,
+    /** A next page is being fetched (19-F3). */
+    val loadingMore: Boolean = false,
     /** Only sessions for this directory, when filtering. */
     val filterDirectory: String? = null,
     /** Per-session preview/model/status (Phase 2, finding 21), filled by
@@ -91,6 +111,18 @@ class SessionListViewModel(
      */
     private var loadGeneration = 0
 
+    /** Cursor for the next page of sessions (19-F3); null when the list is complete. */
+    private var sessionCursor: String? = null
+
+    /**
+     * The scope the last load() used (80-F11): rename/delete reload after
+     * their network call returns, and the scope chip may have moved since
+     * they were tapped — the reload must use the scope that is current
+     * when it runs, not the one captured at tap time. Defaults to the
+     * app's initial scope (this project).
+     */
+    private var lastScopedToWorkspace: Boolean = true
+
     /** @param scopedToWorkspace when true, only the current project's sessions. */
     fun load(scopedToWorkspace: Boolean) {
         val handle = api.handle() ?: run {
@@ -99,32 +131,83 @@ class SessionListViewModel(
         }
         val directory = if (scopedToWorkspace) workspace() else null
         val generation = ++loadGeneration
+        lastScopedToWorkspace = scopedToWorkspace
+        sessionCursor = null
         detailsJob?.cancel()
         loadJob?.cancel()
-        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, deleteFailure = null, deleteFailedSessionID = null, filterDirectory = directory)
+        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, deleteFailure = null, deleteFailedSessionID = null, deleteFailureKey = null, renameFailure = null, renameFailedSessionID = null, renameFailedTitle = null, renameFailureKey = null, hasMoreSessions = false, loadingMore = false, filterDirectory = directory)
 
         loadJob = viewModelScope.launch {
-            when (val result = handle.sessions.list(directory = directory, limit = 50)) {
+            when (val result = handle.sessions.listPage(directory = directory, limit = SESSION_PAGE_SIZE)) {
                 is ApiResult.Success -> {
                     if (generation != loadGeneration) return@launch
+                    val page = result.value
+                    val listedIds = page.data.map { it.id }.toSet()
+                    // Ghost pins (80-F6): a pin for a session that is gone
+                    // can never be unpinned from the UI, because the session
+                    // never appears. Prune them only when the list is
+                    // complete — while the list is scoped to a project, or
+                    // capped at 50, an unlisted pin may belong to a session
+                    // that is real but out of view.
                     val pinned = pinnedStore?.getPinnedIds().orEmpty()
+                    val keptPins = pruneGhostPins(pinned, listedIds, directory != null || page.data.size >= SESSION_PAGE_SIZE)
+                    (pinned - keptPins).forEach { pinnedStore?.remove(it) }
                     // Details survive a reload (Fase 2, 19-F1): wiping them
                     // made every drawer open refetch every session's full
                     // history. Entries for sessions no longer listed are
                     // pruned; the rest are refreshed by loadDetails, which
                     // only fetches sessions without a preview.
-                    val listedIds = result.value.map { it.id }.toSet()
                     _state.value = _state.value.copy(
                         loading = false,
-                        rows = result.value.map { it.toRow(isPinned = pinned.contains(it.id)) },
+                        rows = page.data.map { it.toRow(isPinned = keptPins.contains(it.id)) },
                         failure = null, failureKey = null,
                         details = _state.value.details.filterKeys { it in listedIds },
+                        hasMoreSessions = page.cursor?.next != null,
                     )
-                    loadDetails(result.value, generation)
+                    sessionCursor = page.cursor?.next
+                    loadDetails(page.data, generation)
                 }
                 is ApiResult.Failure -> {
                     if (generation != loadGeneration) return@launch
                     _state.value = _state.value.copy(loading = false, failure = result)
+                }
+            }
+        }
+    }
+
+    /**
+     * Appends the next page of sessions (19-F3). A no-op when the list is
+     * complete or a page is already loading.
+     */
+    fun loadMore() {
+        val cursor = sessionCursor ?: return
+        if (_state.value.loading || _state.value.loadingMore) return
+        val handle = api.handle() ?: return
+        val generation = loadGeneration
+        val directory = _state.value.filterDirectory
+        _state.value = _state.value.copy(loadingMore = true)
+        loadJob = viewModelScope.launch {
+            when (val result = handle.sessions.listPage(directory = directory, limit = SESSION_PAGE_SIZE, cursor = cursor)) {
+                is ApiResult.Success -> {
+                    if (generation != loadGeneration) return@launch
+                    val page = result.value
+                    val listedIds = (_state.value.rows.map { it.id } + page.data.map { it.id }).toSet()
+                    val pinned = pinnedStore?.getPinnedIds().orEmpty()
+                    _state.value = _state.value.copy(
+                        loadingMore = false,
+                        rows = mergeSessionPage(_state.value.rows, page.data.map { it.toRow(isPinned = pinned.contains(it.id)) }),
+                        failure = null, failureKey = null,
+                        details = _state.value.details.filterKeys { it in listedIds },
+                        hasMoreSessions = page.cursor?.next != null,
+                    )
+                    sessionCursor = page.cursor?.next
+                    loadDetails(page.data, generation)
+                }
+                is ApiResult.Failure -> {
+                    if (generation != loadGeneration) return@launch
+                    // Rows are already on screen, so this is a banner over
+                    // the list, never a full-screen error (Fase 5 pattern).
+                    _state.value = _state.value.copy(loadingMore = false, failure = result)
                 }
             }
         }
@@ -136,20 +219,22 @@ class SessionListViewModel(
      * The list endpoint returns no transcript, so the preview comes from the
      * messages endpoint and the model/outcome from the [SessionInfo] already
      * in hand — no extra call for those two. The preview is the session's
-     * first user message; that is the oldest entry, so the full history is
-     * fetched (no limit), newest-first from the engine and reversed here.
-     * There is no cheaper way to reach the oldest message: the endpoint
-     * takes only a newest-first limit, and a small limit returns the wrong
-     * end. What is cheap is not fetching twice (Fase 2, 19-F1): a preview
-     * already loaded is immutable — the first message never changes — so
-     * it is kept across reloads and only its model/status refresh from
-     * the fresh list info, with no network call. Sessions without a
-     * preview (new, empty, or failed before) are still looked up.
-     * Lookups run sequentially in the background and publish incrementally,
-     * so rows fill in as their data lands. A failed lookup leaves that
-     * session's model/status in place with no preview rather than failing
-     * the whole list — and a session whose history is genuinely empty has
-     * no preview at all, which the row already handles.
+     * first user message; that is the oldest entry, so the walk follows
+     * the page cursor toward the oldest page (19-F2): the old code fetched
+     * the whole history in one unbounded call and assumed "no limit" meant
+     * "everything", which breaks the moment the engine paginates. Each
+     * page is bounded (50 messages) and only the candidate preview is
+     * kept, so a long session no longer loads its whole transcript into
+     * memory to find one line. What is cheap is not fetching twice
+     * (Fase 2, 19-F1): a preview already loaded is immutable — the first
+     * message never changes — so it is kept across reloads and only its
+     * model/status refresh from the fresh list info, with no network call.
+     * Sessions without a preview (new, empty, or failed before) are still
+     * looked up. Lookups run sequentially in the background and publish
+     * incrementally, so rows fill in as their data lands. A failed lookup
+     * leaves that session's model/status in place with no preview rather
+     * than failing the whole list — and a session whose history is
+     * genuinely empty has no preview at all, which the row already handles.
      */
     private fun loadDetails(infos: List<SessionInfo>, generation: Int) {
         detailsJob?.cancel()
@@ -164,30 +249,49 @@ class SessionListViewModel(
                     _state.value = _state.value.copy(details = filled.toMap())
                     continue
                 }
-                when (val result = handle.sessions.messages(info.id)) {
-                    is ApiResult.Success -> {
-                        val preview = result.value.reversed()
-                            .firstOrNull { it.isUser }
-                            ?.text?.trim()
-                            ?.takeIf { it.isNotEmpty() }
-                        filled[info.id] = SessionDetail(
-                            preview = preview,
-                            model = modelLabel,
-                            status = info.outcome,
-                        )
-                    }
-                    is ApiResult.Failure -> {
-                        filled[info.id] = SessionDetail(
-                            preview = null,
-                            model = modelLabel,
-                            status = info.outcome,
-                        )
-                    }
-                }
+                val preview = fetchFirstUserPreview(handle, info.id, generation)
+                filled[info.id] = SessionDetail(
+                    preview = preview,
+                    model = modelLabel,
+                    status = info.outcome,
+                )
                 // A newer load replaced the rows while this lookup was in
                 // flight: its previews belong to the old list (item 26).
                 if (generation != loadGeneration) return@launch
                 _state.value = _state.value.copy(details = filled.toMap())
+            }
+        }
+    }
+
+    /**
+     * The session's first user message, found by walking the message
+     * pages newest-first (19-F2/80-F7).
+     *
+     * Each page's oldest user message overwrites the candidate, so after
+     * the last page the candidate is the first user message of the whole
+     * history — the page walk never holds more than one page in memory.
+     * A repeated cursor (an engine that loops) ends the walk instead of
+     * spinning; a failed page keeps whatever was found so far.
+     */
+    private suspend fun fetchFirstUserPreview(
+        handle: EngineApi.Handle,
+        sessionID: String,
+        generation: Int,
+    ): String? {
+        var cursor: String? = null
+        var candidate: String? = null
+        val seenCursors = mutableSetOf<String>()
+        while (true) {
+            if (generation != loadGeneration) return candidate
+            when (val page = handle.sessions.messagesPage(sessionID, limit = PREVIEW_PAGE_SIZE, cursor = cursor)) {
+                is ApiResult.Success -> {
+                    candidate = updatePreviewCandidate(candidate, page.value.data)
+                    val next = page.value.cursor?.next
+                    if (next == null || next in seenCursors) return candidate
+                    seenCursors += next
+                    cursor = next
+                }
+                is ApiResult.Failure -> return candidate
             }
         }
     }
@@ -203,27 +307,52 @@ class SessionListViewModel(
     }
 
     /** Renames a session. */
-    fun rename(sessionID: String, newTitle: String, scopedToWorkspace: Boolean = true) {
+    fun rename(sessionID: String, newTitle: String) {
         val trimmed = newTitle.trim()
         if (trimmed.isEmpty()) return
+        val oldTitle = _state.value.rows.find { it.id == sessionID }?.title
         _state.value = _state.value.copy(
             rows = _state.value.rows.map {
                 if (it.id == sessionID) it.copy(title = trimmed) else it
             }
         )
-        val handle = api.handle() ?: return
+        val handle = api.handle() ?: run {
+            // The engine is down: nothing was renamed. Revert the
+            // optimistic title and say so (65-F3 pattern from delete) —
+            // the old code returned silently and the user kept waiting.
+            _state.value = resolveRenameFailure(_state.value, sessionID, oldTitle, trimmed, null, R.string.error_engine_not_running)
+            return
+        }
         viewModelScope.launch {
-            handle.sessions.rename(sessionID, trimmed)
-            load(scopedToWorkspace)
+            when (val result = handle.sessions.rename(sessionID, trimmed)) {
+                is ApiResult.Success -> load(lastScopedToWorkspace)
+                is ApiResult.Failure -> {
+                    // The old code dropped the result and reloaded: the
+                    // title quietly snapped back with no word about why
+                    // (65-F2/80-F3). Revert it here and keep the failure,
+                    // so the banner can name it and retry with the same
+                    // title instead of reopening the dialog.
+                    _state.value = resolveRenameFailure(_state.value, sessionID, oldTitle, trimmed, result)
+                }
+            }
         }
     }
 
     /** Deletes a session. */
-    fun delete(sessionID: String, scopedToWorkspace: Boolean = true) {
+    fun delete(sessionID: String, onDeleted: ((String) -> Unit)? = null) {
         // The engine must be reachable before anything is removed locally:
         // with no handle the delete cannot run, and removing the pin or the
         // row first would lose state for a session that is still there.
-        val handle = api.handle() ?: return
+        // The old code returned silently here (65-F3/80-F4): the row stayed
+        // and the user got no word at all. The banner below names it.
+        val handle = api.handle() ?: run {
+            _state.value = _state.value.copy(
+                deleteFailure = null,
+                deleteFailedSessionID = sessionID,
+                deleteFailureKey = R.string.error_engine_not_running,
+            )
+            return
+        }
         val rows = _state.value.rows
         val index = rows.indexOfFirst { it.id == sessionID }
         val deleted = rows.getOrNull(index)
@@ -237,7 +366,14 @@ class SessionListViewModel(
                     // gone: removing it first meant a failed delete brought
                     // the session back without its pin (audit-70 19-F3).
                     pinnedStore?.remove(sessionID)
-                    load(scopedToWorkspace)
+                    // The chat must not move away from the session before
+                    // the engine confirms the delete (80-F1): the old call
+                    // sites called newSession() first, so a failed delete
+                    // left the session alive with its live view destroyed.
+                    // The caller switches away and prunes the parked
+                    // composer (80-F6) only on this callback.
+                    onDeleted?.invoke(sessionID)
+                    load(lastScopedToWorkspace)
                 }
                 is ApiResult.Failure -> {
                     // The session is still on the engine: put the row back
@@ -250,7 +386,12 @@ class SessionListViewModel(
     }
     /** Dismisses the failed-delete banner; the row stays in the list. */
     fun clearDeleteFailure() {
-        _state.value = _state.value.copy(deleteFailure = null, deleteFailedSessionID = null)
+        _state.value = _state.value.copy(deleteFailure = null, deleteFailedSessionID = null, deleteFailureKey = null)
+    }
+
+    /** Dismisses the failed-rename banner; the reverted title stays. */
+    fun clearRenameFailure() {
+        _state.value = _state.value.copy(renameFailure = null, renameFailedSessionID = null, renameFailedTitle = null, renameFailureKey = null)
     }
 
     /** Dismisses a load-failure banner shown over a non-empty list. */
@@ -281,6 +422,82 @@ internal fun resolveDeleteFailure(
     }
     return state.copy(rows = current, deleteFailure = result, deleteFailedSessionID = sessionID)
 }
+
+/**
+ * State after a rename the engine refused (65-F2/80-F3): the title goes
+ * back to what it was, and the failure lands in [SessionListUiState.renameFailure]
+ * with the title that failed, so the banner can retry it — never in
+ * `failure`, which is the screen's full-screen error. Pure so the branch
+ * is testable without a live engine: [SessionListViewModel.rename] runs it
+ * inside a coroutine the JVM unit tests cannot drive (no Main dispatcher
+ * on the test classpath).
+ */
+internal fun resolveRenameFailure(
+    state: SessionListUiState,
+    sessionID: String,
+    oldTitle: String?,
+    newTitle: String,
+    result: ApiResult.Failure?,
+    failureKey: Int? = null,
+): SessionListUiState {
+    val rows = if (oldTitle != null) {
+        state.rows.map { if (it.id == sessionID) it.copy(title = oldTitle) else it }
+    } else {
+        state.rows
+    }
+    return state.copy(
+        rows = rows,
+        renameFailure = result,
+        renameFailedSessionID = sessionID,
+        renameFailedTitle = newTitle,
+        renameFailureKey = failureKey,
+    )
+}
+
+/**
+ * Pins that may stay after a list load (80-F6).
+ *
+ * A pin for a session that is gone can never be unpinned from the UI,
+ * because the session never appears — but only when the list is known
+ * complete. While the list is scoped to a project, or capped at a full
+ * page, an unlisted pin may belong to a session that is real but out of
+ * view, so every pin is kept. Pure so the rule is testable.
+ */
+internal fun pruneGhostPins(
+    pinned: Set<String>,
+    listedIds: Set<String>,
+    incomplete: Boolean,
+): Set<String> =
+    if (incomplete) pinned else pinned.filter { it in listedIds }.toSet()
+
+/**
+ * Appends one more page of session rows (19-F3), dropping rows the list
+ * already shows: a page boundary must never duplicate a session the
+ * user already sees.
+ */
+internal fun mergeSessionPage(
+    existing: List<SessionRow>,
+    page: List<SessionRow>,
+): List<SessionRow> {
+    val ids = existing.map { it.id }.toSet()
+    return existing + page.filter { it.id !in ids }
+}
+
+/**
+ * The preview candidate after one page of a newest-first walk (19-F2).
+ *
+ * The page's oldest user message overwrites the candidate, so after the
+ * last (oldest) page the candidate is the session's first user message.
+ * A page with no user message keeps the candidate from the newer pages:
+ * the first user message is the earliest one the walk has seen.
+ */
+internal fun updatePreviewCandidate(
+    candidate: String?,
+    page: List<dev.bidzz.opencode.core.api.dto.SessionMessage>,
+): String? =
+    page.reversed().firstOrNull { it.isUser }
+        ?.text?.trim()?.takeIf { it.isNotEmpty() }
+        ?: candidate
 
 private fun SessionInfo.toRow(isPinned: Boolean = false): SessionRow {
     val ts = time?.updated ?: time?.created

@@ -39,6 +39,21 @@ data class SessionDetail(
     val status: String? = null,
 )
 
+/**
+ * Words a status can be searched by (80-F8).
+ *
+ * The engine reports outcomes in English ("succeeded" / "failed"), so an
+ * Indonesian query like "gagal" never matched the raw status. The known
+ * outcomes gain their Indonesian and plain-English synonyms; an unknown
+ * outcome stays searchable under its own word, never hidden.
+ */
+internal fun statusSearchTerms(status: String?): List<String> = when (status?.lowercase()) {
+    "succeeded" -> listOf("succeeded", "berhasil", "selesai", "success")
+    "failed" -> listOf("failed", "gagal", "error")
+    null -> emptyList()
+    else -> listOf(status)
+}
+
 /** True when [query] matches the title, the transcript preview, the model, the status or the directory. */
 fun matchesSessionQuery(query: String, row: SessionRow, detail: SessionDetail? = null): Boolean {
     if (query.isBlank()) return true
@@ -46,7 +61,7 @@ fun matchesSessionQuery(query: String, row: SessionRow, detail: SessionDetail? =
     return row.title.contains(needle, ignoreCase = true)
         || detail?.preview?.contains(needle, ignoreCase = true) == true
         || detail?.model?.contains(needle, ignoreCase = true) == true
-        || detail?.status?.contains(needle, ignoreCase = true) == true
+        || statusSearchTerms(detail?.status).any { it.contains(needle, ignoreCase = true) }
         || row.directory?.contains(needle, ignoreCase = true) == true
 }
 
@@ -58,6 +73,26 @@ fun filterSessionRows(
 ): List<SessionRow> {
     if (query.isBlank()) return rows
     return rows.filter { matchesSessionQuery(query, it, details[it.id]) }
+}
+
+/**
+ * An instant estimated from a relative age (80-F12).
+ *
+ * A relative age is a duration, not a day: "3 hours ago" at 01:00 is
+ * yesterday by the calendar. Estimating the instant first lets the
+ * no-timestamp fallback use the same calendar boundaries as the
+ * timestamp path instead of raw 24-hour buckets. The estimate is exact
+ * for minutes and hours; days and months are approximate by nature (a
+ * "1 day" age spans 24–47 hours), so a session near midnight can still
+ * land one bucket off — the same imprecision the age itself carries.
+ */
+internal fun estimateTimestamp(age: SessionAge?, nowMillis: Long): Long? = when (age?.unit) {
+    null -> null
+    AgeUnit.NOW -> nowMillis
+    AgeUnit.MINUTES -> nowMillis - age.value * 60_000L
+    AgeUnit.HOURS -> nowMillis - age.value * 3_600_000L
+    AgeUnit.DAYS -> nowMillis - age.value * 86_400_000L
+    AgeUnit.MONTHS -> nowMillis - age.value * 30L * 86_400_000L
 }
 
 /**
@@ -101,14 +136,22 @@ fun groupSessions(
                 else -> older.add(row)
             }
         } else {
-            when (row.age?.unit) {
-                AgeUnit.NOW, AgeUnit.MINUTES, AgeUnit.HOURS -> today.add(row)
-                AgeUnit.DAYS -> {
-                    if (row.age.value <= 1) yesterday.add(row)
-                    else if (row.age.value <= 7) previous7Days.add(row)
-                    else older.add(row)
+            // No timestamp: estimate the instant from the relative age and
+            // bucket by the same calendar boundaries as the timestamp path
+            // (80-F12). The old fallback used raw 24-hour buckets, so a
+            // session from 3 hours ago at 01:00 landed in Today even though
+            // it was yesterday by the calendar. A null age means nothing
+            // is known at all, and the session stays in Older.
+            val estimated = estimateTimestamp(row.age, nowMillis)
+            if (estimated != null) {
+                when {
+                    estimated >= startOfToday -> today.add(row)
+                    estimated >= startOfYesterday -> yesterday.add(row)
+                    estimated >= startOf7Days -> previous7Days.add(row)
+                    else -> older.add(row)
                 }
-                AgeUnit.MONTHS, null -> older.add(row)
+            } else {
+                older.add(row)
             }
         }
     }
