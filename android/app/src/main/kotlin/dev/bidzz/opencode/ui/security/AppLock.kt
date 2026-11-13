@@ -118,39 +118,48 @@ fun authenticateWithBiometrics(
     // Activity.mainExecutor (API 28+, minSdk 29) instead of
     // ContextCompat: the app module has no androidx.core dependency, and
     // this avoids relying on it arriving transitively.
-    val prompt = BiometricPrompt(
-        activity,
-        activity.mainExecutor,
-        object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(
-                result: BiometricPrompt.AuthenticationResult,
-            ) {
-                onSuccess()
-            }
-
-            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
-                    errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
-                    errorCode != BiometricPrompt.ERROR_CANCELED
+    // Audit-200 A4 (C-004, SUSPECTED): authenticate() throws when the
+    // authenticator cannot run at all (nothing enrolled anymore, the
+    // activity going away) — that used to crash the app instead of
+    // showing the error. A throw now reaches onError like any other
+    // authentication failure; the caller's error state shows it.
+    runCatching {
+        val prompt = BiometricPrompt(
+            activity,
+            activity.mainExecutor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(
+                    result: BiometricPrompt.AuthenticationResult,
                 ) {
-                    onError(errString.toString())
+                    onSuccess()
                 }
-            }
 
-            override fun onAuthenticationFailed() {
-                onError(failedMessage)
-            }
-        },
-    )
-    val info = BiometricPrompt.PromptInfo.Builder()
-        .setTitle(title)
-        .setSubtitle(subtitle)
-        .setAllowedAuthenticators(
-            BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                        errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                        errorCode != BiometricPrompt.ERROR_CANCELED
+                    ) {
+                        onError(errString.toString())
+                    }
+                }
+
+                override fun onAuthenticationFailed() {
+                    onError(failedMessage)
+                }
+            },
         )
-        .build()
-    prompt.authenticate(info)
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+            )
+            .build()
+        prompt.authenticate(info)
+    }.onFailure {
+        onError(it.message?.takeIf { message -> message.isNotBlank() } ?: failedMessage)
+    }
 }
 
 /**
@@ -165,11 +174,17 @@ fun LockScreen(onUnlocked: () -> Unit) {
     val title = stringResource(R.string.lock_unlock_title)
     val subtitle = stringResource(R.string.lock_unlock_subtitle)
     val failedMessage = stringResource(R.string.lock_failed)
+    val unavailableMessage = stringResource(R.string.lock_unavailable_generic)
     var error by remember { mutableStateOf<String?>(null) }
     var prompted by remember { mutableStateOf(false) }
 
     fun prompt() {
-        val act = activity ?: return
+        // Audit-200 A4 (C-004): a missing activity used to make the
+        // Unlock button silently do nothing. Say so instead.
+        val act = activity ?: run {
+            error = unavailableMessage
+            return
+        }
         authenticateWithBiometrics(act, title, subtitle, failedMessage, onUnlocked) {
             error = it
         }
