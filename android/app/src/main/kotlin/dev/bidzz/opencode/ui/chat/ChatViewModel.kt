@@ -21,6 +21,7 @@ import dev.bidzz.opencode.core.api.newMessageId
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.ui.engineDownFailure
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -41,6 +42,16 @@ import java.util.UUID
 data class ChatUiState(
     val engineState: EngineState = EngineState.STOPPED,
     val sessionID: String? = null,
+    /**
+     * The active session's title as the engine last reported it
+     * (audit-200 B3, M-567): the header's fallback when the session list
+     * has not loaded the row yet — after a fork, a new session, a deep
+     * link or a resume, the list may never have loaded, so the title
+     * came only from it and the header showed no conversation name. The
+     * list still wins when it knows the session (it carries later
+     * auto-titles); this only fills the gap.
+     */
+    val sessionTitle: String? = null,
     val messages: List<ChatMessage> = emptyList(),
     /** True when the transcript window cut older messages: more are available above. */
     val hasMoreOlder: Boolean = false,
@@ -244,6 +255,24 @@ internal fun List<QueuedPrompt>.withUniqueIds(): List<QueuedPrompt> =
 internal fun resolveFlushDrop(queue: List<QueuedPrompt>, sent: QueuedPrompt?): List<QueuedPrompt> =
     if (sent != null && queue.firstOrNull()?.id == sent.id) queue.drop(1) else queue
 
+/**
+ * Splits the queue for [ChatViewModel.returnQueueToDraft] (audit-200 B3,
+ * M-242): the entry the flush is sending stays queued — its send may
+ * still land — while everything else goes back to the composer. Matched
+ * by id, never by text (two follow-ups can hold the same words). With no
+ * in-flight entry — the engine-death path, where the repository is gone
+ * — everything returns: its send can never land.
+ *
+ * Returns (toReturn, toKeep).
+ */
+internal fun resolveReturnedQueue(
+    queued: List<QueuedPrompt>,
+    inFlightId: String?,
+): Pair<List<QueuedPrompt>, List<QueuedPrompt>> {
+    if (inFlightId == null) return queued to emptyList()
+    return queued.filter { it.id != inFlightId } to queued.filter { it.id == inFlightId }
+}
+
 /** What the error banner's Retry button does for the current failure. */
 enum class RetryKind {
     /** No retry is offered (non-retryable failure, or nothing failed). */
@@ -336,11 +365,17 @@ internal enum class RunEndAction {
  * queue explicitly: anything queued up to the end of a stopped run goes
  * back to the composer — visible, sendable, never auto-sent — and the
  * flush only fires for a run that ended on its own.
+ *
+ * [stopRequested] is the intent, not the [ChatUiState.stopping] flag
+ * (audit-200 B3, M-080/M-376): the flag clears when the interrupt POST
+ * times out or fails so Stop can be tapped again, but the intent must
+ * survive until the run actually ends — otherwise a late terminal event
+ * flushes the queue right after the Stop.
  */
 internal fun resolveRunEndAction(
     wasBusy: Boolean,
     busy: Boolean,
-    stopping: Boolean,
+    stopRequested: Boolean,
     hasQueued: Boolean,
     sendInFlight: Boolean,
     flushing: Boolean,
@@ -348,7 +383,7 @@ internal fun resolveRunEndAction(
 ): RunEndAction {
     if (!wasBusy || busy) return RunEndAction.NONE
     if (!hasQueued || sendInFlight || flushing || !hasRepository) return RunEndAction.NONE
-    return if (stopping) RunEndAction.RETURN_TO_DRAFT else RunEndAction.FLUSH
+    return if (stopRequested) RunEndAction.RETURN_TO_DRAFT else RunEndAction.FLUSH
 }
 
 /**
@@ -942,6 +977,37 @@ class ChatViewModel(
      */
     private var flushingEntry: QueuedPrompt? = null
 
+    /**
+     * The user asked this run to stop (audit-200 B3, M-080/M-376). Unlike
+     * [ChatUiState.stopping] — the button state, cleared when the
+     * interrupt POST times out or fails so Stop can be tapped again —
+     * the intent survives until the run actually ends: a late terminal
+     * event must still return the queue to the draft, never flush it.
+     * Cleared when a run ends, on a session change, and when the engine
+     * dies. An explicit send while stopping does NOT clear it: follow-ups
+     * queued during stopping go back to the draft at run end, and the
+     * user re-sends with one tap.
+     */
+    private var stopIntent = false
+
+    /**
+     * The session a fork was tapped in (audit-200 B3, M-492): the
+     * [ChatUiState.forking] flag clears on fork-API success, before the
+     * new session opens — a second tap in that window forked twice.
+     * This survives until the fork settles (opened, abandoned, or
+     * failed), and is deliberately NOT cleared by a session open: a
+     * fork opened in the source session mid-flight must not re-arm.
+     */
+    private var forkingSessionID: String? = null
+
+    /**
+     * The session a revert was staged in (audit-200 B3, M-493): the
+     * [dev.bidzz.opencode.core.api.dto.SessionRevert] DTO carries no
+     * session id, so without this the banner — and its commit — would
+     * follow the user into whatever session is current when tapped.
+     */
+    private var stagedRevertSessionID: String? = null
+
     /** Takes the entry the flush is sending, if one is in flight. */
     private fun takeFlushingEntry(): QueuedPrompt? {
         val entry = flushingEntry ?: return null
@@ -988,7 +1054,15 @@ class ChatViewModel(
      * it (audit-70 13-F3).
      */
     private fun returnQueueToDraft(): Boolean {
-        val queued = _state.value.queuedPrompts
+        // Audit-200 B3 (M-242): the entry the flush is sending stays
+        // queued — its POST may still land, and returning its text to
+        // the draft while the send succeeds would duplicate it. Only
+        // the rest goes back to the composer. On the engine-death path
+        // there is no in-flight entry, so everything returns.
+        val (queued, toKeep) = resolveReturnedQueue(
+            _state.value.queuedPrompts,
+            inFlightId = if (repository != null) flushingEntry?.id else null,
+        )
         val returned = queued.map {
             when {
                 it.typedText.isNotBlank() -> it.typedText
@@ -1009,7 +1083,7 @@ class ChatViewModel(
             savedStateHandle?.set(DRAFT_KEY, restoredDraft)
         }
         _state.value = _state.value.copy(
-            queuedPrompts = emptyList(),
+            queuedPrompts = toKeep,
             draft = restoredDraft,
             pendingAttachments = (returnedAttachments +
                 _state.value.pendingAttachments).distinctBy { it.id },
@@ -1031,6 +1105,9 @@ class ChatViewModel(
                     repository = null
                     handle = null
                     attached = null
+                    // Audit-200 B3 (M-080/M-376): the run is gone with
+                    // the engine — a stop intent for it is spent.
+                    stopIntent = false
                     // Follow-ups queued while the agent worked are the user's
                     // words: the engine dying must not throw them away
                     // (item 8). They go back into the composer — after
@@ -1345,7 +1422,7 @@ class ChatViewModel(
             resolveRunEndAction(
                 wasBusy = wasBusy,
                 busy = chat.busy,
-                stopping = previous.stopping,
+                stopRequested = stopIntent,
                 hasQueued = _state.value.queuedPrompts.isNotEmpty(),
                 sendInFlight = sendInFlight,
                 flushing = flushingEntry != null,
@@ -1364,6 +1441,10 @@ class ChatViewModel(
             RunEndAction.RETURN_TO_DRAFT -> returnQueueToDraft()
             RunEndAction.NONE -> Unit
         }
+        // Audit-200 B3 (M-080/M-376): the run ended — whatever it was,
+        // the stop intent is spent. A later run starts with a clean
+        // slate; a new Stop tap re-arms it.
+        if (wasBusy && !chat.busy) stopIntent = false
 
         // A queue restored after process death (audit-70 69-F2): the first
         // repo state decides its fate. A run still going clears the flag
@@ -1920,8 +2001,14 @@ class ChatViewModel(
         if (safPicksJob != null) return
         safPicksJob = viewModelScope.launch {
             picks.collect { uri ->
+                // Audit-200 B3 (M-076): the park key is captured before
+                // the read — a session switch mid-read must not re-file
+                // the pick. The landing is the same one drops use, so a
+                // pick for another session parks under that session
+                // instead of attaching to the wrong composer.
+                val pickKey = currentParkKey()
                 val result = withContext(Dispatchers.IO) { readFile(uri) }
-                handleSafReadResult(result)
+                handleDroppedFileResult(result, pickKey)
             }
         }
     }
@@ -2163,15 +2250,32 @@ class ChatViewModel(
     fun forkMessage(messageId: String) {
         val sessionID = _state.value.sessionID ?: return
         val sessions = handle?.sessions ?: return
-        if (_state.value.forking) return
+        // Audit-200 B3 (M-492): the forking flag clears on fork-API
+        // success, before the new session opens — a second tap in that
+        // window forked twice. The session-scoped guard survives until
+        // the fork settles.
+        if (_state.value.forking || forkingSessionID == sessionID) return
+        forkingSessionID = sessionID
         _state.value = _state.value.copy(forking = true)
         viewModelScope.launch {
             when (val result = sessions.fork(sessionID, before = messageId)) {
                 is ApiResult.Success -> {
-                    _state.value = _state.value.copy(forking = false)
-                    openSession(result.value.id)
+                    forkingSessionID = null
+                    if (_state.value.sessionID == sessionID) {
+                        // The SessionInfo overload: it syncs the fork's
+                        // title/model/agent too (M-567), and its open
+                        // clears the forking flag.
+                        openSession(result.value)
+                    } else {
+                        // Switched away mid-fork: the fork exists
+                        // server-side and the list will show it, but
+                        // opening it now would yank the user out of the
+                        // session they chose.
+                        _state.value = _state.value.copy(forking = false)
+                    }
                 }
                 is ApiResult.Failure -> {
+                    forkingSessionID = null
                     _state.value = _state.value.copy(forking = false)
                     reportFailure(result)
                 }
@@ -2187,15 +2291,22 @@ class ChatViewModel(
     fun forkSession() {
         val sessionID = _state.value.sessionID ?: return
         val sessions = handle?.sessions ?: return
-        if (_state.value.forking) return
+        // Audit-200 B3 (M-492): same double-tap guard as forkMessage.
+        if (_state.value.forking || forkingSessionID == sessionID) return
+        forkingSessionID = sessionID
         _state.value = _state.value.copy(forking = true)
         viewModelScope.launch {
             when (val result = sessions.fork(sessionID)) {
                 is ApiResult.Success -> {
-                    _state.value = _state.value.copy(forking = false)
-                    openSession(result.value.id)
+                    forkingSessionID = null
+                    if (_state.value.sessionID == sessionID) {
+                        openSession(result.value)
+                    } else {
+                        _state.value = _state.value.copy(forking = false)
+                    }
                 }
                 is ApiResult.Failure -> {
+                    forkingSessionID = null
                     _state.value = _state.value.copy(forking = false)
                     reportFailure(result)
                 }
@@ -2248,10 +2359,20 @@ class ChatViewModel(
         _state.value = _state.value.copy(revertBusy = true)
         viewModelScope.launch {
             when (val result = sessions.revertStage(sessionID, messageId)) {
-                is ApiResult.Success -> _state.value = _state.value.copy(
-                    revertBusy = false,
-                    stagedRevert = result.value,
-                )
+                is ApiResult.Success -> {
+                    // Audit-200 B3 (M-493): the stage only belongs to
+                    // the session it was tapped in — a switch mid-flight
+                    // must not plant its banner on the new session.
+                    if (_state.value.sessionID == sessionID) {
+                        stagedRevertSessionID = sessionID
+                        _state.value = _state.value.copy(
+                            revertBusy = false,
+                            stagedRevert = result.value,
+                        )
+                    } else {
+                        _state.value = _state.value.copy(revertBusy = false)
+                    }
+                }
                 is ApiResult.Failure -> {
                     _state.value = _state.value.copy(revertBusy = false)
                     reportFailure(result)
@@ -2265,10 +2386,19 @@ class ChatViewModel(
         val sessionID = _state.value.sessionID ?: return
         val sessions = handle?.sessions ?: return
         if (_state.value.stagedRevert == null || _state.value.revertBusy) return
+        // Audit-200 B3 (M-493): the banner belongs to another session
+        // (staged there, then the user switched) — drop it here instead
+        // of committing a revert into the wrong session.
+        if (stagedRevertSessionID != null && stagedRevertSessionID != sessionID) {
+            stagedRevertSessionID = null
+            _state.value = _state.value.copy(stagedRevert = null)
+            return
+        }
         _state.value = _state.value.copy(revertBusy = true)
         viewModelScope.launch {
             when (val result = sessions.revertCommit(sessionID)) {
                 is ApiResult.Success -> {
+                    stagedRevertSessionID = null
                     _state.value = _state.value.copy(revertBusy = false, stagedRevert = null)
                     reloadSession()
                 }
@@ -2285,13 +2415,23 @@ class ChatViewModel(
         val sessionID = _state.value.sessionID ?: return
         val sessions = handle?.sessions ?: return
         if (_state.value.stagedRevert == null || _state.value.revertBusy) return
+        // Audit-200 B3 (M-493): same session check as commitRevert — a
+        // banner for another session is dropped, never cleared there.
+        if (stagedRevertSessionID != null && stagedRevertSessionID != sessionID) {
+            stagedRevertSessionID = null
+            _state.value = _state.value.copy(stagedRevert = null)
+            return
+        }
         _state.value = _state.value.copy(revertBusy = true)
         viewModelScope.launch {
             when (val result = sessions.revertClear(sessionID)) {
-                is ApiResult.Success -> _state.value = _state.value.copy(
-                    revertBusy = false,
-                    stagedRevert = null,
-                )
+                is ApiResult.Success -> {
+                    stagedRevertSessionID = null
+                    _state.value = _state.value.copy(
+                        revertBusy = false,
+                        stagedRevert = null,
+                    )
+                }
                 is ApiResult.Failure -> {
                     _state.value = _state.value.copy(revertBusy = false)
                     reportFailure(result)
@@ -2412,6 +2552,24 @@ class ChatViewModel(
             _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
             return
         }
+        // Audit-200 B3 (M-215): a failed FLUSHED entry still sits in the
+        // queue (its send failed, so it was left queued for the next run
+        // to end). Re-sending lastSentText without dropping it sends the
+        // same prompt twice — once now, once at the next run end. The
+        // entry is matched by fullText: only a flushed entry can hold
+        // lastSentText in the queue (queuePrompt dedups direct sends
+        // against it), and its attachments are already baked into the
+        // text. The text stays retryable through lastSentText itself.
+        val sessionID = _state.value.sessionID
+        val duplicates = _state.value.queuedPrompts.filter { it.fullText == text }
+        if (duplicates.isNotEmpty()) {
+            _state.value = _state.value.copy(
+                queuedPrompts = _state.value.queuedPrompts - duplicates.toSet(),
+            )
+            if (sessionID != null) {
+                duplicates.forEach { parkedStore.removeQueued(sessionID, it) }
+            }
+        }
         _state.value = _state.value.copy(failure = null, failureKey = null, selectionFailure = null)
         sendInFlight = true
         viewModelScope.launch {
@@ -2474,6 +2632,35 @@ class ChatViewModel(
     }
 
     /**
+     * Sends one prompt through [repo] into [capturedSessionID], and turns
+     * a throw the [ApiResult] channel could not carry into a banner
+     * (audit-200 B3, M-243): a decode crash or an unexpected runtime
+     * failure used to escape the launch uncaught — the optimistic bubble
+     * stuck, the flushed entry stayed in flight forever, and the user
+     * got no retry. A cancellation is different: the entry stays queued
+     * and the cancellation propagates, as structured concurrency
+     * requires.
+     */
+    private suspend fun sendNow(
+        repo: ChatRepository,
+        capturedSessionID: String?,
+        text: String,
+        typedText: String,
+        attachments: List<AttachedFile>,
+    ) {
+        try {
+            sendNowInner(repo, capturedSessionID, text, typedText, attachments)
+        } catch (e: CancellationException) {
+            settleFlushedEntry(null, sent = false)
+            throw e
+        } catch (e: Exception) {
+            clearOptimistic()
+            settleFlushedEntry(null, sent = false)
+            reportFailure(ApiResult.Failure(code = -1, tag = "SendFailed", message = e.message))
+        }
+    }
+
+    /**
      * Sends one prompt through [repo] into [capturedSessionID].
      *
      * Both are captured by the caller before the coroutine runs (item 15):
@@ -2486,7 +2673,7 @@ class ChatViewModel(
      * to the open/switch flow only, and calling it from a send attached a
      * fresh stream to a repository the screen had already left behind.
      */
-    private suspend fun sendNow(
+    private suspend fun sendNowInner(
         repo: ChatRepository,
         capturedSessionID: String?,
         text: String,
@@ -2523,8 +2710,18 @@ class ChatViewModel(
         when (result) {
             is ApiResult.Failure -> {
                 clearOptimistic()
-                reportFailure(result)
-                settleFlushedEntry(sessionID, sent = false)
+                // Audit-200 B3 (M-491): the failure belongs to the old
+                // session — the same post-await revalidation the Success
+                // path already has (A5/DL-007). The banner must not land
+                // on the new session for a prompt it never sent, and the
+                // entry stays parked under the old session for the next
+                // retry: a failed send never drops its entry.
+                if (repository !== repo || repo.state.value.sessionID != sessionID) {
+                    settleFlushedEntry(sessionID, sent = false)
+                } else {
+                    reportFailure(result)
+                    settleFlushedEntry(sessionID, sent = false)
+                }
             }
             is ApiResult.Success -> {
                 // Audit-200 A5 (DL-007, DL-030): the session may have
@@ -2539,11 +2736,43 @@ class ChatViewModel(
                 if (repository !== repo || repo.state.value.sessionID != sessionID) {
                     clearOptimistic()
                     settleFlushedEntryParkedOnly(sessionID)
+                    // Audit-200 B3 (M-070): the prompt landed in the
+                    // old session, but the typed text is still parked
+                    // under it — the switch parked the draft before the
+                    // send cleared it — and returning there would offer
+                    // the same text to send again. Clear the parked
+                    // draft where it equals what was just sent. The
+                    // send itself cannot be unsent client-side; the
+                    // parked duplicate is the fixable half.
+                    clearParkedDraftIfSent(sessionID, typedText)
                 } else {
                     clearSentDraft(typedText)
                     clearSentAttachments(attachments)
                     settleFlushedEntry(sessionID, sent = true)
                 }
+            }
+        }
+    }
+
+    /**
+     * Clears a parked draft that equals text just sent (audit-200 B3,
+     * M-070). Only an exact (trimmed) match is cleared, and only the
+     * draft part: attachments and the queue stay, and an entry left with
+     * nothing is removed instead of kept as an empty shell. Text typed
+     * after the send started — or edited since — does not match, so it
+     * is never swept away with the sent text.
+     */
+    private fun clearParkedDraftIfSent(sessionID: String?, typedText: String) {
+        val sent = typedText.trim()
+        if (sent.isEmpty()) return
+        val keys = listOfNotNull(sessionID, lastParkKey, UNSENT_SESSION_KEY).distinct()
+        for (key in keys) {
+            val parked = parkedStore.get(key) ?: continue
+            if (parked.draft.trim() != sent) continue
+            if (parked.attachments.isEmpty() && parked.queued.isEmpty()) {
+                parkedStore.remove(key)
+            } else {
+                parkedStore.put(key, parked.copy(draft = ""))
             }
         }
     }
@@ -2703,6 +2932,12 @@ class ChatViewModel(
         // "Stopping…" until the run actually ends: the interrupt is async and
         // the button must not flip back to Send while the agent still works.
         // The collector clears it when busy goes false.
+        // Audit-200 B3 (M-080/M-376): the intent is recorded apart from
+        // the button state — a timeout or a failed interrupt releases the
+        // button so Stop can be tapped again, but the intent must survive
+        // until the terminal event, or the queue flushes right after the
+        // Stop. It clears when the run ends (see onRepoState).
+        stopIntent = true
         _state.value = _state.value.copy(stopping = true)
         viewModelScope.launch {
             // The interrupt POST has its own timeout (17-F10): without it
@@ -2743,6 +2978,26 @@ class ChatViewModel(
                     // means stop, so the follow-ups go back to the
                     // composer instead of auto-sending after it.
                     returnQueueToDraft()
+                    // Audit-200 B3 (M-244): the run is supposed to end
+                    // now, but if the terminal event never arrives the
+                    // button stays "Stopping…" forever — and the stop
+                    // intent with it. The watchdog shakes the transcript
+                    // loose after thirty seconds: a resync may surface
+                    // the terminal state the stream never delivered. If
+                    // the run is STILL going after that, only the button
+                    // is released (the intent is kept, so a late terminal
+                    // event still returns the queue to the draft instead
+                    // of flushing it).
+                    viewModelScope.launch {
+                        delay(STOP_WATCHDOG_MS)
+                        if (_state.value.stopping && _state.value.busy) {
+                            repository?.refresh()
+                            delay(1_000)
+                            if (_state.value.stopping && _state.value.busy) {
+                                _state.value = _state.value.copy(stopping = false)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2832,7 +3087,11 @@ class ChatViewModel(
         // one. The edited text itself is parked above as the draft, so
         // nothing typed is lost — only the pre-edit backup goes.
         draftBeforeEdit = null
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
+        // Audit-200 B3 (M-080/M-376, M-493): the stop intent and the
+        // staged revert belong to the old session too.
+        stopIntent = false
+        stagedRevertSessionID = null
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
         // Text typed before any session exists lives under the unsent key
         // (95-F6): a fresh session is where it belongs, so it comes back
         // as this session's composer instead of starting empty. The edit
@@ -2867,9 +3126,12 @@ class ChatViewModel(
         // in Session.Info.agent (docs/API-REFERENCE.md) — no new endpoint.
         // A null model/agent clears the chip (item 23): keeping the previous
         // session's value would show a model this session never runs on.
+        // The title syncs too (audit-200 B3, M-567): the list row is the
+        // only title the header had, and it may never have loaded.
         _state.value = _state.value.copy(
             activeModel = session.model,
             activeAgent = session.agent,
+            sessionTitle = session.title,
         )
         // An explicit open supersedes a deep link still waiting for
         // attach (56-F1).
@@ -3004,7 +3266,12 @@ class ChatViewModel(
         // in-flight send, so its post-send clear must not fire on the
         // restored text.
         draftEditCount++
-        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
+        // Audit-200 B3 (M-080/M-376, M-493, M-567): the stop intent, the
+        // staged revert and the title belong to the old session; the meta
+        // block below re-installs the new session's own.
+        stopIntent = false
+        stagedRevertSessionID = null
+        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
         restoreParkedComposer(sessionID)
         repo.open(sessionID)
         // Guarded by the repository's attached session (item 23), not the
@@ -3013,6 +3280,7 @@ class ChatViewModel(
         // synchronously in open(), so this holds even before the
         // collector's first emission.
         if (meta != null && repository?.state?.value?.sessionID == sessionID) {
+            if (meta.revert != null) stagedRevertSessionID = sessionID
             _state.value = _state.value.copy(
                 activeModel = meta.model,
                 activeAgent = meta.agent,
@@ -3020,6 +3288,9 @@ class ChatViewModel(
                 // is still staged: surface it in the banner instead of
                 // hiding it until the user happens to stage another one.
                 stagedRevert = meta.revert,
+                // Audit-200 B3 (M-567): the title the list may never have
+                // loaded for this session.
+                sessionTitle = meta.title,
             )
         }
     }
@@ -3067,6 +3338,17 @@ class ChatViewModel(
                                 repositoryChanged = repository !== repo,
                             )
                         ) {
+                            // Audit-200 B3 (M-541): the GET already has
+                            // the session's model, agent and title — sync
+                            // them now instead of discarding them. Before
+                            // this the resume opened the session with the
+                            // previous session's chips and no title until
+                            // the list happened to load.
+                            _state.value = _state.value.copy(
+                                activeModel = result.value.model,
+                                activeAgent = result.value.agent,
+                                sessionTitle = result.value.title,
+                            )
                             // Audit-200 A9-3 (DL-035): a composer parked
                             // before the process died — by the debounced
                             // park, or before an update — belongs to this
@@ -3159,6 +3441,14 @@ class ChatViewModel(
          * and short enough to notice.
          */
         internal const val STOP_TIMEOUT_MS = 15_000L
+
+        /**
+         * How long Stop waits for the terminal event before shaking the
+         * transcript loose (audit-200 B3, M-244): thirty seconds is long
+         * enough for a healthy engine to end the run, and short enough
+         * that "Stopping…" never looks permanently stuck.
+         */
+        internal const val STOP_WATCHDOG_MS = 30_000L
     }
 }
 
