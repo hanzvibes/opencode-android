@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -22,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,6 +97,8 @@ fun McpServersScreen(
     onRemove: (String) -> Unit,
     onAdd: (String, McpServerConfig) -> Unit,
     onClearActionFailure: () -> Unit,
+    /** True when the server was added at runtime and lives in no config file (DL-015). */
+    isRuntimeOnly: (String) -> Boolean = { false },
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -104,13 +109,29 @@ fun McpServersScreen(
     // Action failures arrive as values; show once, then clear.
     // message() is @Composable, so resolve it here — not inside LaunchedEffect.
     val actionFailureMessage = state.actionFailure?.message()
-    LaunchedEffect(state.actionFailure) {
+    var showAddForm by remember { mutableStateOf(false) }
+    // While the add form is open, the failure is shown inside it instead:
+    // clearing it for the snackbar would erase the form's error before
+    // the user reads it (audit-200 A9-1, DL-016). The snackbar fires when
+    // the form closes instead — the effect keys on both values.
+    LaunchedEffect(state.actionFailure, showAddForm) {
+        if (showAddForm) return@LaunchedEffect
         val message = actionFailureMessage ?: return@LaunchedEffect
         (context.applicationContext as OpenCodeApplication).showSnackbar(message)
         onClearActionFailure()
     }
 
-    var showAddForm by remember { mutableStateOf(false) }
+    // An add is in flight until the view model says otherwise (DL-016):
+    // the form stays open while adding and closes only on success, so a
+    // failed add keeps its values instead of losing them with the dialog.
+    var addInFlight by remember { mutableStateOf(false) }
+    LaunchedEffect(state.adding) {
+        if (addInFlight && !state.adding) {
+            addInFlight = false
+            if (state.actionFailure == null) showAddForm = false
+        }
+    }
+
     var removeTarget by remember { mutableStateOf<String?>(null) }
 
     ScreenScaffold(
@@ -219,9 +240,11 @@ fun McpServersScreen(
     if (showAddForm) {
         AddMcpServerDialog(
             adding = state.adding,
+            error = actionFailureMessage,
+            existingServer = { name -> mcpServerNamed(state.servers, name) },
             onDismiss = { showAddForm = false },
             onAdd = { name, config ->
-                showAddForm = false
+                addInFlight = true
                 onAdd(name, config)
             },
         )
@@ -255,7 +278,16 @@ fun McpServersScreen(
                 Text(text = stringResource(R.string.mcp_remove_title, name))
             },
             text = {
-                Text(text = stringResource(R.string.mcp_remove_body))
+                // Audit-200 A9-1 (DL-015): the old body promised every
+                // server "comes back from the config file" after a
+                // restart — false for a server added at runtime, which
+                // lives in no file and is gone for good once removed.
+                Text(
+                    text = stringResource(
+                        if (isRuntimeOnly(name)) R.string.mcp_remove_body_runtime
+                        else R.string.mcp_remove_body,
+                    ),
+                )
             },
         )
     }
@@ -449,20 +481,28 @@ private fun mcpStatusWord(kind: McpStatusKind): String = stringResource(
 @Composable
 private fun AddMcpServerDialog(
     adding: Boolean,
+    /** The last add failure, shown inside the dialog (DL-016). */
+    error: String?,
+    /** The server with this name, when one already exists (DL-014). */
+    existingServer: (String) -> McpServer?,
     onDismiss: () -> Unit,
     onAdd: (String, McpServerConfig) -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    var name by remember { mutableStateOf("") }
-    var isLocal by remember { mutableStateOf(true) }
-    var command by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var cwd by remember { mutableStateOf("") }
+    // Audit-200 A9-1 (DL-016): saved across rotation, and kept — the
+    // dialog stays open on a failed add — so a failure never wipes
+    // what the user typed.
+    var name by rememberSaveable { mutableStateOf("") }
+    var isLocal by rememberSaveable { mutableStateOf(true) }
+    var command by rememberSaveable { mutableStateOf("") }
+    var url by rememberSaveable { mutableStateOf("") }
+    var cwd by rememberSaveable { mutableStateOf("") }
 
     val nameValid = name.matches(Regex("^[A-Za-z0-9_-]+$"))
     val detailValid = if (isLocal) command.isNotBlank() else url.isNotBlank()
     val valid = nameValid && detailValid
+    val existing = if (nameValid) existingServer(name.trim()) else null
 
     LocalizedAlertDialog(
         onDismissRequest = onDismiss,
@@ -481,10 +521,23 @@ private fun AddMcpServerDialog(
                 },
                 enabled = valid && !adding,
             ) {
-                Text(
-                    text = stringResource(R.string.mcp_add_confirm),
-                    color = if (valid && !adding) colors.accentText else colors.onSurfaceFaint,
-                )
+                if (adding) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.onSurfaceFaint,
+                    )
+                } else {
+                    Text(
+                        // DL-014: the button says Replace when the name
+                        // is taken, so the overwrite is a deliberate tap.
+                        text = stringResource(
+                            if (existing != null) R.string.mcp_add_replace
+                            else R.string.mcp_add_confirm,
+                        ),
+                        color = if (valid) colors.accentText else colors.onSurfaceFaint,
+                    )
+                }
             }
         },
         dismissButton = {
@@ -548,6 +601,28 @@ private fun AddMcpServerDialog(
                         value = url,
                         onValueChange = { url = it },
                         placeholder = stringResource(R.string.mcp_add_url_hint),
+                    )
+                }
+                // Audit-200 A9-1 (DL-014): adding with a taken name
+                // replaces the whole server — its command, headers and
+                // OAuth included — so the warning names what is at stake
+                // before the Replace tap.
+                existing?.let {
+                    Text(
+                        text = stringResource(
+                            R.string.mcp_add_overwrite_warning,
+                            it.name,
+                            mcpStatusWord(it.statusKind()),
+                        ),
+                        style = OpenCodeTypography.caption,
+                        color = colors.danger,
+                    )
+                }
+                error?.let {
+                    Text(
+                        text = it,
+                        style = OpenCodeTypography.caption,
+                        color = colors.danger,
                     )
                 }
                 Text(

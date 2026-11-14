@@ -120,6 +120,9 @@
     <string name="mcp_add_url">URL</string>
     <string name="mcp_add_url_hint">https://mcp.example.com/sse</string>
     <string name="mcp_add_runtime_note">Hanya berlaku saat runtime — server hilang setelah engine di-restart. Perintah dipisah berdasarkan spasi; argumen ber-tanda kutip tidak didukung.</string>
+    <string name="mcp_add_overwrite_warning">Server bernama %1$s sudah ada (%2$s). Menambah akan menggantinya, dan konfigurasi lamanya akan hilang.</string>
+    <string name="mcp_add_replace">Ganti</string>
+    <string name="mcp_remove_body_runtime">Server ini ditambahkan di sesi ini dan tidak tersimpan di berkas konfigurasi. Menghapusnya berarti hilang permanen — tidak akan kembali setelah restart.</string>
     <string name="mcp_resources_title">Resource</string>
     <string name="mcp_resource_line">%1$s · %2$s</string>
     <string name="mcp_resource_template_line">%1$s · %2$s (template)</string>

@@ -1136,6 +1136,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onRemove = mcpServersViewModel::remove,
                         onAdd = mcpServersViewModel::addServer,
                         onClearActionFailure = mcpServersViewModel::clearActionFailure,
+                        isRuntimeOnly = mcpServersViewModel::isRuntimeOnly,
                     )
 
                     Screen.Plugins -> PluginsScreen(
