@@ -256,12 +256,22 @@ fun ProvidersScreen(
                 }
             }
 
+            // Audit-200 B6 (M-019): the failure used to render as bare red
+            // text with no way to retry, even though onRefresh is in scope.
             state.failure?.let {
-                Text(
-                    text = it.message(),
-                    style = OpenCodeTypography.bodySmall,
-                    color = colors.danger,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                    Text(
+                        text = it.message(),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.danger,
+                    )
+                    TextButton(onClick = onRefresh) {
+                        Text(
+                            text = stringResource(R.string.chat_retry),
+                            color = colors.accentText,
+                        )
+                    }
+                }
             }
 
             state.failureKey?.let {

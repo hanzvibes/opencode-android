@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -322,7 +323,13 @@ fun SessionListPane(
             // Audit-200 B1 (M-194): same as DiffScreen — onRefresh was
             // in scope (the failure states below already use it) but
             // never passed to the loading state.
-            state.loading -> LoadingState(stringResource(R.string.history_loading), onRetry = onRefresh)
+            // Audit-200 B6 (M-213): the full-screen loading state is only
+            // for the first load — a reload with rows already on screen
+            // used to empty the list and lose the scroll position on every
+            // refresh, scope change and post-delete reload. With rows, the
+            // list stays and a thin progress bar shows the reload instead.
+            // See shouldShowFullScreenLoading.
+            shouldShowFullScreenLoading(state.loading, state.rows.isEmpty()) -> LoadingState(stringResource(R.string.history_loading), onRetry = onRefresh)
             state.failure != null && state.rows.isEmpty() -> EmptyState(
                 state.failure.message(),
                 isError = true,
@@ -333,15 +340,53 @@ fun SessionListPane(
                 isError = true,
                 onRetry = onRefresh,
             )
-            filteredRows.isEmpty() -> EmptyState(
-                if (query.isBlank()) stringResource(R.string.history_empty)
-                else stringResource(R.string.history_search_no_results, query),
-                // Aura mesh band on the true empty state only — a search
-                // with no results stays plain text.
-                meshGradient = query.isBlank(),
-            )
+            filteredRows.isEmpty() -> Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 720.dp)
+                    .align(Alignment.CenterHorizontally),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                EmptyState(
+                    if (query.isBlank()) stringResource(R.string.history_empty)
+                    else stringResource(R.string.history_search_no_results, query),
+                    // Aura mesh band on the true empty state only — a search
+                    // with no results stays plain text.
+                    meshGradient = query.isBlank(),
+                    fillMaxSize = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                // Audit-200 B6 (M-090/M-098): a search that matches nothing
+                // on the loaded pages used to hide "Load more" entirely —
+                // the sessions on page 2+ were unreachable through search.
+                // The footer stays under the empty state, so the user can
+                // page on while searching. See shouldShowLoadMoreOnEmptySearch.
+                if (shouldShowLoadMoreOnEmptySearch(query, state.hasMoreSessions)) {
+                    HatchPaginationIndicator(
+                        hasMore = state.hasMoreSessions,
+                        loadingMore = state.loadingMore,
+                        loadMoreLabel = stringResource(R.string.history_load_more),
+                        loadingLabel = stringResource(R.string.common_loading),
+                        onLoadMore = onLoadMore,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = spacing.md),
+                    )
+                }
+            }
             else -> {
                 val grouped = remember(filteredRows) { groupSessions(filteredRows) }
+
+                // Audit-200 B6 (M-213): reload in progress with rows on
+                // screen — a thin progress bar, not a full-screen spinner.
+                if (state.loading) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 720.dp)
+                            .align(Alignment.CenterHorizontally),
+                    )
+                }
 
                 // The list is paged at 50 (19-F3): while a next page
                 // exists, the count names what was loaded, not the whole

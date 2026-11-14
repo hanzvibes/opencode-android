@@ -551,8 +551,13 @@ fun ToolStep(
     val radius = OpenCodeTheme.tokens.radius
     val active = call.status == "running" || call.status == "streaming"
     // A step that is running right now starts expanded, so its live output
-    // is visible without a tap; a finished step still starts collapsed.
-    var open by rememberSaveable(call.id) { mutableStateOf(active) }
+    // is visible without a tap; a finished step still starts collapsed —
+    // except a finished edit (audit-200 B6, M-198): its Accept/Reject
+    // review buttons live inside the expanded body, so a completed edit
+    // that arrives already finished (restore, load-earlier) must start
+    // expanded, or the review is hidden behind a tap even though the
+    // trace shows the step. See toolStepInitialOpen.
+    var open by rememberSaveable(call.id) { mutableStateOf(toolStepInitialOpen(call)) }
 
     // Animation C: shared press feedback on the step's main row.
     val stepPressSource = remember { MutableInteractionSource() }

@@ -101,8 +101,8 @@ internal fun shouldIndexDirectory(name: String): Boolean = name !in QuickOpenSki
  * (35-F9): directories were still queued when the file or directory cap was
  * reached, so the published index is partial.
  */
-internal fun quickOpenWalkTruncated(queueRemaining: Int, foundSize: Int, dirsVisited: Int): Boolean =
-    queueRemaining > 0 && (foundSize >= QuickOpenMaxFiles || dirsVisited >= QuickOpenMaxDirs)
+internal fun quickOpenWalkTruncated(queueRemaining: Int, foundSize: Int, dirsVisited: Int, droppedEntries: Boolean = false): Boolean =
+    droppedEntries || (queueRemaining > 0 && (foundSize >= QuickOpenMaxFiles || dirsVisited >= QuickOpenMaxDirs))
 
 /**
  * True when a directory is hidden from the explorer list by default (89-F6):
@@ -189,6 +189,12 @@ class ExplorerViewModel(
             // silently: its files were missing and the walk still counted
             // as loaded, so no retry ever happened (item 27).
             var hadFailure = false
+            // Audit-200 B6 (M-139): the file cap can be hit in the middle
+            // of ONE directory — a flat workspace with 3,000 files fills
+            // `found` while the queue is already empty, so the truncation
+            // check below (queue non-empty) missed it and the partial
+            // index was presented as complete.
+            var droppedEntries = false
             while (queue.isNotEmpty() && found.size < QuickOpenMaxFiles && dirsVisited < QuickOpenMaxDirs) {
                 val dir = queue.removeFirst()
                 dirsVisited++
@@ -207,12 +213,14 @@ class ExplorerViewModel(
                         }
                     } else if (found.size < QuickOpenMaxFiles) {
                         found.add(FileRow(path = relative, name = entry.name, isDirectory = false))
+                    } else {
+                        droppedEntries = true
                     }
                 }
             }
             // 35-F9: the walk stopped on a size limit, not because the tree
             // ended — the published index is partial and the palette says so.
-            val truncated = quickOpenWalkTruncated(queue.size, found.size, dirsVisited)
+            val truncated = quickOpenWalkTruncated(queue.size, found.size, dirsVisited, droppedEntries)
             // The workspace may have changed during the walk: an index built
             // for the old directory must not land on the new one (item 26).
             // The loading flag is still cleared, so the next palette open
@@ -541,6 +549,12 @@ class FileViewViewModel(
     fun loadFull() {
         val s = _state.value
         if (!s.truncated || s.loading) return
+        // Audit-200 B6 (M-174): a read capped at 8 MB cannot be loaded in
+        // full at all — the cap is in every read, so starting the load
+        // could only fail. The banner already hides the button for capped
+        // files; the view model refuses too, so no caller can reach the
+        // failing path.
+        if (s.totalBytes > 0) return
         load(s.path, allowFull = true)
     }
 
@@ -549,8 +563,15 @@ class FileViewViewModel(
         // (item 10): every load path goes through requestLoad, and this
         // guard is the backstop for any caller that forgot.
         if (_state.value.dirty) return
+        // Audit-200 B6 (M-174): a full load extends the preview the user is
+        // already reading — keep it aside, so a failed full load can put it
+        // back instead of leaving a bare error where the preview was.
+        val previous = if (allowFull) _state.value else null
         val handle = api.handle() ?: run {
-            _state.value = FileViewState(loading = false, path = path, failureKey = R.string.error_engine_not_running)
+            _state.value = previous?.copy(
+                loading = false,
+                failureKey = R.string.error_engine_not_running,
+            ) ?: FileViewState(loading = false, path = path, failureKey = R.string.error_engine_not_running)
             return
         }
         _state.value = FileViewState(loading = true, path = path)
@@ -570,9 +591,14 @@ class FileViewViewModel(
                     // A capped read is a preview only (59-F5): loading it
                     // whole for editing would save the kept prefix over
                     // the real file. Refuse with a plain-language failure
-                    // instead of silently truncating on save.
+                    // instead of silently truncating on save — and keep
+                    // the preview the user was reading (audit-200 B6,
+                    // M-174): a bare failure state deleted it.
                     if (allowFull && file.truncated) {
-                        _state.value = FileViewState(
+                        _state.value = previous?.copy(
+                            loading = false,
+                            failureKey = R.string.fileview_too_large_to_edit,
+                        ) ?: FileViewState(
                             loading = false,
                             path = path,
                             failureKey = R.string.fileview_too_large_to_edit,
@@ -644,11 +670,18 @@ class FileViewViewModel(
                         restoredBasisHash = null
                     }
                 }
-                is ApiResult.Failure -> _state.value = FileViewState(
-                    loading = false,
-                    path = path,
-                    failure = result,
-                )
+                // Audit-200 B6 (M-174): a failed full load keeps the preview
+                // — the same bare-failure replacement as the capped branch
+                // above deleted what the user was reading.
+                is ApiResult.Failure -> _state.value = if (allowFull && previous != null) {
+                    previous.copy(loading = false, failure = result)
+                } else {
+                    FileViewState(
+                        loading = false,
+                        path = path,
+                        failure = result,
+                    )
+                }
             }
         }
     }
@@ -803,6 +836,18 @@ class FileViewViewModel(
                                     // A file switch was held for this save (item 10): the
                                     // draft is written now, so open the file asked for.
                                     _state.value.confirmSwitchTo?.let { load(it) }
+                                } else {
+                                    // Audit-200 B6 (M-141): when typing landed
+                                    // during the save (35-F1), the new draft
+                                    // stays persisted and editing continues on
+                                    // top of what is now on disk — but the
+                                    // persisted basis hash was written while
+                                    // the save was still running, against the
+                                    // OLD content. Re-persist now, so the
+                                    // basis is the new disk content: without
+                                    // this the draft restores as a false stale
+                                    // conflict after a process death.
+                                    persistDraft()
                                 }
                                 // When typing landed during the save (35-F1),
                                 // the new draft stays persisted and editing

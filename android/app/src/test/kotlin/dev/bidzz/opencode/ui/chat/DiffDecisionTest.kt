@@ -27,6 +27,22 @@ class DiffDecisionTest {
     }
 
     @Test
+    fun `M-198 a completed edit starts open so its review is visible`() {
+        assertTrue(toolStepInitialOpen(call("edit", "completed")))
+        assertTrue(toolStepInitialOpen(call("write", "completed")))
+        assertTrue(toolStepInitialOpen(call("multiedit", "completed")))
+    }
+
+    @Test
+    fun `M-198 a running step starts open, any other finished step starts closed`() {
+        assertTrue(toolStepInitialOpen(call("read", "running")))
+        assertTrue(toolStepInitialOpen(call("bash", "streaming")))
+        assertFalse(toolStepInitialOpen(call("read", "completed")))
+        assertFalse(toolStepInitialOpen(call("bash", "completed")))
+        assertFalse(toolStepInitialOpen(call("edit", "error")))
+    }
+
+    @Test
     fun `revert prompt names the relative path and asks for the prior state`() {
         assertEquals(
             "Please revert src/chat/ChatScreen.kt to how it was before your last edit.",

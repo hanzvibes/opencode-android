@@ -100,7 +100,7 @@ fun MoveSessionScreen(
                         }
                     }
                 }
-                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
                 state.projects.isEmpty() -> EmptyState(stringResource(R.string.move_empty))
                 else -> {
                     LazyColumn(

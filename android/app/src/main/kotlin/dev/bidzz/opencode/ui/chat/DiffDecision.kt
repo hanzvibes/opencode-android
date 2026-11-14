@@ -47,6 +47,16 @@ fun isReviewableEdit(call: ToolCall): Boolean =
     }
 
 /**
+ * Whether a tool step starts expanded (audit-200 B6, M-198): a running step
+ * shows its live output, and a finished edit shows its diff plus the
+ * Accept/Reject review — a completed edit that arrives already finished
+ * (restore, load-earlier) must not hide its review behind a tap, even
+ * though the trace shows the step. Any other finished step starts collapsed.
+ */
+fun toolStepInitialOpen(call: ToolCall): Boolean =
+    call.status == "running" || call.status == "streaming" || isReviewableEdit(call)
+
+/**
  * The prompt sent when the operator rejects an edit: asks the agent to
  * put [relativePath] back the way it was before its last edit. The
  * workspace-relative path is what the agent resolves, so the absolute

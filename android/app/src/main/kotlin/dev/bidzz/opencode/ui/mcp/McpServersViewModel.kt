@@ -185,9 +185,14 @@ class McpServersViewModel(
             when (val result = handle.mcp.list()) {
                 is ApiResult.Success -> {
                     runtimeAdded.retainListed(result.value.map { it.name })
+                    // Audit-200 B6 (M-017): a quiet reload after a mutation
+                    // (add/connect/remove call load(false)) must clear a
+                    // previous list failure — a successful Add used to leave
+                    // the screen showing the old error state.
                     _state.value = _state.value.copy(
                         servers = result.value.sortedBy { it.name.lowercase() },
                         loading = false,
+                        failure = null,
                     )
                     when (val catalog = handle.mcp.resourceCatalog()) {
                         is ApiResult.Success -> _state.value =

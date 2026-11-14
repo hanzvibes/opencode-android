@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.sessions
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -128,5 +129,21 @@ class SessionListPageTest {
     @Test
     fun `19-F2 the candidate survives an empty oldest page`() {
         assertTrue(updatePreviewCandidate("kept", emptyList()) == "kept")
+    }
+
+    @Test
+    fun `M-090 M-098 an empty search result keeps Load more while pages remain`() {
+        assertTrue(shouldShowLoadMoreOnEmptySearch("nomatch", true))
+        assertFalse(shouldShowLoadMoreOnEmptySearch("nomatch", false))
+        assertFalse(shouldShowLoadMoreOnEmptySearch("", true))
+        assertFalse(shouldShowLoadMoreOnEmptySearch("   ", true))
+    }
+
+    @Test
+    fun `M-213 only the first load shows the full-screen spinner`() {
+        assertTrue(shouldShowFullScreenLoading(loading = true, rowsEmpty = true))
+        assertFalse(shouldShowFullScreenLoading(loading = true, rowsEmpty = false))
+        assertFalse(shouldShowFullScreenLoading(loading = false, rowsEmpty = true))
+        assertFalse(shouldShowFullScreenLoading(loading = false, rowsEmpty = false))
     }
 }

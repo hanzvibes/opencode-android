@@ -661,12 +661,21 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         when (val target = screen) {
             is Screen.FileView -> fileViewModel.requestLoad(target.path)
             is Screen.Diff -> diffViewModel.load(target.file)
-            is Screen.SessionDiff -> {
-                // The active session's latest turn; no session, no diff —
-                // the entry point only exists while a session is open.
-                chatState.sessionID?.let { sessionDiffViewModel.load(it) }
-            }
             else -> Unit
+        }
+    }
+
+    // The session diff loads for the active session's latest turn — and it
+    // needs its own effect (audit-200 B6, M-159): after a process death the
+    // restored screen is SessionDiff, but chatState.sessionID is still null
+    // until the engine comes up and onResume restores it, so the screen
+    // effect above fired once with no id and never again. Keyed on the id
+    // too, the load re-fires the moment the id lands.
+    LaunchedEffect(screen, chatState.sessionID) {
+        if (screen is Screen.SessionDiff) {
+            // The active session's latest turn; no session, no diff — the
+            // entry point only exists while a session is open.
+            chatState.sessionID?.let { sessionDiffViewModel.load(it) }
         }
     }
 
@@ -1250,14 +1259,21 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         sessionID = target.sessionID,
                         state = inboxState,
                         onBack = { screen = Screen.Sessions },
-                        onRefresh = inboxViewModel::refresh,
+                        // Audit-200 B6 (M-594): refresh() is a no-op when
+                        // the view model's session id was lost to a process
+                        // death, so the screen stuck on its loading spinner
+                        // forever after restore. The screen already knows
+                        // the id — load with it directly.
+                        onRefresh = { inboxViewModel.load(target.sessionID) },
                     )
 
                     is Screen.MoveSession -> MoveSessionScreen(
                         sessionID = target.sessionID,
                         state = moveSessionState,
                         onBack = { screen = Screen.Sessions },
-                        onRefresh = moveSessionViewModel::refresh,
+                        // Audit-200 B6 (M-594): see Inbox above — load with
+                        // the screen's id, not the view model's lost one.
+                        onRefresh = { moveSessionViewModel.load(target.sessionID) },
                         onSelect = moveSessionViewModel::select,
                         onMove = moveSessionViewModel::move,
                         onMoved = {
@@ -1270,14 +1286,18 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         sessionID = target.sessionID,
                         state = exportState,
                         onBack = { screen = Screen.Sessions },
-                        onRefresh = exportViewModel::refresh,
+                        // Audit-200 B6 (M-594): see Inbox above — load with
+                        // the screen's id, not the view model's lost one.
+                        onRefresh = { exportViewModel.load(target.sessionID) },
                     )
 
                     is Screen.Instructions -> InstructionsScreen(
                         sessionID = target.sessionID,
                         state = instructionsState,
                         onBack = { screen = Screen.Sessions },
-                        onRefresh = instructionsViewModel::refresh,
+                        // Audit-200 B6 (M-594): see Inbox above — load with
+                        // the screen's id, not the view model's lost one.
+                        onRefresh = { instructionsViewModel.load(target.sessionID) },
                         onKeyChange = instructionsViewModel::setKey,
                         onValueChange = instructionsViewModel::setValue,
                         onSave = instructionsViewModel::save,
