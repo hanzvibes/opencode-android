@@ -32,7 +32,7 @@ class ChatFollowTest {
         val before = followKeysOf(message(reasoning = "thinking"))
         val after = followKeysOf(message(reasoning = "thinking harder"))
         assertNotEquals(before, after)
-        assertEquals(9, before.reasoningLength)
+        assertEquals(8, before.reasoningLength)
         assertEquals(15, after.reasoningLength)
     }
 
