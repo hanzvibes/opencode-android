@@ -27,7 +27,7 @@ class ChatMergeIdTest {
 
         assertEquals(1, merged.size)
         assertEquals("a2", merged[0].id)
-        assertEquals("first second", merged[0].text)
+        assertEquals("first \n\nsecond", merged[0].text)
     }
 
     @Test
@@ -42,7 +42,7 @@ class ChatMergeIdTest {
 
         assertEquals(1, merged.size)
         assertEquals("a3", merged[0].id)
-        assertEquals("first middle last", merged[0].text)
+        assertEquals("first \n\nmiddle \n\nlast", merged[0].text)
     }
 
     @Test
