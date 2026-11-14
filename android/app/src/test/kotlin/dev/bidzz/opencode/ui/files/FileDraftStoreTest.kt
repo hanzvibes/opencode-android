@@ -10,37 +10,47 @@ import org.junit.Test
  * so a swipe from recents or a force-stop — which clears the saved-state
  * handle — still finds it.
  *
- * The restore itself is applied on a successful load through the same
- * restored* fields the handle path already uses, so it is covered by
- * compile + fast-verify; what is tested here is the disk behaviour a
- * JVM test can see — persisting without a handle (the old code returned
- * early there), discarding, and surviving a failed load.
+ * A JVM test cannot drive the editing flow itself: the view model starts
+ * loading, and only a successful load (a live engine) reaches an
+ * editable state. What is tested here is the store's own contract and
+ * the wiring a test can reach — discarding and reloading from disk
+ * clear the stored draft, a failed load keeps it, and a fresh view model
+ * over the same store still finds it. The write path (typing persists
+ * the draft through [FileViewViewModel.persistDraft]) and the restore
+ * on a successful load use the same restored* fields the handle path
+ * already uses, so they are covered by compile + fast-verify.
  */
 class FileDraftStoreTest {
 
     private fun viewModel(store: FileDraftStore = InMemoryFileDraftStore()) =
         FileViewViewModel(EngineApi { "/tmp" }, { "/tmp" }, fileDraftStore = store)
 
-    @Test
-    fun `typing persists the draft to the store even without a handle`() {
+    private fun seededStore(): InMemoryFileDraftStore {
         val store = InMemoryFileDraftStore()
-        val vm = viewModel(store)
-
-        vm.startEditing()
-        vm.editDraft("one\ntwo\n")
-
-        val draft = store.get()
-        assertEquals("", draft?.path)
-        assertEquals("one\ntwo\n", draft?.text)
-        assertEquals(true, draft?.editing)
+        store.put(FileDraft(path = "a.kt", text = "one\ntwo\n", editing = true, basisHash = "abc"))
+        return store
     }
 
     @Test
-    fun `discarding clears the store`() {
+    fun `the store round-trips a draft`() {
         val store = InMemoryFileDraftStore()
+
+        store.put(FileDraft(path = "a.kt", text = "one\ntwo\n", editing = true, basisHash = "abc"))
+
+        val draft = store.get()
+        assertEquals("a.kt", draft?.path)
+        assertEquals("one\ntwo\n", draft?.text)
+        assertEquals(true, draft?.editing)
+        assertEquals("abc", draft?.basisHash)
+
+        store.clear()
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `discarding clears the stored draft`() {
+        val store = seededStore()
         val vm = viewModel(store)
-        vm.startEditing()
-        vm.editDraft("one\ntwo\n")
 
         vm.stopEditing()
 
@@ -48,11 +58,19 @@ class FileDraftStoreTest {
     }
 
     @Test
-    fun `a failed load keeps the stored draft`() {
-        val store = InMemoryFileDraftStore()
+    fun `reload from disk deliberately drops the stored draft`() {
+        val store = seededStore()
         val vm = viewModel(store)
-        vm.startEditing()
-        vm.editDraft("one\ntwo\n")
+
+        vm.reloadFromDisk()
+
+        assertNull(store.get())
+    }
+
+    @Test
+    fun `a failed load keeps the stored draft`() {
+        val store = seededStore()
+        val vm = viewModel(store)
 
         // The engine is not running, so the load fails before any network
         // call — but the draft must survive it either way.
@@ -62,23 +80,8 @@ class FileDraftStoreTest {
     }
 
     @Test
-    fun `reload from disk deliberately drops the stored draft`() {
-        val store = InMemoryFileDraftStore()
-        val vm = viewModel(store)
-        vm.startEditing()
-        vm.editDraft("one\ntwo\n")
-
-        vm.reloadFromDisk()
-
-        assertNull(store.get())
-    }
-
-    @Test
-    fun `a second view model sees the stored draft`() {
-        val store = InMemoryFileDraftStore()
-        val first = viewModel(store)
-        first.startEditing()
-        first.editDraft("one\ntwo\n")
+    fun `a second view model over the same store still finds the draft`() {
+        val store = seededStore()
 
         // A new process constructs a fresh view model over the same store:
         // the draft is still there to restore from, and a load attempt

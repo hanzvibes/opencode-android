@@ -760,10 +760,18 @@ class ChatViewModel(
      * handle first, and a parked copy there is older than the live text —
      * applying it would overwrite newer typing. The entry is left in
      * place then; the next park overwrites or removes it.
+     *
+     * With [restoreEditState] false the draft, attachments and queue
+     * come back but the edit in progress does not: [newSession] restores
+     * the unsent composer that its own park just wrote, and the message
+     * being edited belongs to the old session's transcript — restoring
+     * the edit would point Cancel at a message that is not there
+     * (DraftBeforeEditTest, Fase 6 batch 6c).
      */
     internal fun restoreParkedComposer(
         sessionID: String,
         onlyIfComposerEmpty: Boolean = false,
+        restoreEditState: Boolean = true,
     ): ParkedComposer? {
         if (onlyIfComposerEmpty) {
             val live = _state.value
@@ -776,24 +784,24 @@ class ChatViewModel(
         val restored = takeParkedComposer(sessionID)
         reportUnreadableParked(sessionID)
         if (restored != null) {
-            draftBeforeEdit = restored.draftBeforeEdit
+            draftBeforeEdit = if (restoreEditState) restored.draftBeforeEdit else null
             _state.value = _state.value.copy(
                 draft = restored.draft,
                 pendingAttachments = restored.attachments,
                 queuedPrompts = restored.queued,
-                editingMessageId = restored.editingMessageId,
+                editingMessageId = if (restoreEditState) restored.editingMessageId else null,
             )
             if (restored.draft.isBlank()) {
                 savedStateHandle?.remove<String>(DRAFT_KEY)
             } else {
                 savedStateHandle?.set(DRAFT_KEY, restored.draft)
             }
-            if (restored.draftBeforeEdit == null) {
+            if (!restoreEditState || restored.draftBeforeEdit == null) {
                 savedStateHandle?.remove<String>(DRAFT_BEFORE_EDIT_KEY)
             } else {
                 savedStateHandle?.set(DRAFT_BEFORE_EDIT_KEY, restored.draftBeforeEdit)
             }
-            if (restored.editingMessageId == null) {
+            if (!restoreEditState || restored.editingMessageId == null) {
                 savedStateHandle?.remove<String>(EDITING_MESSAGE_KEY)
             } else {
                 savedStateHandle?.set(EDITING_MESSAGE_KEY, restored.editingMessageId)
@@ -2760,8 +2768,10 @@ class ChatViewModel(
         _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
         // Text typed before any session exists lives under the unsent key
         // (95-F6): a fresh session is where it belongs, so it comes back
-        // as this session's composer instead of starting empty.
-        restoreParkedComposer(UNSENT_SESSION_KEY)
+        // as this session's composer instead of starting empty. The edit
+        // in progress does not come back with it (see restoreEditState):
+        // its message belongs to the old session.
+        restoreParkedComposer(UNSENT_SESSION_KEY, restoreEditState = false)
         // The abandoned session must not come back on the next resume:
         // without this, switching workspaces reopened the old workspace's
         // session under the new project's header (item 14).
