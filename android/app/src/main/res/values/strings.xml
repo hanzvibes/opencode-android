@@ -576,6 +576,8 @@
     <string name="tool_status_running">Running</string>
     <string name="tool_status_success">Success</string>
     <string name="tool_status_failed">Failed</string>
+    <string name="tool_status_interrupted">Interrupted</string>
+    <string name="tool_output_on_finish">Output appears when the tool finishes.</string>
     <string name="tool_lines_one">%1$d line</string>
     <string name="tool_lines">%1$d lines</string>
     <string name="tool_stdout">STDOUT</string>

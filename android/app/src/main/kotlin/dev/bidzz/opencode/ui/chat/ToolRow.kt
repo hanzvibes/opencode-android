@@ -42,6 +42,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -117,8 +119,17 @@ fun ToolTrace(
      * item 3). */
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2): the
-     * view model sends the revert request as an ordinary user message. */
-    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
+     * view model sends the revert request as an ordinary user message.
+     * Receives the call id, so the view model can record the decision
+     * against the step that asked (audit-200 C2, M-052/M-053). */
+    onRequestDiffRevert: (String, String, String?) -> Unit = { _, _, _ -> },
+    /** Accept / Reject decisions per tool call id, owned by the view
+     * model (audit-200 C2, M-053) — the step reads its own entry here
+     * instead of keeping it in the composition, so a transcript rebuild
+     * cannot resurrect the buttons. */
+    diffDecisions: Map<String, DiffDecision> = emptyMap(),
+    /** Records an Accept / Reject decision for one tool call id. */
+    onDiffDecision: (String, DiffDecision) -> Unit = { _, _ -> },
     /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
      * item 5): the same client-side stamps the durations come from, so a
      * still-running step can show a live elapsed time instead of no
@@ -435,6 +446,8 @@ fun ToolTrace(
                         workspacePath = workspacePath,
                         onOpenToolFile = onOpenToolFile,
                         onRequestDiffRevert = onRequestDiffRevert,
+                        diffDecisions = diffDecisions,
+                        onDiffDecision = onDiffDecision,
                         onBeforeHeightChange = onBeforeHeightChange,
                     )
                 }
@@ -534,8 +547,15 @@ fun ToolStep(
     workspacePath: String? = null,
     /** Opens a workspace-relative file in the file viewer (Fase 1, item 3). */
     onOpenToolFile: (String) -> Unit = {},
-    /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
-    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
+    /** Asks the agent to revert a rejected edit (Fase 1, item 2). Receives
+     * the call id, so the view model can record the decision against the
+     * step that asked (audit-200 C2, M-052/M-053). */
+    onRequestDiffRevert: (String, String, String?) -> Unit = { _, _, _ -> },
+    /** Accept / Reject decisions per tool call id, owned by the view model
+     * (audit-200 C2, M-053). */
+    diffDecisions: Map<String, DiffDecision> = emptyMap(),
+    /** Records an Accept / Reject decision for one tool call id. */
+    onDiffDecision: (String, DiffDecision) -> Unit = { _, _ -> },
     /** Client-side start stamp for this step, epoch millis (Fase 2,
      * item 5). Only read while the step is still running, to show a live
      * elapsed time; a finished step uses [durationMillis] instead. */
@@ -550,13 +570,15 @@ fun ToolStep(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val active = call.status == "running" || call.status == "streaming"
-    // A step that is running right now starts expanded, so its live output
-    // is visible without a tap; a finished step still starts collapsed —
+    // A step that is running right now starts expanded, so its input is
+    // visible without a tap; a finished step still starts collapsed —
     // except a finished edit (audit-200 B6, M-198): its Accept/Reject
     // review buttons live inside the expanded body, so a completed edit
     // that arrives already finished (restore, load-earlier) must start
     // expanded, or the review is hidden behind a tap even though the
-    // trace shows the step. See toolStepInitialOpen.
+    // trace shows the step. See toolStepInitialOpen. (The engine sends
+    // no stdout until the tool finishes — audit-200 C2, M-059 — so the
+    // expanded running step shows its input, not live output.)
     var open by rememberSaveable(call.id) { mutableStateOf(toolStepInitialOpen(call)) }
 
     // Animation C: shared press feedback on the step's main row.
@@ -595,6 +617,9 @@ fun ToolStep(
     val dotColor = when {
         call.status == "completed" -> colors.toolSuccess
         isError -> colors.toolError
+        // Audit-200 C2 (M-050): a tool cut off by Stop / interrupt is
+        // terminal, not running — a muted dot, not the live colour.
+        call.status == "interrupted" -> colors.onSurfaceMuted
         else -> colors.toolRunning
     }
 
@@ -609,11 +634,20 @@ fun ToolStep(
     // tool is not an edit/write, or its old/new text cannot be read (a
     // partial stream, an unknown field name) — then the raw input block
     // below is shown as before, so nothing is lost.
+    //
+    // `patch` / `apply_patch` / `multiedit` never went through
+    // extractEditDiff — their change is a unified-diff string or an
+    // `edits` array, not one old/new pair (audit-200 C2, M-051) — so
+    // their hunks come from extractPatchHunks instead, and the review
+    // row below is reached for them too.
+    val patchHunks = remember(call.inputText, call.name) {
+        if (toolKind == ToolKind.EDIT) extractPatchHunks(call) else null
+    }
     val editDiff = remember(call.inputText, toolKind) {
         if (toolKind == ToolKind.EDIT || toolKind == ToolKind.WRITE) extractEditDiff(call) else null
     }
-    val diffHunks = remember(editDiff) {
-        editDiff?.let { computeDiffHunks(it.oldText, it.newText) }
+    val diffHunks = remember(editDiff, patchHunks) {
+        patchHunks ?: editDiff?.let { computeDiffHunks(it.oldText, it.newText) }
     }
     val diffCounts = remember(diffHunks) { diffHunks?.let { DiffParser.counts(it) } }
 
@@ -652,13 +686,11 @@ fun ToolStep(
     // (audit-70 07-F2).
     val revertChange = remember(diffHunks) { diffHunks?.let { revertChangeDescription(it) } }
 
-    // Diff decision (Fase 1, item 2), per tool call: stored as the enum
-    // name, not the enum — rememberSaveable has no built-in enum saver.
-    var diffDecisionName by rememberSaveable(call.id) {
-        mutableStateOf(DiffDecision.NONE.name)
-    }
-    val diffDecision = runCatching { DiffDecision.valueOf(diffDecisionName) }
-        .getOrDefault(DiffDecision.NONE)
+    // Diff decision (Fase 1, item 2), per tool call: owned by the view
+    // model (audit-200 C2, M-053), read here — a transcript rebuild used
+    // to reset this to NONE because it lived in the composition, and a
+    // Reject could then fire twice.
+    val diffDecision = diffDecisions[call.id] ?: DiffDecision.NONE
 
     Row(
         modifier = modifier
@@ -973,6 +1005,29 @@ fun ToolStep(
                                     )
                                 }
                             }
+                            // Audit-200 C2 (M-050): a tool the run left
+                            // behind reads "Interrupted", not "Running" —
+                            // and not "Failed" either, since nothing
+                            // failed; the run was stopped.
+                            call.status == "interrupted" -> {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(radius.full))
+                                        .background(colors.onSurface.copy(alpha = 0.08f))
+                                        .padding(horizontal = spacing.xs, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.tool_status_interrupted),
+                                        style = OpenCodeTypography.caption.copy(
+                                            fontFamily = OpenCodeTypography.mono,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        ),
+                                        color = colors.onSurfaceMuted,
+                                    )
+                                }
+                            }
                             call.status == "completed" -> {
                                 // An edit/write with a readable diff reads
                                 // "+n −m" — the change itself, not the output
@@ -1113,12 +1168,18 @@ fun ToolStep(
                             if (isReviewableEdit(call)) {
                                 DiffDecisionRow(
                                     decision = diffDecision,
-                                    onAccept = { diffDecisionName = DiffDecision.ACCEPTED.name },
+                                    onAccept = { onDiffDecision(call.id, DiffDecision.ACCEPTED) },
                                     showReject = revertPath != null,
                                     onReject = {
-                                        diffDecisionName = DiffDecision.REJECTED.name
+                                        // Audit-200 C2 (M-052): the view
+                                        // model records REJECTED only when
+                                        // the prompt was actually accepted
+                                        // for sending/queueing — a dropped
+                                        // duplicate keeps the buttons up
+                                        // instead of claiming a request
+                                        // that never went out.
                                         val path = revertPath
-                                        if (path != null) onRequestDiffRevert(path, revertChange)
+                                        if (path != null) onRequestDiffRevert(call.id, path, revertChange)
                                     },
                                 )
                             }
@@ -1137,9 +1198,21 @@ fun ToolStep(
                             )
                         }
 
+                        // Audit-200 C2 (M-059): the engine sends no stdout
+                        // until the tool finishes — a running step shows
+                        // its input, not live output. Say so, instead of
+                        // leaving a blank space that reads as a frozen
+                        // stream.
+                        if (active && call.output.isNullOrBlank() && call.error.isNullOrBlank()) {
+                            Text(
+                                text = stringResource(R.string.tool_output_on_finish),
+                                style = OpenCodeTypography.caption.copy(fontSize = 11.sp),
+                                color = colors.onSurfaceFaint,
+                            )
+                        }
+
                         // 2. Output STDOUT block
                         call.output?.takeIf { it.isNotBlank() }?.let { out ->
-                            val truncated = if (out.length > MAX_OUTPUT) out.take(MAX_OUTPUT) + "\n… [truncated]" else out
                             val outLang = detectOutputLanguage(out, isShell)
                             val lineCount = out.lines().size
                             val lineSubtitle = if (lineCount > 1) {
@@ -1150,7 +1223,12 @@ fun ToolStep(
 
                             TerminalConsoleBlock(
                                 title = stringResource(R.string.tool_stdout),
-                                body = truncated,
+                                body = truncateOutput(out),
+                                // "Show full output" renders the whole
+                                // output (audit-200 C2, M-056): the body
+                                // above is only the first MAX_OUTPUT
+                                // characters while collapsed.
+                                fullBody = out,
                                 // Copy takes the full output: the body
                                 // shown is truncated at MAX_OUTPUT, but
                                 // copying that would silently lose the rest.
@@ -1196,6 +1274,10 @@ private fun TerminalConsoleBlock(
     subtitle: String? = null,
     /** Text the Copy button writes; defaults to [body] (the displayed text). */
     copyText: String = body,
+    /** The full text, when [body] is only its collapsed slice (audit-200
+     * C2, M-056): "Show full output" renders this instead of [body].
+     * Null when the body is already complete (input, stderr). */
+    fullBody: String? = null,
     /** #6f: called before the show-full toggle changes this block's
      * height, so the caller can anchor the scroll position first. */
     onBeforeHeightChange: () -> Unit = {},
@@ -1221,8 +1303,35 @@ private fun TerminalConsoleBlock(
 
     // Long output is capped at 320dp, but the rest is one tap away instead
     // of cut off with no way to see it (the old 220dp cap + 8000-char
-    // truncation had no escape hatch at all).
+    // truncation had no escape hatch at all). "Show full output" renders
+    // the whole text (audit-200 C2, M-056) — the old toggle only lifted
+    // the height cap while the text stayed truncated.
     var showFullOutput by remember { mutableStateOf(false) }
+
+    // The text on screen: the full text while expanded, the collapsed
+    // slice otherwise. Without a fullBody the toggle only lifts the
+    // height, as before.
+    val shownBody = if (showFullOutput) fullBody ?: body else body
+
+    // Audit-200 C2 (M-057): output used to grow below the viewport while
+    // the box sat at the top, so a long run looked frozen and the result
+    // — usually at the tail — stayed under the fold. The box now follows
+    // its tail while the user has not scrolled up; any manual scroll up
+    // pauses the follow until they scroll back to the bottom.
+    val scrollState = rememberScrollState()
+    var followTail by remember { mutableStateOf(true) }
+    LaunchedEffect(scrollState) {
+        snapshotFlow { scrollState.value to scrollState.maxValue }
+            .collect { (value, max) -> followTail = value >= max - 8 }
+    }
+    LaunchedEffect(body) {
+        if (followTail) {
+            // Wait until the layout knows the content height; scrolling
+            // before that is a no-op (maxValue is still 0).
+            snapshotFlow { scrollState.maxValue }.first { it > 0 }
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
 
     // One glyph rotating 0° (right) ↔ 90° (down) for show full / less.
     val showFullRotation by animateFloatAsState(
@@ -1233,7 +1342,7 @@ private fun TerminalConsoleBlock(
 
     val highlightedText = rememberSyntaxHighlightedText(
         language = language,
-        text = body,
+        text = shownBody,
         promptPrefix = promptPrefix,
     )
 
@@ -1330,7 +1439,7 @@ private fun TerminalConsoleBlock(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = if (showFullOutput) Dp.Infinity else 320.dp)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = spacing.md, vertical = spacing.sm),
         ) {
             SelectionContainer {
@@ -1527,6 +1636,15 @@ private fun detectOutputLanguage(output: String, isShell: Boolean): String? {
 
 private const val MAX_OUTPUT = 8000
 
+/**
+ * The output text as shown while collapsed (audit-200 C2, M-056): the
+ * first [MAX_OUTPUT] characters plus a marker, or the whole text when it
+ * fits. "Show full output" renders the full text instead — see
+ * [TerminalConsoleBlock].
+ */
+internal fun truncateOutput(out: String): String =
+    if (out.length > MAX_OUTPUT) out.take(MAX_OUTPUT) + "\n… [truncated]" else out
+
 /** Old and new text of an edit/write tool call, read from its input JSON. */
 private data class EditDiff(
     val oldText: String,
@@ -1539,9 +1657,9 @@ private data class EditDiff(
  * The engine names the fields `oldString`/`newString` (edit) and `content`
  * (write, whole file, no old text); `oldText`/`newText` and snake_case
  * variants are accepted too, since tool schemas drift. Returns null for a
- * `multiedit` (its `edits` array needs per-edit hunks, not one diff), for a
- * partial stream that is not JSON yet, and for anything without both sides
- * of the change — the caller then falls back to the raw input block.
+ * `multiedit` (its `edits` array is read by [extractPatchHunks], not here),
+ * for a partial stream that is not JSON yet, and for anything without both
+ * sides of the change — the caller then falls back to the raw input block.
  */
 private fun extractEditDiff(call: ToolCall): EditDiff? {
     val input = call.inputText ?: return null
@@ -1565,6 +1683,52 @@ private fun extractJsonStringField(input: String, keys: List<String>): String? {
         if (match != null) return unescapeJson(match.groupValues[1])
     }
     return null
+}
+
+/** Every value of the first matching JSON string field, in document order. */
+private fun extractJsonStringFields(input: String, keys: List<String>): List<String> {
+    for (key in keys) {
+        val matches = Regex(""""$key"\s*:\s*"((?:\\.|[^"\\])*)"""").findAll(input).toList()
+        if (matches.isNotEmpty()) return matches.map { unescapeJson(it.groupValues[1]) }
+    }
+    return emptyList()
+}
+
+/**
+ * Hunks for `patch` / `apply_patch` / `multiedit` (audit-200 C2, M-051):
+ * these never went through [extractEditDiff] — their change is a
+ * unified-diff string or an `edits` array, not one old/new pair — so
+ * they never got a diff, or Accept/Reject buttons, even though
+ * [isReviewableEdit] calls them reviewable. Null when the change cannot
+ * be read (a partial stream, an unknown field name, mismatched edit
+ * pairs) — the caller then falls back to the raw input block.
+ *
+ * - `patch` / `apply_patch`: the `patch` field is parsed as a unified
+ *   diff by [DiffParser], the same parser the full-screen diff uses.
+ * - `multiedit`: every edit in the `edits` array becomes its own
+ *   line-diff; the edits are paired in document order, so an edit
+ *   without both sides fails the whole parse rather than silently
+ *   pairing the wrong texts.
+ */
+internal fun extractPatchHunks(call: ToolCall): List<DiffHunk>? {
+    val input = call.inputText ?: return null
+    if (!input.trim().startsWith("{")) return null
+    return when (call.name.lowercase()) {
+        "patch", "apply_patch" -> {
+            val patch = extractJsonStringField(input, listOf("patch"))
+                ?.takeIf { it.isNotBlank() } ?: return null
+            DiffParser.parse(patch).takeIf { it.isNotEmpty() }
+        }
+        "multiedit" -> {
+            val olds = extractJsonStringFields(input, listOf("oldString", "oldText", "old_string", "old"))
+            val news = extractJsonStringFields(input, listOf("newString", "newText", "new_string", "new"))
+            if (olds.isEmpty() || olds.size != news.size) return null
+            olds.zip(news)
+                .flatMap { (old, new) -> computeDiffHunks(old, new) }
+                .takeIf { it.isNotEmpty() }
+        }
+        else -> null
+    }
 }
 
 /** Lines of context kept around each change in a computed diff. */

@@ -17,6 +17,7 @@ import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
+import dev.bidzz.opencode.core.api.dto.ToolCall
 import dev.bidzz.opencode.core.api.newMessageId
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
@@ -125,6 +126,16 @@ data class ChatUiState(
      * never persisted — and cleared when the session changes, like
      * [lastSentText]. Capped so a long session cannot grow it without bound. */
     val sentPrompts: List<String> = emptyList(),
+    /**
+     * Accept / Reject decisions per tool call id (audit-200 C2, M-053):
+     * owned by the view model, not by the step composition, so a
+     * transcript rebuild (session reload, revert apply, process
+     * restart of the screen) cannot resurrect the buttons and let a
+     * Reject fire twice. Cleared when the session changes, like
+     * [lastSentText]; not persisted, so a process death still loses
+     * them — the same limit as the other in-memory session state.
+     */
+    val diffDecisions: Map<String, DiffDecision> = emptyMap(),
     /** Active permission request; the agent is blocked until it is answered. */
     val pendingPermission: dev.bidzz.opencode.core.api.dto.PendingPermission? = null,
     /** A permission request the user deferred ("Answer later"). Kept so it can
@@ -430,6 +441,19 @@ internal fun resolveRunEndAction(
     if (!hasQueued || sendInFlight || flushing || !hasRepository) return RunEndAction.NONE
     return if (stopRequested) RunEndAction.RETURN_TO_DRAFT else RunEndAction.FLUSH
 }
+
+/**
+ * Which revert decisions a queue returned to the draft invalidates
+ * (audit-200 C2, M-052): a queued revert prompt is looked up by its
+ * exact text — the queue only carries text — and its step's decision
+ * resets, so the chip stops claiming a request that is now an editable
+ * draft the user may delete. Other queued prompts leave decisions
+ * alone.
+ */
+internal fun revertDecisionsForReturnedQueue(
+    returned: List<QueuedPrompt>,
+    revertPromptCalls: Map<String, String>,
+): Set<String> = returned.mapNotNull { revertPromptCalls[it.fullText] }.toSet()
 
 /**
  * What the model/agent chip shows after a `set` call the engine rejected
@@ -747,6 +771,15 @@ class ChatViewModel(
      * Cleared when the session changes — call ids belong to a session.
      */
     private val confirmedQuestionAnswers = mutableMapOf<String, List<String>>()
+    /**
+     * Revert prompts the view model sent or queued, by prompt text
+     * (audit-200 C2, M-052): when a queued revert is returned to the
+     * composer as a draft, the step that asked for it must stop claiming
+     * "Revert requested". The text is the prompt itself — the queue only
+     * carries text — so the lookup is exact. Cleared when the session
+     * changes, like [confirmedQuestionAnswers].
+     */
+    private val revertPromptCalls = mutableMapOf<String, String>()
     private var collector: Job? = null
     /** The pending debounced composer park (audit-200 A9-3, DL-010). */
     private var composerParkJob: Job? = null
@@ -1237,6 +1270,14 @@ class ChatViewModel(
         val returnedAttachments = queued.flatMap { it.attachments }.distinctBy { it.id }
         val anythingReturned = returned.isNotEmpty() || returnedAttachments.isNotEmpty()
         if (!anythingReturned) return false
+        // Audit-200 C2 (M-052): a queued revert prompt that goes back to
+        // the composer is not a request anymore — the user can edit or
+        // delete it without knowing it was a rejection. Its step stops
+        // claiming "Revert requested" and offers Reject again.
+        val resetCalls = revertDecisionsForReturnedQueue(queued, revertPromptCalls)
+        if (resetCalls.isNotEmpty()) {
+            revertPromptCalls.entries.removeAll { it.value in resetCalls }
+        }
         val draft = _state.value.draft
         val restoredDraft = when {
             returned.isEmpty() -> draft
@@ -1251,6 +1292,7 @@ class ChatViewModel(
             draft = restoredDraft,
             pendingAttachments = (returnedAttachments +
                 _state.value.pendingAttachments).distinctBy { it.id },
+            diffDecisions = _state.value.diffDecisions - resetCalls,
         )
         return true
     }
@@ -1459,6 +1501,7 @@ class ChatViewModel(
             // to a session's calls — a new session must not inherit
             // another session's answered cards.
             confirmedQuestionAnswers.clear()
+            revertPromptCalls.clear()
             lastCollectorSessionID = chat.sessionID
         }
         // Stamp live tools: first sight starts the clock, a terminal status
@@ -1469,8 +1512,15 @@ class ChatViewModel(
             val id = live.call.id
             val now = System.currentTimeMillis()
             if (live.call.isDone) {
-                toolStartedAt.getOrPut(id) { now }
-                toolCompletedAt.getOrPut(id) { now }
+                // Audit-200 C2 (M-049): a tool the collector first sees
+                // already finished used to be stamped start == end == now,
+                // so every fast tool read "0ms" — contradicting the
+                // guarantee above. Only close a clock that was opened
+                // while the tool was live; a tool never seen running gets
+                // no duration at all (and no chip) instead of a fake one.
+                if (toolStartedAt.containsKey(id)) {
+                    toolCompletedAt.getOrPut(id) { now }
+                }
             } else {
                 toolStartedAt.getOrPut(id) { now }
             }
@@ -1566,6 +1616,10 @@ class ChatViewModel(
                 retryKindFor(chat.lastFailure, chat.resyncFailed)
             },
             stopping = if (!chat.busy) false else previous.stopping,
+            // Audit-200 C2 (M-053): decisions belong to a session's calls —
+            // a new session must not inherit another session's Accepted /
+            // Rejected chips.
+            diffDecisions = if (sessionChanged) emptyMap() else previous.diffDecisions,
             // A new request re-arms the prompt; the same request keeps the
             // failed-reply flag so the prompt stays re-armed until answered.
             permissionReplyFailed = if (effectivePending?.id != previous.pendingPermission?.id) {
@@ -2746,9 +2800,26 @@ class ChatViewModel(
      * so the agent is asked to put [relativePath] back in a new turn.
      * It travels exactly like a question answer — never through the
      * draft, never with the pending attachments, queued while busy.
+     *
+     * Returns whether the prompt was accepted for sending or queueing
+     * (audit-200 C2, M-052): a duplicate the queue drops, or a send
+     * with no engine attached, is NOT a request — the step keeps its
+     * buttons instead of claiming "Revert requested" for a prompt that
+     * never went out. On acceptance the decision is recorded here, in
+     * the view model, so it survives transcript rebuilds (M-053) and
+     * a second Reject cannot send the same prompt twice.
      */
-    fun requestDiffRevert(relativePath: String, change: String? = null) {
-        sendStandalonePrompt(revertPromptFor(relativePath, change))
+    fun requestDiffRevert(callId: String, relativePath: String, change: String? = null): Boolean {
+        val prompt = revertPromptFor(relativePath, change)
+        if (!sendStandalonePrompt(prompt)) return false
+        revertPromptCalls[prompt.trim()] = callId
+        recordDiffDecision(callId, DiffDecision.REJECTED)
+        return true
+    }
+
+    /** Records an Accept / Reject decision for one tool call (audit-200 C2, M-053). */
+    fun recordDiffDecision(callId: String, decision: DiffDecision) {
+        _state.value = _state.value.copy(diffDecisions = _state.value.diffDecisions + (callId to decision))
     }
 
     /**
@@ -2757,15 +2828,18 @@ class ChatViewModel(
      * decision that must reach the engine even while the user is typing
      * something else. (Question answers used to share this path; they
      * now go to the engine as a form reply — see [answerQuestion].)
+     *
+     * Returns false when the prompt was not accepted — blank, dropped
+     * as a queue duplicate, or with no engine to send to (audit-200
+     * C2, M-052; audit-100 07-F6).
      */
-    private fun sendStandalonePrompt(text: String) {
+    private fun sendStandalonePrompt(text: String): Boolean {
         val trimmed = text.trim()
-        if (trimmed.isBlank()) return
+        if (trimmed.isBlank()) return false
         if (_state.value.busy || sendInFlight) {
-            queuePrompt(trimmed, trimmed)
-            return
+            return queuePrompt(trimmed, trimmed)
         }
-        sendText(trimmed, trimmed, emptyList())
+        return sendText(trimmed, trimmed, emptyList())
     }
 
     /**
@@ -3798,6 +3872,19 @@ private fun ChatState.buildUnmergedMessages(
     /** Engine-confirmed question answers, by tool call id (audit-200 B5, M-065). */
     answered: Map<String, List<String>> = emptyMap(),
 ): List<ChatMessage> {
+    // Audit-200 C2 (M-050): the engine writes no terminal status for a
+    // tool cut off by Stop / interrupt, so history keeps it "running"
+    // forever — with a live 1s tick on a finished turn. When no run is in
+    // flight no tool can still be running: those are dead, shown as
+    // interrupted. Display-only — the engine history is untouched, and a
+    // later resync re-derives it.
+    val settled = !busy
+    fun settle(call: ToolCall): ToolCall =
+        if (settled && (call.status == "running" || call.status == "streaming")) {
+            call.copy(status = "interrupted")
+        } else {
+            call
+        }
     val result = mutableListOf<ChatMessage>()
     messages.forEach { message ->
         when {
@@ -3834,10 +3921,10 @@ private fun ChatState.buildUnmergedMessages(
                     )
                 }
             message.isAssistant -> {
-                val msgLiveTools = liveTools.values.filter { it.messageID == message.id }.map { it.call }
+                val msgLiveTools = liveTools.values.filter { it.messageID == message.id }.map { settle(it.call) }
                 val msgStreamingText = streaming[message.id]
                 val isStreamingMsg = streaming.containsKey(message.id) || msgLiveTools.any { it.status == "running" || it.status == "streaming" }
-                val initialTools = message.content.mapNotNull { it.toToolCall() }
+                val initialTools = message.content.mapNotNull { it.toToolCall() }.map(::settle)
                 val allTools = (initialTools + msgLiveTools).distinctBy { it.id }
 
                 val parts = buildTurnParts(
@@ -3889,13 +3976,13 @@ private fun ChatState.buildUnmergedMessages(
     // that has no text yet still need a message to hang off.
     liveTools.values.groupBy { it.messageID }.forEach { (messageID, live) ->
         var idx = result.indexOfFirst { it.id == messageID }
-        val liveCalls = live.map { it.call }
+        val liveCalls = live.map { settle(it.call) }
         val liveIds = liveCalls.map { it.id }.toSet()
         if (idx < 0) {
             val parts = buildTurnParts(
                 content = emptyList(),
                 liveTools = liveCalls,
-                isStreaming = true,
+                isStreaming = !settled,
                 answered = answered,
             )
             result += ChatMessage(
@@ -3904,7 +3991,7 @@ private fun ChatState.buildUnmergedMessages(
                 text = "",
                 tools = liveCalls,
                 parts = parts,
-                streaming = true,
+                streaming = !settled,
                 createdAtMillis = System.currentTimeMillis(),
                 toolDurations = toolDurations,
                 toolStartedAtMillis = toolStartedAt,

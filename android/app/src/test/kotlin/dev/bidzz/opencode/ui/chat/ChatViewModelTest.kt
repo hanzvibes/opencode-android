@@ -2,7 +2,11 @@ package dev.bidzz.opencode.ui.chat
 
 import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ChatState
+import dev.bidzz.opencode.core.api.LiveTool
+import dev.bidzz.opencode.core.api.dto.MessageContent
 import dev.bidzz.opencode.core.api.dto.SessionMessage
+import dev.bidzz.opencode.core.api.dto.ToolCall
+import dev.bidzz.opencode.core.api.dto.ToolState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -116,5 +120,121 @@ class ChatViewModelTest {
         vm.onRepoState(ChatState(sessionID = "s1", messages = emptyList(), busy = true))
         assertEquals(1, vm.state.value.messages.size)
         assertTrue(vm.state.value.sending)
+    }
+
+    // Audit-200 Fase C2, M-049: a tool first seen already finished must
+    // not be stamped start == end == now ("0ms") — it gets no duration.
+    @Test
+    fun `M-049 a tool first seen already finished gets no duration`() {
+        val vm = viewModel()
+        val live = mapOf(
+            "t1" to LiveTool("m1", ToolCall("t1", "read", "completed")),
+        )
+        vm.onRepoState(ChatState(messages = emptyList(), liveTools = live, busy = true))
+
+        val shown = vm.state.value.messages.single()
+        assertEquals("t1", shown.tools.single().id)
+        assertFalse("a first-seen-done tool must have no duration", shown.toolDurations.containsKey("t1"))
+    }
+
+    @Test
+    fun `M-049 a tool seen running first keeps its duration when it finishes`() {
+        val vm = viewModel()
+        val running = mapOf(
+            "t1" to LiveTool("m1", ToolCall("t1", "read", "running")),
+        )
+        val done = mapOf(
+            "t1" to LiveTool("m1", ToolCall("t1", "read", "completed")),
+        )
+        vm.onRepoState(ChatState(messages = emptyList(), liveTools = running, busy = true))
+        vm.onRepoState(ChatState(messages = emptyList(), liveTools = done, busy = true))
+
+        val shown = vm.state.value.messages.single()
+        assertTrue("a live-seen tool must have a duration", shown.toolDurations.containsKey("t1"))
+    }
+
+    // Audit-200 Fase C2, M-050: when no run is in flight, a history tool
+    // still marked running is dead — shown as interrupted, never ticking.
+    @Test
+    fun `M-050 a running history tool reads interrupted once the run is over`() {
+        val vm = viewModel()
+        val tool = MessageContent(
+            type = "tool",
+            id = "t1",
+            name = "read",
+            state = ToolState(status = "running"),
+        )
+        val msg = SessionMessage(id = "m1", type = "assistant", content = listOf(tool))
+
+        vm.onRepoState(ChatState(messages = listOf(msg), busy = false))
+
+        val shown = vm.state.value.messages.single()
+        assertEquals("interrupted", shown.tools.single().status)
+        assertFalse(shown.streaming)
+    }
+
+    @Test
+    fun `M-050 a running history tool stays running while the run is live`() {
+        val vm = viewModel()
+        val tool = MessageContent(
+            type = "tool",
+            id = "t1",
+            name = "read",
+            state = ToolState(status = "running"),
+        )
+        val msg = SessionMessage(id = "m1", type = "assistant", content = listOf(tool))
+
+        vm.onRepoState(ChatState(messages = listOf(msg), busy = true))
+
+        val shown = vm.state.value.messages.single()
+        assertEquals("running", shown.tools.single().status)
+    }
+
+    // Audit-200 Fase C2, M-052/M-053: Reject only counts when the prompt
+    // was actually accepted, and the decision lives in the view model.
+    @Test
+    fun `M-052 a reject with no engine attached records no decision`() {
+        val vm = viewModel()
+
+        assertFalse(vm.requestDiffRevert("c1", "src/Foo.kt", null))
+        assertTrue(vm.state.value.diffDecisions.isEmpty())
+    }
+
+    @Test
+    fun `M-052 a queued reject records the decision, a duplicate does not resend`() {
+        val vm = viewModel()
+        vm.onRepoState(repoState(emptyList(), busy = true))
+
+        assertTrue(vm.requestDiffRevert("c1", "src/Foo.kt", null))
+        assertEquals(DiffDecision.REJECTED, vm.state.value.diffDecisions["c1"])
+        // The same prompt queued again is a duplicate: the second call
+        // is refused, so the UI keeps the first request — it never
+        // claims a second one.
+        assertFalse(vm.requestDiffRevert("c1", "src/Foo.kt", null))
+        assertEquals(DiffDecision.REJECTED, vm.state.value.diffDecisions["c1"])
+        assertEquals(1, vm.state.value.queuedPrompts.size)
+    }
+
+    @Test
+    fun `M-053 an accept decision is recorded in the view model`() {
+        val vm = viewModel()
+        vm.recordDiffDecision("c9", DiffDecision.ACCEPTED)
+        assertEquals(DiffDecision.ACCEPTED, vm.state.value.diffDecisions["c9"])
+    }
+
+    @Test
+    fun `M-052 a revert returned to the draft resets its decision`() {
+        val queued = listOf(QueuedPrompt("Please revert src/Foo.kt to undo the change described below. If newer edits exist on this file, keep them and only undo this one.", "Please revert src/Foo.kt to undo the change described below. If newer edits exist on this file, keep them and only undo this one."))
+        val calls = mapOf(
+            "Please revert src/Foo.kt to undo the change described below. If newer edits exist on this file, keep them and only undo this one." to "c1",
+        )
+        assertEquals(setOf("c1"), revertDecisionsForReturnedQueue(queued, calls))
+        assertEquals(
+            emptySet<String>(),
+            revertDecisionsForReturnedQueue(
+                listOf(QueuedPrompt("some other prompt", "some other prompt")),
+                calls,
+            ),
+        )
     }
 }

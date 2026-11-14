@@ -200,4 +200,39 @@ class DiffParserTest {
         assertEquals("end", sbs[4].left?.text)
         assertEquals("end", sbs[4].right?.text)
     }
+
+    @Test
+    fun `M-054 content lines starting with --- or +++ inside a hunk are kept`() {
+        // A removed `-- comment` (SQL comment, Markdown rule, --flag) and
+        // an added `++ x` read as `--- comment` / `+++ x` in the patch —
+        // the old parser dropped both as "file headers", hiding a real
+        // change and undercounting by one. File headers before the first
+        // hunk are still dropped (see the test above).
+        val patch = """
+            --- a/query.sql
+            +++ b/query.sql
+            @@ -1,3 +1,3 @@
+             select 1
+            --- old
+            +-- new
+            +++ x
+            +x
+        """.trimIndent()
+
+        val hunks = DiffParser.parse(patch)
+        assertEquals(1, hunks.size)
+        val lines = hunks[0].lines
+        // The file headers are gone; the four changed lines are all kept.
+        assertEquals(5, lines.size)
+        assertEquals(DiffLine.Kind.CONTEXT, lines[0].kind)
+        assertEquals(DiffLine.Kind.REMOVED, lines[1].kind)
+        assertEquals("-- old", lines[1].text)
+        assertEquals(DiffLine.Kind.ADDED, lines[2].kind)
+        assertEquals("-- new", lines[2].text)
+        assertEquals(DiffLine.Kind.REMOVED, lines[3].kind)
+        assertEquals("++ x", lines[3].text)
+        assertEquals(DiffLine.Kind.ADDED, lines[4].kind)
+        assertEquals("x", lines[4].text)
+        assertEquals(2 to 2, DiffParser.counts(hunks))
+    }
 }

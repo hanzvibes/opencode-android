@@ -205,8 +205,15 @@ fun MessageBubble(
     workspacePath: String? = null,
     /** Opens a workspace-relative file from a tool step (Fase 1, item 3). */
     onOpenToolFile: (String) -> Unit = {},
-    /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
-    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
+    /** Asks the agent to revert a rejected edit (Fase 1, item 2). Receives
+     * the call id, so the view model can record the decision against the
+     * step that asked (audit-200 C2, M-052/M-053). */
+    onRequestDiffRevert: (String, String, String?) -> Unit = { _, _, _ -> },
+    /** Accept / Reject decisions per tool call id, owned by the view model
+     * (audit-200 C2, M-053). */
+    diffDecisions: Map<String, DiffDecision> = emptyMap(),
+    /** Records an Accept / Reject decision for one tool call id. */
+    onDiffDecision: (String, DiffDecision) -> Unit = { _, _ -> },
     /** #6f: called before a ToolTrace height toggle (expand/collapse,
      * show-full output/diff), so the transcript can anchor the scroll
      * position first and the list does not jump. */
@@ -579,6 +586,8 @@ fun MessageBubble(
                                             workspacePath = workspacePath,
                                             onOpenToolFile = onOpenToolFile,
                                             onRequestDiffRevert = onRequestDiffRevert,
+                                            diffDecisions = diffDecisions,
+                                            onDiffDecision = onDiffDecision,
                                             onBeforeHeightChange = onBeforeToolTraceHeightChange,
                                             modifier = Modifier.padding(bottom = spacing.sm),
                                         )

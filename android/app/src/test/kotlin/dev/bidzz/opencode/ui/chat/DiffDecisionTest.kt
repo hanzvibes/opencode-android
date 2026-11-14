@@ -45,7 +45,8 @@ class DiffDecisionTest {
     @Test
     fun `revert prompt names the relative path and asks for the prior state`() {
         assertEquals(
-            "Please revert src/chat/ChatScreen.kt to how it was before your last edit.",
+            "Please revert src/chat/ChatScreen.kt to undo the change described below. " +
+                "If newer edits exist on this file, keep them and only undo this one.",
             revertPromptFor("src/chat/ChatScreen.kt"),
         )
     }
@@ -56,9 +57,20 @@ class DiffDecisionTest {
             "src/Foo.kt",
             "@@ -10,2 +10,3 @@\n- old line\n+ new line",
         )
-        assertTrue(prompt.startsWith("Please revert src/Foo.kt to how it was before your last edit."))
+        assertTrue(prompt.startsWith("Please revert src/Foo.kt to undo the change described below."))
         assertTrue(prompt.contains("- old line"))
         assertTrue(prompt.contains("+ new line"))
+    }
+
+    @Test
+    fun `M-055 the revert prompt never points at the newest edit`() {
+        // The old "before your last edit" pointed at whatever edit was
+        // newest when the agent finally ran the prompt — a queued reject
+        // could undo a NEWER edit. The new wording names the change
+        // itself and tells the agent to keep newer edits.
+        val prompt = revertPromptFor("src/Foo.kt")
+        assertFalse(prompt.contains("before your last edit"))
+        assertTrue(prompt.contains("keep them and only undo this one"))
     }
 
     @Test
