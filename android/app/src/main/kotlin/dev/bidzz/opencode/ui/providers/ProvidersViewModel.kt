@@ -9,9 +9,12 @@ import dev.bidzz.opencode.core.api.dto.CredentialEntry
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
 import dev.bidzz.opencode.engine.EngineConfigStore
 import dev.bidzz.opencode.ui.engineDownFailure
+import dev.bidzz.opencode.ui.mcp.McpRuntimeChangesSignal
 import java.net.URI
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,8 +28,14 @@ data class ProvidersUiState(
     /** Every stored credential; [rowsFor] filters these per provider. */
     val credentials: List<CredentialEntry> = emptyList(),
     val loading: Boolean = false,
-    /** Provider currently being saved, so only its row shows progress. */
-    val busyFor: String? = null,
+    /**
+     * Providers with an action in flight, so only their rows show progress
+     * (audit-200 B4, M-035): the old single slot meant two parallel actions
+     * on different targets overwrote each other's spinner — the second
+     * action's `beginAction` cleared the first one's. A set lets each row
+     * track its own action.
+     */
+    val busyFor: Set<String> = emptySet(),
     /** What went wrong, as a value; the screen words it in the app’s language. */
     val failure: ApiResult.Failure? = null,
     /** A message with no failure behind it, e.g. a config file that would be shadowed. */
@@ -48,9 +57,25 @@ data class ProvidersUiState(
      * Name of the custom provider whose engine restart is still pending
      * (30-F4): the provider is written to the config file, but the engine
      * has not re-read it yet, so its row must not claim CONNECTED. Cleared
-     * by the next screen-entry refresh.
+     * when the restart lands (audit-200 B4, M-125) or by the next
+     * screen-entry refresh — not before, so a failed restart stays visible.
      */
     val restartPendingFor: String? = null,
+    /**
+     * Name of the provider whose restart is waiting on the user's say-so
+     * (audit-200 B4, M-457): runtime MCP changes are pending, and the
+     * restart would discard them. The screen asks first; confirming
+     * restarts, dismissing leaves the provider row PENDING.
+     */
+    val restartConfirm: String? = null,
+    /**
+     * Provider ids declared in `opencode.json` while the effective config
+     * lives in `opencode.jsonc` (audit-200 B4, M-248): the engine reads
+     * only the `.jsonc`, so these are shadowed — invisible in the list
+     * and never loaded. The screen names them and offers the
+     * delete-`.jsonc` flow that brings them back.
+     */
+    val shadowedJsonProviders: List<String> = emptyList(),
 )
 
 /**
@@ -128,11 +153,27 @@ internal fun isNameTaken(
 class ProvidersViewModel(
     private val api: EngineApi,
     private val configStore: EngineConfigStore,
-    private val restartEngine: () -> Unit,
+    /**
+     * Restarts the engine; true when the restart was actually requested
+     * (audit-200 B4, M-125): the old `() -> Unit` discarded the result,
+     * so a restart that never started looked exactly like a successful
+     * one. False means the supervisor was never initialised.
+     */
+    private val restartEngine: () -> Boolean,
+    /**
+     * Shared with the MCP screen (audit-200 B4, M-457): true while
+     * runtime MCP changes are pending, which a provider restart would
+     * discard. Defaults to a private instance so existing callers need
+     * no wiring.
+     */
+    private val mcpRuntimeChanges: McpRuntimeChangesSignal = McpRuntimeChangesSignal(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ProvidersUiState())
     val state: StateFlow<ProvidersUiState> = _state.asStateFlow()
+
+    /** The restart watch from the last provider write, if still running. */
+    private var restartWatchJob: Job? = null
 
     /**
      * Re-reads the config file and, unless [reloadEngine] is false, the engine's
@@ -161,12 +202,18 @@ class ProvidersViewModel(
             val custom = withContext(Dispatchers.IO) {
                 runCatching { configStore.customProviders() }.getOrDefault(emptyList())
             }
+            // Providers shadowed by a .jsonc (audit-200 B4, M-248): read on
+            // disk like the custom list, so the screen can name them.
+            val shadowed = withContext(Dispatchers.IO) {
+                runCatching { configStore.shadowedJsonProviderIds() }.getOrDefault(emptyList())
+            }
             _state.value = _state.value.copy(
                 customProviders = custom,
                 antigravityAccounts = agAccounts,
                 activeAntigravityEmail = activeAg?.email,
                 antigravityAccountsCorrupt = agResult is EngineConfigStore.AntigravityAccountsResult.Corrupt,
                 configProblem = configStore.lastConfigReadProblem,
+                shadowedJsonProviders = shadowed,
                 restartPendingFor = if (preserveRestartPending) _state.value.restartPendingFor else null,
             )
             if (!reloadEngine) return@launch
@@ -187,7 +234,7 @@ class ProvidersViewModel(
         viewModelScope.launch {
             when (val result = h.credentialStore.createKey(integrationID, key.trim())) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
-                    busyFor = null,
+                    busyFor = _state.value.busyFor - integrationID,
                     failure = result,
                 )
                 is ApiResult.Success -> {
@@ -197,7 +244,7 @@ class ProvidersViewModel(
                     // green confirmation and a red error on screen together
                     // (31-F9). The list refreshes on the next entry.
                     _state.value = _state.value.copy(
-                        busyFor = null,
+                        busyFor = _state.value.busyFor - integrationID,
                         connected = name,
                         failure = null,
                         failureKey = null,
@@ -224,13 +271,13 @@ class ProvidersViewModel(
         viewModelScope.launch {
             when (val result = h.credentialStore.remove(credentialID)) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
-                    busyFor = null,
+                    busyFor = _state.value.busyFor - credentialID,
                     failure = result,
                 )
                 is ApiResult.Success -> {
                     reload(h)
                     _state.value = _state.value.copy(
-                        busyFor = null,
+                        busyFor = _state.value.busyFor - credentialID,
                         notice = afterDeleteNotice(rowsFor(_state.value.credentials, integrationID).size, name),
                         failure = null,
                         failureKey = null,
@@ -257,7 +304,7 @@ class ProvidersViewModel(
         viewModelScope.launch {
             when (val created = h.credentialStore.createKey(integrationID, key.trim())) {
                 is ApiResult.Failure -> _state.value = _state.value.copy(
-                    busyFor = null,
+                    busyFor = _state.value.busyFor - credentialID,
                     failure = created,
                 )
                 is ApiResult.Success -> {
@@ -266,7 +313,7 @@ class ProvidersViewModel(
                     val stale = (h.credentialStore.remove(credentialID) as? ApiResult.Failure)
                     reload(h)
                     _state.value = _state.value.copy(
-                        busyFor = null,
+                        busyFor = _state.value.busyFor - credentialID,
                         connected = name,
                         failure = null,
                         failureKey = null,
@@ -300,7 +347,6 @@ class ProvidersViewModel(
         // Validate before any disk write or restart (30-F1/31-F12/53-F7).
         validateCustomProvider(trimmedName, baseURL, apiKey, modelsText, requireKey = editingId == null)?.let { key ->
             _state.value = _state.value.copy(
-                busyFor = null,
                 failureKey = key,
                 connected = null,
                 notice = null,
@@ -324,7 +370,7 @@ class ProvidersViewModel(
             // unless the slug is the one being edited (30-F2).
             if (isNameTaken(existing, id, editingId)) {
                 _state.value = _state.value.copy(
-                    busyFor = null,
+                    busyFor = _state.value.busyFor - id,
                     failureKey = R.string.providers_name_taken,
                     connected = null,
                     notice = null,
@@ -334,14 +380,18 @@ class ProvidersViewModel(
             }
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
-                    configStore.putOpenAICompatible(id, trimmedName, baseURL.trim(), keyToStore, models)
+                    // Audit-200 B4 (M-126): a rename passes the old slug
+                    // so the store moves the entry in the same write —
+                    // otherwise the old entry stayed behind as a second,
+                    // still-CONNECTED provider.
+                    configStore.putOpenAICompatible(id, trimmedName, baseURL.trim(), keyToStore, models, previousId = editingId)
                 }
             }
             val written = outcome.getOrNull()
             if (written == null) {
                 val blocked = outcome.exceptionOrNull() is EngineConfigStore.JsoncBlockedException
                 _state.value = _state.value.copy(
-                    busyFor = null,
+                    busyFor = _state.value.busyFor - id,
                     failureKey = if (blocked) {
                         R.string.providers_config_jsonc_blocks_write
                     } else {
@@ -354,13 +404,13 @@ class ProvidersViewModel(
                 return@launch
             }
             _state.value = _state.value.copy(
-                busyFor = null,
+                busyFor = _state.value.busyFor - id,
                 restartPendingFor = trimmedName,
                 connected = null,
                 failureKey = null,
             )
             refresh(preserveRestartPending = true, reloadEngine = false)
-            restartEngine()
+            restartAfterWrite(trimmedName)
         }
     }
 
@@ -378,7 +428,7 @@ class ProvidersViewModel(
             if (!deleted) {
                 val blocked = outcome.exceptionOrNull() is EngineConfigStore.JsoncBlockedException
                 _state.value = _state.value.copy(
-                    busyFor = null,
+                    busyFor = _state.value.busyFor - id,
                     failureKey = if (blocked) {
                         R.string.providers_config_jsonc_blocks_write
                     } else {
@@ -390,9 +440,9 @@ class ProvidersViewModel(
                 )
                 return@launch
             }
-            _state.value = _state.value.copy(busyFor = null)
+            _state.value = _state.value.copy(busyFor = _state.value.busyFor - id)
             refresh(reloadEngine = false)
-            restartEngine()
+            restartAfterWrite(id)
         }
     }
 
@@ -414,7 +464,7 @@ class ProvidersViewModel(
                 return@launch
             }
             refresh(reloadEngine = false)
-            restartEngine()
+            restartAfterWrite(id)
         }
     }
 
@@ -432,7 +482,7 @@ class ProvidersViewModel(
                 return@launch
             }
             refresh(reloadEngine = false)
-            restartEngine()
+            restartAfterWrite(id)
         }
     }
 
@@ -483,19 +533,95 @@ class ProvidersViewModel(
     }
 
     /**
-     * State at the start of an action: busy for one target, with no outcome
-     * inherited from the previous action (31-F14) — an old green "Connected"
-     * must not survive next to a new red error.
+     * State at the start of an action: busy for this target.
+     *
+     * Audit-200 B4 (M-035): the old version cleared every outcome and set
+     * the single busy slot, so a second action on another target wiped
+     * the first one's spinner and its just-completed confirmation. The
+     * busy set lets each row track its own action, and an outcome is only
+     * replaced when an action COMPLETES (31-F14) — an old green
+     * "Connected" never sits next to a new red error, but it does survive
+     * while another action is still in flight.
      */
-    private fun beginAction(busyFor: String?): ProvidersUiState =
+    private fun beginAction(busyFor: String): ProvidersUiState =
         _state.value.copy(
-            busyFor = busyFor,
-            failure = null,
-            failureKey = null,
-            connected = null,
-            notice = null,
-            staleKeyRemains = false,
+            busyFor = _state.value.busyFor + busyFor,
         )
+
+    /**
+     * Restarts the engine after a provider write, asking first when
+     * runtime MCP changes are pending (audit-200 B4, M-457).
+     *
+     * The write already happened — the confirm gates the RESTART, not
+     * the save. Dismissing leaves the provider row PENDING (the engine
+     * has not re-read the config yet); the user restarts from the MCP
+     * screen instead, whose own confirm says the same thing.
+     */
+    private fun restartAfterWrite(providerName: String) {
+        if (mcpRuntimeChanges.changes.value) {
+            _state.value = _state.value.copy(restartConfirm = providerName)
+            return
+        }
+        doRestart(providerName)
+    }
+
+    /** The user confirmed the restart despite pending MCP changes (M-457). */
+    fun confirmRestart() {
+        val pending = _state.value.restartConfirm ?: return
+        _state.value = _state.value.copy(restartConfirm = null)
+        doRestart(pending)
+    }
+
+    /** The user put the restart off (M-457): the row stays PENDING. */
+    fun dismissRestart() {
+        _state.value = _state.value.copy(restartConfirm = null)
+    }
+
+    /**
+     * Requests the restart and watches it land (audit-200 B4, M-125).
+     *
+     * The old code fired the restart and forgot it: the result was
+     * discarded, and the PENDING row only cleared when the user left and
+     * re-entered the screen — a failed restart looked identical to a
+     * slow one. The watch polls for a new engine handle (the same signal
+     * the MCP screen uses: a restart attaches a new handle) and refreshes
+     * once it appears, which clears the PENDING row. If the engine never
+     * comes back, the failure is reported instead — the row keeps
+     * PENDING, which is still true.
+     */
+    private fun doRestart(providerName: String) {
+        val before = api.handle()
+        if (!restartEngine()) {
+            // The restart never started (supervisor not initialised):
+            // say so now instead of leaving a PENDING row behind (M-125).
+            _state.value = _state.value.copy(
+                restartPendingFor = null,
+                failureKey = R.string.providers_restart_failed,
+                connected = null,
+                notice = null,
+                staleKeyRemains = false,
+            )
+            return
+        }
+        restartWatchJob?.cancel()
+        restartWatchJob = viewModelScope.launch {
+            repeat(RESTART_WATCH_ATTEMPTS) {
+                delay(RESTART_WATCH_INTERVAL_MS)
+                val now = api.handle()
+                if (now != null && now !== before) {
+                    refresh(preserveRestartPending = false)
+                    return@launch
+                }
+            }
+            _state.value = _state.value.copy(failure = engineDownFailure())
+        }
+    }
+
+    companion object {
+        /** How long the restart watch polls for a new engine handle (M-125). */
+        private const val RESTART_WATCH_ATTEMPTS = 30
+        private const val RESTART_WATCH_INTERVAL_MS = 1_000L
+    }
 
     /**
      * The engine is down: report it instead of silently doing nothing (31-F7).
