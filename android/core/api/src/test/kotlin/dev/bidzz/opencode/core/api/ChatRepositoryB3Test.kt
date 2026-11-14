@@ -143,13 +143,18 @@ class ChatRepositoryB3Test {
             assertEquals("p1", first)
 
             runBlocking { repository.replyPermission("p1", "once") }
-            val cleared = runBlocking {
+            // Audit-200 C3 (M-060): answering the head promotes the
+            // queued ask at once — the run is still blocked on it, so
+            // there is no reason to hide it until a reconnect shows it
+            // again. The old assertion (head clears to null) belonged
+            // to the single-slot model.
+            val promoted = runBlocking {
                 withTimeoutOrNull(20_000) {
-                    while (repository.state.value.pendingPermission != null) delay(25)
-                    true
+                    while (repository.state.value.pendingPermission?.id != "p2") delay(25)
+                    repository.state.value.pendingPermission?.id
                 }
             }
-            assertTrue("answered permission never cleared", cleared == true)
+            assertEquals("p2", promoted)
 
             stream!!.close()
             val newStream = stub.eventOut.poll(20, TimeUnit.SECONDS)
