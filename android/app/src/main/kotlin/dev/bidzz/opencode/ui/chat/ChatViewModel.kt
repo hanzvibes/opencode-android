@@ -752,6 +752,18 @@ class ChatViewModel(
     private val restoredLastSent: String? = savedStateHandle?.get<String>(LAST_SENT_KEY)
     private val restoredSentPrompts: List<String> =
         savedStateHandle?.get<ArrayList<String>>(SENT_PROMPTS_KEY)?.toList().orEmpty()
+    // Audit-200 C7 (M-118): a model/agent picked before the first message
+    // used to vanish on process death — the handle only carried the
+    // composer. ModelRef is a kotlinx @Serializable, not a
+    // java.io.Serializable, so it is stored as plain strings (id +
+    // provider + variant); a missing provider means the restore is
+    // unusable and the pick is dropped rather than guessed.
+    private val restoredModel: ModelRef? =
+        savedStateHandle?.get<String>(MODEL_ID_KEY)?.let { id ->
+            val provider = savedStateHandle?.get<String>(MODEL_PROVIDER_KEY) ?: return@let null
+            ModelRef(id = id, providerID = provider, variant = savedStateHandle?.get<String>(MODEL_VARIANT_KEY))
+        }
+    private val restoredAgent: String? = savedStateHandle?.get<String>(AGENT_KEY)
 
     /**
      * True until the first repo state after a restore decides the restored
@@ -769,6 +781,12 @@ class ChatViewModel(
             pendingAttachments = restoredAttachments,
             lastSentText = restoredLastSent,
             sentPrompts = restoredSentPrompts,
+            // Audit-200 C7 (M-118): the pre-session pick restored above.
+            // A session's own model/agent overwrites it on open (M-117);
+            // the engine default fills it in loadControls only when it
+            // is still null (M-112/M-120), so the restore always wins.
+            activeModel = restoredModel,
+            activeAgent = restoredAgent,
             // Audit-200 A9-3 (DL-034): an edit in progress survives a
             // process death with its backup (see draftBeforeEdit above).
             editingMessageId = savedStateHandle?.get<String>(EDITING_MESSAGE_KEY),
@@ -792,6 +810,11 @@ class ChatViewModel(
                 var lastAttachments: List<AttachedFile>? = null
                 var lastSent: String? = null
                 var lastHistory: List<String>? = null
+                // Audit-200 C7 (M-118): the active model/agent pick,
+                // mirrored into the handle on change (see the restore
+                // above). Stored as plain strings — see the restore note.
+                var lastModel: ModelRef? = null
+                var lastAgent: String? = null
                 // Audit-200 A9-3 (DL-010): the composer at launch — a draft
                 // restored from the handle is already parked (or has no park
                 // yet because the user typed it moments before the death),
@@ -835,6 +858,30 @@ class ChatViewModel(
                             // the recent ones, and the full history is
                             // unbounded text.
                             handle[SENT_PROMPTS_KEY] = ArrayList(state.sentPrompts.takeLast(HANDLE_SENT_HISTORY))
+                        }
+                    }
+                    // Audit-200 C7 (M-118): mirror the pick. A null model
+                    // removes all three keys together — a stale provider
+                    // next to a missing id would restore a half-pick.
+                    if (state.activeModel != lastModel) {
+                        lastModel = state.activeModel
+                        if (state.activeModel == null) {
+                            handle.remove<String>(MODEL_ID_KEY)
+                            handle.remove<String>(MODEL_PROVIDER_KEY)
+                            handle.remove<String>(MODEL_VARIANT_KEY)
+                        } else {
+                            handle[MODEL_ID_KEY] = state.activeModel.id
+                            handle[MODEL_PROVIDER_KEY] = state.activeModel.providerID
+                            state.activeModel.variant?.let { handle[MODEL_VARIANT_KEY] = it }
+                                ?: handle.remove<String>(MODEL_VARIANT_KEY)
+                        }
+                    }
+                    if (state.activeAgent != lastAgent) {
+                        lastAgent = state.activeAgent
+                        if (state.activeAgent == null) {
+                            handle.remove<String>(AGENT_KEY)
+                        } else {
+                            handle[AGENT_KEY] = state.activeAgent
                         }
                     }
                     // Audit-200 A9-3 (DL-010): the composer itself is
@@ -912,6 +959,18 @@ class ChatViewModel(
      * skip takes the same lock, so it cannot cancel a form mid-reply.
      */
     private val questionFormMutex = Mutex()
+    /**
+     * Serialises model/agent selection traffic (audit-200 C7, M-119):
+     * a prompt sent right after a switch used to run on the OLD
+     * agent/model, because selectAgent/selectModel fire their POST and
+     * return while sendNowInner never waits. The switches hold this
+     * lock for their POST (+ the re-read in selectAgent), createSession
+     * holds it for its set POSTs, and sendNowInner takes it briefly
+     * before repo.send — so a send waits for in-flight switches to
+     * settle. Held only across network calls, never while waiting for
+     * another lock, so it cannot deadlock.
+     */
+    private val selectionMutex = Mutex()
     /**
      * Revert prompts the view model sent or queued, by prompt text
      * (audit-200 C2, M-052): when a queued revert is returned to the
@@ -2262,6 +2321,28 @@ class ChatViewModel(
                         // Audit-200 B4 (M-459): the fresh list may have
                         // dropped the agent the chip shows.
                         validateActiveSelection()
+                        // Audit-200 C7 (M-120): the configured default
+                        // agent (opencode.json default_agent) — the
+                        // agent a fresh session starts on. Only when
+                        // nothing is active: a pre-session pick (incl.
+                        // the M-118 restored one) wins, and a session's
+                        // own agent is synced elsewhere. Validation
+                        // drops the default when its id is not in the
+                        // fresh agent list.
+                        if (_state.value.activeAgent == null) {
+                            when (val c = h.config.list()) {
+                                is ApiResult.Success -> {
+                                    val defaultAgent = c.value.firstNotNullOfOrNull {
+                                        it.info?.default_agent?.takeIf { d -> d.isNotBlank() }
+                                    }
+                                    if (defaultAgent != null) {
+                                        _state.value = _state.value.copy(activeAgent = defaultAgent)
+                                        validateActiveSelection()
+                                    }
+                                }
+                                is ApiResult.Failure -> Unit // chip stays neutral
+                            }
+                        }
                     }
                     // A control-list failure is not a send failure: Retry
                     // must not offer to re-send the last prompt for it.
@@ -2275,6 +2356,20 @@ class ChatViewModel(
                         // Audit-200 B4 (M-459): the fresh list may have
                         // dropped the model the chip shows.
                         validateActiveSelection()
+                        // Audit-200 C7 (M-112): the engine's own default
+                        // model — the model a fresh session actually runs
+                        // on. Only when nothing is active (same guard as
+                        // the default agent above); a failure is ignored
+                        // like commands/skills and the chip stays neutral.
+                        if (_state.value.activeModel == null) {
+                            when (val d = h.models.default()) {
+                                is ApiResult.Success -> d.value?.let {
+                                    _state.value = _state.value.copy(activeModel = it.ref())
+                                    validateActiveSelection()
+                                }
+                                is ApiResult.Failure -> Unit
+                            }
+                        }
                     }
                     is ApiResult.Failure -> reportFailure(r, RetryKind.NONE)
                 }
@@ -2294,14 +2389,56 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * Audit-200 C7 (M-122): after an agent switch (or the agent set in
+     * [createSession]), re-read the session — the engine may have applied
+     * the agent's own model. When it did, the chips follow engine truth;
+     * when it did not, the GET returns the same model and nothing changes.
+     * The sync only applies while the session and the pick that triggered
+     * it are still current: a newer pick's launch re-reads for itself.
+     * Returns the session's model, or null when the re-read failed.
+     */
+    private suspend fun syncModelFromSession(
+        h: EngineApi.Handle,
+        sessionID: String,
+        expectedAgent: String? = null,
+    ): ModelRef? {
+        return when (val result = h.sessions.get(sessionID)) {
+            is ApiResult.Success -> {
+                val current = _state.value
+                // The null arm is the reverted pick: createSession's
+                // duplicate set failed and cleared the chip, and no newer
+                // pick has replaced it yet (a newer pick would have set
+                // a non-null value) — adopting engine truth is safe.
+                if (current.sessionID == sessionID &&
+                    (expectedAgent == null || current.activeAgent == expectedAgent || current.activeAgent == null)
+                ) {
+                    _state.value = current.copy(
+                        activeModel = result.value.model,
+                        activeAgent = result.value.agent,
+                    )
+                    validateActiveSelection()
+                }
+                result.value.model
+            }
+            is ApiResult.Failure -> null
+        }
+    }
+
     /** Switches the session's agent (mode). Applies to the next prompt. */
     fun selectAgent(agentID: String) {
+        // Audit-200 C7 (M-116): a pick must never land mid-run — the
+        // menu closes when a run starts, and this guard catches a tap
+        // that raced the close.
+        if (_state.value.busy) return
         val sessionID = _state.value.sessionID
-        val h = handle ?: return
-        // Optimistic: the chip moves at once. If the engine rejects the
-        // switch the chip must move back (item 23) — otherwise it shows an
-        // agent the prompt never runs on. Only revert when the user is still
-        // on this session showing the rejected agent; a newer pick wins.
+        // Optimistic: the chip moves at once — before the handle check,
+        // so a pick made before the engine has attached still sticks
+        // (it used to be dropped silently, and the chip showed nothing
+        // for a tap the user clearly made). With no session yet the pick
+        // waits for createSession; with a session the POST below binds it.
+        // A session implies an attached handle, so the check after the
+        // update can only fire with no session open.
         val previous = _state.value.activeAgent
         // A new pick supersedes a rejected one (43-F2): the old selection
         // failure described a pick that is no longer current, so it clears
@@ -2314,27 +2451,58 @@ class ChatViewModel(
             selectionFailure = null,
             staleSelectionArg = null,
         )
+        val h = handle ?: return
         // A mode chosen before the first message has no session to bind to yet;
         // createSession picks it up from activeAgent when the session is made.
         if (sessionID == null) return
         viewModelScope.launch {
-            when (val result = h.agents.set(sessionID, agentID)) {
-                is ApiResult.Failure -> {
-                    val current = _state.value
-                    if (current.sessionID == sessionID && current.activeAgent == agentID) {
-                        _state.value = current.copy(activeAgent = previous)
+            // Audit-200 C7 (M-119): switches serialize through
+            // selectionMutex (see its declaration) so a prompt sent right
+            // after a switch waits for this POST to settle.
+            selectionMutex.withLock {
+                when (val result = h.agents.set(sessionID, agentID)) {
+                    is ApiResult.Failure -> {
+                        // If the engine rejects the switch the chip must
+                        // move back (item 23) — otherwise it shows an
+                        // agent the prompt never runs on. Only revert
+                        // when the user is still on this session showing
+                        // the rejected agent; a newer pick wins.
+                        val current = _state.value
+                        if (current.sessionID == sessionID && current.activeAgent == agentID) {
+                            _state.value = current.copy(activeAgent = previous)
+                        }
+                        reportSelectionFailure(result)
                     }
-                    reportSelectionFailure(result)
+                    is ApiResult.Success -> {
+                        // Audit-200 C7 (M-122): re-read the session — the
+                        // engine may have applied the agent's own model.
+                        // On a failed re-read the chips simply keep the
+                        // pick, exactly as before.
+                        syncModelFromSession(h, sessionID, expectedAgent = agentID)
+                        // The triple race (see M-119's note in the design):
+                        // createSession's duplicate set failed and reverted
+                        // the chip to null, but this identical set just
+                        // succeeded — the engine HAS the pick, so the chip
+                        // follows engine truth. The stale banner is left
+                        // alone (it describes the failed duplicate, and
+                        // re-reporting here would fight the revert logic).
+                        val current = _state.value
+                        if (current.sessionID == sessionID && current.activeAgent == null) {
+                            _state.value = current.copy(activeAgent = agentID)
+                        }
+                    }
                 }
-                is ApiResult.Success -> Unit
             }
         }
     }
 
     /** Switches the session's model. */
     fun selectModel(model: dev.bidzz.opencode.core.api.dto.ModelRef) {
+        // Audit-200 C7 (M-116): same busy guard as selectAgent.
+        if (_state.value.busy) return
         val sessionID = _state.value.sessionID
-        val h = handle ?: return
+        // Optimistic update before the handle check — same reason as
+        // selectAgent: a pick made before the engine attaches sticks.
         val previous = _state.value.activeModel
         // A new pick supersedes a rejected one (43-F2) — see selectAgent.
         val picked = _state.value
@@ -2344,17 +2512,30 @@ class ChatViewModel(
             selectionFailure = null,
             staleSelectionArg = null,
         )
+        val h = handle ?: return
         if (sessionID == null) return
         viewModelScope.launch {
-            when (val result = h.sessions.setModel(sessionID, model)) {
-                is ApiResult.Failure -> {
-                    val current = _state.value
-                    if (current.sessionID == sessionID && current.activeModel == model) {
-                        _state.value = current.copy(activeModel = previous)
+            // Audit-200 C7 (M-119): same serialization as selectAgent.
+            selectionMutex.withLock {
+                when (val result = h.sessions.setModel(sessionID, model)) {
+                    is ApiResult.Failure -> {
+                        val current = _state.value
+                        if (current.sessionID == sessionID && current.activeModel == model) {
+                            _state.value = current.copy(activeModel = previous)
+                        }
+                        reportSelectionFailure(result)
                     }
-                    reportSelectionFailure(result)
+                    is ApiResult.Success -> {
+                        // Same triple race as selectAgent, mirrored for
+                        // the model: a failed duplicate set in
+                        // createSession reverted the chip to null, but
+                        // this identical set succeeded.
+                        val current = _state.value
+                        if (current.sessionID == sessionID && current.activeModel == null) {
+                            _state.value = current.copy(activeModel = model)
+                        }
+                    }
                 }
-                is ApiResult.Success -> Unit
             }
         }
     }
@@ -3670,6 +3851,26 @@ class ChatViewModel(
         _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE, selectionFailure = null)
         collectRepo(repo)
         repo.open(id)
+        // Audit-200 C7 (M-113): a reload re-opens the SAME session, so
+        // the chips already belong to it — but the model/agent may have
+        // changed elsewhere (another client, a restart). Re-read the
+        // session and sync, like onResume does; on a failed re-read the
+        // chips simply keep their values, which are this session's own.
+        viewModelScope.launch {
+            when (val result = attachedHandle.sessions.get(id)) {
+                is ApiResult.Success -> {
+                    if (repository === repo && repo.state.value.sessionID == id) {
+                        _state.value = _state.value.copy(
+                            activeModel = result.value.model,
+                            activeAgent = result.value.agent,
+                            sessionTitle = result.value.title,
+                        )
+                        validateActiveSelection()
+                    }
+                }
+                is ApiResult.Failure -> Unit
+            }
+        }
     }
 
     /**
@@ -3751,6 +3952,13 @@ class ChatViewModel(
         // 204; the output arrives over the event stream exactly like a normal turn.
         // A skill cannot ride a command: the pick inserts a bare name, never a
         // slash, so a prompt carrying skills never takes this branch.
+        // Audit-200 C7 (M-119): wait for in-flight model/agent switches
+        // to settle before the prompt goes out — a switch posted a
+        // moment ago must be applied before the run starts, or the
+        // prompt runs on the old agent/model. The lock is taken briefly
+        // and released before the send; createSession above already
+        // released it, so this cannot deadlock.
+        selectionMutex.withLock { }
         val result = if (text.startsWith("/")) {
             val name = text.substring(1).substringBefore(' ')
             val args = text.substringAfter(' ', "").trim()
@@ -3923,50 +4131,94 @@ class ChatViewModel(
                 if (repository !== repo || repo.state.value.sessionID != null) return null
                 repo.open(result.value.id)
                 // A mode or model picked before the first message has no session to bind
-                // to at the time it is chosen, so it is applied here instead. A rejected
-                // selection is reported AND reverted (43-F2): the old code only reported
-                // it, and the next repo emission wiped the banner while the chip kept
-                // showing the rejected model — the send below runs on the engine
-                // default, so the chip must say so (null = default). The prompt
-                // still sends: refusing the whole message over a rejected
-                // preference would lose the user's text for a setting they
-                // can re-pick after the send.
+                // to at the time it is chosen, so it is applied here instead.
+                // Audit-200 C7 (M-012): a rejected selection now HOLDS the
+                // send instead of sending at the engine default — the old
+                // code reported the rejection and sent anyway, so the
+                // prompt ran on a model/agent the user never chose and the
+                // banner described a pick that was already sent. The draft
+                // stays in the composer (sendNowInner clears it only on
+                // success), so the user re-picks and re-sends; the session
+                // already exists, so the re-send skips createSession's
+                // early return and sends at the reverted (default)
+                // selection unless the user picks again.
+                // Audit-200 C7 (M-119): the set POSTs hold selectionMutex,
+                // so they cannot interleave with a selectAgent/selectModel
+                // POST for a newer pick and leave the engine on the wrong
+                // one (the send below waits on the same lock).
                 val pickedAgent = _state.value.activeAgent
                 val pickedModel = _state.value.activeModel
+                val createdId = result.value.id
                 var agentFailed = false
                 var modelFailed = false
-                pickedAgent?.let {
-                    when (val setResult = h.agents.set(result.value.id, it)) {
-                        is ApiResult.Failure -> {
-                            agentFailed = true
-                            reportSelectionFailure(setResult)
+                // The failures are collected here and reported after the
+                // loop, only when this session is still current (058-F13
+                // below) — reporting mid-loop let a late success
+                // overwrite the banner with the wrong pick's failure.
+                var agentFailure: ApiResult.Failure? = null
+                var modelFailure: ApiResult.Failure? = null
+                // Audit-200 C7 (M-122): the engine's model after the
+                // agent set — the agent may have brought its own.
+                var engineModel: ModelRef? = null
+                selectionMutex.withLock {
+                    pickedAgent?.let {
+                        when (val setResult = h.agents.set(createdId, it)) {
+                            is ApiResult.Failure -> {
+                                agentFailed = true
+                                agentFailure = setResult
+                            }
+                            is ApiResult.Success -> {
+                                // M-122: re-read before deciding whether
+                                // the picked model still applies. On a
+                                // failed re-read engineModel stays null
+                                // and the pick is applied as before.
+                                engineModel = syncModelFromSession(h, createdId, expectedAgent = it)
+                            }
                         }
-                        is ApiResult.Success -> Unit
                     }
-                }
-                pickedModel?.let {
-                    when (val setResult = h.sessions.setModel(result.value.id, it)) {
-                        is ApiResult.Failure -> {
-                            modelFailed = true
-                            reportSelectionFailure(setResult)
+                    pickedModel?.let {
+                        // M-122: when the re-read proved the engine's
+                        // model (usually the agent's own), the stale
+                        // setModel is skipped — the GET model stands,
+                        // already synced into the chip by the helper.
+                        if (engineModel == null) {
+                            when (val setResult = h.sessions.setModel(createdId, it)) {
+                                is ApiResult.Failure -> {
+                                    modelFailed = true
+                                    modelFailure = setResult
+                                }
+                                is ApiResult.Success -> Unit
+                            }
                         }
-                        is ApiResult.Success -> Unit
                     }
                 }
                 if (agentFailed || modelFailed) {
-                    val reverted = resolveSelectionAfterSetFailure(
-                        pickedAgent,
-                        pickedModel,
-                        agentFailed,
-                        modelFailed,
-                    )
-                    _state.value = _state.value.copy(
-                        activeAgent = reverted.agent,
-                        activeModel = reverted.model,
-                    )
-                    // Audit-200 B4 (M-459): the reverted session's
-                    // model/agent may be gone from the fresh lists.
-                    validateActiveSelection()
+                    // Audit-200 C7 (058-F13): the report and the revert
+                    // belong to the session this send is for. If the user
+                    // already switched away, the new session's chips are
+                    // not ours to touch — and the send is abandoned
+                    // either way, so there is nothing to report on.
+                    if (repository === repo && repo.state.value.sessionID == createdId) {
+                        // Agent first, then model — the same last-wins
+                        // order as before.
+                        agentFailure?.let { reportSelectionFailure(it) }
+                        modelFailure?.let { reportSelectionFailure(it) }
+                        val reverted = resolveSelectionAfterSetFailure(
+                            pickedAgent,
+                            pickedModel,
+                            agentFailed,
+                            modelFailed,
+                        )
+                        _state.value = _state.value.copy(
+                            activeAgent = reverted.agent,
+                            activeModel = reverted.model,
+                        )
+                        // Audit-200 B4 (M-459): the reverted session's
+                        // model/agent may be gone from the fresh lists.
+                        validateActiveSelection()
+                    }
+                    // Hold the send (M-012): do not return the id.
+                    return null
                 }
                 result.value.id
             }
@@ -4323,7 +4575,10 @@ class ChatViewModel(
         // An explicit open supersedes a deep link still waiting for
         // attach (56-F1).
         if (repository != null) pendingOpenSessionID = null
-        openSessionById(session.id)
+        // Audit-200 C7 (M-117): hand the row's meta through, so the
+        // unchecked open syncs from it instead of seeing a null meta
+        // and (wrongly) clearing the chips this call just set.
+        openSessionById(session.id, knownMeta = session)
     }
 
     /** Loads an existing session by id, from the history list. */
@@ -4339,7 +4594,7 @@ class ChatViewModel(
         openSessionById(sessionID, fetchMeta = true)
     }
 
-    private fun openSessionById(sessionID: String, fetchMeta: Boolean = false) {
+    private fun openSessionById(sessionID: String, fetchMeta: Boolean = false, knownMeta: SessionInfo? = null) {
         // Tapping the session that is already open is a no-op: repo.open()
         // itself no-ops for the same session, so re-opening it would only
         // clear the draft, queue, attachments and edit in progress for
@@ -4410,7 +4665,9 @@ class ChatViewModel(
             }
             return
         }
-        openSessionUnchecked(sessionID, repo, meta = null)
+        // Audit-200 C7 (M-117): the list row's meta, when the caller had
+        // it — openSession(SessionInfo) passes its row through here.
+        openSessionUnchecked(sessionID, repo, meta = knownMeta)
     }
 
     /**
@@ -4498,6 +4755,19 @@ class ChatViewModel(
             // Audit-200 B4 (M-459): the meta's model/agent may be gone
             // from the fresh lists (its provider was deleted since).
             validateActiveSelection()
+        } else if (meta == null && repository?.state?.value?.sessionID == sessionID) {
+            // Audit-200 C7 (M-117): no meta for the session just opened —
+            // the fetch failed, or there was no handle to fetch with.
+            // The previous session's chips must not survive the switch:
+            // they name a model/agent this session never runs on. (The
+            // title is already cleared by the state copy above.)
+            // openSession(SessionInfo) threads its row's meta through
+            // openSessionById, so its legitimate sync never reaches
+            // this branch.
+            _state.value = _state.value.copy(
+                activeModel = null,
+                activeAgent = null,
+            )
         }
     }
 
@@ -4694,6 +4964,14 @@ class ChatViewModel(
         internal const val EDITING_MESSAGE_KEY = "chat_editing_message"
         /** The attachments pending before the edit in progress (audit-200 C4, M-078). */
         internal const val ATTACHMENTS_BEFORE_EDIT_KEY = "chat_attachments_before_edit"
+        /** The active model id, so a pre-session pick survives process death (audit-200 C7, M-118). */
+        internal const val MODEL_ID_KEY = "chat_model_id"
+        /** The active model provider, same reason as [MODEL_ID_KEY]. */
+        internal const val MODEL_PROVIDER_KEY = "chat_model_provider"
+        /** The active model variant, same reason as [MODEL_ID_KEY]. */
+        internal const val MODEL_VARIANT_KEY = "chat_model_variant"
+        /** The active agent id, same reason as [MODEL_ID_KEY]. */
+        internal const val AGENT_KEY = "chat_agent"
         /** Failed reloads before the banner points at a new session (item 24). */
         private const val SESSION_RELOAD_LIMIT = 2
         /** Quiet time after the last composer change before it is parked (audit-200 A9-3, DL-010). */

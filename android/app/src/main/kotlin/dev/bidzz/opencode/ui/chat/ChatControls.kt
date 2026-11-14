@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.api.dto.AgentInfo
 import dev.bidzz.opencode.core.api.dto.ModelInfo
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.api.dto.PermissionRule
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -133,6 +134,19 @@ internal fun dedupeAgents(agents: List<AgentInfo>): List<AgentInfo> =
     agents.distinctBy { it.id }
 
 /**
+ * Audit-200 C7 (M-114): does this catalog model match the active ref?
+ * The provider is part of the identity — two providers advertising the
+ * same model id are different models, and the engine's session model
+ * id may be the engine's record id while the catalog's modelID is the
+ * bare id. Either id form matches, but only within the same provider.
+ */
+internal fun modelRefMatches(model: ModelInfo, active: ModelRef?): Boolean {
+    if (active == null) return false
+    if (model.providerID != active.providerID) return false
+    return model.ref() == active || model.id == active.id
+}
+
+/**
  * Audit-200 C6 (M-110/M-111): which model/agent the chip shows. There is
  * deliberately NO fallback to the first catalog entry: when nothing is
  * active the chip shows the neutral placeholder ("Model"/"Mode") instead
@@ -144,7 +158,7 @@ internal fun resolveCurrentModel(
     dedupedModels: List<ModelInfo>,
     activeModel: ModelRef?,
 ): ModelInfo? =
-    dedupedModels.firstOrNull { it.ref() == activeModel || (activeModel != null && (it.modelID ?: it.id) == activeModel.id) }
+    dedupedModels.firstOrNull { modelRefMatches(it, activeModel) }
         ?: activeModel?.let { ModelInfo(id = it.id, providerID = it.providerID) }
 
 internal fun resolveCurrentAgent(
@@ -202,6 +216,13 @@ private fun AgentSelector(
     val dims = OpenCodeTheme.tokens.dimensions
     var expanded by remember { mutableStateOf(false) }
     var agentQuery by remember { mutableStateOf("") }
+
+    // Audit-200 C7 (M-116): a run starting while the menu is open closes
+    // it. A tap racing the close is still refused by the VM's busy guard
+    // in selectAgent, so a pick can never land mid-run.
+    LaunchedEffect(enabled) {
+        if (!enabled) expanded = false
+    }
 
     val context = LocalContext.current
     val prefs = remember(context) {
@@ -637,6 +658,13 @@ internal fun ModelSelector(
     var expanded by remember { mutableStateOf(false) }
     var modelQuery by remember { mutableStateOf("") }
 
+    // Audit-200 C7 (M-116): a run starting while the menu is open closes
+    // it. A tap racing the close is still refused by the VM's busy guard
+    // in selectModel, so a pick can never land mid-run.
+    LaunchedEffect(enabled) {
+        if (!enabled) expanded = false
+    }
+
     val context = LocalContext.current
     val prefs = remember(context) {
         context.getSharedPreferences("opencode_chat", Context.MODE_PRIVATE)
@@ -697,8 +725,10 @@ internal fun ModelSelector(
     // Column just enough to reveal it.
     val hasSelectedEntry = entries.any { entry ->
         entry is SelectorEntry.ModelRow &&
-            (entry.model.ref() == activeModel ||
-                (activeModel != null && (entry.model.modelID ?: entry.model.id) == activeModel.id))
+            // Audit-200 C7 (M-114): provider-aware match, same rule as
+            // resolveCurrentModel — an id-only match would checkmark the
+            // wrong provider's row when two providers share a model id.
+            modelRefMatches(entry.model, activeModel)
     }
     val selectedRowBringIntoView = remember { BringIntoViewRequester() }
     val menuScrollState = rememberScrollState()
@@ -924,7 +954,7 @@ internal fun ModelSelector(
                         }
                         is SelectorEntry.ModelRow -> {
                             val model = entry.model
-                            val isSelected = model.ref() == activeModel || (activeModel != null && (model.modelID ?: model.id) == activeModel.id)
+                            val isSelected = modelRefMatches(model, activeModel)
                             val presentation = resolveModelPresentation(model, colors)
                             val rowBg by animateColorAsState(
                                 targetValue = if (isSelected) colors.accent.copy(alpha = 0.10f) else Color.Transparent,
@@ -1048,6 +1078,32 @@ private data class AgentPresentation(
     val icon: Glyph,
 )
 
+/**
+ * Audit-200 C7 (M-121): what this agent's own permission rules say it
+ * can do with file edits, on top of the engine's documented base policy
+ * (every agent starts from allow-all; shipped rules are appended after
+ * it and the LAST matching rule wins — opencode.ai/docs/permissions).
+ * Only catch-all edit rules decide: a rule that allows edits under one
+ * directory does not restrict the rest, and a rule about another action
+ * (e.g. "question") says nothing about edits. When the engine sent no
+ * permissions field at all the access is Unknown — the badge then shows
+ * the raw mode, never a guess from the agent's name.
+ */
+internal enum class EditAccess { FullAccess, ReadOnly, AsksFirst, Unknown }
+
+internal fun editAccessOf(permissions: List<PermissionRule>?): EditAccess {
+    if (permissions == null) return EditAccess.Unknown
+    val catchAll = permissions.lastOrNull {
+        (it.action == "edit" || it.action == "*") && it.resource == "*"
+    }
+    return when (catchAll?.effect?.lowercase()) {
+        "deny" -> EditAccess.ReadOnly
+        "ask" -> EditAccess.AsksFirst
+        // No catch-all edit rule: the documented base policy allows it.
+        else -> EditAccess.FullAccess
+    }
+}
+
 private fun resolveAgentPresentation(agent: AgentInfo, colors: OpenCodeColors): AgentPresentation {
     val key = "${agent.id} ${agent.name} ${agent.mode.orEmpty()}".lowercase()
     // A colour the engine itself sent for this agent wins; the fallbacks
@@ -1055,22 +1111,41 @@ private fun resolveAgentPresentation(agent: AgentInfo, colors: OpenCodeColors): 
     val customColor = parseHexColor(agent.color)
     val customDesc = agent.description?.takeIf { it.isNotBlank() }
 
+    // Audit-200 C7 (M-121): the badge is the access from the agent's own
+    // permission rules (see editAccessOf), not a guess from its name.
+    // "code-reviewer" with a deny-edit rule is Read Only; an agent with
+    // no permissions field keeps the raw mode badge (the else branch's
+    // old behaviour). Global/session rules the client cannot see can
+    // still restrict it — the badge is the agent's declared access.
+    val access = editAccessOf(agent.permissions)
+    val (badgeRes, badgeText) = when (access) {
+        EditAccess.FullAccess -> R.string.agent_badge_full_access to null
+        EditAccess.ReadOnly -> R.string.agent_badge_read_only to null
+        EditAccess.AsksFirst -> R.string.agent_badge_asks_first to null
+        EditAccess.Unknown -> null to agent.mode?.takeIf { it.isNotBlank() }?.uppercase()
+    }
+
     return when {
         "build" in key || "coder" in key || "developer" in key || "code" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Build" }.replaceFirstChar { it.uppercase() },
             descriptionText = customDesc,
-            descriptionRes = R.string.agent_desc_build,
-            badgeRes = R.string.agent_badge_full_access,
-            badgeText = null,
+            // The build description claims full edit access; when the
+            // rules say otherwise the neutral description replaces it
+            // rather than contradicting the badge.
+            descriptionRes = if (access == EditAccess.Unknown || access == EditAccess.FullAccess) R.string.agent_desc_build else R.string.agent_desc_default,
+            badgeRes = badgeRes,
+            badgeText = badgeText,
             dotColor = customColor ?: colors.warning,
             icon = Glyph.Terminal,
         )
         "plan" in key || "architect" in key || "designer" in key -> AgentPresentation(
             title = agent.name.ifBlank { "Plan" }.replaceFirstChar { it.uppercase() },
             descriptionText = customDesc,
-            descriptionRes = R.string.agent_desc_plan,
-            badgeRes = R.string.agent_badge_read_only,
-            badgeText = null,
+            // The plan description claims no edits; same contradiction
+            // rule as the build branch, mirrored.
+            descriptionRes = if (access == EditAccess.Unknown || access == EditAccess.ReadOnly) R.string.agent_desc_plan else R.string.agent_desc_default,
+            badgeRes = badgeRes,
+            badgeText = badgeText,
             dotColor = customColor ?: colors.syntaxKeyword,
             icon = Glyph.Pencil,
         )
@@ -1078,8 +1153,8 @@ private fun resolveAgentPresentation(agent: AgentInfo, colors: OpenCodeColors): 
             title = agent.name.ifBlank { "Chat" }.replaceFirstChar { it.uppercase() },
             descriptionText = customDesc,
             descriptionRes = R.string.agent_desc_chat,
-            badgeRes = R.string.agent_badge_discussion,
-            badgeText = null,
+            badgeRes = badgeRes,
+            badgeText = badgeText,
             dotColor = customColor ?: colors.success,
             icon = Glyph.NewChat,
         )
@@ -1087,8 +1162,8 @@ private fun resolveAgentPresentation(agent: AgentInfo, colors: OpenCodeColors): 
             title = agent.name.ifBlank { "Review" }.replaceFirstChar { it.uppercase() },
             descriptionText = customDesc,
             descriptionRes = R.string.agent_desc_review,
-            badgeRes = R.string.agent_badge_review,
-            badgeText = null,
+            badgeRes = badgeRes,
+            badgeText = badgeText,
             dotColor = customColor ?: colors.accent,
             icon = Glyph.Search,
         )
@@ -1096,8 +1171,8 @@ private fun resolveAgentPresentation(agent: AgentInfo, colors: OpenCodeColors): 
             title = agent.name.ifBlank { agent.id }.replaceFirstChar { it.uppercase() },
             descriptionText = customDesc,
             descriptionRes = R.string.agent_desc_default,
-            badgeRes = null,
-            badgeText = agent.mode?.takeIf { it.isNotBlank() }?.uppercase(),
+            badgeRes = badgeRes,
+            badgeText = badgeText,
             dotColor = customColor ?: colors.accent,
             icon = Glyph.Sliders,
         )
@@ -1127,7 +1202,10 @@ private fun resolveBrand(model: ModelInfo, colors: OpenCodeColors): Triple<Strin
     val combined = "${model.providerID} ${model.family.orEmpty()} ${model.name.orEmpty()} ${model.id} ${model.modelID.orEmpty()}".lowercase()
     val brandColor = colors.providerColor(combined)
     return when {
-        "antigravity" in combined -> Triple("Google", "Antigravity", brandColor)
+        // Audit-200 C7 (M-115): Antigravity is its own brand, not Google
+        // — the menu groups by this name, so its models get their own
+        // ANTIGRAVITY header instead of hiding under GOOGLE.
+        "antigravity" in combined -> Triple("Antigravity", "Antigravity", brandColor)
         "anthropic" in combined || "claude" in combined -> Triple("Anthropic", "Claude", brandColor)
         "openai" in combined || "gpt" in combined || "o1" in combined || "o3" in combined -> Triple("OpenAI", "GPT", brandColor)
         "deepseek" in combined -> Triple("DeepSeek", "DeepSeek", brandColor)
@@ -1164,12 +1242,16 @@ internal fun cleanModelName(rawName: String, rawId: String): String {
     val candidate = rawName.ifBlank { rawId }.substringAfterLast('/')
     val lower = candidate.lowercase()
     return when {
-        "antigravity-gemini-3.8-flash-high" in lower -> "Gemini 3.8 Flash (High)"
-        "antigravity-gemini-3.8-flash-medium" in lower -> "Gemini 3.8 Flash (Med)"
-        "antigravity-gemini-3.8-flash" in lower -> "Gemini 3.8 Flash"
-        "antigravity-gemini-3.1-pro-low" in lower -> "Gemini 3.1 Pro (Low)"
-        "antigravity-gemini-3.1-pro-high" in lower -> "Gemini 3.1 Pro (High)"
-        "antigravity-gemini-3.1-pro" in lower -> "Gemini 3.1 Pro"
+        // Audit-200 C7 (M-115): Antigravity Gemini reads exactly like
+        // Google Gemini today, so the "(Antigravity)" suffix names the
+        // provider in the chip and in every menu row — the same pattern
+        // the Claude entries already use.
+        "antigravity-gemini-3.8-flash-high" in lower -> "Gemini 3.8 Flash (High, Antigravity)"
+        "antigravity-gemini-3.8-flash-medium" in lower -> "Gemini 3.8 Flash (Med, Antigravity)"
+        "antigravity-gemini-3.8-flash" in lower -> "Gemini 3.8 Flash (Antigravity)"
+        "antigravity-gemini-3.1-pro-low" in lower -> "Gemini 3.1 Pro (Low, Antigravity)"
+        "antigravity-gemini-3.1-pro-high" in lower -> "Gemini 3.1 Pro (High, Antigravity)"
+        "antigravity-gemini-3.1-pro" in lower -> "Gemini 3.1 Pro (Antigravity)"
         "antigravity-claude-opus-4-6-thinking" in lower -> "Claude Opus 4.6 (Thinking)"
         "antigravity-claude" in lower -> "Claude (Antigravity)"
         // Current generation (added Phase 2): Claude 4, GPT-5, Nemotron.
@@ -1249,7 +1331,11 @@ private data class ModelDescription(@StringRes val res: Int, val arg: String? = 
 private fun resolveModelDescription(text: String, family: String?): ModelDescription {
     val lower = text.lowercase()
     return when {
-        "antigravity" in lower -> ModelDescription(R.string.model_desc_gemini)
+        // Audit-200 C7 (M-115): Antigravity models run on the user's
+        // Antigravity account (OAuth), not a Gemini API key — the
+        // 2026-11-11 "API key not valid" incident came from exactly this
+        // confusion, so they get their own description, not Gemini's.
+        "antigravity" in lower -> ModelDescription(R.string.model_desc_antigravity)
         "claude-opus-4" in lower || "opus-4" in lower -> ModelDescription(R.string.model_desc_opus4)
         "claude-sonnet-4" in lower || "sonnet-4" in lower -> ModelDescription(R.string.model_desc_sonnet4)
         "claude-haiku-4" in lower || "haiku-4" in lower -> ModelDescription(R.string.model_desc_haiku4)

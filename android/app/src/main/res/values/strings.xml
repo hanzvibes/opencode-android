@@ -983,6 +983,8 @@
     <string name="model_desc_gemini_flash">Ultra-fast multimodal model with massive 1M context</string>
     <string name="model_desc_gemini_pro">Google flagship model with deep 2M token context</string>
     <string name="model_desc_gemini">Multimodal intelligence with expanded context capacity</string>
+    <!-- Audit-200 C7 (M-115): Antigravity runs on an OAuth account, not a Gemini API key. -->
+    <string name="model_desc_antigravity">Runs on your Antigravity account (OAuth) — not a Gemini API key</string>
     <string name="model_desc_llama">State-of-the-art open weights model for developer workflows</string>
     <string name="model_desc_qwen">Specialized open coding model with broad language support</string>
     <string name="model_desc_mistral">Efficient code synthesis &amp; reasoned explanations</string>
@@ -998,6 +1000,8 @@
     <string name="agent_desc_default">Specialized agent configuration</string>
     <string name="agent_badge_full_access">Full Access</string>
     <string name="agent_badge_read_only">Read Only</string>
+    <!-- Audit-200 C7 (M-121): the agent asks before editing. -->
+    <string name="agent_badge_asks_first">Asks First</string>
     <string name="agent_badge_discussion">Discussion</string>
     <string name="agent_badge_review">Review</string>
     <string name="browser_back">Back</string>

@@ -2041,7 +2041,11 @@ fun ChatScreen(
                     // the human model label when the catalog knows it, else
                     // the raw model id; the agent name the same way.
                     val modelLabel = remember(state.activeModel, state.models) {
-                        state.models.firstOrNull { it.ref() == state.activeModel }?.label()
+                        // Audit-200 C7 (M-114): provider-aware match, same
+                        // rule as the selector — a strict ref() match
+                        // falls back to the raw id when the engine's model
+                        // id is a record id.
+                        state.models.firstOrNull { modelRefMatches(it, state.activeModel) }?.label()
                             ?: state.activeModel?.id
                     }
                     val agentLabel = remember(state.activeAgent, state.agents) {
