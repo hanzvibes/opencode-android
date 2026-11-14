@@ -10,6 +10,8 @@ import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.ui.chat.ReadPositionStore
 import dev.bidzz.opencode.ui.formatCompactTokens
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,6 +81,12 @@ data class SessionListUiState(
      * [SessionListViewModel.loadDetails]. A session with no entry yet shows
      * title-only until its lookup lands. */
     val details: Map<String, SessionDetail> = emptyMap(),
+    /**
+     * True while a preview walk is in flight (audit-200 C5, M-089): the
+     * screen says previews are still arriving instead of letting a
+     * search look complete while rows are still unknown.
+     */
+    val detailsLoading: Boolean = false,
 )
 
 /**
@@ -98,8 +106,17 @@ class SessionListViewModel(
     private val _state = MutableStateFlow(SessionListUiState())
     val state: StateFlow<SessionListUiState> = _state.asStateFlow()
 
-    /** In-flight detail lookup, cancelled when a fresh list loads. */
-    private var detailsJob: Job? = null
+    /** In-flight preview job, cancelled when a fresh list loads. */
+    private var previewJob: Job? = null
+
+    /**
+     * Sessions whose preview walk is still wanted, in request order
+     * (audit-200 C5, M-089): the first load seeds the first 20, and the
+     * screens add the rows they actually show (see [requestPreviews]).
+     * A walk removes its id when it lands, so a session is never walked
+     * twice for one list.
+     */
+    private val previewWantedIds = LinkedHashSet<String>()
 
     /** In-flight list load, cancelled when a fresh list loads. */
     private var loadJob: Job? = null
@@ -135,7 +152,8 @@ class SessionListViewModel(
         val generation = ++loadGeneration
         lastScopedToWorkspace = scopedToWorkspace
         sessionCursor = null
-        detailsJob?.cancel()
+        previewJob?.cancel()
+        previewWantedIds.clear()
         loadJob?.cancel()
         _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, deleteFailure = null, deleteFailedSessionID = null, deleteFailureKey = null, renameFailure = null, renameFailedSessionID = null, renameFailedTitle = null, renameFailureKey = null, hasMoreSessions = false, loadingMore = false, filterDirectory = directory)
 
@@ -225,84 +243,153 @@ class SessionListViewModel(
     }
 
     /**
-     * Fills [SessionListUiState.details] (Phase 2, finding 21).
+     * Refreshes [SessionListUiState.details] (Phase 2, finding 21).
      *
      * The list endpoint returns no transcript, so the preview comes from the
      * messages endpoint and the model/outcome from the [SessionInfo] already
      * in hand — no extra call for those two. The preview is the session's
      * first user message; that is the oldest entry, so the walk follows
-     * the page cursor toward the oldest page (19-F2): the old code fetched
-     * the whole history in one unbounded call and assumed "no limit" meant
-     * "everything", which breaks the moment the engine paginates. Each
-     * page is bounded (50 messages) and only the candidate preview is
-     * kept, so a long session no longer loads its whole transcript into
-     * memory to find one line. What is cheap is not fetching twice
-     * (Fase 2, 19-F1): a preview already loaded is immutable — the first
-     * message never changes — so it is kept across reloads and only its
-     * model/status refresh from the fresh list info, with no network call.
-     * Sessions without a preview (new, empty, or failed before) are still
-     * looked up. Lookups run sequentially in the background and publish
-     * incrementally, so rows fill in as their data lands. A failed lookup
-     * leaves that session's model/status in place with no preview rather
-     * than failing the whole list — and a session whose history is
-     * genuinely empty has no preview at all, which the row already handles.
+     * the page cursor toward the oldest page (19-F2).
+     *
+     * Audit-200 C5 (M-089): the old code walked every session's whole
+     * history eagerly, one after another, before the list was usable — a
+     * long session stalled every row behind it, and a null preview
+     * (empty or failed) was re-walked on every load. Now the refresh
+     * itself is free (model/status from the list info, no network), and
+     * the history walk is lazy: the first load seeds the first 20 ids,
+     * the screens add the rows they actually show (see
+     * [requestPreviews]), and one job walks them in small concurrent
+     * batches. A walk that completed is never repeated — a null preview
+     * then means the session is genuinely empty, not "not looked up
+     * yet" (see [SessionDetail.previewKnown]) — and a walk that failed
+     * mid-way stays wanted, so the next load retries it.
      */
     private fun loadDetails(infos: List<SessionInfo>, generation: Int) {
-        detailsJob?.cancel()
-        detailsJob = viewModelScope.launch {
-            val handle = api.handle() ?: return@launch
-            val filled = _state.value.details.toMutableMap()
-            for (info in infos) {
-                val modelLabel = info.model?.let { "${it.providerID}/${it.id}" }
-                val existing = filled[info.id]
-                if (existing?.preview != null) {
-                    filled[info.id] = existing.copy(model = modelLabel, status = info.outcome)
+        val filled = _state.value.details.toMutableMap()
+        for (info in infos) {
+            val modelLabel = info.model?.let { "${it.providerID}/${it.id}" }
+            val existing = filled[info.id]
+            filled[info.id] = SessionDetail(
+                preview = existing?.preview,
+                model = modelLabel,
+                status = info.outcome,
+                searchText = existing?.searchText,
+                previewKnown = existing?.previewKnown == true,
+            )
+        }
+        _state.value = _state.value.copy(details = filled.toMap())
+        // Seed the first screenful: the drawer shows at most 20 rows,
+        // and History's first rows are the same ids — visible reporting
+        // (requestPreviews) covers everything below the fold.
+        val wanted = infos.take(PREVIEW_SEED_COUNT)
+            .map { it.id }
+            .filter { filled[it]?.previewKnown != true }
+        previewWantedIds.addAll(wanted)
+        startPreviewJob()
+    }
+
+    /**
+     * Asks for previews for [ids] (audit-200 C5, M-089): the screens
+     * report the rows actually visible, so a session below the fold is
+     * never walked until the user scrolls to it. Ids already known are
+     * skipped; the rest join the queue and the preview job starts when
+     * it is not already running.
+     */
+    fun requestPreviews(ids: List<String>) {
+        val details = _state.value.details
+        val wanted = ids.filter { details[it]?.previewKnown != true }
+        if (wanted.isEmpty()) return
+        if (previewWantedIds.addAll(wanted)) startPreviewJob()
+    }
+
+    /**
+     * Walks the wanted previews in batches (audit-200 C5, M-089): up to
+     * [PREVIEW_BATCH_SIZE] walks at once, publishing each batch as it
+     * lands, until the queue is empty or a newer load replaces the list
+     * (the generation check). A single job owns the queue — a second
+     * start while it runs is a no-op — and the loading flag belongs to
+     * that job: the finally block only clears it when no newer job took
+     * over, so a cancelled job cannot hide a running one.
+     */
+    private fun startPreviewJob() {
+        if (previewWantedIds.isEmpty()) {
+            _state.value = _state.value.copy(detailsLoading = false)
+            return
+        }
+        if (previewJob?.isActive == true) return
+        val generation = loadGeneration
+        previewJob = viewModelScope.launch {
+            val self = coroutineContext[Job]!!
+            _state.value = _state.value.copy(detailsLoading = true)
+            try {
+                while (previewWantedIds.isNotEmpty()) {
+                    if (generation != loadGeneration) return@launch
+                    val handle = api.handle() ?: return@launch
+                    val batch = previewWantedIds.take(PREVIEW_BATCH_SIZE)
+                    val results = batch.map { id ->
+                        async { id to fetchFirstUserPreview(handle, id, generation) }
+                    }.awaitAll()
+                    if (generation != loadGeneration) return@launch
+                    val filled = _state.value.details.toMutableMap()
+                    for ((id, lookup) in results) {
+                        previewWantedIds.remove(id)
+                        val existing = filled[id]
+                        filled[id] = SessionDetail(
+                            preview = lookup.preview,
+                            model = existing?.model,
+                            status = existing?.status,
+                            searchText = lookup.searchText,
+                            previewKnown = lookup.complete,
+                        )
+                    }
                     _state.value = _state.value.copy(details = filled.toMap())
-                    continue
                 }
-                val preview = fetchFirstUserPreview(handle, info.id, generation)
-                filled[info.id] = SessionDetail(
-                    preview = preview,
-                    model = modelLabel,
-                    status = info.outcome,
-                )
-                // A newer load replaced the rows while this lookup was in
-                // flight: its previews belong to the old list (item 26).
-                if (generation != loadGeneration) return@launch
-                _state.value = _state.value.copy(details = filled.toMap())
+            } finally {
+                if (previewJob === self) {
+                    _state.value = _state.value.copy(detailsLoading = false)
+                }
             }
         }
     }
 
     /**
      * The session's first user message, found by walking the message
-     * pages newest-first (19-F2/80-F7).
+     * pages newest-first (19-F2/80-F7), plus the searchable text the
+     * walk passed and whether the walk completed (audit-200 C5,
+     * M-089/M-097).
      *
      * Each page's oldest user message overwrites the candidate, so after
      * the last page the candidate is the first user message of the whole
      * history — the page walk never holds more than one page in memory.
      * A repeated cursor (an engine that loops) ends the walk instead of
-     * spinning; a failed page keeps whatever was found so far.
+     * spinning; a failed page keeps whatever was found so far and
+     * reports the walk incomplete, so the next load retries it. One very
+     * long session still walks its whole history when it becomes visible
+     * — the engine has no first-message endpoint or oldest-first paging —
+     * but the walk is bounded to visible rows, runs in parallel with the
+     * others, and never re-walks a proven-empty session.
      */
     private suspend fun fetchFirstUserPreview(
         handle: EngineApi.Handle,
         sessionID: String,
         generation: Int,
-    ): String? {
+    ): PreviewLookup {
         var cursor: String? = null
         var candidate: String? = null
+        var searchText: String? = null
         val seenCursors = mutableSetOf<String>()
         while (true) {
-            if (generation != loadGeneration) return candidate
+            if (generation != loadGeneration) return PreviewLookup(candidate, searchText, complete = false)
             when (val page = handle.sessions.messagesPage(sessionID, limit = PREVIEW_PAGE_SIZE, cursor = cursor)) {
                 is ApiResult.Success -> {
                     candidate = updatePreviewCandidate(candidate, page.value.data)
+                    searchText = accumulateSearchText(searchText, page.value.data)
                     val next = page.value.cursor?.next
-                    if (next == null || next in seenCursors) return candidate
+                    if (next == null || next in seenCursors) return PreviewLookup(candidate, searchText, complete = true)
                     seenCursors += next
                     cursor = next
                 }
-                is ApiResult.Failure -> return candidate
+                is ApiResult.Failure -> return PreviewLookup(candidate, searchText, complete = false)
             }
         }
     }
@@ -525,6 +612,46 @@ internal fun updatePreviewCandidate(
     page.reversed().firstOrNull { it.isUser }
         ?.text?.trim()?.takeIf { it.isNotEmpty() }
         ?: candidate
+
+/** How much user-message text a session's search entry keeps (audit-200 C5, M-097): enough to match on, never the whole transcript. */
+internal const val SEARCH_TEXT_MAX_CHARS = 8192
+
+/** How many preview walks run at once (audit-200 C5, M-089). */
+internal const val PREVIEW_BATCH_SIZE = 4
+
+/** How many sessions the first load seeds previews for (audit-200 C5, M-089): the drawer shows at most 20 rows. */
+internal const val PREVIEW_SEED_COUNT = 20
+
+/**
+ * What one preview walk found (audit-200 C5, M-089/M-097): the first
+ * user message, the capped searchable text of every user message the
+ * walk passed, and whether the walk reached the oldest page.
+ */
+internal data class PreviewLookup(
+    val preview: String?,
+    val searchText: String?,
+    val complete: Boolean,
+)
+
+/**
+ * Appends a page's user messages to the searchable text, in visit
+ * order (audit-200 C5, M-097). Blank messages add nothing; once the
+ * text reaches [SEARCH_TEXT_MAX_CHARS] it stops growing — the walk
+ * still continues for the preview candidate. Pure, so the cap and the
+ * order are unit-tested here rather than through a walk.
+ */
+internal fun accumulateSearchText(
+    current: String?,
+    page: List<dev.bidzz.opencode.core.api.dto.SessionMessage>,
+): String? {
+    if (current != null && current.length >= SEARCH_TEXT_MAX_CHARS) return current
+    val joined = page.filter { it.isUser }
+        .mapNotNull { it.text?.trim()?.takeIf { text -> text.isNotEmpty() } }
+        .joinToString("\n")
+    if (joined.isEmpty()) return current
+    val combined = if (current.isNullOrEmpty()) joined else "$current\n$joined"
+    return combined.take(SEARCH_TEXT_MAX_CHARS)
+}
 
 private fun SessionInfo.toRow(isPinned: Boolean = false): SessionRow {
     val ts = time?.updated ?: time?.created

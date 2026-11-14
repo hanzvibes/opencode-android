@@ -991,6 +991,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 onDismissRenameFailure = sessionViewModel::clearRenameFailure,
                                 onDismissLoadFailure = sessionViewModel::clearLoadFailure,
                                 onLoadMore = sessionViewModel::loadMore,
+                                // Audit-200 C5 (M-089): the pane reports
+                                // the rows actually visible, so previews
+                                // are walked lazily instead of eagerly.
+                                onVisibleSessions = sessionViewModel::requestPreviews,
                                 // Shared-element pilot: NO flight here. This pane
                                 // and the detail chat beside it are composed at
                                 // the same time, so the same session title would
@@ -1085,6 +1089,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                             onDismissRenameFailure = sessionViewModel::clearRenameFailure,
                             onDismissLoadFailure = sessionViewModel::clearLoadFailure,
                             onLoadMore = sessionViewModel::loadMore,
+                            // Audit-200 C5 (M-089): History reports the
+                            // rows actually visible, so previews are
+                            // walked lazily instead of eagerly.
+                            onVisibleSessions = sessionViewModel::requestPreviews,
                             // Shared-element pilot: the full-screen list is the
                             // origin side of the session-title flight.
                             sharedTransitionScope = sharedTransitionScope,
@@ -1400,8 +1408,16 @@ private fun ChatDestination(
         sessionsFailureKey = sessionsState.failureKey,
         onOpenSession = chatViewModel::openSession,
         onDrawerOpen = { sessionViewModel.load(sessionScopeToProject) },
+        // Audit-200 C5 (M-089): the drawer reports the rows actually
+        // visible, so previews are walked lazily instead of eagerly.
+        onVisibleSessions = sessionViewModel::requestPreviews,
         onDraftChange = chatViewModel::onDraftChange,
         onSend = chatViewModel::send,
+        onFollowUpPick = chatViewModel::sendFollowUp,
+        onFindQuery = chatViewModel::setFindQuery,
+        onFindNext = chatViewModel::findNext,
+        onFindPrevious = chatViewModel::findPrevious,
+        onClearFind = chatViewModel::clearFind,
         onStop = chatViewModel::stop,
         onPermissionReply = chatViewModel::replyPermission,
         onAgent = chatViewModel::selectAgent,
@@ -1411,7 +1427,11 @@ private fun ChatDestination(
         onLoadBranches = chatViewModel::loadBranches,
         // Turn diff (Tier 2): only while a session is open — without one
         // there is no latest turn to diff, and the dialog hides the entry.
-        onTurnDiff = if (chatState.sessionID != null) { { onNavigate(Screen.SessionDiff) } } else null,
+        // Audit-200 C5 (M-103): not while the turn is still running
+        // either — a live turn's diff would compare against the working
+        // copy with no provisional label, so the entry hides until the
+        // run ends, the same treatment Compact already gets.
+        onTurnDiff = if (chatState.sessionID != null && !chatState.busy) { { onNavigate(Screen.SessionDiff) } } else null,
         onDismissError = chatViewModel::dismissError,
         onRetryError = chatViewModel::retryError,
         onLoadEarlier = chatViewModel::loadEarlier,

@@ -176,6 +176,7 @@ import dev.bidzz.opencode.ui.sessionTitleSharedKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.isActive
 import kotlin.math.roundToLong
@@ -203,6 +204,15 @@ fun ChatScreen(
     sessionsFailureKey: Int? = null,
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
+    /** Sends a follow-up chip's text (audit-200 C5, M-087/M-088):
+     * the view model sends it directly — never through the draft —
+     * and drops the tap while a send is still being admitted. */
+    onFollowUpPick: (String) -> Unit = {},
+    /** Find in chat (audit-200 C5, M-100): query, step, clear. */
+    onFindQuery: (String) -> Unit = {},
+    onFindNext: () -> Unit = {},
+    onFindPrevious: () -> Unit = {},
+    onClearFind: () -> Unit = {},
     onStop: () -> Unit,
     onPermissionReply: (String) -> Unit,
     onAgent: (String) -> Unit,
@@ -216,6 +226,10 @@ fun ChatScreen(
     onLoadBranches: () -> Unit = {},
     onOpenSession: (String) -> Unit,
     onDrawerOpen: () -> Unit,
+    /** The drawer rows currently visible (audit-200 C5, M-089): the
+     * view model walks previews lazily, so the drawer reports which
+     * sessions are actually on screen. */
+    onVisibleSessions: (List<String>) -> Unit = {},
     onSessionsClick: () -> Unit,
     onProjectClick: () -> Unit,
     onFilesClick: () -> Unit,
@@ -386,6 +400,23 @@ fun ChatScreen(
     // Sidebar search query, hoisted so switching between the modal
     // drawer and the persistent sidebar does not clear what was typed.
     var sidebarQuery by rememberSaveable { mutableStateOf("") }
+
+    // Find in chat (audit-200 C5, M-100): whether the find bar under
+    // the header is open. The query itself lives in the view model
+    // ([ChatUiState.findQuery]), so a rotation keeps the matches.
+    var findActive by rememberSaveable { mutableStateOf(false) }
+
+    // When the current match changes, scroll it into view. The list
+    // has one extra leading item while older messages are still above
+    // (same +1 as the first-unread scroll below).
+    val currentFindMatchId = state.findMatches.getOrNull(state.findIndex)
+    LaunchedEffect(currentFindMatchId) {
+        val id = currentFindMatchId ?: return@LaunchedEffect
+        val index = state.messages.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            listState.scrollToItem(index + if (state.hasMoreOlder) 1 else 0)
+        }
+    }
 
     // Follow the conversation as it grows, but only while the reader is already at the bottom,
     // so scrolling up during a stream is not yanked back down.
@@ -1218,6 +1249,7 @@ fun ChatScreen(
                 },
                 onStatusClick = onStatusClick,
                 onNewSession = onNewSession,
+                onFindClick = { findActive = true },
                 onTurnDiff = onTurnDiff,
                 // Compact + whole-session fork (mockup group 2): the
                 // status dialog is where the context meter lives, so the
@@ -1234,6 +1266,78 @@ fun ChatScreen(
                 vcsDetailsFailed = state.vcsDetailsFailed,
                 onLoadBranches = onLoadBranches,
             )
+
+            // Find in chat (audit-200 C5, M-100): a bar under the
+            // header — query, match count, previous/next, close — plus
+            // the loaded-only note when older pages are still above.
+            // The bar searches only the messages already loaded; older
+            // pages stay unsearched until "Load earlier" brings them in.
+            if (findActive) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.background)
+                        .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SearchField(
+                            query = state.findQuery,
+                            onQueryChange = onFindQuery,
+                            placeholder = stringResource(R.string.chat_find_hint),
+                            imeAction = ImeAction.Search,
+                            modifier = Modifier.weight(1f),
+                        )
+                        val hasMatches = state.findMatches.isNotEmpty()
+                        Text(
+                            text = if (hasMatches) {
+                                stringResource(
+                                    R.string.chat_find_count,
+                                    state.findIndex + 1,
+                                    state.findMatches.size,
+                                )
+                            } else if (state.findQuery.isNotBlank()) {
+                                stringResource(R.string.chat_find_no_results)
+                            } else {
+                                ""
+                            },
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceFaint,
+                            modifier = Modifier.padding(horizontal = spacing.xs),
+                        )
+                        IconAction(
+                            glyph = Glyph.ArrowUp,
+                            description = stringResource(R.string.chat_find_previous),
+                            onClick = onFindPrevious,
+                            enabled = hasMatches,
+                        )
+                        IconAction(
+                            glyph = Glyph.ArrowDown,
+                            description = stringResource(R.string.chat_find_next),
+                            onClick = onFindNext,
+                            enabled = hasMatches,
+                        )
+                        IconAction(
+                            glyph = Glyph.Close,
+                            description = stringResource(R.string.chat_find_close),
+                            onClick = {
+                                findActive = false
+                                onClearFind()
+                            },
+                        )
+                    }
+                    if (state.hasMoreOlder) {
+                        Text(
+                            text = stringResource(R.string.chat_find_loaded_only),
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceFaint,
+                            modifier = Modifier.padding(horizontal = spacing.xs),
+                        )
+                    }
+                }
+            }
 
             if (showCompactDialog) {
                 // Compact is destructive in one direction: the transcript
@@ -1536,6 +1640,16 @@ fun ChatScreen(
                                         MessageBubble(
                                             role = message.role,
                                             markdown = message.text,
+                                            // Audit-200 C5 (M-100): the
+                                            // current find match gets a
+                                            // soft accent wash over the
+                                            // whole turn, so the reader
+                                            // can spot it at a glance.
+                                            modifier = if (state.findMatches.getOrNull(state.findIndex) == message.id) {
+                                                Modifier.background(colors.accent.copy(alpha = 0.10f))
+                                            } else {
+                                                Modifier
+                                            },
                                             streaming = message.streaming,
                                             tools = message.tools,
                                             provenance = provenanceLabel(
@@ -1975,10 +2089,16 @@ fun ChatScreen(
                     // over an error or a pending permission, never while the
                     // user is typing or editing (a tap sends immediately,
                     // so it must not overwrite a draft in progress). A tap
-                    // sends through the same chain as the composer, and the
-                    // chips vanish with the send because the run goes busy.
+                    // sends the chip's text directly through the view
+                    // model (audit-200 C5, M-087/M-088) — never through
+                    // the draft, so pending attachments ride with it and
+                    // a second fast tap is dropped instead of queued —
+                    // and the chips vanish with the send because the run
+                    // goes busy. `sending` is in the gate too: the
+                    // optimistic bubble is up while the admit is still
+                    // in flight, and a tap then would queue behind it.
                     val lastMessage = state.messages.lastOrNull()
-                    val showFollowUps = !state.busy && !state.stopping &&
+                    val showFollowUps = !state.busy && !state.stopping && !state.sending &&
                         state.failure == null && state.pendingPermission == null &&
                         state.editingMessageId == null && state.draft.isBlank() &&
                         lastMessage?.role == Role.ASSISTANT &&
@@ -1989,10 +2109,7 @@ fun ChatScreen(
                     if (showFollowUps && followUpRes.isNotEmpty()) {
                         FollowUpChips(
                             suggestions = followUpRes,
-                            onPick = { text ->
-                                onDraftChange(text)
-                                submitFromComposer()
-                            },
+                            onPick = { text -> onFollowUpPick(text) },
                         )
                     }
 
@@ -2196,6 +2313,7 @@ fun ChatScreen(
                         busy = busy,
                         sidebarQuery = sidebarQuery,
                         onSidebarQueryChange = { sidebarQuery = it },
+                        onVisibleSessions = onVisibleSessions,
                         // No close-then-open here: there is no drawer to close,
                         // and selecting a session opens it in the detail pane
                         // beside the sidebar without a screen switch.
@@ -2243,6 +2361,7 @@ fun ChatScreen(
                         busy = busy,
                         sidebarQuery = sidebarQuery,
                         onSidebarQueryChange = { sidebarQuery = it },
+                        onVisibleSessions = onVisibleSessions,
                         onNewSession = { closeThen(onNewSession) },
                         onOpenSession = { id -> closeThen { onOpenSession(id) } },
                         onAllSessions = { closeThen(onSessionsClick) },
@@ -2644,6 +2763,8 @@ fun ChatHeader(
     onMenu: () -> Unit,
     onStatusClick: () -> Unit,
     onNewSession: () -> Unit,
+    /** Find in chat (audit-200 C5, M-100): opens the find bar. */
+    onFindClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     /** Hidden at expanded widths, where the sidebar is persistent. */
     showMenuButton: Boolean = true,
@@ -2851,6 +2972,12 @@ fun ChatHeader(
                             .background(statusDotColor(colors, status), CircleShape),
                     )
                 }
+
+                IconAction(
+                    glyph = Glyph.Search,
+                    description = stringResource(R.string.chat_find),
+                    onClick = onFindClick,
+                )
 
                 IconAction(
                     glyph = Glyph.NewChat,
@@ -3382,6 +3509,8 @@ private fun ChatDrawer(
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
     onCloseDrawer: () -> Unit,
+    /** The drawer rows currently visible (audit-200 C5, M-089). */
+    onVisibleSessions: (List<String>) -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
@@ -3423,6 +3552,7 @@ private fun ChatDrawer(
                 onRenameSession = onRenameSession,
                 onDeleteSession = onDeleteSession,
                 onTogglePinSession = onTogglePinSession,
+                onVisibleSessions = onVisibleSessions,
             )
         }
     }
@@ -3473,6 +3603,8 @@ private fun ChatDrawerContent(
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
+    /** The drawer rows currently visible (audit-200 C5, M-089). */
+    onVisibleSessions: (List<String>) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -3619,6 +3751,22 @@ private fun ChatDrawerContent(
     }
     val drawerSessions = remember(filteredSessions) { filteredSessions.take(DRAWER_SESSIONS) }
     val groupedSessions = remember(drawerSessions) { groupSessions(drawerSessions) }
+    // Audit-200 C5 (M-089): previews are walked lazily, so the drawer
+    // reports the rows actually visible — debounced, so a fast scroll
+    // does not spam the view model, and header keys never reach it
+    // (only row ids are session ids). The first 20 are already seeded
+    // by the list load, so this mostly covers a searched drawer.
+    val drawerListState = rememberLazyListState()
+    LaunchedEffect(drawerListState, groupedSessions) {
+        snapshotFlow { drawerListState.layoutInfo.visibleItemsInfo.map { it.key } }
+            .debounce(200)
+            .collect { keys ->
+                onVisibleSessions(
+                    keys.filterIsInstance<String>()
+                        .filter { !it.startsWith("header_") },
+                )
+            }
+    }
 
     if (filteredSessions.isEmpty()) {
         // Mini empty state, pinned to the top of the list area: the old
@@ -3689,6 +3837,7 @@ private fun ChatDrawerContent(
         }
     } else {
         LazyColumn(
+            state = drawerListState,
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(vertical = spacing.xxs),
         ) {
@@ -3882,6 +4031,8 @@ private fun ChatSidebar(
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
     onToggleCollapse: () -> Unit,
+    /** The drawer rows currently visible (audit-200 C5, M-089). */
+    onVisibleSessions: (List<String>) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
@@ -3921,6 +4072,7 @@ private fun ChatSidebar(
             onRenameSession = onRenameSession,
             onDeleteSession = onDeleteSession,
             onTogglePinSession = onTogglePinSession,
+            onVisibleSessions = onVisibleSessions,
             modifier = Modifier.fillMaxSize(),
         )
         Box(

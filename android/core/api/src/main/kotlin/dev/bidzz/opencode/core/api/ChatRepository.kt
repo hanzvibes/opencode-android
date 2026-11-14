@@ -727,6 +727,22 @@ class ChatRepository(
     suspend fun send(text: String, skills: List<PromptSkillAttachment>? = null): ApiResult<Unit> {
         val id = sessionID ?: return ApiResult.Failure(code = -1, tag = "NoSession")
         val result = sessionApi.prompt(id, text, skills)
+        // Audit-200 C5 (M-091): the user may have switched sessions
+        // while the prompt was in flight — the repository's sessionID
+        // is the NEW session now, and writing this send's message,
+        // busy or failure into it would put session A's prompt in
+        // session B's transcript. The prompt DID land in the old
+        // session (the engine accepted it), so the result is returned
+        // as-is; only the state writes — including the run bookkeeping
+        // above — are skipped. The client-side guard in
+        // ChatViewModel.sendNowInner already revalidates after the
+        // await; this is the repository half it could not cover.
+        if (sessionID != id) {
+            return when (result) {
+                is ApiResult.Success -> ApiResult.Success(Unit)
+                is ApiResult.Failure -> result
+            }
+        }
         if (result is ApiResult.Success) {
             // A new run starts: late text events are live again (M-558),
             // the terminal retry loop must stand down (M-375), and asks

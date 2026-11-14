@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.diff
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -33,6 +34,12 @@ fun SessionDiffScreen(
     onRetry: () -> Unit = {},
 ) {
     val selected = state.selected
+    // Audit-200 C5 (M-102): system Back from a file view used to jump
+    // straight to Chat, skipping the diff list — the file view's own
+    // back button closed the file, but the gesture did not. The
+    // handler is only enabled while a file is open, so Back from the
+    // list still leaves the screen as before.
+    BackHandler(enabled = selected != null) { onCloseFile() }
     if (selected != null) {
         DiffScreen(state = selected, onBack = onCloseFile)
         return

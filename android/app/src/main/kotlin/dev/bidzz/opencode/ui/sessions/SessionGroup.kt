@@ -37,6 +37,23 @@ data class SessionDetail(
     val model: String? = null,
     /** Last known outcome, e.g. "succeeded" / "failed". */
     val status: String? = null,
+    /**
+     * Searchable text from the session's user messages (audit-200 C5,
+     * M-097): the preview alone is only the FIRST user message, so a
+     * search could not find a session by what the user asked later.
+     * The preview walk accumulates every user message it passes, in
+     * visit order, capped (see [accumulateSearchText]) — enough to
+     * match on, never the whole transcript. Null until the walk ran.
+     */
+    val searchText: String? = null,
+    /**
+     * True when the preview walk COMPLETED for this session (audit-200
+     * C5, M-089): the walk reached the oldest page, so a null preview
+     * means the session is genuinely empty — not "not looked up yet".
+     * A walk that failed mid-way leaves this false, so the next load
+     * retries it. Only a completed walk is cached as known.
+     */
+    val previewKnown: Boolean = false,
 )
 
 /**
@@ -60,6 +77,10 @@ fun matchesSessionQuery(query: String, row: SessionRow, detail: SessionDetail? =
     val needle = query.trim()
     return row.title.contains(needle, ignoreCase = true)
         || detail?.preview?.contains(needle, ignoreCase = true) == true
+        // Audit-200 C5 (M-097): the preview is only the first user
+        // message — the capped text of every user message the preview
+        // walk passed is what makes a session findable by a later ask.
+        || detail?.searchText?.contains(needle, ignoreCase = true) == true
         || detail?.model?.contains(needle, ignoreCase = true) == true
         || statusSearchTerms(detail?.status).any { it.contains(needle, ignoreCase = true) }
         || row.directory?.contains(needle, ignoreCase = true) == true

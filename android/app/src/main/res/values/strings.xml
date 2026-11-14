@@ -263,6 +263,14 @@
     <!-- Chat -->
     <string name="chat_menu">Menu</string>
     <string name="chat_new_session">New session</string>
+    <string name="chat_find">Find in chat</string>
+    <string name="chat_find_hint">Find in this conversation</string>
+    <string name="chat_find_count">%1$d/%2$d</string>
+    <string name="chat_find_no_results">No results</string>
+    <string name="chat_find_loaded_only">Searches loaded messages only — load earlier messages to search further back.</string>
+    <string name="chat_find_next">Next match</string>
+    <string name="chat_find_previous">Previous match</string>
+    <string name="chat_find_close">Close find</string>
     <string name="chat_jump_latest">Jump to latest message</string>
     <string name="chat_jump_latest_unread">Jump to latest message, %1$d unread</string>
     <string name="chat_new_messages">New messages</string>
@@ -723,6 +731,8 @@
     <string name="history_search_hint">Search sessions</string>
     <string name="history_search_no_results">No sessions match "%1$s"</string>
     <string name="history_showing">Showing %1$d of %2$d</string>
+    <string name="history_showing_search">%1$d results · %2$d sessions loaded</string>
+    <string name="history_search_loaded_only">Search covers loaded sessions only — load more to search further back.</string>
     <string name="history_showing_more">Showing %1$d of %2$d+ loaded</string>
     <string name="history_load_more">Load more sessions</string>
     <string name="history_previews_loading">Previews still loading — search results may grow.</string>

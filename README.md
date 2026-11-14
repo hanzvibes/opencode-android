@@ -50,7 +50,7 @@ on `127.0.0.1`, and the only network traffic is the call to the model provider *
 | **Files and diffs** | Browse the project, read and edit files with syntax highlighting, quick-open and find-in-file, and review real `git` diffs with A/M/D badges. |
 | **Search that works** | `git` and `ripgrep` are bundled, so the agent's `grep` and `glob` tools function. |
 | **Agent runtime guide** | Every project gets an `AGENTS.md` seeded into the workspace on first launch, so the agent knows the bundled tools (Node, npm, xz, tar, curl) and their limits. Your edits are never overwritten. |
-| **Session history** | Reopen any past conversation, for this project or all of them, with previews and transcript search. Each row shows its cost and token usage. |
+| **Session history** | Reopen any past conversation, for this project or all of them, with previews and search across titles, first messages and the capped text of later user messages. Each row shows its cost and token usage. The open conversation itself has find-in-chat for the messages already loaded. |
 | **MCP servers** | See the engine's configured MCP servers and their connection status in Settings. Connecting, disconnecting, adding and removing are not available yet. |
 | **Plugins** | See the engine's enabled server plugins and their status in Settings. Checking for updates and updating are not available yet. |
 | **Worktrees** | See the engine's saved worktrees grouped by project in Settings. Creating, removing and refreshing are not available yet. |
