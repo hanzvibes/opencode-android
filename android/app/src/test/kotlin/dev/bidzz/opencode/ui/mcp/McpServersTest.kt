@@ -38,4 +38,56 @@ class McpServersTest {
         assertEquals(McpStatusKind.UNKNOWN, server("warming-up").statusKind())
         assertEquals(McpStatusKind.UNKNOWN, server("").statusKind())
     }
+
+    // mcpServerNamed (audit-200 A9-1, DL-014) ----------------------------
+
+    @Test
+    fun `mcpServerNamed finds an exact name match`() {
+        val servers = listOf(server("connected"), McpServer("docs", McpStatus("disabled")))
+
+        assertEquals("docs", mcpServerNamed(servers, "docs")?.name)
+    }
+
+    @Test
+    fun `mcpServerNamed returns null for a missing or differently-cased name`() {
+        val servers = listOf(McpServer("docs", McpStatus("connected")))
+
+        assertEquals(null, mcpServerNamed(servers, "other"))
+        assertEquals(null, mcpServerNamed(servers, "Docs"))
+        assertEquals(null, mcpServerNamed(emptyList(), "docs"))
+    }
+
+    // RuntimeAddedServers (audit-200 A9-1, DL-015) -----------------------
+
+    @Test
+    fun `a runtime-added server is runtime-only, a config server is not`() {
+        val added = RuntimeAddedServers()
+        added.added("tmp")
+
+        assertEquals(true, added.isRuntimeOnly("tmp"))
+        assertEquals(false, added.isRuntimeOnly("docs"))
+    }
+
+    @Test
+    fun `retainListed drops names the engine no longer lists`() {
+        val added = RuntimeAddedServers()
+        added.added("tmp")
+        added.added("gone")
+
+        added.retainListed(listOf("tmp", "docs"))
+
+        assertEquals(true, added.isRuntimeOnly("tmp"))
+        assertEquals(false, added.isRuntimeOnly("gone"))
+    }
+
+    @Test
+    fun `a name can be added again after it was pruned`() {
+        val added = RuntimeAddedServers()
+        added.added("tmp")
+        added.retainListed(emptyList())
+        assertEquals(false, added.isRuntimeOnly("tmp"))
+
+        added.added("tmp")
+        assertEquals(true, added.isRuntimeOnly("tmp"))
+    }
 }

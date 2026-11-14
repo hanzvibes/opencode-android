@@ -37,6 +37,40 @@ data class McpServersUiState(
 enum class McpStatusKind { CONNECTED, DISABLED, FAILED, NEEDS_AUTH, PENDING, UNKNOWN }
 
 /**
+ * The server in [servers] with exactly this name, or null (audit-200
+ * A9-1, DL-014): adding replaces an existing server with the same name,
+ * so the form must warn first. The match is exact — the engine takes
+ * the name as a path segment, and a differently-cased name is a
+ * different server.
+ */
+internal fun mcpServerNamed(servers: List<McpServer>, name: String): McpServer? =
+    servers.firstOrNull { it.name == name }
+
+/**
+ * Names added at runtime in this session (audit-200 A9-1, DL-015).
+ *
+ * The engine's list carries no source flag, so the app tracks what it
+ * added itself: those servers live in no config file, and removing one
+ * deletes it for good — unlike a config server, which comes back after
+ * a restart. [retainListed] drops names the engine no longer lists (a
+ * restart already took them), so a later config server with the same
+ * name is not misread as runtime-only.
+ */
+internal class RuntimeAddedServers {
+    private val names = mutableSetOf<String>()
+
+    fun added(name: String) {
+        names += name
+    }
+
+    fun isRuntimeOnly(name: String): Boolean = name in names
+
+    fun retainListed(listed: List<String>) {
+        names.retainAll(listed.toSet())
+    }
+}
+
+/**
  * Maps the engine's status string to a kind.
  *
  * Compared case-insensitively, so both `connected` and `Connected` read
@@ -72,6 +106,12 @@ class McpServersViewModel(
     private val _state = MutableStateFlow(McpServersUiState())
     val state: StateFlow<McpServersUiState> = _state.asStateFlow()
 
+    /** Servers this session added at runtime — see [RuntimeAddedServers]. */
+    private val runtimeAdded = RuntimeAddedServers()
+
+    /** True when [name] was added at runtime and lives in no config file (DL-015). */
+    fun isRuntimeOnly(name: String): Boolean = runtimeAdded.isRuntimeOnly(name)
+
     fun refresh() {
         load(showLoading = true)
     }
@@ -98,6 +138,7 @@ class McpServersViewModel(
         viewModelScope.launch {
             when (val result = handle.mcp.list()) {
                 is ApiResult.Success -> {
+                    runtimeAdded.retainListed(result.value.map { it.name })
                     _state.value = _state.value.copy(
                         servers = result.value.sortedBy { it.name.lowercase() },
                         loading = false,
@@ -125,6 +166,7 @@ class McpServersViewModel(
         viewModelScope.launch {
             when (val result = handle.mcp.add(name, config)) {
                 is ApiResult.Success -> {
+                    runtimeAdded.added(name)
                     _state.value = _state.value.copy(adding = false)
                     load(showLoading = false)
                 }
