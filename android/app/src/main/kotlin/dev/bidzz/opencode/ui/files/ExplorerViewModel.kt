@@ -388,6 +388,13 @@ class FileViewViewModel(
      * then lives only in [FileViewState], as before).
      */
     private val savedStateHandle: SavedStateHandle? = null,
+    /**
+     * Where the unsaved draft lives on disk (audit-200 A9-3, DL-033).
+     * Defaults to in-memory, which is what unit tests get; the app passes
+     * the SharedPreferences-backed store so a swipe or force-stop — which
+     * clears the handle — still finds the draft.
+     */
+    private val fileDraftStore: FileDraftStore = InMemoryFileDraftStore(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FileViewState())
@@ -399,12 +406,21 @@ class FileViewViewModel(
      * next loaded successfully — the content is re-read from the engine,
      * only the draft is restored — and dropped when another file is opened.
      */
+    // Audit-200 A9-3 (DL-033): the disk store is the fallback when the
+    // handle has nothing — a swipe or force-stop clears the handle, so
+    // the disk copy is the only one left. The handle wins per field when
+    // both have it: it is written at the same moment, and a death between
+    // the two writes leaves the handle fresher, never staler.
+    private val diskDraft: FileDraft? = fileDraftStore.get()
     private var restoredPath: String? = savedStateHandle?.get<String>(FILE_DRAFT_PATH_KEY)
+        ?: diskDraft?.path
     private var restoredDraft: String? = savedStateHandle?.get<String>(FILE_DRAFT_TEXT_KEY)
+        ?: diskDraft?.text
     private var restoredEditing: Boolean =
-        savedStateHandle?.get<Boolean>(FILE_DRAFT_EDITING_KEY) ?: false
+        savedStateHandle?.get<Boolean>(FILE_DRAFT_EDITING_KEY) ?: diskDraft?.editing ?: false
     /** SHA-256 of the content the restored draft was based on (89-F3). */
     private var restoredBasisHash: String? = savedStateHandle?.get<String>(FILE_DRAFT_BASE_KEY)
+        ?: diskDraft?.basisHash
 
     /**
      * Increments on every save start and every discard: a save whose generation
@@ -422,19 +438,36 @@ class FileViewViewModel(
      */
     private var saveJob: Job? = null
 
-    /** Writes the live draft into the handle, or clears it when not editing. */
+    /** Writes the live draft into the handle and onto disk, or clears both when not editing. */
     private fun persistDraft() {
-        val handle = savedStateHandle ?: return
         val s = _state.value
         if (s.editing) {
-            handle[FILE_DRAFT_PATH_KEY] = s.path
-            handle[FILE_DRAFT_TEXT_KEY] = s.draft
-            handle[FILE_DRAFT_EDITING_KEY] = true
-            // The content the draft was made against (89-F3). A draft restored
-            // on top of newer disk content keeps its original basis:
-            // recomputing it from the new content would launder the draft
-            // as fresh, and a later restore would apply it silently.
-            if (!s.draftStale) handle[FILE_DRAFT_BASE_KEY] = sha256Hex(s.content)
+            savedStateHandle?.let { handle ->
+                handle[FILE_DRAFT_PATH_KEY] = s.path
+                handle[FILE_DRAFT_TEXT_KEY] = s.draft
+                handle[FILE_DRAFT_EDITING_KEY] = true
+                // The content the draft was made against (89-F3). A draft restored
+                // on top of newer disk content keeps its original basis:
+                // recomputing it from the new content would launder the draft
+                // as fresh, and a later restore would apply it silently.
+                if (!s.draftStale) handle[FILE_DRAFT_BASE_KEY] = sha256Hex(s.content)
+            }
+            // Audit-200 A9-3 (DL-033): the same draft on disk, so a swipe
+            // or force-stop — which clears the handle — still finds it.
+            // A stale draft keeps its original basis, read back from the
+            // stored record for this file.
+            fileDraftStore.put(
+                FileDraft(
+                    path = s.path,
+                    text = s.draft,
+                    editing = true,
+                    basisHash = if (s.draftStale) {
+                        fileDraftStore.get()?.takeIf { it.path == s.path }?.basisHash
+                    } else {
+                        sha256Hex(s.content)
+                    },
+                ),
+            )
         } else {
             clearPersistedDraft()
         }
@@ -446,6 +479,7 @@ class FileViewViewModel(
         savedStateHandle?.remove<String>(FILE_DRAFT_TEXT_KEY)
         savedStateHandle?.remove<Boolean>(FILE_DRAFT_EDITING_KEY)
         savedStateHandle?.remove<String>(FILE_DRAFT_BASE_KEY)
+        fileDraftStore.clear()
         restoredPath = null
         restoredDraft = null
         restoredEditing = false

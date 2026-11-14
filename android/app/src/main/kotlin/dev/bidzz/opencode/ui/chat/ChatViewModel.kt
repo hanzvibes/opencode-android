@@ -23,6 +23,7 @@ import dev.bidzz.opencode.ui.engineDownFailure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.JsonArray
@@ -474,6 +475,13 @@ class ChatViewModel(
      * store so parked drafts survive process death (57-F1).
      */
     private val parkedStore: ParkedComposerStore = InMemoryParkedComposerStore(),
+    /**
+     * Called when the busy session changes (audit-200 A9-3, DL-029): the
+     * session id while a run is in flight, null when no run is going.
+     * The app persists it so a later engine start knows an orphan may
+     * still be working. Only called when the value changes.
+     */
+    private val onBusySessionChanged: (String?) -> Unit = {},
 ) : ViewModel() {
 
     /**
@@ -510,6 +518,9 @@ class ChatViewModel(
             pendingAttachments = restoredAttachments,
             lastSentText = restoredLastSent,
             sentPrompts = restoredSentPrompts,
+            // Audit-200 A9-3 (DL-034): an edit in progress survives a
+            // process death with its backup (see draftBeforeEdit above).
+            editingMessageId = savedStateHandle?.get<String>(EDITING_MESSAGE_KEY),
         ),
     )
     val state: StateFlow<ChatUiState> = _state.asStateFlow()
@@ -530,6 +541,16 @@ class ChatViewModel(
                 var lastAttachments: List<AttachedFile>? = null
                 var lastSent: String? = null
                 var lastHistory: List<String>? = null
+                // Audit-200 A9-3 (DL-010): the composer at launch — a draft
+                // restored from the handle is already parked (or has no park
+                // yet because the user typed it moments before the death),
+                // so the first emission must not re-park it under the wrong
+                // key while no session is attached yet.
+                var lastComposer = Triple(
+                    _state.value.draft,
+                    _state.value.pendingAttachments,
+                    _state.value.queuedPrompts,
+                )
                 _state.collect { state ->
                     if (state.queuedPrompts != lastQueue) {
                         lastQueue = state.queuedPrompts
@@ -563,6 +584,40 @@ class ChatViewModel(
                             handle[SENT_PROMPTS_KEY] = ArrayList(state.sentPrompts)
                         }
                     }
+                    // Audit-200 A9-3 (DL-010): the composer itself is
+                    // parked debounced on every change, so a swipe from
+                    // recents or a force-stop keeps the active session's
+                    // draft, queue and attachments — parking only on a
+                    // session switch lost all three. The park runs in the
+                    // store's commit(), so a death at any moment after
+                    // the pause finds it on disk. A trailing debounce,
+                    // not a write per keystroke: the handle above already
+                    // covers low-memory kills keystroke by keystroke, and
+                    // a commit per keystroke would jank typing.
+                    val composer = Triple(
+                        state.draft,
+                        state.pendingAttachments,
+                        state.queuedPrompts,
+                    )
+                    if (composer != lastComposer) {
+                        lastComposer = composer
+                        composerParkJob?.cancel()
+                        if (state.draft.isBlank() &&
+                            state.pendingAttachments.isEmpty() &&
+                            state.queuedPrompts.isEmpty()
+                        ) {
+                            // Empty at once: a sent or discarded draft must
+                            // not come back — a delayed park would leave the
+                            // stale entry until it fires, and a swipe in
+                            // that window would resurrect sent text.
+                            parkComposer()
+                        } else {
+                            composerParkJob = viewModelScope.launch {
+                                delay(COMPOSER_PARK_DEBOUNCE_MS)
+                                parkComposer()
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -570,6 +625,10 @@ class ChatViewModel(
 
     private var repository: ChatRepository? = null
     private var collector: Job? = null
+    /** The pending debounced composer park (audit-200 A9-3, DL-010). */
+    private var composerParkJob: Job? = null
+    /** Last busy session reported to [onBusySessionChanged] (DL-029): the callback fires only on change. */
+    private var lastReportedBusySession: String? = null
     /** In-flight context-usage load, cancelled when a newer one starts. */
     private var contextUsageJob: Job? = null
     /** Last wall-clock refresh of the context meter, for the 30s busy throttle (23-F3). */
@@ -603,10 +662,16 @@ class ChatViewModel(
     private var lastToolDurations: Map<String, Long> = emptyMap()
     private var lastToolStartedAt: Map<String, Long> = emptyMap()
 
-    /** Draft as it was before an edit loaded a message into the composer;
-     * cancelling the edit restores it. Not persisted: on process death the
-     * edit is abandoned and the draft stays as typed. */
-    private var draftBeforeEdit: String? = null
+    /**
+     * Draft as it was before an edit loaded a message into the composer;
+     * cancelling the edit restores it. Audit-200 A9-3 (DL-034): persisted
+     * now — in the saved-state handle (a low-memory kill restores it) and
+     * in the parked composer (a swipe or force-stop restores it through
+     * [restoreParkedComposer]). The old comment's "not persisted" was the
+     * bug: a process death mid-edit lost the original draft with no way
+     * back to it.
+     */
+    private var draftBeforeEdit: String? = savedStateHandle?.get<String>(DRAFT_BEFORE_EDIT_KEY)
 
     /**
      * Generation counter for the draft (13-F4): every change to the
@@ -660,13 +725,90 @@ class ChatViewModel(
         val draft = _state.value.draft
         val attachments = _state.value.pendingAttachments
         val queued = _state.value.queuedPrompts
-        if (draft.isNotBlank() || attachments.isNotEmpty() || queued.isNotEmpty()) {
-            parkedStore.put(id, ParkedComposer(draft, attachments, queued))
+        if (draft.isNotBlank() || attachments.isNotEmpty() || queued.isNotEmpty() ||
+            draftBeforeEdit != null
+        ) {
+            // Audit-200 A9-3 (DL-034): the edit in progress parks with its
+            // backup, so a death mid-edit still offers Cancel afterwards.
+            parkedStore.put(
+                id,
+                ParkedComposer(
+                    draft,
+                    attachments,
+                    queued,
+                    draftBeforeEdit = draftBeforeEdit,
+                    editingMessageId = _state.value.editingMessageId,
+                ),
+            )
             lastParkKey = id
         } else {
             parkedStore.remove(id)
             if (lastParkKey == id) lastParkKey = null
         }
+    }
+
+    /**
+     * Restores the parked composer for [sessionID] into the live composer
+     * (audit-200 A9-3, DL-035): draft, attachments, queue, and an edit in
+     * progress with its backup (DL-034). The entry is taken, so it cannot
+     * come back a second time, and an undecodable entry is reported
+     * instead of silently coming back empty (A5, DL-008). Returns the
+     * entry, or null when there was nothing parked.
+     *
+     * With [onlyIfComposerEmpty] the restore is skipped while the live
+     * composer holds anything: [onResume] restores from the saved-state
+     * handle first, and a parked copy there is older than the live text —
+     * applying it would overwrite newer typing. The entry is left in
+     * place then; the next park overwrites or removes it.
+     */
+    internal fun restoreParkedComposer(
+        sessionID: String,
+        onlyIfComposerEmpty: Boolean = false,
+    ): ParkedComposer? {
+        if (onlyIfComposerEmpty) {
+            val live = _state.value
+            if (live.draft.isNotBlank() || live.pendingAttachments.isNotEmpty() ||
+                live.queuedPrompts.isNotEmpty()
+            ) {
+                return null
+            }
+        }
+        val restored = takeParkedComposer(sessionID)
+        reportUnreadableParked(sessionID)
+        if (restored != null) {
+            draftBeforeEdit = restored.draftBeforeEdit
+            _state.value = _state.value.copy(
+                draft = restored.draft,
+                pendingAttachments = restored.attachments,
+                queuedPrompts = restored.queued,
+                editingMessageId = restored.editingMessageId,
+            )
+            if (restored.draft.isBlank()) {
+                savedStateHandle?.remove<String>(DRAFT_KEY)
+            } else {
+                savedStateHandle?.set(DRAFT_KEY, restored.draft)
+            }
+            if (restored.draftBeforeEdit == null) {
+                savedStateHandle?.remove<String>(DRAFT_BEFORE_EDIT_KEY)
+            } else {
+                savedStateHandle?.set(DRAFT_BEFORE_EDIT_KEY, restored.draftBeforeEdit)
+            }
+            if (restored.editingMessageId == null) {
+                savedStateHandle?.remove<String>(EDITING_MESSAGE_KEY)
+            } else {
+                savedStateHandle?.set(EDITING_MESSAGE_KEY, restored.editingMessageId)
+            }
+        } else {
+            // No parked composer: the incoming session has no edit in
+            // progress — drop any keys the previous session left behind,
+            // or a death now would resurrect its edit here.
+            draftBeforeEdit = null
+            _state.value = _state.value.copy(editingMessageId = null)
+            savedStateHandle?.remove<String>(DRAFT_KEY)
+            savedStateHandle?.remove<String>(DRAFT_BEFORE_EDIT_KEY)
+            savedStateHandle?.remove<String>(EDITING_MESSAGE_KEY)
+        }
+        return restored
     }
 
     /** Takes the parked composer for [sessionID], if the user left one there. */
@@ -1167,6 +1309,17 @@ class ChatViewModel(
         // streaming state does not hammer the endpoint. A run that ends
         // into a queued follow-up still refreshes: the new send will end
         // later and refresh again.
+        // Audit-200 A9-3 (DL-029): the app remembers which session has a
+        // run in flight, so an engine start after the process died knows
+        // an orphan may still be working. Reported only when it changes —
+        // onRepoState fires on every repo emission, and the app writes the
+        // value to disk with commit().
+        val busySession = if (chat.busy) chat.sessionID else null
+        if (busySession != lastReportedBusySession) {
+            lastReportedBusySession = busySession
+            onBusySessionChanged(busySession)
+        }
+
         if (sessionChanged) {
             _state.value = _state.value.copy(contextUsedTokens = null, contextModel = null)
             refreshContextUsage()
@@ -1846,6 +1999,10 @@ class ChatViewModel(
         if (_state.value.editingMessageId != null) cancelEdit()
         draftBeforeEdit = _state.value.draft
         _state.value = _state.value.copy(editingMessageId = messageId)
+        // Audit-200 A9-3 (DL-034): the edit and its backup are persisted
+        // with the draft, so a process death mid-edit still offers Cancel.
+        draftBeforeEdit?.let { savedStateHandle?.set(DRAFT_BEFORE_EDIT_KEY, it) }
+        savedStateHandle?.set(EDITING_MESSAGE_KEY, messageId)
         onDraftChange(text)
     }
 
@@ -1853,8 +2010,15 @@ class ChatViewModel(
     fun cancelEdit() {
         val restore = draftBeforeEdit
         draftBeforeEdit = null
+        clearEditHandleKeys()
         _state.value = _state.value.copy(editingMessageId = null)
         if (restore != null) onDraftChange(restore)
+    }
+
+    /** Drops the edit keys from the handle (audit-200 A9-3, DL-034). */
+    private fun clearEditHandleKeys() {
+        savedStateHandle?.remove<String>(DRAFT_BEFORE_EDIT_KEY)
+        savedStateHandle?.remove<String>(EDITING_MESSAGE_KEY)
     }
 
     /** Submits the edited text (see [startEdit] for why this re-sends). */
@@ -1878,6 +2042,7 @@ class ChatViewModel(
             if (queuePrompt(full, text, attachments)) {
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
                 draftBeforeEdit = null
+                clearEditHandleKeys()
                 _state.value = _state.value.copy(editingMessageId = null)
                 clearDraft()
             }
@@ -1888,6 +2053,7 @@ class ChatViewModel(
             return
         }
         draftBeforeEdit = null
+        clearEditHandleKeys()
         _state.value = _state.value.copy(editingMessageId = null)
         sendText(full, text, attachments)
     }
@@ -2591,19 +2757,11 @@ class ChatViewModel(
         // one. The edited text itself is parked above as the draft, so
         // nothing typed is lost — only the pre-edit backup goes.
         draftBeforeEdit = null
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
         // Text typed before any session exists lives under the unsent key
         // (95-F6): a fresh session is where it belongs, so it comes back
         // as this session's composer instead of starting empty.
-        val restored = takeParkedComposer(UNSENT_SESSION_KEY)
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
-        // Audit-200 A5 (DL-008): after the copy above resets the banner,
-        // so the notice survives.
-        reportUnreadableParked(UNSENT_SESSION_KEY)
-        if (restored?.draft.isNullOrBlank()) {
-            savedStateHandle?.remove<String>(DRAFT_KEY)
-        } else {
-            savedStateHandle?.set(DRAFT_KEY, restored.draft)
-        }
+        restoreParkedComposer(UNSENT_SESSION_KEY)
         // The abandoned session must not come back on the next resume:
         // without this, switching workspaces reopened the old workspace's
         // session under the new project's header (item 14).
@@ -2765,20 +2923,12 @@ class ChatViewModel(
         // Same as newSession (draftBeforeEdit): the pre-edit backup belongs
         // to the old session's composer and must not survive the switch.
         draftBeforeEdit = null
-        val restored = takeParkedComposer(sessionID)
-        // Audit-200 A5 (DL-008): a parked composer that cannot be decoded
-        // is reported instead of silently coming back empty.
-        reportUnreadableParked(sessionID)
         // Audit-200 A5 (DL-030): the visible draft changed under any
         // in-flight send, so its post-send clear must not fire on the
         // restored text.
         draftEditCount++
-        _state.value = _state.value.copy(draft = restored?.draft ?: "", pendingAttachments = restored?.attachments ?: emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = restored?.queued ?: emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
-        if (restored?.draft.isNullOrBlank()) {
-            savedStateHandle?.remove<String>(DRAFT_KEY)
-        } else {
-            savedStateHandle?.set(DRAFT_KEY, restored.draft)
-        }
+        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false)
+        restoreParkedComposer(sessionID)
         repo.open(sessionID)
         // Guarded by the repository's attached session (item 23), not the
         // UI state's: opening A then B fast must not let A's late GET
@@ -2840,6 +2990,14 @@ class ChatViewModel(
                                 repositoryChanged = repository !== repo,
                             )
                         ) {
+                            // Audit-200 A9-3 (DL-035): a composer parked
+                            // before the process died — by the debounced
+                            // park, or before an update — belongs to this
+                            // session and comes back now, not only when the
+                            // session is opened from the list. Only when
+                            // the live composer is empty: the handle may
+                            // already hold newer text for this session.
+                            restoreParkedComposer(target, onlyIfComposerEmpty = true)
                             repo.open(target)
                         }
                     }
@@ -2875,9 +3033,24 @@ class ChatViewModel(
     }
 
     override fun onCleared() {
+        parkOnCleared()
         collector?.cancel()
         repository?.close()
         super.onCleared()
+    }
+
+    /**
+     * Parks the composer when the view model is cleared (audit-200 A9-3,
+     * DL-010): leaving the app by Back clears the view model with the
+     * process still alive, so the draft is on disk before anything else
+     * tears down. (A swipe or force-stop kills the process without
+     * calling this; the debounced park above covers that path.) Internal
+     * so a unit test can drive it: `onCleared()` is protected on the
+     * final view model class.
+     */
+    internal fun parkOnCleared() {
+        composerParkJob?.cancel()
+        parkComposer()
     }
 
     companion object {
@@ -2890,8 +3063,14 @@ class ChatViewModel(
         private const val LAST_SENT_KEY = "chat_last_sent"
         /** Prompt history (Up navigation), same reason as [LAST_SENT_KEY]. */
         private const val SENT_PROMPTS_KEY = "chat_sent_prompts"
+        /** The draft as it was before the edit in progress (audit-200 A9-3, DL-034). */
+        private const val DRAFT_BEFORE_EDIT_KEY = "chat_draft_before_edit"
+        /** The message being edited (audit-200 A9-3, DL-034). */
+        private const val EDITING_MESSAGE_KEY = "chat_editing_message"
         /** Failed reloads before the banner points at a new session (item 24). */
         private const val SESSION_RELOAD_LIMIT = 2
+        /** Quiet time after the last composer change before it is parked (audit-200 A9-3, DL-010). */
+        private const val COMPOSER_PARK_DEBOUNCE_MS = 750L
         /**
          * How long an interrupt POST may hang before Stop is released for
          * another tap (17-F10): the client's 120s call timeout left

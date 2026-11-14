@@ -160,6 +160,7 @@
     <string name="generate_prompt_hint_image">Describe the image…</string>
     <string name="generate_resolution_default">Default size</string>
     <string name="generate_generating">Generating…</string>
+    <string name="generate_interrupted">The last generation was interrupted when the app closed. Your prompt is still here — generate again to retry.</string>
     <string name="generate_no_image_models">No image models on this engine. Enable one first, or generate text instead.</string>
     <string name="generate_image_unreadable">This image could not be decoded.</string>
     <string name="generate_cost">Cost $%1$.4f</string>

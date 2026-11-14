@@ -153,6 +153,7 @@
     <string name="generate_prompt_hint_image">Jelaskan gambarnya…</string>
     <string name="generate_resolution_default">Ukuran bawaan</string>
     <string name="generate_generating">Menghasilkan…</string>
+    <string name="generate_interrupted">Generate terakhir terputus saat aplikasi tertutup. Prompt kamu masih ada — generate lagi untuk mengulang.</string>
     <string name="generate_no_image_models">Tidak ada model gambar di engine ini. Aktifkan dulu, atau generate teks saja.</string>
     <string name="generate_image_unreadable">Gambar ini tidak bisa dibaca.</string>
     <string name="generate_cost">Biaya $%1$.4f</string>
