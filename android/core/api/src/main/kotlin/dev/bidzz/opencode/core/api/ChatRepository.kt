@@ -11,6 +11,7 @@ import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.core.api.dto.ToolCall
 import dev.bidzz.opencode.core.api.dto.toolOutput
 import dev.bidzz.opencode.core.api.dto.PendingPermission
+import dev.bidzz.opencode.core.api.dto.PromptSkillAttachment
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TextDelta
 import dev.bidzz.opencode.core.api.dto.TextEnded
@@ -55,6 +56,16 @@ data class ChatState(
     val resyncFailed: Boolean = false,
     /** Active permission request waiting for the operator to reply. */
     val pendingPermission: PendingPermission? = null,
+    /**
+     * Permission requests waiting behind [pendingPermission], in arrival
+     * order (audit-200 C3, M-060): the engine can ask twice while the
+     * first ask is still unanswered, and a single slot dropped the first
+     * ask without a trace — the run then sat blocked with no prompt on
+     * screen. The head is what the screen shows; the queue is what a
+     * successful reply promotes next. Empty whenever the head is null —
+     * the two are maintained together.
+     */
+    val pendingPermissionQueue: List<PendingPermission> = emptyList(),
     /** Tool calls seen on the stream this run, keyed by call id. Cleared on resync. */
     val liveTools: Map<String, LiveTool> = emptyMap(),
     /** True when the transcript window cut older messages: more are available above. */
@@ -291,6 +302,15 @@ class ChatRepository(
     private var replyingPermissionId: String? = null
 
     /**
+     * When each pending permission first arrived (audit-200 C3, M-061):
+     * the resync list is a snapshot from when its call started, so a
+     * request that arrived via SSE after that moment must not be cleared
+     * for missing from the list. Stamped on PERMISSION_ASKED and on
+     * resync restore; the entry leaves with the request.
+     */
+    private val pendingArrivedAtMs = mutableMapOf<String, Long>()
+
+    /**
      * Counts the runs this repository has started (audit-200 B3, M-375):
      * the terminal resync's retry loop must stop touching state the
      * moment a new run starts, or a late retry overwrites the new run's
@@ -331,6 +351,7 @@ class ChatRepository(
         if (this.sessionID == sessionID && streamJob?.isActive == true) return
         close()
         runEnded = false
+        pendingArrivedAtMs.clear()
         this.sessionID = sessionID
         // A fresh open starts at the default window (item 28): earlier
         // messages are one tap away, not fetched up front every time.
@@ -550,13 +571,21 @@ class ChatRepository(
                 )
                 // A permission the engine still waits on survives reconnects
                 // and reopens (item 22): the stream only announces new asks,
-                // so restore it from REST. Only ever sets — an empty list
-                // must not wipe a request that arrived via SSE while this
-                // call was in flight, and a failed call leaves the prompt
-                // untouched. A request answered just now is not restored
-                // (58-F5): the engine can keep listing it until it
+                // so restore it from REST. A request answered just now is not
+                // restored (58-F5): the engine can keep listing it until it
                 // processes the reply, and bringing it back shows a dead
                 // prompt that fails again when answered.
+                //
+                // Audit-200 C3 (M-060/M-061): this reconciles the whole
+                // pending set against the engine's list instead of only
+                // ever setting the head. A request the engine no longer
+                // waits on is a dead prompt — leaving it up makes every
+                // answer fail forever, with no way out but reopening the
+                // session. Only a request older than the list call can be
+                // judged by it: one that arrived via SSE while the call
+                // was in flight is missing from the snapshot through no
+                // fault of its own, so it survives.
+                val listStartedAtMs = System.currentTimeMillis()
                 when (val pending = sessionApi.listPermissions(id)) {
                     is ApiResult.Success -> {
                         if (sessionID != id) return ResyncOutcome.SUCCEEDED
@@ -570,14 +599,24 @@ class ChatRepository(
                         if (permissionGate.suppressedSessionID == id) {
                             return ResyncOutcome.SUCCEEDED
                         }
+                        val nowMs = System.currentTimeMillis()
+                        val listedIds = pending.value.map { it.id }.toSet()
+                        val current = _state.value
+                        val isListedOrNew: (PendingPermission) -> Boolean = { request ->
+                            request.id in listedIds ||
+                                (pendingArrivedAtMs[request.id] ?: 0L) > listStartedAtMs
+                        }
+                        val head = current.pendingPermission?.takeIf(isListedOrNew)
+                        val queue = current.pendingPermissionQueue.filter(isListedOrNew)
                         // Audit-200 B3 (M-550): the first entry is not
                         // always the restorable one — a just-answered
                         // request at the head used to hide a fresh request
-                        // waiting behind it. Restore the first entry that
-                        // passes the suppression check instead.
-                        val nowMs = System.currentTimeMillis()
-                        pending.value.firstOrNull { request ->
-                            shouldRestorePermission(
+                        // waiting behind it. Restore the first entries that
+                        // pass the suppression check instead, skipping any
+                        // the screen already shows or queues.
+                        val knownIds = (listOfNotNull(head) + queue).map { it.id }.toSet()
+                        val restorable = pending.value.filter { request ->
+                            request.id !in knownIds && shouldRestorePermission(
                                 requestId = request.id,
                                 replyingPermissionId = replyingPermissionId,
                                 lastAnsweredPermissionId = permissionGate.lastAnsweredId
@@ -585,9 +624,20 @@ class ChatRepository(
                                 lastAnsweredPermissionAtMs = permissionGate.lastAnsweredAtMs,
                                 nowMs = nowMs,
                             )
-                        }?.let { request ->
-                            _state.value = _state.value.copy(pendingPermission = request)
                         }
+                        restorable.forEach { pendingArrivedAtMs[it.id] = nowMs }
+                        val newHead = head ?: queue.firstOrNull() ?: restorable.firstOrNull()
+                        val newQueue = when {
+                            head != null -> queue + restorable
+                            queue.isNotEmpty() -> queue.drop(1) + restorable
+                            else -> restorable.drop(1)
+                        }
+                        val liveIds = (listOfNotNull(newHead) + newQueue).map { it.id }.toSet()
+                        pendingArrivedAtMs.keys.retainAll(liveIds)
+                        _state.value = current.copy(
+                            pendingPermission = newHead,
+                            pendingPermissionQueue = newQueue,
+                        )
                     }
                     is ApiResult.Failure -> Log.w(TAG, "permission restore failed: ${pending.message}")
                 }
@@ -674,9 +724,9 @@ class ChatRepository(
      * arrives on the stream. The user's message is appended optimistically so the
      * screen responds immediately.
      */
-    suspend fun send(text: String): ApiResult<Unit> {
+    suspend fun send(text: String, skills: List<PromptSkillAttachment>? = null): ApiResult<Unit> {
         val id = sessionID ?: return ApiResult.Failure(code = -1, tag = "NoSession")
-        val result = sessionApi.prompt(id, text)
+        val result = sessionApi.prompt(id, text, skills)
         if (result is ApiResult.Success) {
             // A new run starts: late text events are live again (M-558),
             // the terminal retry loop must stand down (M-375), and asks
@@ -754,8 +804,24 @@ class ChatRepository(
                     permissionGate.lastAnsweredId = pending.id
                     permissionGate.lastAnsweredSessionID = pending.sessionID
                     permissionGate.lastAnsweredAtMs = System.currentTimeMillis()
-                    _state.value = _state.value.copy(
-                        pendingPermission = _state.value.pendingPermission?.takeIf { it.id != pending.id },
+                    pendingArrivedAtMs.remove(pending.id)
+                    // Audit-200 C3 (M-060): answering the head promotes
+                    // the next queued request into the prompt, so the run
+                    // never sits blocked on a request the screen hides.
+                    // A newer head that arrived mid-reply is left alone.
+                    val current = _state.value
+                    val answeredHead = current.pendingPermission?.id == pending.id
+                    _state.value = current.copy(
+                        pendingPermission = if (answeredHead) {
+                            current.pendingPermissionQueue.firstOrNull()
+                        } else {
+                            current.pendingPermission
+                        },
+                        pendingPermissionQueue = if (answeredHead) {
+                            current.pendingPermissionQueue.drop(1)
+                        } else {
+                            current.pendingPermissionQueue
+                        },
                     )
                     ApiResult.Success(Unit)
                 }
@@ -824,26 +890,44 @@ class ChatRepository(
                     ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                     ?.toSet()
                     .orEmpty()
-                _state.value = _state.value.copy(
+                // Stored so the UI can render the prompt and the operator can reply.
+                // The engine blocks the tool until this is answered.
+                // Audit-200 C3 (M-060): a second ask queues behind the
+                // first instead of overwriting it — the overwritten ask
+                // used to vanish without a trace while the run stayed
+                // blocked waiting for it. A re-ask of the same id
+                // refreshes the entry in place.
+                val request = PendingPermission(
+                    id = id,
+                    sessionID = event.sessionIDOf() ?: return,
+                    action = action,
+                    resources = resources,
+                    save = save,
+                    message = payload["message"]?.jsonPrimitive?.contentOrNull,
+                )
+                pendingArrivedAtMs[id] = System.currentTimeMillis()
+                val current = _state.value
+                val queue = current.pendingPermissionQueue
+                val (newHead, newQueue) = when {
+                    current.pendingPermission == null -> request to queue
+                    current.pendingPermission.id == id -> request to queue
+                    queue.any { it.id == id } -> current.pendingPermission to
+                        queue.map { if (it.id == id) request else it }
+                    else -> current.pendingPermission to (queue + request)
+                }
+                _state.value = current.copy(
                     lastFailure = null,
                     resyncFailed = false,
-                    // Stored so the UI can render the prompt and the operator can reply.
-                    // The engine blocks the tool until this is answered.
-                    pendingPermission = PendingPermission(
-                        id = id,
-                        sessionID = event.sessionIDOf() ?: return,
-                        action = action,
-                        resources = resources,
-                        save = save,
-                        message = payload["message"]?.jsonPrimitive?.contentOrNull,
-                    ),
+                    pendingPermission = newHead,
+                    pendingPermissionQueue = newQueue,
                 )
             }
 
             EventTypes.EXECUTION_SUCCEEDED, EventTypes.EXECUTION_FAILED, EventTypes.EXECUTION_INTERRUPTED -> {
                 // A finished run cannot still be waiting for an answer; drop the
                 // prompt so a dead request does not sit on screen.
-                _state.value = _state.value.copy(busy = false, pendingPermission = null)
+                pendingArrivedAtMs.clear()
+                _state.value = _state.value.copy(busy = false, pendingPermission = null, pendingPermissionQueue = emptyList())
                 // Audit-200 B3 (M-558/M-081): the run is over — later text
                 // events are stale, and any ask the engine still lists
                 // belongs to this dead run, so no resync restores it

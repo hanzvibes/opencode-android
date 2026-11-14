@@ -157,6 +157,9 @@ fun MessageBubble(
     reasoning: String? = null,
     parts: List<ChatTurnPart> = emptyList(),
     onAnswerQuestion: suspend (QuestionAnswer) -> Boolean = { false },
+    /** Skips a question card instead of answering it (audit-200 C3,
+     * M-066): cancels the form, so the agent carries on without it. */
+    onSkipQuestion: suspend (String, Int, Int) -> Boolean = { _, _, _ -> false },
     /**
      * Seconds since this run started, owned by the screen — not by this
      * bubble. A bubble-local timer reset to 0 every time the streaming
@@ -600,6 +603,7 @@ fun MessageBubble(
                                         questions = part.questions,
                                         answered = part.answered,
                                         onAnswer = onAnswerQuestion,
+                                        onSkip = onSkipQuestion,
                                         modifier = Modifier.padding(bottom = spacing.sm),
                                     )
                                 }

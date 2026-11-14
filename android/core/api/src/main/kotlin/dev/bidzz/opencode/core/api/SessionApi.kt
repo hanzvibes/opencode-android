@@ -20,6 +20,7 @@ import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.api.dto.PermissionReplyRequest
 import dev.bidzz.opencode.core.api.dto.PermissionsResponse
 import dev.bidzz.opencode.core.api.dto.PromptRequest
+import dev.bidzz.opencode.core.api.dto.PromptSkillAttachment
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.SessionsResponse
@@ -99,8 +100,12 @@ class SessionApi(private val client: EngineClient) {
      * the model finishes: the response arrives immediately with a queue entry and
      * the actual output streams over the event channel.
      */
-    suspend fun prompt(sessionID: String, text: String): ApiResult<SessionMessage> {
-        val body = ApiJson.encodeToString(PromptRequest(text = text))
+    suspend fun prompt(
+        sessionID: String,
+        text: String,
+        skills: List<PromptSkillAttachment>? = null,
+    ): ApiResult<SessionMessage> {
+        val body = ApiJson.encodeToString(PromptRequest(text = text, skills = skills))
         val request = client.request(sessionPath(sessionID, "/prompt"))
             .post(client.jsonBody(body))
             .build()
@@ -298,6 +303,21 @@ class SessionApi(private val client: EngineClient) {
         val body = ApiJson.encodeToString(FormReplyRequest(answer = answer))
         val request = client.request(sessionPath(sessionID, "/form/$formID/reply"))
             .post(client.jsonBody(body))
+            .build()
+        return client.executeUnit(request)
+    }
+
+    /**
+     * Cancels a pending form (`DELETE /api/session/{id}/form/{formID}`).
+     *
+     * The question card's "Skip" (audit-200 C3, M-066): the operator can
+     * decline a question instead of answering it or killing the run.
+     * Cancelling ends the form, so the agent carries on without that
+     * answer. Responds **204 No Content**.
+     */
+    suspend fun cancelForm(sessionID: String, formID: String): ApiResult<Unit> {
+        val request = client.request(sessionPath(sessionID, "/form/$formID"))
+            .delete()
             .build()
         return client.executeUnit(request)
     }

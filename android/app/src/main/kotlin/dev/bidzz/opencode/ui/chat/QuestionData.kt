@@ -28,6 +28,14 @@ data class QuestionItem(
 )
 
 /**
+ * The marker a skipped question carries in the confirmed-answers list
+ * (audit-200 C3, M-066): the card renders it as "Skipped" instead of
+ * the answer text, and a history reload restores it the same way —
+ * a skipped section must never come back as "expired".
+ */
+internal const val SKIPPED_QUESTION_MARKER = "__skipped__"
+
+/**
  * One answer to one question on a question card, as submitted to the
  * engine (audit-70 10-F1, 10-F3, 44-F1).
  *

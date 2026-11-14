@@ -114,6 +114,16 @@ fun Composer(
     promptHistory: List<String> = emptyList(),
     /** Follow-up queued while the agent works; sent when the run ends. */
     queuedText: String? = null,
+    /** Sends the queued follow-ups now (audit-200 C3, M-069): the
+     * "Queued:" row's Send button. */
+    onFlushQueue: () -> Unit = {},
+    /** Returns the queued follow-ups to the composer (audit-200 C3,
+     * M-069): the "Queued:" row's Cancel button. */
+    onCancelQueue: () -> Unit = {},
+    /** False while the agent is busy: the queue can only be flushed
+     * when idle. Cancel always works — a stuck queue is exactly what
+     * it rescues. */
+    queuedFlushEnabled: Boolean = false,
     /** Composer C suggestion chips (resource ids from [composerSuggestions]):
      * shown above the text field while the draft is blank; a tap fills the
      * draft, never sends. Empty means no suggestions for this moment. */
@@ -294,17 +304,44 @@ fun Composer(
             // Queued follow-up (Phase 2, finding 10): typed while the agent
             // works, sent when the run ends. Shown so the queue is never a
             // silent black box — the text is the user's, verbatim.
+            // Audit-200 C3 (M-069): the row is actionable — Send flushes
+            // the queue now instead of waiting for a run edge that may
+            // never come, Cancel returns it to the composer.
             if (queuedText != null) {
-                Text(
-                    text = stringResource(R.string.composer_queued, queuedText),
-                    style = OpenCodeTypography.caption,
-                    color = colors.onSurfaceMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs),
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    Text(
+                        text = stringResource(R.string.composer_queued, queuedText),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Text(
+                        text = stringResource(R.string.composer_send),
+                        style = OpenCodeTypography.caption,
+                        color = if (queuedFlushEnabled) colors.accentText else colors.onSurfaceFaint,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.full))
+                            .clickable(enabled = queuedFlushEnabled, role = Role.Button, onClick = onFlushQueue)
+                            .padding(horizontal = spacing.xs, vertical = 2.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.common_cancel),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(radius.full))
+                            .clickable(role = Role.Button, onClick = onCancelQueue)
+                            .padding(horizontal = spacing.xs, vertical = 2.dp),
+                    )
+                }
             }
 
             // Pending attachments (SAF, outside the workspace): one

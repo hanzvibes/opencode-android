@@ -1425,6 +1425,13 @@ private fun ChatDestination(
         onCommitRevert = chatViewModel::commitRevert,
         onClearRevert = chatViewModel::clearRevert,
         onAnswerQuestion = chatViewModel::answerQuestion,
+        // Audit-200 C3: skipping a question (M-066), picking a skill
+        // from the palette (M-067), and the queued row's Send/Cancel
+        // (M-069) all land in the view model.
+        onSkipQuestion = chatViewModel::skipQuestion,
+        onSkillPick = chatViewModel::pickSkill,
+        onFlushQueue = chatViewModel::flushQueueNow,
+        onCancelQueue = chatViewModel::cancelQueued,
         onOpenToolFile = { path -> onNavigate(Screen.FileView(path)) },
         onRequestDiffRevert = chatViewModel::requestDiffRevert,
         onDiffDecision = chatViewModel::recordDiffDecision,

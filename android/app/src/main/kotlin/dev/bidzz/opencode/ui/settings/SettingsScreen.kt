@@ -137,33 +137,51 @@ fun SettingsScreen(
     var savedPermissionsFailure by remember { mutableStateOf<ApiResult.Failure?>(null) }
     val permissionsScope = rememberCoroutineScope()
     val engineHandle = app.engineApi.handle()
-    LaunchedEffect(engineHandle) {
-        if (engineHandle == null) {
-            // No engine, no permissions to show — and the empty text must
-            // not claim "no saved permissions yet" (audit-100 64-F10):
-            // record the failure so the section renders the engine-down
-            // error instead. Re-reading happens when the engine attaches
-            // (engineHandle changes) — there is no manual retry here.
-            savedPermissionsFailure = engineDownFailure()
-            savedPermissionsLoading = false
-            return@LaunchedEffect
-        }
-        when (val result = engineHandle.permissions.listSaved()) {
-            is ApiResult.Success -> {
-                savedPermissions = result.value
+    // Audit-200 C3 (M-010/M-062): the load is a named function, not a
+    // one-shot effect body — the failure banner's Retry calls the same
+    // load the screen runs on open.
+    fun loadSavedPermissions() {
+        permissionsScope.launch {
+            savedPermissionsLoading = true
+            val handle = app.engineApi.handle()
+            if (handle == null) {
+                // No engine, no permissions to show — and the empty text must
+                // not claim "no saved permissions yet" (audit-100 64-F10):
+                // record the failure so the section renders the engine-down
+                // error instead. Re-reading happens when the engine attaches
+                // (engineHandle changes) or on Retry.
+                savedPermissionsFailure = engineDownFailure()
                 savedPermissionsLoading = false
+                return@launch
             }
-            is ApiResult.Failure -> {
-                savedPermissionsFailure = result
-                savedPermissionsLoading = false
+            when (val result = handle.permissions.listSaved()) {
+                is ApiResult.Success -> {
+                    savedPermissions = result.value
+                    // A load that succeeds clears the last failure: a
+                    // stale error must never sit above a good list, and
+                    // a dead error must never outlive the retry that
+                    // fixed it.
+                    savedPermissionsFailure = null
+                    savedPermissionsLoading = false
+                }
+                is ApiResult.Failure -> {
+                    savedPermissionsFailure = result
+                    savedPermissionsLoading = false
+                }
             }
         }
     }
+    LaunchedEffect(engineHandle) { loadSavedPermissions() }
     fun revokeSavedPermission(saved: PermissionSavedInfo) {
         val handle = app.engineApi.handle() ?: return
         permissionsScope.launch {
             when (val result = handle.permissions.deleteSaved(saved.id)) {
-                is ApiResult.Success -> savedPermissions = savedPermissions - saved
+                is ApiResult.Success -> {
+                    savedPermissions = savedPermissions - saved
+                    // A revoke that succeeds clears a stale failure, like
+                    // a successful load (audit-200 C3, M-010/M-062).
+                    savedPermissionsFailure = null
+                }
                 is ApiResult.Failure -> savedPermissionsFailure = result
             }
         }
@@ -395,24 +413,40 @@ fun SettingsScreen(
                             vertical = spacing.sm,
                         ),
                     )
+                    // Audit-200 C3 (M-010/M-062): a failed load used to
+                    // replace the whole list — and the failure never
+                    // cleared, so the section showed a dead error
+                    // forever. Now it is a banner above the list, with
+                    // a retry; the list (or its empty text) renders
+                    // underneath either way.
+                    if (savedPermissionsFailure != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = spacing.md, vertical = spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = savedPermissionsFailure!!.message(),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.danger,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            TextButton(onClick = { loadSavedPermissions() }) {
+                                Text(
+                                    text = stringResource(R.string.chat_retry),
+                                    style = OpenCodeTypography.label,
+                                    color = colors.accentText,
+                                )
+                            }
+                        }
+                    }
                     when {
                         savedPermissionsLoading -> {
                             Text(
                                 text = savedPermissionsLoadingText,
                                 style = OpenCodeTypography.bodySmall,
                                 color = colors.onSurfaceFaint,
-                                modifier = Modifier.padding(
-                                    start = spacing.md,
-                                    end = spacing.md,
-                                    bottom = spacing.md,
-                                ),
-                            )
-                        }
-                        savedPermissionsFailure != null -> {
-                            Text(
-                                text = savedPermissionsFailure!!.message(),
-                                style = OpenCodeTypography.bodySmall,
-                                color = colors.danger,
                                 modifier = Modifier.padding(
                                     start = spacing.md,
                                     end = spacing.md,
