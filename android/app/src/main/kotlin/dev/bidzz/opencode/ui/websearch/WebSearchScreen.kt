@@ -24,12 +24,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.WebSearchProvider
 import dev.bidzz.opencode.core.api.dto.WebSearchResult
@@ -75,21 +73,11 @@ fun WebSearchScreen(
     onProviderChange: (String?) -> Unit,
     onSearch: () -> Unit,
     onOpenUrl: (String) -> Unit,
-    onClearFailure: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val context = LocalContext.current
 
     LaunchedEffect(Unit) { onRefreshProviders() }
-
-    // message() is @Composable, so resolve it here — not inside LaunchedEffect.
-    val failureMessage = state.failure?.message()
-    LaunchedEffect(state.failure) {
-        val message = failureMessage ?: return@LaunchedEffect
-        (context.applicationContext as OpenCodeApplication).showSnackbar(message)
-        onClearFailure()
-    }
 
     ScreenScaffold(
         title = stringResource(R.string.websearch_title),
@@ -129,6 +117,16 @@ fun WebSearchScreen(
             val response = state.response
             when {
                 state.searching -> LoadingState(stringResource(R.string.websearch_searching))
+                // Audit-200 B1 (M-183/M-310): a failed search is a
+                // persistent error with a retry, not a snackbar — the
+                // previous response is cleared with the failure, and
+                // once a snackbar dismissed the screen claimed it had
+                // never searched at all.
+                state.failure != null -> EmptyState(
+                    state.failure.message(),
+                    isError = true,
+                    onRetry = onSearch,
+                )
                 response == null -> EmptyState(stringResource(R.string.websearch_empty))
                 response.results.isEmpty() -> EmptyState(stringResource(R.string.websearch_no_results))
                 else -> {

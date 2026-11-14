@@ -120,7 +120,15 @@ fun ArtifactsScreen(
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.failure != null && state.failure.isArtifactsDisabled() ->
                     EmptyState(stringResource(R.string.artifact_disabled))
-                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                // Audit-200 B1 (M-194-class): same as JobsScreen — the
+                // failure state had no retry even though onRefresh is in
+                // scope. (The 403-disabled branch above stays retry-less:
+                // the app cannot enable the flag itself.)
+                state.failure != null -> EmptyState(
+                    state.failure.message(),
+                    isError = true,
+                    onRetry = onRefresh,
+                )
                 state.artifacts.isEmpty() -> EmptyState(stringResource(R.string.artifact_empty))
                 else -> {
                     LazyColumn(

@@ -95,7 +95,10 @@ fun DiffScreen(
         },
     ) {
         when {
-            state.loading -> LoadingState(stringResource(R.string.diff_loading))
+            // Audit-200 B1 (M-194): the retry callback was in scope but
+            // never passed to the loading state — a stuck load had no
+            // retry until the failure arrived.
+            state.loading -> LoadingState(stringResource(R.string.diff_loading), onRetry = onRetry)
             state.gitUnavailable -> EmptyState(stringResource(R.string.diff_git_unavailable), isError = true)
             state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRetry)
             state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true, onRetry = onRetry)

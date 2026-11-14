@@ -109,7 +109,13 @@ fun JobsScreen(
             }
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
-                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                // Audit-200 B1 (M-194-class): the failure state had no
+                // retry even though onRefresh is in scope.
+                state.failure != null -> EmptyState(
+                    state.failure.message(),
+                    isError = true,
+                    onRetry = onRefresh,
+                )
                 state.jobs.isEmpty() -> EmptyState(stringResource(R.string.job_empty))
                 else -> {
                     LazyColumn(

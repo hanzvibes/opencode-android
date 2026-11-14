@@ -1196,7 +1196,6 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onAspectChange = generateViewModel::setAspect,
                         onResolutionChange = generateViewModel::setResolution,
                         onGenerate = generateViewModel::generate,
-                        onClearFailure = generateViewModel::clearFailure,
                     )
 
                     Screen.WebSearch -> WebSearchScreen(
@@ -1207,7 +1206,6 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onProviderChange = webSearchViewModel::setProvider,
                         onSearch = webSearchViewModel::search,
                         onOpenUrl = { url -> screen = Screen.InAppBrowser(url) },
-                        onClearFailure = webSearchViewModel::clearFailure,
                     )
 
                     Screen.Worktrees -> WorktreesScreen(

@@ -151,11 +151,14 @@ fun HatchErrorState(
     message: String,
     modifier: Modifier = Modifier,
     onRetry: (() -> Unit)? = null,
+    // Audit-200 B1 (M-192): same opt-out as EmptyState/LoadingState — a
+    // fillMaxSize child of a scrolling column measures 0dp.
+    fillMaxSize: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     Box(
-        modifier = modifier.fillMaxSize(),
+        modifier = if (fillMaxSize) modifier.fillMaxSize() else modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
         Column(

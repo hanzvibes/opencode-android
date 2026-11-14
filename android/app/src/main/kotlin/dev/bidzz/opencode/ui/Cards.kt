@@ -322,6 +322,12 @@ fun TonalButton(
  * Batch 3 (Aura full): the band is the interactive gradient
  * ([AuraInteractiveMeshGradient]) — its highlight follows the finger
  * instead of sitting at the top-start corner.
+ *
+ * [fillMaxSize] (audit-200 B1, M-192): the default fills the whole
+ * screen, which is right for a full-screen state — but a fillMaxSize
+ * child of a scrolling column measures 0dp and never shows, so screens
+ * that render a state inside a scrolling column (Generate) pass false
+ * and get a content-height box instead.
  */
 @Composable
 fun EmptyState(
@@ -330,18 +336,24 @@ fun EmptyState(
     isError: Boolean = false,
     onRetry: (() -> Unit)? = null,
     meshGradient: Boolean = false,
+    fillMaxSize: Boolean = true,
 ) {
     // Batch 2 (Aura full): the error branch is the Hatch error state —
     // same danger text + retry, plus the danger dot. The plain centred
     // text below stays for non-error empties only.
     if (isError) {
-        HatchErrorState(message = text, modifier = modifier, onRetry = onRetry)
+        HatchErrorState(
+            message = text,
+            modifier = modifier,
+            onRetry = onRetry,
+            fillMaxSize = fillMaxSize,
+        )
         return
     }
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     Box(
-        modifier = modifier.fillMaxSize(),
+        modifier = if (fillMaxSize) modifier.fillMaxSize() else modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -388,8 +400,10 @@ fun EmptyState(
  * automatically when loading finishes and the composable leaves the
  * composition — it never leaks.
  *
- * Screens without a refresh callback (SessionList, Diff, SessionDiff)
- * pass `onRetry = null` and never show the button.
+ * Screens without a refresh callback pass `onRetry = null` and never
+ * show the button. [fillMaxSize] is the same opt-out as [EmptyState]'s
+ * (audit-200 B1, M-192): a loading state inside a scrolling column must
+ * pass false, or it measures 0dp and never shows.
  */
 @Composable
 fun LoadingState(
@@ -397,6 +411,7 @@ fun LoadingState(
     modifier: Modifier = Modifier,
     onRetry: (() -> Unit)? = null,
     retryAfterMs: Long = 15_000,
+    fillMaxSize: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -406,7 +421,7 @@ fun LoadingState(
         showRetry = true
     }
     Box(
-        modifier = modifier.fillMaxSize(),
+        modifier = if (fillMaxSize) modifier.fillMaxSize() else modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
         Column(

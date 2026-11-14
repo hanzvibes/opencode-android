@@ -319,7 +319,10 @@ fun SessionListPane(
         }
 
         when {
-            state.loading -> LoadingState(stringResource(R.string.history_loading))
+            // Audit-200 B1 (M-194): same as DiffScreen — onRefresh was
+            // in scope (the failure states below already use it) but
+            // never passed to the loading state.
+            state.loading -> LoadingState(stringResource(R.string.history_loading), onRetry = onRefresh)
             state.failure != null && state.rows.isEmpty() -> EmptyState(
                 state.failure.message(),
                 isError = true,

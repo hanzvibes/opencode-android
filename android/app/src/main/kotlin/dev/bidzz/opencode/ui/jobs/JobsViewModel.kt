@@ -70,27 +70,53 @@ class JobsViewModel(private val api: EngineApi) : ViewModel() {
         if (showLoading) {
             _state.value = _state.value.copy(loading = true, failure = null)
         }
+        // Audit-200 B1 (M-289): the filters are captured now, not read
+        // inside the coroutine — a slow load for the filter the user
+        // already left must not land after the load for the new one.
+        val kind = _state.value.kindFilter
+        val status = _state.value.statusFilter
         viewModelScope.launch {
             val handle = api.handle()
             if (handle == null) {
-                _state.value = _state.value.copy(
-                    loading = false,
-                    failure = ApiResult.Failure(code = 0, message = "Engine not running"),
-                )
+                if (isCurrentJobsLoad(kind, status, _state.value)) {
+                    _state.value = _state.value.copy(
+                        loading = false,
+                        failure = ApiResult.Failure(code = 0, message = "Engine not running"),
+                    )
+                }
                 return@launch
             }
-            val state = _state.value
-            when (val result = handle.jobs.list(kind = state.kindFilter.apiValue, status = state.statusFilter.apiValue)) {
-                is ApiResult.Success -> _state.value = _state.value.copy(
-                    jobs = result.value,
-                    loading = false,
-                    failure = null,
-                )
-                is ApiResult.Failure -> _state.value = _state.value.copy(
-                    loading = false,
-                    failure = result,
-                )
+            when (val result = handle.jobs.list(kind = kind.apiValue, status = status.apiValue)) {
+                is ApiResult.Success -> {
+                    if (isCurrentJobsLoad(kind, status, _state.value)) {
+                        _state.value = _state.value.copy(
+                            jobs = result.value,
+                            loading = false,
+                            failure = null,
+                        )
+                    }
+                }
+                is ApiResult.Failure -> {
+                    if (isCurrentJobsLoad(kind, status, _state.value)) {
+                        _state.value = _state.value.copy(
+                            loading = false,
+                            failure = result,
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+/**
+ * A load started for [kind]/[status] still owns the list when the
+ * current filters match (audit-200 B1, M-289). Pure, so the rule is
+ * unit-tested here rather than through the view model, whose scope
+ * needs a Main dispatcher the JVM tests do not have.
+ */
+internal fun isCurrentJobsLoad(
+    kind: JobKindFilter,
+    status: JobStatusFilter,
+    current: JobsUiState,
+): Boolean = current.kindFilter == kind && current.statusFilter == status
