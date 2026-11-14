@@ -1708,6 +1708,117 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * The park key the composer for [sessionID] files under (audit-200
+     * A9-2, DL-018): the live session's id, or the last parked key, or
+     * the unsent key — the same resolution [parkComposer] uses. A drop
+     * resolves its key at drop time, not when its read finishes, so a
+     * session switch in between cannot re-file it.
+     */
+    private fun parkKeyFor(sessionID: String?): String =
+        sessionID ?: lastParkKey ?: UNSENT_SESSION_KEY
+
+    /** The key the live composer files under right now. */
+    private fun currentParkKey(): String = parkKeyFor(_state.value.sessionID)
+
+    /**
+     * Reads files dropped into the composer in [viewModelScope]
+     * (audit-200 A9-2, DL-017).
+     *
+     * The drop used to be read in the chat screen's composition scope,
+     * so leaving the screen — Back, a session switch, rotation —
+     * cancelled the read mid-flight and the file vanished without a
+     * trace. The view model outlives the chat composition (it is
+     * created in OpenCodeApp), so a read started in chat still lands
+     * when the user comes back — the same shape as [observeSafPicks]
+     * (15-F4). [sessionID] is captured at drop time; [readFile] is a
+     * parameter so tests can drive the landing with a fake reader (see
+     * [handleDroppedFileResult]).
+     */
+    fun handleDroppedFiles(
+        uris: List<Uri>,
+        sessionID: String?,
+        readFile: suspend (Uri) -> SafReadResult,
+    ) {
+        val dropKey = parkKeyFor(sessionID)
+        viewModelScope.launch {
+            uris.forEach { uri ->
+                val result = withContext(Dispatchers.IO) { readFile(uri) }
+                handleDroppedFileResult(result, dropKey)
+            }
+        }
+    }
+
+    /**
+     * Lands one dropped file's read result (audit-200 A9-2, DL-018).
+     * Pure state work, so it is unit-tested directly — the
+     * [viewModelScope] collection above cannot be driven in a JVM test.
+     *
+     * A file dropped in session A belongs to A even when the user has
+     * since moved on: while [dropKey] is still the live session the
+     * file attaches (or its refusal shows) exactly as before;
+     * otherwise a successful read is parked under the dropped session
+     * — merged into whatever that session already had parked,
+     * duplicates skipped — so returning to it restores the chip. A
+     * refusal is shown where the user is now: it is transient,
+     * filename-tagged feedback about a drop they just made, and the
+     * file itself was never taken, so there is nothing to park.
+     */
+    internal fun handleDroppedFileResult(result: SafReadResult, dropKey: String) {
+        if (dropKey == currentParkKey()) {
+            handleSafReadResult(result)
+            return
+        }
+        when (result) {
+            is SafReadResult.Success -> {
+                val existing = parkedStore.get(dropKey)
+                val attachments = existing?.attachments ?: emptyList()
+                if (isDuplicateAttachment(attachments, result.file)) return
+                parkedStore.put(
+                    dropKey,
+                    ParkedComposer(
+                        draft = existing?.draft ?: "",
+                        attachments = attachments + result.file,
+                        queued = existing?.queued ?: emptyList(),
+                    ),
+                )
+            }
+            is SafReadResult.TooLarge -> reportAttachRefusal(R.string.attach_file_too_large, result.name)
+            is SafReadResult.NotText -> reportAttachRefusal(R.string.attach_not_text_file, result.name)
+            is SafReadResult.Unreadable -> reportAttachRefusal(R.string.attach_unreadable_file, result.name)
+        }
+    }
+
+    /**
+     * Lands workspace paths dropped from the Explorer as `@path`
+     * mentions (audit-200 A9-2, DL-018).
+     *
+     * The mention used to be inserted into whatever draft was live
+     * when the (delayed) drop coroutine ran, so a path dropped in
+     * session A could land in session B's draft after a switch. The
+     * session is captured at drop time now: still there, the mention
+     * goes into the live draft; moved on, it is appended to the parked
+     * draft for the dropped session, its attachments and queue kept.
+     */
+    fun handleDroppedPaths(texts: List<String>, sessionID: String?) {
+        val dropKey = parkKeyFor(sessionID)
+        if (dropKey == currentParkKey()) {
+            texts.forEach { text -> onDraftChange(insertMention(_state.value.draft, text)) }
+            return
+        }
+        val existing = parkedStore.get(dropKey)
+        var draft = existing?.draft ?: ""
+        texts.forEach { text -> draft = insertMention(draft, text) }
+        parkedStore.put(
+            dropKey,
+            ParkedComposer(
+                draft = draft,
+                attachments = existing?.attachments ?: emptyList(),
+                queued = existing?.queued ?: emptyList(),
+            ),
+        )
+    }
+
     /** Dismisses the attachment refusal row above the composer. */
     fun dismissAttachNotice() {
         _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null)

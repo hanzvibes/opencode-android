@@ -1351,8 +1351,12 @@ private fun ChatDestination(
         onDeferPermission = chatViewModel::deferPermission,
         onRestoreDeferredPermission = chatViewModel::restoreDeferredPermission,
         onRemoveAttachment = chatViewModel::removeAttachment,
-        onAttachmentAdded = chatViewModel::addAttachment,
-        onAttachmentRefused = { key, filename -> chatViewModel.reportAttachRefusal(key, filename) },
+        onFilesDropped = { uris, sessionId ->
+            chatViewModel.handleDroppedFiles(uris, sessionId) { uri ->
+                readSafFile(app.contentResolver, uri)
+            }
+        },
+        onPathsDropped = chatViewModel::handleDroppedPaths,
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
         onRequestSafFile = app::requestSafFile,
         onRequestCameraPhoto = app::requestCameraPhoto,

@@ -270,16 +270,21 @@ fun ChatScreen(
     fileIndexFailed: Boolean = false,
     /** Builds the index lazily on first picker open; no-op once built. */
     onEnsureFileIndex: () -> Unit = {},
-    /**
-     * SAF attachments (files outside the workspace): the screen owns the
-     * system picker launcher and the read — the view model owns the state
-     * and never sees a Context or a Uri. [onAttachmentAdded] receives a
-     * file already read in as text; [onAttachmentRefused] receives the
-     * refusal string plus the filename to format into it.
-     */
     onRemoveAttachment: (String) -> Unit = {},
-    onAttachmentAdded: (AttachedFile) -> Unit = {},
-    onAttachmentRefused: (Int, String?) -> Unit = { _, _ -> },
+    /**
+     * Files dropped into the composer (audit-200 A9-2, DL-017/DL-018):
+     * the view model reads them in its own scope with the session
+     * captured at drop time, so the read survives leaving the screen
+     * and the file lands in the session it was dropped into.
+     */
+    onFilesDropped: (List<Uri>, String?) -> Unit = { _, _ -> },
+    /**
+     * Workspace paths dropped from the Explorer (audit-200 A9-2,
+     * DL-018): the view model inserts them as `@path` mentions into
+     * the dropped session's draft — live, or parked when the user has
+     * since moved on.
+     */
+    onPathsDropped: (List<String>, String?) -> Unit = { _, _ -> },
     /**
      * Opens the system file picker for a file outside the workspace (SAF).
      * The launcher lives in MainActivity: a Compose launcher here crashed
@@ -902,9 +907,6 @@ fun ChatScreen(
     // check happens after the pick (see readSafFile), so a .py/.md/.json
     // the provider does not call text/* is still pickable and a binary is
     // refused with a message, not by being unpickable.
-    // The resolver is read here, in the composable body — LocalContext.current is a @Composable call and
-    // cannot be used inside the drag-and-drop coroutine below.
-    val safContentResolver = LocalContext.current.contentResolver
 
     // Drag & drop into the composer (Batch 7): files dropped from another
     // app arrive as content:// URIs and are read with the SAF rules above;
@@ -952,22 +954,20 @@ fun ChatScreen(
                     // workspace path.
                     val pathDrop = event.clipDescription
                         ?.hasMimeType(MIME_WORKSPACE_PATH) == true
-                    scope.launch {
-                        content.uris.forEach { uri ->
-                            when (val result = withContext(Dispatchers.IO) {
-                                readSafFile(safContentResolver, uri)
-                            }) {
-                                is SafReadResult.Success -> onAttachmentAdded(result.file)
-                                is SafReadResult.TooLarge -> onAttachmentRefused(R.string.attach_file_too_large, result.name)
-                                is SafReadResult.NotText -> onAttachmentRefused(R.string.attach_not_text_file, result.name)
-                                is SafReadResult.Unreadable -> onAttachmentRefused(R.string.attach_unreadable_file, result.name)
-                            }
-                        }
-                        if (pathDrop) {
-                            content.texts.forEach { text ->
-                                onDraftChange(insertMention(currentDraft, text))
-                            }
-                        }
+                    // Audit-200 A9-2 (DL-017, DL-018): the read used to
+                    // run in this composition's scope with the session
+                    // resolved when it finished, so leaving the screen
+                    // cancelled it and a switch misfiled it. Both now
+                    // go to the view model with the session captured
+                    // here (currentSessionId) — the read survives
+                    // leaving chat, and the file/mention lands in the
+                    // session it was dropped into. Paths land at once;
+                    // files follow as their reads finish.
+                    if (pathDrop) {
+                        onPathsDropped(content.texts, currentSessionId)
+                    }
+                    if (content.uris.isNotEmpty()) {
+                        onFilesDropped(content.uris, currentSessionId)
                     }
                     true
                 }
