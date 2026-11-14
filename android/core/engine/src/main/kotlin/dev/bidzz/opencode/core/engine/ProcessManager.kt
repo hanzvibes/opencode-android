@@ -197,8 +197,18 @@ class ProcessManager(
     /** Serialises every write to [_status]. Never held across a suspension point. */
     private val stateLock = Any()
 
-    /** Brings the engine up. Returns once the health check passes. */
-    suspend fun start(): Result<EngineCredentials> = lifecycle.withLock { startLocked() }
+    /**
+     * Brings the engine up. Returns once the health check passes.
+     *
+     * With [preserveBusyOrphan] an engine left over from a previous life
+     * is not reaped (audit-200 A9-3, DL-029): it may still be running a
+     * turn, and killing it would destroy that work mid-flight. The new
+     * engine takes a fresh port, so the orphan holds nothing it needs;
+     * the orphan is reaped on the next start, once the flag that asked
+     * for this has been cleared.
+     */
+    suspend fun start(preserveBusyOrphan: Boolean = false): Result<EngineCredentials> =
+        lifecycle.withLock { startLocked(preserveBusyOrphan) }
 
     /** Stops the engine, waiting for the process to exit. */
     suspend fun stop(): Result<Unit> = lifecycle.withLock { stopLocked() }
@@ -245,7 +255,7 @@ class ProcessManager(
         }
     }
 
-    private suspend fun startLocked(): Result<EngineCredentials> = withContext(Dispatchers.IO + NonCancellable) {
+    private suspend fun startLocked(preserveBusyOrphan: Boolean = false): Result<EngineCredentials> = withContext(Dispatchers.IO + NonCancellable) {
         val current = _status.value.state
         if (current == EngineState.RUNNING) {
             return@withContext _status.value.credentials?.let { Result.success(it) }
@@ -259,8 +269,9 @@ class ProcessManager(
         // (item 29): the child survives the parent's death, and the
         // service's onDestroy is not guaranteed to run. Reap orphans
         // before the first attempt, so the new engine never contends
-        // with a ghost for its port or workspace.
-        reapZombies()
+        // with a ghost for its port or workspace — unless the flag says
+        // the orphan may still be working (DL-029, see [start]).
+        reapZombies(preserveBusy = preserveBusyOrphan)
 
         patchJob?.cancel()
         patchJob = null
@@ -569,15 +580,27 @@ class ProcessManager(
      * The kill is a parameter so tests can substitute it: the platform
      * `killProcess` is an Android stub under JVM unit tests.
      *
+     * With [preserveBusy] the orphans are counted but left alive
+     * (audit-200 A9-3, DL-029): one of them may still be running a turn
+     * from before the process died. The caller clears the flag that asked
+     * for this once the new engine is up, so the next start reaps them.
+     *
      * Returns the number of orphans found.
      */
     internal suspend fun reapZombies(
         kill: (Int) -> Unit = { pid -> android.os.Process.killProcess(pid) },
         ownPid: Int = android.os.Process.myPid(),
+        preserveBusy: Boolean = false,
     ): Int {
         val executable = binary.executable.absolutePath
         val currentPid = _status.value.pid
         val zombies = scanForEnginePids(executable, ownPid = ownPid).filter { it != currentPid }
+        if (preserveBusy) {
+            if (zombies.isNotEmpty()) {
+                Log.i(TAG, "leaving ${zombies.size} orphaned engine(s) alive: a run may still be in flight")
+            }
+            return zombies.size
+        }
         for (pid in zombies) {
             Log.w(TAG, "reaping orphaned engine pid=$pid")
             runCatching { kill(pid) }

@@ -28,6 +28,16 @@ data class ParkedComposer(
     val draft: String,
     val attachments: List<AttachedFile>,
     val queued: List<QueuedPrompt> = emptyList(),
+    /**
+     * The draft as it was before the edit in progress (audit-200 A9-3,
+     * DL-034), and the message being edited. Both null when no edit is
+     * in progress. Nullable so a composer parked before this field
+     * existed still decodes — Java deserialization bypasses the
+     * constructor, so the default never applies to old bytes, and null
+     * is the only honest value for them.
+     */
+    val draftBeforeEdit: String? = null,
+    val editingMessageId: String? = null,
 ) : java.io.Serializable {
     companion object {
         private const val serialVersionUID = 1L

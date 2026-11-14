@@ -71,6 +71,7 @@ import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
 import dev.bidzz.opencode.ui.chat.SharedPrefsParkedComposerStore
+import dev.bidzz.opencode.ui.files.SharedPrefsFileDraftStore
 import dev.bidzz.opencode.ui.chat.readSafFile
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
 import dev.bidzz.opencode.ui.diff.DiffListScreen
@@ -365,6 +366,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
             onSessionCleared = { app.lastSessionID = null },
             // Parked composers survive process death on disk (Fase 1a, 57-F1).
             parkedStore = SharedPrefsParkedComposerStore(app),
+            // Audit-200 A9-3 (DL-029): the session with a run in flight, so
+            // the next engine start knows an orphan may still be working.
+            onBusySessionChanged = { app.lastBusySessionID = it },
         )
     })
 
@@ -407,6 +411,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
             { app.workspaceStore.resolve().absolutePath },
             onSaved = explorerViewModel::invalidateQuickOpenIndex,
             savedStateHandle = extras.createSavedStateHandle(),
+            // Audit-200 A9-3 (DL-033): the draft on disk too, so a swipe
+            // or force-stop — which clears the handle — still finds it.
+            fileDraftStore = SharedPrefsFileDraftStore(app),
         )
     })
     val diffViewModel: DiffViewModel = viewModel(factory = viewModelFactory { _ ->
@@ -464,7 +471,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     })
 
     val generateViewModel: GenerateViewModel = viewModel(factory = viewModelFactory { _ ->
-        GenerateViewModel(app.engineApi)
+        // Audit-200 A9-3 (DL-011): the last generation on disk, so a
+        // prompt — and a paid image result — survive process death.
+        GenerateViewModel(app.engineApi, app.filesDir)
     })
 
     val webSearchViewModel: WebSearchViewModel = viewModel(factory = viewModelFactory { _ ->

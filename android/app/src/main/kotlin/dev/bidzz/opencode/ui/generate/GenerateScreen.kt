@@ -180,6 +180,16 @@ fun GenerateScreen(
             if (state.generating) {
                 LoadingState(stringResource(R.string.generate_generating))
             }
+            // Audit-200 A9-3 (DL-011): the last generation died with the
+            // process — the prompt and the previous result are back, but
+            // nothing is running anymore.
+            if (state.interrupted) {
+                Text(
+                    text = stringResource(R.string.generate_interrupted),
+                    style = OpenCodeTypography.caption,
+                    color = colors.danger,
+                )
+            }
             state.textResult?.let { text ->
                 SelectionContainer {
                     Text(

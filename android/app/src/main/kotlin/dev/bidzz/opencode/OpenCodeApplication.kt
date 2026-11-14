@@ -37,6 +37,8 @@ class OpenCodeApplication : Application() {
         const val PREFS_NAME = "app"
         /** Last opened session id (also read by the widget). */
         const val KEY_LAST_SESSION = "last_session_id"
+        /** Session with a run in flight when the process died (audit-200 A9-3, DL-029). */
+        const val KEY_LAST_BUSY_SESSION = "last_busy_session_id"
     }
 
     /**
@@ -99,6 +101,24 @@ class OpenCodeApplication : Application() {
             // the main thread.
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
                 if (value == null) remove(KEY_LAST_SESSION) else putString(KEY_LAST_SESSION, value)
+            }.commit()
+        }
+
+    /**
+     * The session with a run in flight, if any (audit-200 A9-3, DL-029).
+     * The chat view model reports it on every busy change; the value is
+     * still set when the process dies mid-run, so the next engine start
+     * knows an orphan may still be working and must not be reaped. The
+     * start clears it once the new engine is up (one-shot: the orphan's
+     * run is preserved across one restart, not forever). Same commit()
+     * rule as [lastSessionID]: the flag must be on disk before the run
+     * can outlive the process.
+     */
+    var lastBusySessionID: String?
+        get() = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_LAST_BUSY_SESSION, null)
+        set(value) {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().apply {
+                if (value == null) remove(KEY_LAST_BUSY_SESSION) else putString(KEY_LAST_BUSY_SESSION, value)
             }.commit()
         }
 

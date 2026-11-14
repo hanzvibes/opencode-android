@@ -277,9 +277,17 @@ class EngineService : Service() {
                 Log.i(TAG, "engine already ${state.name.lowercase()}, nothing to do")
                 return@launch
             }
-            val result = supervisor.start()
+            // Audit-200 A9-3 (DL-029): the app died mid-run once — the
+            // orphan may still be working, so this start does not reap
+            // it. One-shot: the flag is cleared when the new engine is
+            // up, so the next start reaps the orphan (by then idle, its
+            // run finished and its results in the session store).
+            val app = application as OpenCodeApplication
+            val preserveBusyOrphan = app.lastBusySessionID != null
+            val result = supervisor.start(preserveBusyOrphan = preserveBusyOrphan)
             result.onSuccess {
                 consecutiveFailures = 0
+                if (preserveBusyOrphan) app.lastBusySessionID = null
                 Log.i(TAG, "engine running at ${it.baseUrl}")
             }.onFailure { e ->
                 consecutiveFailures++
