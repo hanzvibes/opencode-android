@@ -147,10 +147,10 @@ class SessionListViewModel(
                     // can never be unpinned from the UI, because the session
                     // never appears. Prune them only when the list is
                     // complete — while the list is scoped to a project, or
-                    // capped at 50, an unlisted pin may belong to a session
-                    // that is real but out of view.
+                    // the engine says there is another page, an unlisted pin
+                    // may belong to a session that is real but out of view.
                     val pinned = pinnedStore?.getPinnedIds().orEmpty()
-                    val keptPins = pruneGhostPins(pinned, listedIds, directory != null || page.data.size >= SESSION_PAGE_SIZE)
+                    val keptPins = pruneGhostPins(pinned, listedIds, isSessionListIncomplete(directory, page.cursor?.next != null))
                     (pinned - keptPins).forEach { pinnedStore?.remove(it) }
                     // Details survive a reload (Fase 2, 19-F1): wiping them
                     // made every drawer open refetch every session's full
@@ -455,13 +455,29 @@ internal fun resolveRenameFailure(
 }
 
 /**
+ * True when a just-loaded first page cannot prove a pin is a ghost
+ * (audit-200 A9-7, DL-028): the list is scoped to one project, or the
+ * engine says there is another page. The old check read the page's
+ * size — a short page with a `next` cursor looked complete, so pins
+ * for sessions on the later pages were pruned as ghosts. The cursor is
+ * the only signal that says whether more sessions exist: a full page
+ * with no `next` cursor IS complete (exactly 50 sessions), and a short
+ * page with one is not. Pure so the rule is testable.
+ */
+internal fun isSessionListIncomplete(
+    scopedDirectory: String?,
+    hasNextPage: Boolean,
+): Boolean = scopedDirectory != null || hasNextPage
+
+/**
  * Pins that may stay after a list load (80-F6).
  *
  * A pin for a session that is gone can never be unpinned from the UI,
  * because the session never appears — but only when the list is known
- * complete. While the list is scoped to a project, or capped at a full
- * page, an unlisted pin may belong to a session that is real but out of
- * view, so every pin is kept. Pure so the rule is testable.
+ * complete. While the list is scoped to a project, or the engine
+ * reports another page, an unlisted pin may belong to a session that
+ * is real but out of view, so every pin is kept. Pure so the rule is
+ * testable.
  */
 internal fun pruneGhostPins(
     pinned: Set<String>,

@@ -69,6 +69,30 @@ class SessionListPageTest {
     }
 
     @Test
+    fun `DL-028 a short page with a next cursor is incomplete, so pins are kept`() {
+        // The old size check read this as complete (fewer than 50 rows)
+        // and pruned pins for sessions on the later pages.
+        assertTrue(isSessionListIncomplete(scopedDirectory = null, hasNextPage = true))
+        val pinned = setOf("gone", "kept", "later-page")
+        assertEquals(
+            pinned,
+            pruneGhostPins(pinned, setOf("kept"), incomplete = isSessionListIncomplete(null, true)),
+        )
+    }
+
+    @Test
+    fun `DL-028 a full page with no next cursor is complete`() {
+        // Exactly 50 sessions and no more: the old size check called
+        // this incomplete and let ghost pins survive.
+        assertEquals(false, isSessionListIncomplete(scopedDirectory = null, hasNextPage = false))
+    }
+
+    @Test
+    fun `DL-028 a scoped list is incomplete even with no next page`() {
+        assertTrue(isSessionListIncomplete(scopedDirectory = "/some/project", hasNextPage = false))
+    }
+
+    @Test
     fun `19-F3 appending a page never duplicates a session already shown`() {
         val existing = listOf(row("s1", "One"), row("s2", "Two"))
         val page = listOf(row("s2", "Two"), row("s3", "Three"))
