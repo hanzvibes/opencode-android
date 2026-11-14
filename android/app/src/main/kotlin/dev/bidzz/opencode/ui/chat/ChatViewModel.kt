@@ -752,8 +752,11 @@ class ChatViewModel(
      * (audit-200 A9-3, DL-035): draft, attachments, queue, and an edit in
      * progress with its backup (DL-034). The entry is taken, so it cannot
      * come back a second time, and an undecodable entry is reported
-     * instead of silently coming back empty (A5, DL-008). Returns the
-     * entry, or null when there was nothing parked.
+     * instead of silently coming back empty (A5, DL-008). The restored
+     * content is written to the saved-state handle synchronously
+     * ([syncRestoredComposerToHandle], audit-200 A9-8, DL-019), so the
+     * take and the handle write are one step. Returns the entry, or null
+     * when there was nothing parked.
      *
      * With [onlyIfComposerEmpty] the restore is skipped while the live
      * composer holds anything: [onResume] restores from the saved-state
@@ -791,21 +794,7 @@ class ChatViewModel(
                 queuedPrompts = restored.queued,
                 editingMessageId = if (restoreEditState) restored.editingMessageId else null,
             )
-            if (restored.draft.isBlank()) {
-                savedStateHandle?.remove<String>(DRAFT_KEY)
-            } else {
-                savedStateHandle?.set(DRAFT_KEY, restored.draft)
-            }
-            if (!restoreEditState || restored.draftBeforeEdit == null) {
-                savedStateHandle?.remove<String>(DRAFT_BEFORE_EDIT_KEY)
-            } else {
-                savedStateHandle?.set(DRAFT_BEFORE_EDIT_KEY, restored.draftBeforeEdit)
-            }
-            if (!restoreEditState || restored.editingMessageId == null) {
-                savedStateHandle?.remove<String>(EDITING_MESSAGE_KEY)
-            } else {
-                savedStateHandle?.set(EDITING_MESSAGE_KEY, restored.editingMessageId)
-            }
+            syncRestoredComposerToHandle(savedStateHandle, restored, restoreEditState)
         } else {
             // No parked composer: the incoming session has no edit in
             // progress — drop any keys the previous session left behind,
@@ -817,6 +806,58 @@ class ChatViewModel(
             savedStateHandle?.remove<String>(EDITING_MESSAGE_KEY)
         }
         return restored
+    }
+
+    /**
+     * Writes a restored parked composer into the saved-state handle in
+     * one synchronous step (audit-200 A9-8, DL-019): draft, queue,
+     * attachments and the edit keys. The restore used to write only the
+     * draft and the edit keys here and leave the queue and attachments
+     * to the init collector, which runs asynchronously on state changes
+     * — a process death before it ran lost a just-restored queue whose
+     * park entry was already removed. Writing all of it here makes the
+     * take and the handle write one step; the collector still re-writes
+     * the same values when it notices the state change, so nothing is
+     * lost by doubling. The handle itself is only serialised by the
+     * system at the next save point, and the debounced park re-establishes
+     * the on-disk copy within 750 ms (DL-010) — so the residual window is
+     * a death in that gap, not the open-ended one the collector left.
+     * A member, not a top-level helper, so it can use the handle keys;
+     * it takes the handle as a parameter so unit tests can drive it
+     * without a view-model scope (which needs a Main dispatcher the
+     * JVM tests do not have).
+     */
+    internal fun syncRestoredComposerToHandle(
+        handle: SavedStateHandle?,
+        restored: ParkedComposer,
+        restoreEditState: Boolean,
+    ) {
+        if (handle == null) return
+        if (restored.draft.isBlank()) {
+            handle.remove<String>(DRAFT_KEY)
+        } else {
+            handle[DRAFT_KEY] = restored.draft
+        }
+        if (restored.queued.isEmpty()) {
+            handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
+        } else {
+            handle[QUEUE_KEY] = ArrayList(restored.queued)
+        }
+        if (restored.attachments.isEmpty()) {
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
+        } else {
+            handle[ATTACHMENTS_KEY] = ArrayList(restored.attachments)
+        }
+        if (!restoreEditState || restored.draftBeforeEdit == null) {
+            handle.remove<String>(DRAFT_BEFORE_EDIT_KEY)
+        } else {
+            handle[DRAFT_BEFORE_EDIT_KEY] = restored.draftBeforeEdit
+        }
+        if (!restoreEditState || restored.editingMessageId == null) {
+            handle.remove<String>(EDITING_MESSAGE_KEY)
+        } else {
+            handle[EDITING_MESSAGE_KEY] = restored.editingMessageId
+        }
     }
 
     /** Takes the parked composer for [sessionID], if the user left one there. */
@@ -3064,19 +3105,22 @@ class ChatViewModel(
     }
 
     companion object {
-        private const val DRAFT_KEY = "chat_draft"
+        // The restore keys are internal, not private, so unit tests can
+        // assert on what a restore wrote (audit-200 A9-8, DL-019) — the
+        // same reason FileViewViewModel's draft keys are visible.
+        internal const val DRAFT_KEY = "chat_draft"
         /** Queued follow-ups, so they survive process death (audit-70 69-F2). */
-        private const val QUEUE_KEY = "chat_queue"
+        internal const val QUEUE_KEY = "chat_queue"
         /** Pending attachment chips, same reason as [QUEUE_KEY]. */
-        private const val ATTACHMENTS_KEY = "chat_attachments"
+        internal const val ATTACHMENTS_KEY = "chat_attachments"
         /** Retry target, so Retry still works after a restore (audit-70 69-F2). */
         private const val LAST_SENT_KEY = "chat_last_sent"
         /** Prompt history (Up navigation), same reason as [LAST_SENT_KEY]. */
         private const val SENT_PROMPTS_KEY = "chat_sent_prompts"
         /** The draft as it was before the edit in progress (audit-200 A9-3, DL-034). */
-        private const val DRAFT_BEFORE_EDIT_KEY = "chat_draft_before_edit"
+        internal const val DRAFT_BEFORE_EDIT_KEY = "chat_draft_before_edit"
         /** The message being edited (audit-200 A9-3, DL-034). */
-        private const val EDITING_MESSAGE_KEY = "chat_editing_message"
+        internal const val EDITING_MESSAGE_KEY = "chat_editing_message"
         /** Failed reloads before the banner points at a new session (item 24). */
         private const val SESSION_RELOAD_LIMIT = 2
         /** Quiet time after the last composer change before it is parked (audit-200 A9-3, DL-010). */
