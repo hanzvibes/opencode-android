@@ -50,4 +50,39 @@ class MarkdownCodeTest {
         val code = Markdown.parse("```\ncode\n  ```").single() as MdBlock.Code
         assertEquals("code", code.code)
     }
+
+    @Test
+    fun `DL-012 a closing fence indented 3 spaces still closes`() {
+        val code = Markdown.parse("```\ncode\n   ```").single() as MdBlock.Code
+        assertEquals("code", code.code)
+    }
+
+    @Test
+    fun `DL-012 a closing fence indented 4 spaces does not close`() {
+        val code = Markdown.parse("```\n    ```\ncode\n```").single() as MdBlock.Code
+        assertEquals("    ```\ncode", code.code)
+    }
+
+    @Test
+    fun `DL-012 an indented nested fence stays inside a 4-backtick block`() {
+        val md = "````markdown\n    ```kotlin\nval x = 1\n    ```\n````"
+        val code = Markdown.parse(md).single() as MdBlock.Code
+        assertEquals("markdown", code.language)
+        assertEquals("    ```kotlin\nval x = 1\n    ```", code.code)
+    }
+
+    @Test
+    fun `DL-012 a list-item fence opens and closes at the same indent`() {
+        val code = Markdown.parse("    ```kotlin\n    code\n    ```").single() as MdBlock.Code
+        assertEquals("kotlin", code.language)
+        assertEquals("    code", code.code)
+    }
+
+    @Test
+    fun `DL-012 a closer deeper than its opener does not close`() {
+        // The opener is inside a list item (indent 4); a closer indented
+        // further than that is content, not a closer.
+        val code = Markdown.parse("    ```\ncode\n        ```\nmore").single() as MdBlock.Code
+        assertEquals("code\n        ```\nmore", code.code)
+    }
 }

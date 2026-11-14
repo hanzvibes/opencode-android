@@ -124,6 +124,22 @@ object Markdown {
     }
 
     /**
+     * Leading indentation of [line] in spaces; a tab counts as 4, the
+     * CommonMark tab stop.
+     */
+    internal fun leadingIndent(line: String): Int {
+        var indent = 0
+        for (ch in line) {
+            when (ch) {
+                ' ' -> indent++
+                '\t' -> indent += 4
+                else -> break
+            }
+        }
+        return indent
+    }
+
+    /**
      * True when [line] closes a fenced code block opened with [marker]
      * (04-F3). CommonMark: the closing fence is a run of the same fence
      * character, at least as long as the opening fence, with no info
@@ -132,8 +148,20 @@ object Markdown {
      * `startsWith(marker.take(3))`, closed on both: a nested example
      * (````markdown containing ```kotlin … ```) was cut off mid-block,
      * and Copy/Save only copied the truncated part.
+     *
+     * Audit-200 A9-5 (DL-012): the 04-F3 check trimmed the whole line,
+     * so a fence line indented 4+ spaces still closed the block — a
+     * nested example indented as sample code cut the block off mid-way
+     * the same way. CommonMark caps the closer at 3 spaces; the cap is
+     * the opening fence's own indent ([openingIndent]) when that was
+     * deeper, so a code block inside a list item — which opens and
+     * closes at the same indent, and which this parser has no
+     * list-indent tracking to normalise — keeps working. The opening
+     * fence itself stays permissive for the same reason; only the
+     * closer's depth is capped.
      */
-    internal fun isClosingFence(line: String, marker: String): Boolean {
+    internal fun isClosingFence(line: String, marker: String, openingIndent: Int = 0): Boolean {
+        if (leadingIndent(line) > maxOf(3, openingIndent)) return false
         val trimmed = line.trim()
         val fenceChar = marker.first()
         return trimmed.length >= marker.length && trimmed.all { it == fenceChar }
@@ -185,10 +213,11 @@ object Markdown {
             if (fenceMatch != null) {
                 flushParagraph()
                 val marker = fenceMatch.groupValues[1]
+                val openingIndent = leadingIndent(line)
                 val lang = fenceMatch.groupValues[2].trim().ifEmpty { null }
                 val bodyLines = mutableListOf<String>()
                 i++
-                while (i < lines.size && !isClosingFence(lines[i], marker)) {
+                while (i < lines.size && !isClosingFence(lines[i], marker, openingIndent)) {
                     bodyLines += lines[i]
                     i++
                 }
