@@ -18,7 +18,13 @@ data class WebSearchUiState(
     val query: String = "",
     val searching: Boolean = false,
     val response: WebSearchResponse? = null,
-    /** What the last search got wrong; the screen shows it once as a snackbar, then clears it. */
+    /**
+     * What the last search got wrong; the screen shows it as a
+     * persistent error with a retry (audit-200 B1, M-183/M-310: a
+     * snackbar that clears itself left the old results on screen as if
+     * they answered the query that just failed, and once it dismissed
+     * the screen claimed it had never searched).
+     */
     val failure: ApiResult.Failure? = null,
 )
 
@@ -67,15 +73,16 @@ class WebSearchViewModel(private val api: EngineApi) : ViewModel() {
                     searching = false,
                     response = result.value,
                 )
+                // Audit-200 B1 (M-310): a failed search clears the
+                // previous response — leaving it on screen made it look
+                // like the answer to the query that just failed.
                 is ApiResult.Failure -> _state.value = _state.value.copy(
                     searching = false,
+                    response = null,
                     failure = result,
                 )
             }
         }
     }
 
-    fun clearFailure() {
-        _state.value = _state.value.copy(failure = null)
-    }
 }

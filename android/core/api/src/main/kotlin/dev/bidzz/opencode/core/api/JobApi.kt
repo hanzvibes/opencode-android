@@ -1,7 +1,6 @@
 package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.JobInfo
-import dev.bidzz.opencode.core.api.dto.JobsResponse
 import java.net.URLEncoder
 
 /**
@@ -44,8 +43,10 @@ class JobApi(private val client: EngineClient) {
             if (descendants != null) param("descendants", descendants.toString())
         }
         val request = client.request(query).get().build()
+        // Audit-200 B1 (M-314): decode per entry, not the whole list at
+        // once — one malformed job used to hide the entire list.
         return client.execute(request) { raw ->
-            ApiJson.decodeFromString<JobsResponse>(raw).data
+            client.decodeDataList<JobInfo>(raw)
         }
     }
 }

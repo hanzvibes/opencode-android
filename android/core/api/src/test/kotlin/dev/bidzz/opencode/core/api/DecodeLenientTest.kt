@@ -1,9 +1,12 @@
 package dev.bidzz.opencode.core.api
 
+import dev.bidzz.opencode.core.api.dto.ArtifactInfo
 import dev.bidzz.opencode.core.api.dto.CredentialEntry
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
+import dev.bidzz.opencode.core.api.dto.JobInfo
 import dev.bidzz.opencode.core.api.dto.ProviderInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 /**
@@ -62,6 +65,61 @@ class DecodeLenientTest {
         assertEquals(
             emptyList<IntegrationInfo>(),
             client.decodeDataList<IntegrationInfo>("""{"location":null}"""),
+        )
+    }
+
+    // Audit-200 B1 (M-005): a total decode failure is a contract
+    // mismatch, not an empty list --------------------------------------
+
+    @Test
+    fun `an empty data array still decodes as empty`() {
+        assertEquals(
+            emptyList<IntegrationInfo>(),
+            client.decodeDataList<IntegrationInfo>("""{"data":[]}"""),
+        )
+    }
+
+    @Test
+    fun `every entry failing to decode throws instead of returning empty`() {
+        assertThrows(IllegalStateException::class.java) {
+            client.decodeDataList<IntegrationInfo>(
+                """{"data":[{"name":"No id"},{"name":"No id either"}]}""",
+            )
+        }
+    }
+
+    // Audit-200 B1 (M-314): artifacts and jobs decode per entry, so one
+    // bad entry skips instead of hiding the whole list ------------------
+
+    @Test
+    fun `an artifact list skips a malformed entry`() {
+        val raw = """{"data":[
+            {"id":"art_01","provider":"local","title":"Demo","entry":"index.html",
+             "url":"/api/experimental/artifacts/art_01/view/",
+             "time":{"created":1762900000000,"updated":1762900100000}},
+            {"provider":"local","title":"No id at all"},
+            {"id":"art_02","provider":"local","title":"Second","entry":"app.html",
+             "url":"/api/experimental/artifacts/art_02/view/",
+             "time":{"created":1762900000000,"updated":1762900000000}}
+        ]}"""
+        assertEquals(
+            listOf("art_01", "art_02"),
+            client.decodeDataList<ArtifactInfo>(raw).map { it.id },
+        )
+    }
+
+    @Test
+    fun `a job list skips a malformed entry`() {
+        val raw = """{"data":[
+            {"id":"job_01","sessionID":"ses_01","status":"running",
+             "time":{"started":1762900000000},"kind":"shell","command":"sleep 10"},
+            {"sessionID":"ses_01","status":"completed"},
+            {"id":"job_02","sessionID":"ses_01","status":"completed",
+             "time":{"started":1762900000000,"completed":1762900010000},"kind":"subagent"}
+        ]}"""
+        assertEquals(
+            listOf("job_01", "job_02"),
+            client.decodeDataList<JobInfo>(raw).map { it.id },
         )
     }
 }

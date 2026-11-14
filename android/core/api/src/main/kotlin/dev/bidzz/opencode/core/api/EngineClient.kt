@@ -152,6 +152,13 @@ class EngineClient(
      * every credential, although the engine's database was intact. The
      * skipped count is logged, not silent. A body that is not a list
      * response at all still throws, so the caller reports it as a failure.
+     *
+     * Audit-200 B1 (M-005): when the array is non-empty but EVERY entry
+     * fails to decode, the answer is not an empty list — it is a contract
+     * mismatch, and it throws so the caller reports a failure instead of
+     * a false "no items". A genuinely empty array still returns empty,
+     * and a missing `data` key still returns empty (that shape is the
+     * documented no-data answer, see DecodeLenientTest).
      */
     internal inline fun <reified T> decodeDataList(raw: String): List<T> {
         val array = ApiJson.parseToJsonElement(raw).jsonObject["data"]?.jsonArray
@@ -163,6 +170,11 @@ class EngineClient(
             if (item == null) skipped++ else items += item
         }
         if (skipped > 0) Log.w(TAG, "skipped $skipped malformed entries in list response")
+        if (array.isNotEmpty() && items.isEmpty()) {
+            throw IllegalStateException(
+                "all ${array.size} entries in list response failed to decode",
+            )
+        }
         return items
     }
 }

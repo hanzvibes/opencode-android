@@ -44,9 +44,11 @@ data class GenerateUiState(
      */
     val interrupted: Boolean = false,
     /**
-     * What the last generation got wrong; the screen shows it once as a
-     * snackbar, then clears it. A failed load of the model list goes
-     * to [modelsFailure] instead.
+     * What the last generation got wrong; the screen shows it as a
+     * persistent error with a retry (audit-200 B1, M-302/M-183-class: a
+     * snackbar that clears itself left the stale result on screen as if
+     * it were the new one). A failed load of the model list goes to
+     * [modelsFailure] instead.
      */
     val failure: ApiResult.Failure? = null,
     val modelsFailure: ApiResult.Failure? = null,
@@ -177,8 +179,18 @@ class GenerateViewModel(
                             resultInputTokens = null,
                             resultOutputTokens = null,
                         )
+                        // Audit-200 B1 (M-302): a failed generation clears
+                        // the previous result — leaving it on screen made
+                        // it look like the answer to the prompt that just
+                        // failed. The same clearing applies to the image
+                        // failure and the no-model failure below.
                         is ApiResult.Failure -> _state.value = _state.value.copy(
                             generating = false,
+                            textResult = null,
+                            imageResults = emptyList(),
+                            resultCost = null,
+                            resultInputTokens = null,
+                            resultOutputTokens = null,
                             failure = result,
                         )
                     }
@@ -191,6 +203,11 @@ class GenerateViewModel(
                     if (model == null) {
                         _state.value = _state.value.copy(
                             generating = false,
+                            textResult = null,
+                            imageResults = emptyList(),
+                            resultCost = null,
+                            resultInputTokens = null,
+                            resultOutputTokens = null,
                             failure = ApiResult.Failure(code = 0, message = "Pick an image model first"),
                         )
                         persistGeneration(_state.value)
@@ -214,6 +231,11 @@ class GenerateViewModel(
                         )
                         is ApiResult.Failure -> _state.value = _state.value.copy(
                             generating = false,
+                            textResult = null,
+                            imageResults = emptyList(),
+                            resultCost = null,
+                            resultInputTokens = null,
+                            resultOutputTokens = null,
                             failure = result,
                         )
                     }
@@ -221,10 +243,6 @@ class GenerateViewModel(
                 }
             }
         }
-    }
-
-    fun clearFailure() {
-        _state.value = _state.value.copy(failure = null)
     }
 
     /** Writes [state] to disk when persistence is configured (DL-011). */

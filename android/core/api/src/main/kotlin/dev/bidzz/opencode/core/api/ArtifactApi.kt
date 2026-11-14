@@ -5,7 +5,6 @@ import dev.bidzz.opencode.core.api.dto.ArtifactCreateInput
 import dev.bidzz.opencode.core.api.dto.ArtifactInfo
 import dev.bidzz.opencode.core.api.dto.ArtifactProvidersResponse
 import dev.bidzz.opencode.core.api.dto.ArtifactUpdateInput
-import dev.bidzz.opencode.core.api.dto.ArtifactsResponse
 import dev.bidzz.opencode.core.api.dto.SingleResponse
 import kotlinx.serialization.encodeToString
 import java.net.URLEncoder
@@ -47,8 +46,10 @@ class ArtifactApi(private val client: EngineClient) {
             if (provider != null) param("provider", provider)
         }
         val request = client.request(query).get().build()
+        // Audit-200 B1 (M-314): decode per entry, not the whole list at
+        // once — one malformed artifact used to hide the entire list.
         return client.execute(request) { raw ->
-            ApiJson.decodeFromString<ArtifactsResponse>(raw).data
+            client.decodeDataList<ArtifactInfo>(raw)
         }
     }
 

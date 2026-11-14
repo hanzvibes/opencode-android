@@ -34,12 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.GenerateImageOutput
 import dev.bidzz.opencode.core.api.dto.ModelInfo
@@ -76,21 +74,11 @@ fun GenerateScreen(
     onAspectChange: (String) -> Unit,
     onResolutionChange: (String?) -> Unit,
     onGenerate: () -> Unit,
-    onClearFailure: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val context = LocalContext.current
 
     LaunchedEffect(Unit) { onRefreshModels() }
-
-    // message() is @Composable, so resolve it here — not inside LaunchedEffect.
-    val failureMessage = state.failure?.message()
-    LaunchedEffect(state.failure) {
-        val message = failureMessage ?: return@LaunchedEffect
-        (context.applicationContext as OpenCodeApplication).showSnackbar(message)
-        onClearFailure()
-    }
 
     val canGenerate = state.prompt.isNotBlank() && !state.generating &&
         (state.mode == GenerateMode.TEXT || state.selectedModelId != null)
@@ -138,8 +126,21 @@ fun GenerateScreen(
                 )
             }
             when {
-                state.modelsLoading -> LoadingState(stringResource(R.string.common_loading))
-                state.modelsFailure != null -> EmptyState(state.modelsFailure.message(), isError = true)
+                // Audit-200 B1 (M-192): this column scrolls, so the states
+                // must not fillMaxSize — a fillMaxSize child of a scrolling
+                // column measures 0dp and never shows. (M-194): the model
+                // load has a refresh in scope, so its states retry.
+                state.modelsLoading -> LoadingState(
+                    stringResource(R.string.common_loading),
+                    onRetry = onRefreshModels,
+                    fillMaxSize = false,
+                )
+                state.modelsFailure != null -> EmptyState(
+                    state.modelsFailure.message(),
+                    isError = true,
+                    onRetry = onRefreshModels,
+                    fillMaxSize = false,
+                )
                 state.mode == GenerateMode.IMAGE && modelsForMode.isEmpty() ->
                     EmptyState(stringResource(R.string.generate_no_image_models))
                 else -> ModelPicker(
@@ -178,7 +179,25 @@ fun GenerateScreen(
                 }
             }
             if (state.generating) {
-                LoadingState(stringResource(R.string.generate_generating))
+                // No retry here: a generation has no cancel, and a retry
+                // tap while generating would be a no-op (M-192: the state
+                // still needs fillMaxSize = false to show at all).
+                LoadingState(
+                    stringResource(R.string.generate_generating),
+                    fillMaxSize = false,
+                )
+            }
+            // Audit-200 B1 (M-302): a failed generation is a persistent
+            // error with a retry, not a snackbar — the previous result is
+            // cleared with the failure, so there is nothing stale left to
+            // mistake for the new answer.
+            if (state.failure != null) {
+                EmptyState(
+                    state.failure.message(),
+                    isError = true,
+                    onRetry = onGenerate,
+                    fillMaxSize = false,
+                )
             }
             // Audit-200 A9-3 (DL-011): the last generation died with the
             // process — the prompt and the previous result are back, but
