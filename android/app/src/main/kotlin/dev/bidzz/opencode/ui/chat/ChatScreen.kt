@@ -135,6 +135,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import dev.bidzz.opencode.core.api.ApiResult
+import dev.bidzz.opencode.core.api.dto.RevertFileImpact
+import dev.bidzz.opencode.core.api.dto.fileImpact
 import dev.bidzz.opencode.core.api.dto.revertFilePaths
 import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -2298,7 +2300,7 @@ private fun StagedRevertBanner(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
-    val fileCount = staged.revertFilePaths().size
+    val paths = staged.revertFilePaths()
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -2325,10 +2327,13 @@ private fun StagedRevertBanner(
             )
         }
         Text(
-            text = if (fileCount > 0) {
-                stringResource(R.string.revert_banner_files, fileCount)
-            } else {
-                stringResource(R.string.revert_banner_messages_only)
+            // Audit-200 A9-6 (DL-013): a non-empty files list whose
+            // entries name no readable path must never read as "No files
+            // change" — the revert may still touch files. It says so.
+            text = when (staged.fileImpact()) {
+                RevertFileImpact.KnownFiles -> stringResource(R.string.revert_banner_files, paths.size)
+                RevertFileImpact.UnknownFiles -> stringResource(R.string.revert_banner_files_unknown)
+                RevertFileImpact.MessagesOnly -> stringResource(R.string.revert_banner_messages_only)
             },
             style = OpenCodeTypography.caption,
             color = colors.onSurfaceMuted,

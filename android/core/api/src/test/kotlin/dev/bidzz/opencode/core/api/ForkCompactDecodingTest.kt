@@ -3,12 +3,16 @@ package dev.bidzz.opencode.core.api
 import dev.bidzz.opencode.core.api.dto.CompactRequest
 import dev.bidzz.opencode.core.api.dto.ForkRequest
 import dev.bidzz.opencode.core.api.dto.InboxItem
+import dev.bidzz.opencode.core.api.dto.RevertFileImpact
 import dev.bidzz.opencode.core.api.dto.RevertStageRequest
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionRevert
 import dev.bidzz.opencode.core.api.dto.SingleResponse
+import dev.bidzz.opencode.core.api.dto.fileImpact
 import dev.bidzz.opencode.core.api.dto.revertFilePaths
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -61,6 +65,73 @@ class ForkCompactDecodingTest {
         assertEquals("msg_01JCCCCCCCCCCCCCCCCCCCCCCCCC", revert?.messageID)
         assertEquals("snap_01JDDDDDDDDDDDDDDDDDDDDDDDDD", revert?.snapshot)
         assertEquals(listOf("app/src/main/kotlin/Main.kt"), revert?.revertFilePaths())
+    }
+
+    @Test
+    fun `DL-013 decodes a staged revert whose files use the file key`() {
+        // The engine's own diff shape (FileDiff.Info) names the file
+        // under "file", not "path" — a revert staged from that shape
+        // must still count its files.
+        val raw = """
+            {"data":{"id":"ses_01JAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "title":"Fix the scroll bug",
+              "revert":{"messageID":"msg_01JCCCCCCCCCCCCCCCCCCCCCCCCC",
+                "files":[{"file":"app/src/main/kotlin/Main.kt","status":"modified"},
+                  {"file":"README.md","status":"added"}]}}}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<SingleResponse<SessionInfo>>(raw).data
+        val revert: SessionRevert? = parsed.revert
+        assertEquals(
+            listOf("app/src/main/kotlin/Main.kt", "README.md"),
+            revert?.revertFilePaths(),
+        )
+        assertEquals(RevertFileImpact.KnownFiles, revert?.fileImpact())
+    }
+
+    @Test
+    fun `DL-013 decodes a staged revert with mixed path and file keys`() {
+        val raw = """
+            {"data":{"id":"ses_01JAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "revert":{"messageID":"msg_01JCCCCCCCCCCCCCCCCCCCCCCCCC",
+                "files":[{"path":"src/A.kt","status":"modified"},
+                  {"file":"src/B.kt","status":"modified"}]}}}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<SingleResponse<SessionInfo>>(raw).data
+        assertEquals(
+            listOf("src/A.kt", "src/B.kt"),
+            parsed.revert?.revertFilePaths(),
+        )
+    }
+
+    @Test
+    fun `DL-013 decodes a staged revert with a nested file object`() {
+        val raw = """
+            {"data":{"id":"ses_01JAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "revert":{"messageID":"msg_01JCCCCCCCCCCCCCCCCCCCCCCCCC",
+                "files":[{"file":{"path":"src/Nested.kt"},"status":"modified"}]}}}
+        """.trimIndent()
+
+        val parsed = ApiJson.decodeFromString<SingleResponse<SessionInfo>>(raw).data
+        assertEquals(listOf("src/Nested.kt"), parsed.revert?.revertFilePaths())
+    }
+
+    @Test
+    fun `DL-013 a staged revert with unreadable file entries reports unknown files`() {
+        val revert = SessionRevert(
+            files = listOf(
+                buildJsonObject { put("status", JsonPrimitive("modified")) },
+                buildJsonObject { put("additions", JsonPrimitive(3)) },
+            ),
+        )
+        assertTrue(revert.revertFilePaths().isEmpty())
+        assertEquals(RevertFileImpact.UnknownFiles, revert.fileImpact())
+    }
+
+    @Test
+    fun `DL-013 a staged revert with no files is messages only`() {
+        assertEquals(RevertFileImpact.MessagesOnly, SessionRevert().fileImpact())
     }
 
     @Test

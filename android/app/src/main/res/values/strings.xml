@@ -302,6 +302,7 @@
     <string name="compact_dialog_confirm">Compact</string>
     <string name="revert_banner_title">Revert staged</string>
     <string name="revert_banner_files">%1$d files will be restored to how they were before this message.</string>
+    <string name="revert_banner_files_unknown">Files may change, but the list could not be read.</string>
     <string name="revert_banner_messages_only">Messages after this point will be removed. No files change.</string>
     <string name="revert_commit">Apply revert</string>
     <string name="revert_discard">Discard</string>

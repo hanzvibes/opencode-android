@@ -2,6 +2,7 @@ package dev.bidzz.opencode.core.api.dto
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * DTOs for session fork / compact / revert (engine-to-UI, mockup group 2).
@@ -85,9 +86,51 @@ data class SessionRevert(
     val files: List<JsonObject> = emptyList(),
 )
 
+/**
+ * The path one revert file entry names, if any.
+ *
+ * Lenient on purpose (audit-200 A9-6, DL-013): the staged-revert
+ * entries were verified with a `"path"` key (see the DTO comment), but
+ * the engine's own diff shape (`FileDiff.Info`, used by the session
+ * diff and the VCS diff) names the same file under `"file"` — and
+ * either key may hold the path directly or inside a nested object. An
+ * entry that names no path at all yields null instead of breaking the
+ * decode.
+ */
+internal fun revertFilePath(entry: JsonObject): String? {
+    for (key in listOf("path", "file")) {
+        when (val value = entry[key]) {
+            is JsonPrimitive -> if (value.isString) return value.content
+            is JsonObject -> {
+                val nested = revertFilePath(value)
+                if (nested != null) return nested
+            }
+            else -> Unit
+        }
+    }
+    return null
+}
+
 /** Workspace-relative paths a staged revert would touch, if any. */
 fun SessionRevert.revertFilePaths(): List<String> =
-    files.mapNotNull { (it["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content }
+    files.mapNotNull { revertFilePath(it) }
+
+/**
+ * What the fork banner can honestly say about the files a staged revert
+ * would touch (audit-200 A9-6, DL-013). [KnownFiles] carries the count
+ * through [SessionRevert.revertFilePaths]; [UnknownFiles] is the case
+ * the old banner got wrong — [SessionRevert.files] is non-empty but no
+ * path could be read from any entry, so the banner must NOT claim "No
+ * files change"; [MessagesOnly] is a genuinely file-free revert.
+ */
+enum class RevertFileImpact { KnownFiles, UnknownFiles, MessagesOnly }
+
+/** The banner's file impact for this staged revert. */
+fun SessionRevert.fileImpact(): RevertFileImpact = when {
+    revertFilePaths().isNotEmpty() -> RevertFileImpact.KnownFiles
+    files.isNotEmpty() -> RevertFileImpact.UnknownFiles
+    else -> RevertFileImpact.MessagesOnly
+}
 
 /** The fork boundary of a forked session (`Session.ForkBoundary`). */
 @Serializable
