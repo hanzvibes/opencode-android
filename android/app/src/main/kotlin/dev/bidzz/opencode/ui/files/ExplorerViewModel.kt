@@ -876,15 +876,16 @@ class FileViewViewModel(
 
     /** Drops the draft and shows what the file holds now. */
     fun reloadFromDisk() {
-        // Audit-200 C11 (M-164): with nothing open there is nothing to
-        // reload — and the steps below (clearing the persisted draft,
-        // bumping the save generation) must not run for an empty path.
-        if (_state.value.path.isEmpty()) return
         // Discarding cancels a save in flight, like stopEditing (35-F8).
         saveGeneration++
         saveJob?.cancel()
         val s = _state.value
         _state.value = s.copy(editing = false, draft = "", conflict = false, conflictDiskContent = null, saving = false, draftStale = false)
+        // Audit-200 C11 (M-164): with nothing open there is no file to
+        // re-read — the empty-path load is refused inside load() — but
+        // the stored draft is still dropped: that is this function's
+        // point (a restored draft must not survive an explicit reload),
+        // pinned by FileDraftStoreTest.
         clearPersistedDraft()
         load(s.path)
     }

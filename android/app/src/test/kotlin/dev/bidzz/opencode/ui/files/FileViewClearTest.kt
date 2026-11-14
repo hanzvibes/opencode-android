@@ -46,7 +46,7 @@ class FileViewClearTest {
     }
 
     @Test
-    fun `M-164 reloading from disk with nothing open is a no-op`() {
+    fun `M-164 reloading from disk with nothing open loads nothing`() {
         val vm = viewModel()
         vm.clear()
         vm.reloadFromDisk()
