@@ -29,7 +29,6 @@ class ScreenSaverTest {
             Screen.Plugins,
             Screen.Worktrees,
             Screen.EngineConfig,
-            Screen.About,
         )
         for (screen in screens) {
             assertEquals(screen, screenFromSavedKey(screen.toSavedKey()))
@@ -65,6 +64,21 @@ class ScreenSaverTest {
         assertEquals(
             Screen.InAppBrowser("https://example.com/a?b=c"),
             screenFromSavedKey(Screen.InAppBrowser("https://example.com/a?b=c").toSavedKey()),
+        )
+        assertEquals(
+            Screen.About(),
+            screenFromSavedKey(Screen.About().toSavedKey()),
+        )
+    }
+
+    @Test
+    fun `M-109 an About opened from Settings restores to Chat`() {
+        // The return target is not carried in the saved key (same
+        // limitation as the browser's returnTo): a restore after
+        // process death lands on the default, Chat — never a crash.
+        assertEquals(
+            Screen.About(),
+            screenFromSavedKey(Screen.About(Screen.Settings).toSavedKey()),
         )
     }
 

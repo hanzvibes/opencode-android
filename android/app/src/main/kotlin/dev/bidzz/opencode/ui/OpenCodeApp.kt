@@ -164,7 +164,15 @@ internal sealed interface Screen {
     data object WebSearch : Screen
     data object Worktrees : Screen
     data object EngineConfig : Screen
-    data object About : Screen
+    /**
+     * Where Back returns to (audit-200 C6, M-109): About opens from
+     * Settings and from the drawer footer, and each of them is the right
+     * place to come back to — not always Chat, not always Settings. Same
+     * pattern as [InAppBrowser.returnTo] (B7, M-158); like the browser,
+     * the return target is not carried in the saved key, so a restore
+     * after process death returns to Chat.
+     */
+    data class About(val returnTo: Screen = Screen.Chat) : Screen
     /** Optional Basic auth for engine URLs (artifact views); public links pass none. */
     /**
      * Where Back returns to (audit-200 B7, M-158): the browser is opened
@@ -208,7 +216,7 @@ internal sealed interface Screen {
         WebSearch -> "websearch"
         Worktrees -> "worktrees"
         EngineConfig -> "engineconfig"
-        About -> "about"
+        is About -> "about"
         is InAppBrowser -> "browser:$url"
     }
 }
@@ -246,7 +254,7 @@ internal fun screenFromSavedKey(key: String): Screen {
         "websearch" -> Screen.WebSearch
         "worktrees" -> Screen.Worktrees
         "engineconfig" -> Screen.EngineConfig
-        "about" -> Screen.About
+        "about" -> Screen.About()
         "browser" -> payload?.let { Screen.InAppBrowser(it) } ?: Screen.Chat
         else -> Screen.Chat
     }
@@ -281,7 +289,7 @@ internal fun Screen.parent(): Screen = when (this) {
     is Screen.Instructions -> Screen.Sessions
     Screen.SessionStats -> Screen.Settings
     Screen.UsageLimits -> Screen.Settings
-    Screen.About -> Screen.Chat
+    is Screen.About -> this.returnTo
     // Audit-200 B7 (M-158): the browser returns to the screen that
     // opened it (chat, Artifacts or WebSearch), not always to Chat.
     is Screen.InAppBrowser -> this.returnTo
@@ -302,7 +310,7 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Artifacts, Screen.Jobs,
     Screen.Generate, Screen.WebSearch,
     Screen.Worktrees,
-    Screen.EngineConfig, Screen.About, is Screen.InAppBrowser,
+    Screen.EngineConfig, is Screen.About, is Screen.InAppBrowser,
     is Screen.Inbox, is Screen.MoveSession, is Screen.SessionExport,
     is Screen.Instructions, Screen.SessionStats, Screen.UsageLimits -> 3
     is Screen.Diff -> 4
@@ -408,6 +416,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
      * is not abandoned.
      */
     val onDeleteSession: (String) -> Unit = { id ->
+        // Audit-200 C6 (M-108): stop the run before the delete leaves —
+        // interrupting after the engine confirms it would target a
+        // session id that no longer exists.
+        chatViewModel.interruptSessionIfBusy(id)
         sessionViewModel.delete(id) { deletedId ->
             if (chatState.sessionID == deletedId) {
                 chatViewModel.newSession()
@@ -1162,15 +1174,18 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onEngineConfig = { screen = Screen.EngineConfig },
                         onSessionStats = { screen = Screen.SessionStats },
                         onUsageLimits = { screen = Screen.UsageLimits },
-                        onAbout = { screen = Screen.About },
+                        onAbout = { screen = Screen.About(Screen.Settings) },
                     )
 
-                    Screen.About -> AboutScreen(
+                    is Screen.About -> AboutScreen(
                         versionName = remember {
                             runCatching { hostContext.packageManager.getPackageInfo(hostContext.packageName, 0).versionName }
                                 .getOrNull().orEmpty()
                         },
-                        onBack = { screen = Screen.Settings },
+                        // Audit-200 C6 (M-109): back goes where About came
+                        // from — the same returnTo the system back uses
+                        // via parent(), not a hardcoded screen.
+                        onBack = { screen = screen.parent() },
                     )
 
                     Screen.Providers -> ProvidersScreen(
@@ -1424,7 +1439,9 @@ private fun ChatDestination(
         onModel = chatViewModel::selectModel,
         onStatusClick = { onNavigate(Screen.Diagnostics) },
         onNewSession = chatViewModel::newSession,
-        onLoadBranches = chatViewModel::loadBranches,
+        // Audit-200 C6 (M-104/M-105): the dialog's loads are user-triggered
+        // (open/expand), so they always refresh — see loadBranches.
+        onLoadBranches = { chatViewModel.loadBranches(force = true) },
         // Turn diff (Tier 2): only while a session is open — without one
         // there is no latest turn to diff, and the dialog hides the entry.
         // Audit-200 C5 (M-103): not while the turn is still running
@@ -1479,14 +1496,16 @@ private fun ChatDestination(
         onFilesClick = { onNavigate(Screen.Files) },
         onSettingsClick = { onNavigate(Screen.Settings) },
         onDiagnosticsClick = { onNavigate(Screen.Diagnostics) },
-        onAboutClick = { onNavigate(Screen.About) },
+        onAboutClick = { onNavigate(Screen.About(Screen.Chat)) },
         onRenameSession = { id, title ->
             sessionViewModel.rename(id, title)
         },
         onDeleteSession = { id ->
             // Same rule as the shared handler in OpenCodeApp (80-F1/80-F6):
             // move away and prune the parked composer only after the
-            // engine confirms the delete.
+            // engine confirms the delete. The run stops first (C6, M-108),
+            // before the delete request leaves.
+            chatViewModel.interruptSessionIfBusy(id)
             sessionViewModel.delete(id) { deletedId ->
                 if (chatState.sessionID == deletedId) {
                     chatViewModel.newSession()

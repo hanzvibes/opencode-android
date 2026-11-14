@@ -656,6 +656,31 @@ internal fun planVcsLoad(
     return VcsLoadPlan(loadBranches = !branchesReady, loadDetails = !detailsReady)
 }
 
+/**
+ * Audit-200 C6 (M-107): the dialog's branch list, current/default branch
+ * and review base belong to one workspace. When [path] is not the
+ * workspace either load was last done for, the stored values are another
+ * project's and must be cleared before anything renders them again — a
+ * failed reload must leave the rows blank, not stale.
+ */
+internal fun shouldClearStaleVcs(
+    branchesWorkspace: String?,
+    detailsWorkspace: String?,
+    path: String,
+): Boolean = branchesWorkspace != path || detailsWorkspace != path
+
+/**
+ * Audit-200 C6 (M-108): deleting a session that is still running stops its
+ * run first. The run can only belong to the open session — leaving a
+ * session already interrupts it (C5, M-092) — so any other id needs no
+ * interrupt.
+ */
+internal fun shouldInterruptSession(
+    busy: Boolean,
+    currentSessionID: String?,
+    targetSessionID: String,
+): Boolean = busy && currentSessionID == targetSessionID
+
 internal data class SelectionRevert(val agent: String?, val model: ModelRef?)
 
 internal fun resolveSelectionAfterSetFailure(
@@ -2008,6 +2033,10 @@ class ChatViewModel(
             refreshContextUsage()
         } else if (wasBusy && !chat.busy) {
             refreshContextUsage()
+            // Audit-200 C6 (M-104/M-105): the run may have created, deleted
+            // or switched branches — the list and details are stale the
+            // moment it ends, so they refresh with the context meter.
+            loadBranches(force = true)
         } else if (chat.busy && contextRefreshDue(System.currentTimeMillis(), lastContextRefreshMillis)) {
             refreshContextUsage()
         }
@@ -2061,15 +2090,41 @@ class ChatViewModel(
     /** Workspace whose `info()` AND `base()` both succeeded; details for any other workspace are stale. */
     private var vcsDetailsWorkspace: String? = null
 
-    fun loadBranches() {
+    /**
+     * Loads the branch list and the VCS details for the current workspace.
+     *
+     * Audit-200 C6 (M-104/M-105): a forced load re-fetches both even when
+     * the plan says they are ready — the agent may have created, deleted
+     * or switched branches since the last load, and a user re-expanding
+     * the list or re-opening the dialog is asking for fresh values, not
+     * the cached ones. Forced loads come from the dialog (open/expand)
+     * and from the end of a run (see [onRepoState]).
+     */
+    fun loadBranches(force: Boolean = false) {
         val path = workspace()
         val h = handle ?: return
-        val plan = planVcsLoad(
-            hasBranches = _state.value.branches != null,
-            branchesWorkspace = branchesWorkspace,
-            detailsWorkspace = vcsDetailsWorkspace,
-            path = path,
-        )
+        // Audit-200 C6 (M-107): the stored values belong to the workspace
+        // the last load was done for — clear them before the plan runs,
+        // so a workspace switch never renders another project's branch,
+        // current/default rows or review base, even if this load fails.
+        if (shouldClearStaleVcs(branchesWorkspace, vcsDetailsWorkspace, path)) {
+            _state.value = _state.value.copy(
+                vcsInfo = null,
+                vcsBase = null,
+                branches = null,
+                branch = null,
+            )
+        }
+        val plan = if (force) {
+            VcsLoadPlan(loadBranches = true, loadDetails = true)
+        } else {
+            planVcsLoad(
+                hasBranches = _state.value.branches != null,
+                branchesWorkspace = branchesWorkspace,
+                detailsWorkspace = vcsDetailsWorkspace,
+                path = path,
+            )
+        }
         if (!plan.loadBranches && !plan.loadDetails) return
         branchesJob?.cancel()
         _state.value = _state.value.copy(
@@ -2106,7 +2161,16 @@ class ChatViewModel(
                 var baseOk = false
                 when (val result = vcs.info(path)) {
                     is ApiResult.Success -> {
-                        _state.value = _state.value.copy(vcsInfo = result.value)
+                        // Audit-200 C6 (M-106): the engine's current branch
+                        // is the one true source — it fills `state.branch`,
+                        // so the header and the list's checkmark compare
+                        // against the same value instead of the local HEAD
+                        // read. A blank current falls back to the local
+                        // read (the header's `?: detectGitBranch`).
+                        _state.value = _state.value.copy(
+                            vcsInfo = result.value,
+                            branch = result.value.branch.current?.takeIf { it.isNotBlank() },
+                        )
                         infoOk = true
                     }
                     is ApiResult.Failure -> detailsFailed = true
@@ -4025,6 +4089,23 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Audit-200 C6 (M-108): stops the run of the session being deleted,
+     * before the delete request leaves. The delete path used to interrupt
+     * only after the engine confirmed the delete — via [newSession], to a
+     * session id that no longer exists — so a run the engine does not kill
+     * on delete kept working invisibly. This is deliberately not [stop]:
+     * the session is about to be deleted, so there is no queue to return
+     * to the draft and no banner to show for it; the interrupt is
+     * fire-and-forget. If the delete then fails, the session survives
+     * with its run stopped, and the user can send again.
+     */
+    fun interruptSessionIfBusy(sessionID: String) {
+        if (!shouldInterruptSession(_state.value.busy, _state.value.sessionID, sessionID)) return
+        val repo = repository ?: return
+        viewModelScope.launch { runCatching { repo.interrupt(sessionID) } }
     }
 
     /**

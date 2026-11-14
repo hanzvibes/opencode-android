@@ -305,7 +305,18 @@ class FileApi(private val client: EngineClient) {
      * into "no changes".
      */
     suspend fun hasRepository(directory: String): Boolean = when (val entries = list(directory)) {
-        is ApiResult.Success -> entries.value.any { it.path.trimEnd('/') == ".git" && it.isDirectory }
+        is ApiResult.Success -> {
+            val dotGit = entries.value.firstOrNull { it.path.trimEnd('/') == ".git" } ?: return false
+            // Audit-200 C6 (M-011): a `.git` file is a worktree/submodule
+            // pointer (`gitdir: <path>`), not a missing repository — the
+            // engine's vcs.status/diff answer for worktrees either way.
+            // Only a `gitdir:` pointer counts; any other file named `.git`
+            // is still not a repository, and an unreadable one stays one.
+            if (dotGit.isDirectory) true else when (val read = readText(directory, ".git")) {
+                is ApiResult.Success -> read.value.text.trimStart().startsWith("gitdir:")
+                is ApiResult.Failure -> false
+            }
+        }
         is ApiResult.Failure -> false
     }
 
