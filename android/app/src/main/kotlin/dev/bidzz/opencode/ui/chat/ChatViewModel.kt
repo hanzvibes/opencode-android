@@ -4101,15 +4101,6 @@ class ChatViewModel(
         // engine comes up.
         pendingOpenSessionID = null
         sessionReloadAttempts = 0
-        // Audit-200 C5 (M-095): with no engine attached there is no
-        // session to start — report it instead of clearing the screen
-        // into a fresh chat that can never send. The old code cleared
-        // first and built nothing, and the UI navigated as if a new
-        // session existed.
-        if (handle == null) {
-            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
-            return
-        }
         // Audit-200 C5 (M-092): leaving a busy session interrupts its
         // run — a fresh session must not leave the old run editing files
         // invisibly. The old repository is captured before close(): the
@@ -4159,6 +4150,18 @@ class ChatViewModel(
         // in progress does not come back with it (see restoreEditState):
         // its message belongs to the old session.
         restoreParkedComposer(UNSENT_SESSION_KEY, restoreEditState = false)
+        // Audit-200 C5 (M-095): with no engine attached there is no
+        // session to start — report it instead of announcing a fresh
+        // chat that can never send. The local teardown above still
+        // runs: the draft is parked under its old session and the
+        // pre-edit backup is cleared, so a stray Cancel cannot restore
+        // the old session's draft here (A9-3, 80-F5, DL-020, 6c pin
+        // that). Only the "a new session exists" announcement is
+        // skipped.
+        if (handle == null) {
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            return
+        }
         // The abandoned session must not come back on the next resume:
         // without this, switching workspaces reopened the old workspace's
         // session under the new project's header (item 14).

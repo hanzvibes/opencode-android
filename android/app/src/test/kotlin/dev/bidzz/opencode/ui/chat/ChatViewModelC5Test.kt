@@ -144,12 +144,21 @@ class ChatViewModelC5Test {
     }
 
     @Test
-    fun `M-095 a new session with no engine reports it and keeps the old one`() {
-        val vm = viewModel()
+    fun `M-095 a new session with no engine parks the draft, clears the session and reports it`() {
+        val store = InMemoryParkedComposerStore()
+        val vm = viewModel(store)
         vm.onRepoState(ChatState(sessionID = "s1"))
+        vm.onDraftChange("typed")
         vm.newSession()
+        // The local teardown still runs (A9-3, 80-F5, DL-020, 6c):
+        // the draft is parked under its session and the composer is
+        // cleared — only the "a new session exists" announcement is
+        // skipped, and the failure is reported instead of silently
+        // opening a chat that can never send.
+        assertEquals("typed", store.get("s1")?.draft)
+        assertNull(vm.state.value.sessionID)
+        assertEquals("", vm.state.value.draft)
         assertEquals(R.string.error_engine_not_running, vm.state.value.failureKey)
-        assertEquals("s1", vm.state.value.sessionID)
     }
 
     @Test
