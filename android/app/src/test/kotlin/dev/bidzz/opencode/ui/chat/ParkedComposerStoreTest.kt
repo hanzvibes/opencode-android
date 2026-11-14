@@ -129,6 +129,23 @@ class ParkedComposerStoreTest {
     }
 
     @Test
+    fun `decode of a composer with a null-attachments entry restores an empty list`() {
+        // Audit-200 A9-9 (DL-036): an entry parked before attachments
+        // existed carries a null list at runtime; the read boundary must
+        // normalize it instead of letting returnQueueToDraft throw on it.
+        val entry = QueuedPrompt("tanya", "tanya")
+        QueuedPrompt::class.java.getDeclaredField("attachments").apply {
+            isAccessible = true
+        }.set(entry, null)
+        val original = ParkedComposer("draft", emptyList(), listOf(entry))
+
+        val decoded = decodeParkedComposer(encodeParkedComposer(original))
+
+        assertEquals(emptyList<AttachedFile>(), decoded?.queued?.get(0)?.attachments)
+        assertTrue(decoded?.queued?.get(0)?.id?.isNotBlank() == true)
+    }
+
+    @Test
     fun `removeQueued on a pre-1a composer does not crash and keeps the draft`() {
         val store = InMemoryParkedComposerStore()
         store.put("s1", pre1aComposer())

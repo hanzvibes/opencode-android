@@ -191,12 +191,14 @@ internal fun decodeParkedComposer(encoded: String): ParkedComposer? {
         val decoded = ObjectInputStream(ByteArrayInputStream(bytes)).use {
             it.readObject() as? ParkedComposer
         } ?: return null
-        // Audit-200 A3 (C-007) + A5 (DL-001): normalize at the read
-        // boundary so every reader sees a real list with real ids, and
-        // the entry self-heals on the next write. A composer parked
-        // before Fase 1a has no `queued` field (null at runtime); one
-        // parked before ids existed has entries with null ids — the
-        // same deserialization bypass in both cases.
+        // Audit-200 A3 (C-007) + A5 (DL-001) + A9-9 (DL-036): normalize
+        // at the read boundary so every reader sees a real list with real
+        // ids and real attachment lists, and the entry self-heals on the
+        // next write. A composer parked before Fase 1a has no `queued`
+        // field (null at runtime); one parked before ids existed has
+        // entries with null ids; one parked before attachments existed
+        // has entries with a null attachments list — the same
+        // deserialization bypass in all three cases.
         val queuedNull = (decoded.queued as Any?) == null
         val queued: List<QueuedPrompt> = if (queuedNull) emptyList() else decoded.queued
         val fixed = queued.withUniqueIds()

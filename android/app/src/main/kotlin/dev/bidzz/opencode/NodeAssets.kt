@@ -42,13 +42,22 @@ object NodeAssets {
             return false
         }
         return try {
-            nodeDir.deleteRecursively()
+            // Audit-200 A9-9 (DL-038): delete only the paths the bundle
+            // ships, never the whole tree — npm computes its global prefix
+            // from npm-cli.js's real path, so user-installed global
+            // packages live in this tree (lib/node_modules/<pkg>) and a
+            // wipe deleted them on every VERSION bump. A path that could
+            // not be cleared is logged, not forced: the sentinel check
+            // below decides, and the copy retries on the next launch.
+            val refused = deleteOwnedPaths(nodeDir, listAssetFiles(assets, ASSET_ROOT) + MARKER_NAME)
+            if (refused.isNotEmpty()) {
+                Log.w(TAG, "node assets could not clear stale paths, leaving them: $refused")
+            }
             nodeDir.mkdirs()
             copyDir(assets, ASSET_ROOT, nodeDir)
             val npmCli = File(nodeDir, "lib/node_modules/npm/bin/npm-cli.js")
             if (!npmCli.isFile) {
                 Log.w(TAG, "node assets missing npm-cli.js after copy; not marking synced")
-                nodeDir.deleteRecursively()
                 return false
             }
             marker.writeText(VERSION)

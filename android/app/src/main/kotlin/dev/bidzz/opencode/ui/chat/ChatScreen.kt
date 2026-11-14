@@ -812,7 +812,11 @@ fun ChatScreen(
             // The watermark is a message id (01-F2): resolved to a count
             // against the messages actually in the window — no coerceIn
             // clamp, a count was exactly what the prepends broke.
-            val restoredId = state.sessionID?.let { readPositionStore.getReadMessageId(it) }
+            // Audit-200 A9-9 (DL-037): a legacy count watermark is
+            // migrated to an id on this first open, not dropped.
+            val restoredId = state.sessionID?.let {
+                readPositionStore.getOrMigrateReadMessageId(it, state.messages)
+            }
             lastReadMessageCount = resolveReadCount(restoredId, state.messages)
             lastReadMessageId = restoredId ?: state.messages.lastOrNull()?.id
             scrolledSessionID = state.sessionID

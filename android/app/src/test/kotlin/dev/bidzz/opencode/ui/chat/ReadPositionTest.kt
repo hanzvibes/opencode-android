@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -33,5 +34,28 @@ class ReadPositionTest {
         val window = messages("m4", "m5", "m6")
         assertEquals(0, resolveReadCount("", window))
         assertEquals(0, resolveReadCount("m1", window))
+    }
+
+    // DL-037: a legacy count watermark migrates to an id --------------
+
+    @Test
+    fun `DL-037 a legacy count resolves to the id of the last read message`() {
+        assertEquals("m2", resolveMigratedReadId(2, messages("m1", "m2", "m3")))
+    }
+
+    @Test
+    fun `DL-037 a legacy count of zero means nothing read`() {
+        assertEquals("", resolveMigratedReadId(0, messages("m1", "m2", "m3")))
+        assertEquals("", resolveMigratedReadId(-1, messages("m1", "m2", "m3")))
+    }
+
+    @Test
+    fun `DL-037 a legacy count past the end clamps to the last message`() {
+        assertEquals("m3", resolveMigratedReadId(9, messages("m1", "m2", "m3")))
+    }
+
+    @Test
+    fun `DL-037 a legacy count with an empty window cannot be resolved`() {
+        assertNull(resolveMigratedReadId(2, emptyList()))
     }
 }

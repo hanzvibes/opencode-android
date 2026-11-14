@@ -50,13 +50,18 @@ object LspAssets {
             return false
         }
         return try {
-            lspDir.deleteRecursively()
+            // Audit-200 A9-9 (DL-038): delete only the paths the bundle
+            // ships, never the whole tree — see NodeAssets for why a wipe
+            // is data loss for anything the user installed into the tree.
+            val refused = deleteOwnedPaths(lspDir, listAssetFiles(assets, ASSET_ROOT) + MARKER_NAME)
+            if (refused.isNotEmpty()) {
+                Log.w(TAG, "lsp assets could not clear stale paths, leaving them: $refused")
+            }
             lspDir.mkdirs()
             copyDir(assets, ASSET_ROOT, lspDir)
             val sentinel = File(lspDir, "lib/node_modules/typescript-language-server/lib/cli.mjs")
             if (!sentinel.isFile) {
                 Log.w(TAG, "lsp assets missing typescript-language-server cli.mjs after copy; not marking synced")
-                lspDir.deleteRecursively()
                 return false
             }
             marker.writeText(VERSION)
