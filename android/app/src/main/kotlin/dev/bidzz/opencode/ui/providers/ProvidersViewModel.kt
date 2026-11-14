@@ -176,6 +176,16 @@ class ProvidersViewModel(
     private var restartWatchJob: Job? = null
 
     /**
+     * The engine handle the last restart was requested against
+     * (audit-200 C8, M-127): [refresh] clears a PENDING row only when
+     * the handle has changed since this was captured. Leaving and
+     * re-entering the screen — or another action's refresh — used to
+     * clear it unconditionally, so a provider whose restart never
+     * happened showed CONNECTED on disk evidence alone.
+     */
+    private var pendingRestartBeforeHandle: EngineApi.Handle? = null
+
+    /**
      * Re-reads the config file and, unless [reloadEngine] is false, the engine's
      * catalog and credentials.
      *
@@ -207,6 +217,15 @@ class ProvidersViewModel(
             val shadowed = withContext(Dispatchers.IO) {
                 runCatching { configStore.shadowedJsonProviderIds() }.getOrDefault(emptyList())
             }
+            // Audit-200 C8 (M-129): entering the screen with the engine
+            // down used to return silently — an empty catalog, no banner,
+            // no retry, and stale rows presented as current. Report it:
+            // the screen already renders `failure` with a Retry button
+            // (B6, M-019), and the disk lists underneath stay as the last
+            // known state. Only on a real reload: callers that are about
+            // to restart pass reloadEngine = false precisely so a dying
+            // engine does not report a spurious failure.
+            val h = if (reloadEngine) api.handle() else null
             _state.value = _state.value.copy(
                 customProviders = custom,
                 antigravityAccounts = agAccounts,
@@ -214,12 +233,26 @@ class ProvidersViewModel(
                 antigravityAccountsCorrupt = agResult is EngineConfigStore.AntigravityAccountsResult.Corrupt,
                 configProblem = configStore.lastConfigReadProblem,
                 shadowedJsonProviders = shadowed,
-                restartPendingFor = if (preserveRestartPending) _state.value.restartPendingFor else null,
+                // Audit-200 C8 (M-127): a PENDING row clears only when
+                // the restart actually landed (see resolveRestartPending)
+                // — not on every refresh. A dismissed restart (M-457)
+                // and a mid-restart re-entry both keep PENDING.
+                restartPendingFor = if (preserveRestartPending) {
+                    _state.value.restartPendingFor
+                } else {
+                    resolveRestartPending(
+                        _state.value.restartPendingFor,
+                        pendingRestartBeforeHandle,
+                        h,
+                    )
+                },
+                failure = if (reloadEngine && h == null) engineDownFailure() else _state.value.failure,
+                loading = if (reloadEngine && h == null) false else _state.value.loading,
             )
             if (!reloadEngine) return@launch
-            val h = api.handle() ?: return@launch
+            val handle = h ?: return@launch
             _state.value = _state.value.copy(loading = true, failure = null, failureKey = null)
-            reload(h)
+            reload(handle)
         }
     }
 
@@ -605,6 +638,10 @@ class ProvidersViewModel(
      */
     private fun doRestart(providerName: String) {
         val before = api.handle()
+        // Audit-200 C8 (M-127): remember which handle the restart was
+        // requested against — refresh() only clears the PENDING row when
+        // a different handle appears, i.e. the restart actually landed.
+        pendingRestartBeforeHandle = before
         if (!restartEngine()) {
             // The restart never started (supervisor not initialised):
             // say so now instead of leaving a PENDING row behind (M-125).
@@ -689,4 +726,28 @@ class ProvidersViewModel(
             }
         }
     }
+}
+
+/**
+ * The pending-restart name a refresh may keep (audit-200 C8, M-127).
+ *
+ * A provider row stays PENDING until the engine actually re-read the
+ * config — that is, until the handle changes. Nothing pending clears
+ * to null; a refresh with no tracked restart (`restartBeforeHandle`
+ * null — e.g. the restart was dismissed, M-457), with the engine down
+ * (`currentHandle` null), or with the same handle still attached
+ * keeps the name. The handles are [Any] because the decision is pure
+ * reference equality and unit tests cannot construct an
+ * [EngineApi.Handle]; the view model passes real handles.
+ */
+internal fun resolveRestartPending(
+    pendingName: String?,
+    restartBeforeHandle: Any?,
+    currentHandle: Any?,
+): String? = if (pendingName == null ||
+    (restartBeforeHandle != null && currentHandle != null && currentHandle !== restartBeforeHandle)
+) {
+    null
+} else {
+    pendingName
 }

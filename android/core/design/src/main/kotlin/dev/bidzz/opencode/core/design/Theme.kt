@@ -2,6 +2,7 @@ package dev.bidzz.opencode.core.design
 
 import android.app.Activity
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Build
 import android.view.View
 import android.view.WindowInsetsController
@@ -680,6 +681,22 @@ fun materialColorScheme(colors: OpenCodeColors, darkTheme: Boolean): ColorScheme
 }
 
 /**
+ * Whether [configuration] is in night mode (audit-200 C8, M-130).
+ *
+ * Pure int arithmetic on the `uiMode` field — no framework call — so it
+ * is unit-testable on the JVM. [androidx.compose.foundation.isSystemInDarkTheme]
+ * reads the same bit out of `LocalConfiguration`, which the app shadows
+ * with a language-wrapped copy (see `OpenCodeApp`): when the manifest
+ * holds `uiMode` in `configChanges` the activity is not recreated, and
+ * the shadowed `Configuration` object is mutated in place, so Compose
+ * never sees a new value and System mode goes stale. The app therefore
+ * observes the system value itself via `ComponentCallbacks` and passes
+ * it in as [OpenCodeTheme]'s `systemDark`.
+ */
+fun isNightModeActive(configuration: Configuration): Boolean =
+    configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+
+/**
  * Applies the design system.
  *
  * [themeMode] resolves to dark/light here: System follows the phone, Dark /
@@ -694,10 +711,11 @@ fun materialColorScheme(colors: OpenCodeColors, darkTheme: Boolean): ColorScheme
 @Composable
 fun OpenCodeTheme(
     themeMode: ThemeMode = ThemeMode.System,
+    systemDark: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
-        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.System -> systemDark
         ThemeMode.Dark -> true
         ThemeMode.Light -> false
     }

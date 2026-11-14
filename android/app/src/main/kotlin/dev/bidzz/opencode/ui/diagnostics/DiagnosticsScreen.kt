@@ -408,7 +408,11 @@ fun DiagnosticsScreen(
                     ) {
                         IconBadge(
                             glyph = Glyph.Terminal,
-                            tint = Color.White,
+                            // Audit-200 C8 (M-132): no explicit tint —
+                            // IconBadge's default picks the foreground
+                            // from the background's luminance (47-F5).
+                            // White on this orange was only 2.20:1; the
+                            // default near-black is 8.95:1.
                             background = Color(0xFFFF9500),
                             shape = RoundedCornerShape(radius.sm),
                             size = 34.dp,
@@ -1107,7 +1111,12 @@ private fun LogViewerControls(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(radius.full))
-                        .background(if (follow) colors.accent else colors.fill)
+                        // Audit-200 C8 (M-131): white text on `accent`
+                        // was only 4.02:1 (light) / 3.65:1 (dark) — below
+                        // AA. The pill now uses the button fill + its
+                        // on-colour (5.98:1 / 5.57:1), the same pair
+                        // PrimaryButton uses.
+                        .background(if (follow) colors.accentFill else colors.fill)
                         .clickable(role = Role.Button) { onFollowChange(!follow) }
                         .semantics {
                             contentDescription = followDescription
@@ -1118,14 +1127,14 @@ private fun LogViewerControls(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         GlyphIcon(
                             Glyph.ArrowDown,
-                            tint = if (follow) Color.White else colors.onSurfaceMuted,
+                            tint = if (follow) colors.onAccent else colors.onSurfaceMuted,
                             size = 14.dp,
                         )
                         Spacer(Modifier.width(spacing.xxs))
                         Text(
                             text = stringResource(R.string.diag_log_follow),
                             style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (follow) Color.White else colors.onSurfaceMuted,
+                            color = if (follow) colors.onAccent else colors.onSurfaceMuted,
                         )
                     }
                 }
@@ -1231,7 +1240,10 @@ private fun HealthRow(
     ) {
         IconBadge(
             glyph = glyph,
-            tint = Color.White,
+            // Audit-200 C8 (M-132): no explicit tint — see the engine
+            // control badge above. White on the cyan/green/orange fills
+            // was 2.57:1 / 2.22:1 / 2.20:1; the luminance default gives
+            // a near-black glyph (7.65:1 / 8.86:1 / 8.95:1).
             background = badgeColor,
             shape = RoundedCornerShape(radius.sm),
             size = 30.dp,
