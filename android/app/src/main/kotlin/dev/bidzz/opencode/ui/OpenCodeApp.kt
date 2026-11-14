@@ -1,6 +1,8 @@
 package dev.bidzz.opencode.ui
 
+import android.content.ComponentCallbacks
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -30,6 +32,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +64,7 @@ import dev.bidzz.opencode.core.design.Motion
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.design.ThemeStore
+import dev.bidzz.opencode.core.design.isNightModeActive
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.about.AboutScreen
 import dev.bidzz.opencode.ui.browser.InAppBrowserScreen
@@ -723,6 +727,30 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // once here, redraws the whole tree in place.
     var themeMode by remember { mutableStateOf(ThemeStore.get(hostContext)) }
 
+    // Audit-200 C8 (M-130): System mode must follow the phone while the
+    // app stays open. It did not: the manifest holds `uiMode` in
+    // `configChanges`, so the activity is never recreated on a system
+    // theme flip — and `isSystemInDarkTheme()` reads `LocalConfiguration`,
+    // which this file shadows below with the language-wrapped copy, a
+    // `Configuration` object the framework mutates in place, so Compose
+    // never sees a new value. Instead the app watches the system value
+    // itself: `ComponentCallbacks` fires on every configuration change
+    // even when the activity handles it, and the state redraws the tree.
+    // The value is read from the UNWRAPPED host context — the wrapped
+    // copy only carries the language override.
+    var systemDark by remember { mutableStateOf(isNightModeActive(hostContext.resources.configuration)) }
+    DisposableEffect(hostContext) {
+        val callbacks = object : ComponentCallbacks {
+            override fun onConfigurationChanged(newConfig: Configuration) {
+                systemDark = isNightModeActive(newConfig)
+            }
+
+            override fun onLowMemory() = Unit
+        }
+        hostContext.applicationContext.registerComponentCallbacks(callbacks)
+        onDispose { hostContext.applicationContext.unregisterComponentCallbacks(callbacks) }
+    }
+
     // First-run onboarding (Phase 3): shown once, while the workspace is
     // still empty. Read once on first composition; dismissing or finishing
     // marks it completed in prefs, so it never reappears.
@@ -787,7 +815,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         LocalAppContext provides localized,
         LocalUriHandler provides browserUriHandler,
     ) {
-    OpenCodeTheme(themeMode = themeMode) {
+    OpenCodeTheme(themeMode = themeMode, systemDark = systemDark) {
         // Animation C: screen transitions slide 24dp with a 320ms
         // emphasized fade. The pixel offset is resolved once here,
         // because a transitionSpec cannot read LocalDensity.

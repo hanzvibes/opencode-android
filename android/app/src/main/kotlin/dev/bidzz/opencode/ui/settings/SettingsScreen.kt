@@ -135,6 +135,12 @@ fun SettingsScreen(
     var savedPermissions by remember { mutableStateOf<List<PermissionSavedInfo>>(emptyList()) }
     var savedPermissionsLoading by remember { mutableStateOf(true) }
     var savedPermissionsFailure by remember { mutableStateOf<ApiResult.Failure?>(null) }
+    // Audit-200 C8 (M-123): ids whose revoke is in flight. The Revoke
+    // button stays enabled while its DELETE runs, so a double-tap fired
+    // a second DELETE at the same id — 404, a misleading failure banner
+    // for a revoke that already succeeded. The row disables while its
+    // own request runs; other rows stay usable.
+    var revokingPermissionIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val permissionsScope = rememberCoroutineScope()
     val engineHandle = app.engineApi.handle()
     // Audit-200 C3 (M-010/M-062): the load is a named function, not a
@@ -173,16 +179,22 @@ fun SettingsScreen(
     }
     LaunchedEffect(engineHandle) { loadSavedPermissions() }
     fun revokeSavedPermission(saved: PermissionSavedInfo) {
+        if (saved.id in revokingPermissionIds) return
         val handle = app.engineApi.handle() ?: return
+        revokingPermissionIds = revokingPermissionIds + saved.id
         permissionsScope.launch {
-            when (val result = handle.permissions.deleteSaved(saved.id)) {
-                is ApiResult.Success -> {
-                    savedPermissions = savedPermissions - saved
-                    // A revoke that succeeds clears a stale failure, like
-                    // a successful load (audit-200 C3, M-010/M-062).
-                    savedPermissionsFailure = null
+            try {
+                when (val result = handle.permissions.deleteSaved(saved.id)) {
+                    is ApiResult.Success -> {
+                        savedPermissions = savedPermissions - saved
+                        // A revoke that succeeds clears a stale failure, like
+                        // a successful load (audit-200 C3, M-010/M-062).
+                        savedPermissionsFailure = null
+                    }
+                    is ApiResult.Failure -> savedPermissionsFailure = result
                 }
-                is ApiResult.Failure -> savedPermissionsFailure = result
+            } finally {
+                revokingPermissionIds = revokingPermissionIds - saved.id
             }
         }
     }
@@ -483,6 +495,7 @@ fun SettingsScreen(
                                 if (index > 0) RowDivider(inset = spacing.md)
                                 SavedPermissionRow(
                                     saved = saved,
+                                    revoking = saved.id in revokingPermissionIds,
                                     onRevoke = { revokeSavedPermission(saved) },
                                 )
                             }
@@ -1100,6 +1113,7 @@ private fun ThemeModeRow(
 @Composable
 private fun SavedPermissionRow(
     saved: PermissionSavedInfo,
+    revoking: Boolean = false,
     onRevoke: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
@@ -1137,7 +1151,7 @@ private fun SavedPermissionRow(
                 )
             }
         }
-        TextButton(onClick = onRevoke) {
+        TextButton(onClick = onRevoke, enabled = !revoking) {
             Text(
                 text = stringResource(R.string.settings_saved_permissions_revoke),
                 style = OpenCodeTypography.label,

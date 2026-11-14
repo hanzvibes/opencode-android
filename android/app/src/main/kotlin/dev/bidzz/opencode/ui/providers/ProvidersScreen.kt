@@ -369,6 +369,19 @@ fun ProvidersScreen(
                 )
             }
 
+            // Audit-200 C8 (M-128): the Antigravity patch status used to
+            // live only inside the Google sheet, two taps away — a fresh
+            // install stared at a Connected Google badge with no hint the
+            // patch was stuck or waiting for a restart. The same
+            // PatchStatus line now shows here when something is off; a
+            // healthy patch stays quiet.
+            PatchStatus(
+                patchReport = patchReport,
+                patchPollEnded = patchPollEnded,
+                restartPendingFor = state.restartPendingFor,
+                onRestartForPatch = onRestartForPatch,
+            )
+
             // 1. Featured AI Providers Section
             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                 Row(
@@ -834,34 +847,15 @@ fun ProvidersScreen(
                     // Audit-200 B7 (M-206/M-209): a patch that landed after start,
                     // or one whose 5-minute wait ran out, offers a restart button
                     // next to the text — the text alone never got the user there.
-                    patchReport?.let { report ->
-                        when (val display = patchDisplayState(report, patchPollEnded)) {
-                            is PatchDisplay.Message -> {
-                                Text(
-                                    text = stringResource(display.textRes),
-                                    style = OpenCodeTypography.bodySmall,
-                                    color = colors.warning,
-                                )
-                            }
-                            is PatchDisplay.WithRestart -> {
-                                Text(
-                                    text = stringResource(display.textRes),
-                                    style = OpenCodeTypography.bodySmall,
-                                    color = colors.warning,
-                                )
-                                TextButton(
-                                    onClick = onRestartForPatch,
-                                    enabled = state.restartPendingFor != ProvidersViewModel.PATCH_RESTART_NAME,
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.providers_patch_restart),
-                                        color = colors.accentText,
-                                    )
-                                }
-                            }
-                            PatchDisplay.Quiet -> Unit
-                        }
-                    }
+                    // Audit-200 C8 (M-128): the same status also shows on the main
+                    // screen (PatchStatus below), so a fresh install does not have
+                    // to open this sheet to learn the patch is stuck.
+                    PatchStatus(
+                        patchReport = patchReport,
+                        patchPollEnded = patchPollEnded,
+                        restartPendingFor = state.restartPendingFor,
+                        onRestartForPatch = onRestartForPatch,
+                    )
 
                     if (storedKeys.isNotEmpty()) {
                         Text(
@@ -1067,6 +1061,52 @@ internal fun patchDisplayState(
             PatchDisplay.Message(R.string.providers_patch_not_found)
         }
     AntigravityPatchOutcome.ALREADY_PATCHED -> PatchDisplay.Quiet
+}
+
+/**
+ * One line of Antigravity patch status, shared by the main screen and
+ * the Google sheet (audit-200 C8, M-128): a Message is a warning line,
+ * WithRestart adds the restart button that retries the patch, Quiet
+ * renders nothing — a healthy already-patched plugin stays silent.
+ * The text comes from [patchDisplayState], so the two places can never
+ * disagree about what the patch needs.
+ */
+@Composable
+private fun PatchStatus(
+    patchReport: AntigravityPatchReport?,
+    patchPollEnded: Boolean,
+    restartPendingFor: String?,
+    onRestartForPatch: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    patchReport?.let { report ->
+        when (val display = patchDisplayState(report, patchPollEnded)) {
+            is PatchDisplay.Message -> {
+                Text(
+                    text = stringResource(display.textRes),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.warning,
+                )
+            }
+            is PatchDisplay.WithRestart -> {
+                Text(
+                    text = stringResource(display.textRes),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.warning,
+                )
+                TextButton(
+                    onClick = onRestartForPatch,
+                    enabled = restartPendingFor != ProvidersViewModel.PATCH_RESTART_NAME,
+                ) {
+                    Text(
+                        text = stringResource(R.string.providers_patch_restart),
+                        color = colors.accentText,
+                    )
+                }
+            }
+            PatchDisplay.Quiet -> Unit
+        }
+    }
 }
 
 /**
