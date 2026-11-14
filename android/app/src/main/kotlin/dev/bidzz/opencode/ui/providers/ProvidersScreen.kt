@@ -166,6 +166,8 @@ fun ProvidersScreen(
     onSelectAntigravityAccount: (String) -> Unit = {},
     onSetAntigravityAccountEnabled: (String, Boolean) -> Unit = { _, _ -> },
     onDeleteJsoncConfig: () -> Unit = {},
+    onConfirmRestart: () -> Unit = {},
+    onDismissRestart: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -188,12 +190,22 @@ fun ProvidersScreen(
     // with the engine-down banner visible behind it.
     var pendingKeySave by remember { mutableStateOf<String?>(null) }
     var pendingReplace by remember { mutableStateOf<Pair<String, String>?>(null) }
+    // Audit-200 B4 (M-035): busyFor is a set now — a dialog closes
+    // when ITS action leaves the set, not when every action finishes.
+    // pendingKeySave holds the integration id (saveKey's busy id);
+    // pendingReplace holds (integration id, credential id), and the
+    // replace action's busy id is the credential id.
     LaunchedEffect(state.busyFor, pendingKeySave, pendingReplace) {
-        if (pendingKeySave != null && state.busyFor == null) {
+        // Delegated properties do not smart-cast, so capture the values
+        // first: a null check on `pendingReplace` alone does not prove
+        // `pendingReplace.second` is safe to read.
+        val keySave = pendingKeySave
+        if (keySave != null && keySave !in state.busyFor) {
             pendingKeySave = null
             keyFor = null
         }
-        if (pendingReplace != null && state.busyFor == null) {
+        val replace = pendingReplace
+        if (replace != null && replace.second !in state.busyFor) {
             pendingReplace = null
             replaceFor = null
             manageFor = null
@@ -285,6 +297,29 @@ fun ProvidersScreen(
                     style = OpenCodeTypography.bodySmall,
                     color = colors.warning,
                 )
+            }
+
+            // Providers shadowed by opencode.jsonc (audit-200 B4, M-248):
+            // they live in opencode.json, which the engine ignores while
+            // the .jsonc exists — name them, and offer the same
+            // delete-.jsonc flow that brings them back. Without this the
+            // list silently showed fewer providers than the user wrote.
+            if (state.shadowedJsonProviders.isNotEmpty()) {
+                Text(
+                    text = stringResource(
+                        R.string.providers_shadowed_json,
+                        state.shadowedJsonProviders.size,
+                        state.shadowedJsonProviders.joinToString(", "),
+                    ),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.warning,
+                )
+                TextButton(onClick = { confirmDeleteJsonc = true }) {
+                    Text(
+                        text = stringResource(R.string.providers_delete_jsonc),
+                        color = colors.accentText,
+                    )
+                }
             }
 
             if (state.staleKeyRemains) {
@@ -417,7 +452,12 @@ fun ProvidersScreen(
                     ProviderCard(
                         id = provider.id,
                         name = provider.name,
-                        subtitle = if (provider.malformed) {
+                        subtitle = if (provider.nonObject) {
+                            // Audit-200 B4 (M-014): the entry is stored as
+                            // text, not a provider — there is nothing to
+                            // edit, only a Delete.
+                            stringResource(R.string.providers_custom_non_object)
+                        } else if (provider.malformed) {
                             stringResource(R.string.providers_custom_malformed)
                         } else {
                             provider.baseURL.ifEmpty { provider.id } +
@@ -425,14 +465,18 @@ fun ProvidersScreen(
                         },
                         status = if (pending) ProviderStatus.PENDING else ProviderStatus.CONNECTED,
                         onClick = {
-                            customFormPrefill = CustomFormInitial(
-                                editingId = provider.id,
-                                name = provider.name,
-                                baseURL = provider.baseURL,
-                                models = provider.models.joinToString("\n"),
-                            )
+                            if (provider.nonObject) {
+                                confirmDeleteCustomId = provider.id
+                            } else {
+                                customFormPrefill = CustomFormInitial(
+                                    editingId = provider.id,
+                                    name = provider.name,
+                                    baseURL = provider.baseURL,
+                                    models = provider.models.joinToString("\n"),
+                                )
+                            }
                         },
-                        busy = state.busyFor == provider.id,
+                        busy = provider.id in state.busyFor,
                     )
                 }
 
@@ -558,7 +602,7 @@ fun ProvidersScreen(
                 // the LaunchedEffect above closes it when busyFor clears.
                 pendingKeySave = integration.id
             },
-            busy = state.busyFor == integration.id,
+            busy = integration.id in state.busyFor,
         )
     }
 
@@ -573,7 +617,7 @@ fun ProvidersScreen(
             },
             onReplace = { row -> replaceFor = integration to row },
             onDelete = { row -> confirmDelete = integration to row },
-            busyRowId = state.busyFor,
+            busyRowIds = state.busyFor,
         )
     }
 
@@ -588,7 +632,7 @@ fun ProvidersScreen(
                 onReplaceCredential(integration.id, row.id, key)
                 pendingReplace = integration.id to row.id
             },
-            busy = state.busyFor == row.id,
+            busy = row.id in state.busyFor,
         )
     }
 
@@ -913,6 +957,40 @@ fun ProvidersScreen(
                         confirmDeleteJsonc = false
                     },
                 ) { Text(stringResource(R.string.providers_delete_jsonc), color = colors.danger) }
+            },
+        )
+    }
+
+    // Audit-200 B4 (M-457): a provider restart while runtime MCP changes
+    // are pending asks first — the restart undoes them (added servers
+    // disappear, removed ones come back). The write already happened, so
+    // dismissing only puts the restart off: the provider row stays
+    // PENDING until the engine restarts from the MCP screen.
+    state.restartConfirm?.let {
+        LocalizedDraggableBottomSheet(
+            onDismiss = onDismissRestart,
+            initialStop = SheetStop.PEEK,
+            title = {
+                Text(
+                    stringResource(R.string.mcp_restart_title),
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                )
+            },
+            content = {
+                Text(
+                    text = stringResource(R.string.mcp_restart_body),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+            },
+            actions = {
+                TextButton(onClick = onDismissRestart) {
+                    Text(stringResource(R.string.providers_restart_later), color = colors.onSurfaceMuted)
+                }
+                TextButton(onClick = onConfirmRestart) {
+                    Text(stringResource(R.string.mcp_restart), color = colors.danger)
+                }
             },
         )
     }
@@ -1546,8 +1624,8 @@ private fun ManageCredentialsDialog(
     onAddKey: () -> Unit,
     onReplace: (CredentialRow) -> Unit,
     onDelete: (CredentialRow) -> Unit,
-    /** Credential id whose delete/replace is in flight (31-F13). */
-    busyRowId: String? = null,
+    /** Credential ids whose delete/replace is in flight (31-F13; audit-200 B4, M-035: a set, so two rows can be busy at once). */
+    busyRowIds: Set<String> = emptySet(),
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
@@ -1629,7 +1707,7 @@ private fun ManageCredentialsDialog(
                             modifier = Modifier.padding(top = spacing.xs),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            val rowBusy = busyRowId == row.id
+                            val rowBusy = row.id in busyRowIds
                             if (rowBusy) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(16.dp),

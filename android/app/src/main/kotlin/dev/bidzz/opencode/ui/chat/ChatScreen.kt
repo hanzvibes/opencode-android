@@ -306,6 +306,7 @@ fun ChatScreen(
     /** URIs of photos just taken; copied into the workspace below. */
     cameraPhotoPicked: Flow<Uri> = emptyFlow(),
     onDismissAttachNotice: () -> Unit = {},
+    onDismissStaleSelection: () -> Unit = {},
     /**
      * Voice input (Composer C): asks MainActivity — via the application
      * bridge, the same shape as the SAF picker — to request RECORD_AUDIO,
@@ -1693,6 +1694,20 @@ fun ChatScreen(
                                 stringResource(noticeKey, arg)
                             } ?: stringResource(noticeKey),
                             onDismiss = onDismissAttachNotice,
+                            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
+                        )
+                    }
+
+                    // A model/agent that went stale (audit-200 B4, M-459):
+                    // the chip cleared to the engine default, and this row
+                    // names what vanished — a slim dismissable row above
+                    // the composer, like the attach refusal, not the pinned
+                    // error banner: the engine never failed, the provider
+                    // is simply gone.
+                    state.staleSelectionArg?.let { stale ->
+                        AttachNoticeRow(
+                            message = stringResource(R.string.chat_stale_selection, stale),
+                            onDismiss = onDismissStaleSelection,
                             modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
                         )
                     }

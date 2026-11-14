@@ -28,7 +28,8 @@ class ProvidersViewModelTest {
     private fun viewModel(home: File = temp.newFolder("config-home")) = ProvidersViewModel(
         EngineApi { "/tmp" },
         EngineConfigStore(home),
-        restartEngine = {},
+        // Audit-200 B4 (M-125): the restart now reports whether it started.
+        restartEngine = { true },
     )
 
     @Test

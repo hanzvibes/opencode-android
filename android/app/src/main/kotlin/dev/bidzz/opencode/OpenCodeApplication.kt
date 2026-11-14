@@ -231,10 +231,15 @@ class OpenCodeApplication : Application() {
      * Provider entries are resolved at startup, so writing the config file does
      * nothing until the process comes back — the same class of trap as a workspace
      * change that skips its restart.
+     *
+     * Returns false when the restart never started (audit-200 B4, M-125):
+     * the supervisor was never initialised, so the service intent goes
+     * nowhere. Callers that report the restart's outcome need the result
+     * instead of assuming the engine is coming back.
      */
-    fun restartEngine() {
+    fun restartEngine(): Boolean {
         Log.i(TAG, "restarting engine for config change")
-        sendToService(EngineService.ACTION_RESTART)
+        return sendToService(EngineService.ACTION_RESTART)
     }
 
     /** Opens the system folder picker. The result arrives in the activity. */
