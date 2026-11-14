@@ -3011,6 +3011,15 @@ fun ChatHeader(
         HairlineSeparator(alpha = separatorAlpha)
     }
 
+    // Audit-200 C6 (M-104/M-105/M-107): opening the status dialog
+    // refreshes the VCS state — the branch may have moved in a terminal
+    // since the last load, and the detail rows render the stored values
+    // with no other trigger. The load also clears another workspace's
+    // values before they can render (see loadBranches).
+    LaunchedEffect(showStatusDialog) {
+        if (showStatusDialog) onLoadBranches()
+    }
+
     if (showStatusDialog) {
         EngineStatusDialog(
             engineState = engineState,

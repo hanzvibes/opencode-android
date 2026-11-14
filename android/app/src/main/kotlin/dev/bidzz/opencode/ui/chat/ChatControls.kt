@@ -133,6 +133,28 @@ internal fun dedupeAgents(agents: List<AgentInfo>): List<AgentInfo> =
     agents.distinctBy { it.id }
 
 /**
+ * Audit-200 C6 (M-110/M-111): which model/agent the chip shows. There is
+ * deliberately NO fallback to the first catalog entry: when nothing is
+ * active the chip shows the neutral placeholder ("Model"/"Mode") instead
+ * of a model the user never picked. An active id that matches no catalog
+ * row (a session whose model/agent is gone from the fresh lists) still
+ * shows as a synthetic entry — that id IS the active one, not a guess.
+ */
+internal fun resolveCurrentModel(
+    dedupedModels: List<ModelInfo>,
+    activeModel: ModelRef?,
+): ModelInfo? =
+    dedupedModels.firstOrNull { it.ref() == activeModel || (activeModel != null && (it.modelID ?: it.id) == activeModel.id) }
+        ?: activeModel?.let { ModelInfo(id = it.id, providerID = it.providerID) }
+
+internal fun resolveCurrentAgent(
+    selectableAgents: List<AgentInfo>,
+    activeAgent: String?,
+): AgentInfo? =
+    selectableAgents.firstOrNull { it.id == activeAgent || it.name.equals(activeAgent, ignoreCase = true) }
+        ?: activeAgent?.let { AgentInfo(id = it, name = it) }
+
+/**
  * Recent selections, newest first, kept in order in one preference
  * string (a string set would lose the order). Shared with the empty
  * state's dismissed starters: same "opencode_chat" file.
@@ -193,9 +215,7 @@ private fun AgentSelector(
     }
 
     val currentAgent = remember(selectableAgents, activeAgent) {
-        selectableAgents.firstOrNull { it.id == activeAgent || it.name.equals(activeAgent, ignoreCase = true) }
-            ?: activeAgent?.let { AgentInfo(id = it, name = it) }
-            ?: selectableAgents.firstOrNull()
+        resolveCurrentAgent(selectableAgents, activeAgent)
     }
 
     val currentPresentation = currentAgent?.let { resolveAgentPresentation(it, colors) }
@@ -254,7 +274,7 @@ private fun AgentSelector(
     // Column just enough to reveal it.
     val hasSelectedEntry = entries.any { entry ->
         entry is SelectorEntry.AgentRow &&
-            (entry.agent.id == activeAgent || (activeAgent == null && entry.agent == currentAgent))
+            entry.agent.id == activeAgent
     }
     val selectedRowBringIntoView = remember { BringIntoViewRequester() }
     val menuScrollState = rememberScrollState()
@@ -320,8 +340,11 @@ private fun AgentSelector(
             Text(
                 text = currentPresentation?.title ?: "Mode",
                 style = OpenCodeTypography.label,
+                // Audit-200 C6 (M-111): the chip is full-color only when an
+                // agent is actually active — the old condition also fired
+                // for the first-catalog fallback, which no longer exists.
                 color = if (!enabled) colors.onSurfaceFaint
-                    else if (activeAgent != null || currentAgent != null) colors.onSurface
+                    else if (activeAgent != null) colors.onSurface
                     else colors.onSurfaceFaint,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -464,7 +487,12 @@ private fun AgentSelector(
                         }
                         is SelectorEntry.AgentRow -> {
                             val agent = entry.agent
-                            val isSelected = agent.id == activeAgent || (activeAgent == null && agent == currentAgent)
+                            // Audit-200 C6 (M-111): only the active agent
+                            // is selected — the old second clause checked
+                            // the first catalog entry when nothing was
+                            // active, so the menu checkmarked a mode the
+                            // user never picked.
+                            val isSelected = agent.id == activeAgent
                             val presentation = resolveAgentPresentation(agent, colors)
                             val rowBg by animateColorAsState(
                                 targetValue = if (isSelected) colors.accent.copy(alpha = 0.10f) else Color.Transparent,
@@ -686,9 +714,7 @@ internal fun ModelSelector(
     }
 
     val currentModel = remember(dedupedModels, activeModel) {
-        dedupedModels.firstOrNull { it.ref() == activeModel || (activeModel != null && (it.modelID ?: it.id) == activeModel.id) }
-            ?: activeModel?.let { ModelInfo(id = it.id, providerID = it.providerID) }
-            ?: dedupedModels.firstOrNull()
+        resolveCurrentModel(dedupedModels, activeModel)
     }
 
     val currentPresentation = currentModel?.let { resolveModelPresentation(it, colors) }
@@ -746,8 +772,10 @@ internal fun ModelSelector(
             Text(
                 text = currentPresentation?.displayName ?: "Model",
                 style = OpenCodeTypography.label,
+                // Audit-200 C6 (M-110): same rule as the agent chip — full
+                // color only when a model is actually active.
                 color = if (!enabled) colors.onSurfaceFaint
-                    else if (activeModel != null || currentModel != null) colors.onSurface
+                    else if (activeModel != null) colors.onSurface
                     else colors.onSurfaceFaint,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

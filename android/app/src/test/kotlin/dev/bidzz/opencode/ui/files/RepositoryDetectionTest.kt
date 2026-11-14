@@ -30,9 +30,17 @@ class RepositoryDetectionTest {
         isLenient = true
     }
 
-    /** Mirrors `FileApi.hasRepository`: a `.git` directory in the listing. */
-    private fun hasRepository(entries: List<FsEntry>): Boolean =
-        entries.any { it.path.trimEnd('/') == ".git" && it.isDirectory }
+    /**
+     * Mirrors `FileApi.hasRepository`: a `.git` directory in the listing,
+     * or a `.git` file whose content is a `gitdir:` pointer (worktree /
+     * submodule). The file content is the engine's `/api/fs/read` answer
+     * for `.git`, passed in because the listing alone cannot see it.
+     */
+    private fun hasRepository(entries: List<FsEntry>, dotGitContent: String? = null): Boolean {
+        val dotGit = entries.firstOrNull { it.path.trimEnd('/') == ".git" } ?: return false
+        if (dotGit.isDirectory) return true
+        return dotGitContent?.trimStart()?.startsWith("gitdir:") == true
+    }
 
     @Test
     fun `a git repository is detected from its dot-git entry`() {
@@ -61,11 +69,18 @@ class RepositoryDetectionTest {
     }
 
     @Test
-    fun `a file named dot-git is not a repository`() {
-        // `.git` as a file is how a worktree or submodule pointer is stored; it is
-        // not a repository the engine can diff.
+    fun `M-011 a gitdir pointer file is a repository`() {
+        // `.git` as a file is how a worktree or submodule pointer is
+        // stored — the engine's vcs.status/diff answer for it either way.
         val entries = listOf(FsEntry(path = ".git", type = "file"))
-        assertFalse(hasRepository(entries))
+        assertTrue(hasRepository(entries, "gitdir: /storage/.git/worktrees/wt\n"))
+    }
+
+    @Test
+    fun `M-011 a dot-git file without gitdir content is not a repository`() {
+        val entries = listOf(FsEntry(path = ".git", type = "file"))
+        assertFalse(hasRepository(entries, "not a pointer"))
+        assertFalse(hasRepository(entries, null))
     }
 
     @Test
