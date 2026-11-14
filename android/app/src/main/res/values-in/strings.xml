@@ -295,6 +295,7 @@
     <string name="compact_dialog_confirm">Ringkas</string>
     <string name="revert_banner_title">Revert sudah disiapkan</string>
     <string name="revert_banner_files">%1$d file akan dikembalikan seperti sebelum pesan ini.</string>
+    <string name="revert_banner_files_unknown">File mungkin berubah, tapi daftarnya tidak bisa dibaca.</string>
     <string name="revert_banner_messages_only">Pesan setelah titik ini akan dihapus. Tidak ada file yang berubah.</string>
     <string name="revert_commit">Terapkan revert</string>
     <string name="revert_discard">Batalkan</string>
