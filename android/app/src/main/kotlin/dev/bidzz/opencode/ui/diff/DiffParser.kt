@@ -93,7 +93,13 @@ object DiffParser {
                 }
 
                 // File headers carry no line content; the file name is shown separately.
-                line.startsWith("--- ") || line.startsWith("+++ ") ||
+                // Only before the first hunk: a removed/added line inside a hunk can
+                // legitimately start with `--- ` / `+++ ` (a deleted `-- comment`, an
+                // added `++ x`), and dropping it hides a real change (audit-200 C2,
+                // M-054). `diff `/`index ` lines cannot be hunk content — content
+                // lines always start with +, -, space or are empty — so they stay
+                // unconditional.
+                (currentHeader == null && (line.startsWith("--- ") || line.startsWith("+++ "))) ||
                     line.startsWith("diff ") || line.startsWith("index ") -> Unit
 
                 line.startsWith("@@") -> {

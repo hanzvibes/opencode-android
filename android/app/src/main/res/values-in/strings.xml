@@ -569,6 +569,8 @@
     <string name="tool_status_running">Berjalan</string>
     <string name="tool_status_success">Berhasil</string>
     <string name="tool_status_failed">Gagal</string>
+    <string name="tool_status_interrupted">Terhenti</string>
+    <string name="tool_output_on_finish">Output muncul saat tool selesai.</string>
     <string name="tool_lines_one">%1$d baris</string>
     <string name="tool_lines">%1$d baris</string>
     <string name="tool_stdout">STDOUT</string>

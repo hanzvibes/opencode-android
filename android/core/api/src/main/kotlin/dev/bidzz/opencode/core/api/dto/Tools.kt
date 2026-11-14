@@ -8,7 +8,12 @@ import kotlinx.serialization.json.contentOrNull
 /**
  * A tool call as the UI shows it, built from either a history block or live events.
  *
- * [status] is `streaming`, `running`, `completed` or `error`.
+ * [status] is `streaming`, `running`, `completed` or `error` from the
+ * engine — plus `interrupted`, a client-side display status (audit-200
+ * C2, M-050): when no run is in flight, a history tool still marked
+ * running can never finish, so the view model shows it as interrupted
+ * instead of letting it tick forever. It is never written back to the
+ * engine; a later resync re-derives it from history.
  */
 data class ToolCall(
     val id: String,
@@ -19,7 +24,7 @@ data class ToolCall(
     val output: String? = null,
     val error: String? = null,
 ) {
-    val isDone: Boolean get() = status == "completed" || status == "error"
+    val isDone: Boolean get() = status == "completed" || status == "error" || status == "interrupted"
 
     /** Input as text, so UI modules need not depend on kotlinx.serialization. */
     val inputText: String? get() = input?.toString()

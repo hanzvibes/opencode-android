@@ -885,8 +885,12 @@ class ChatRepository(
      * Folds one tool event into [ChatState.liveTools].
      *
      * Only `input.started` carries the tool name, so later events keep the name of
-     * the entry they update. An update for an unseen id (stream joined mid-call) is
-     * dropped; `resync()` at the end of the run supplies it from history.
+     * the entry they update. An update for an unseen id (stream joined mid-call)
+     * creates a placeholder with an empty name (audit-200 C2, M-058) — dropping
+     * it hid the tool from the trace entirely, and the progress header could
+     * claim the run was done while a tool was still running. The resync at the
+     * end of the run replaces the placeholder with the history row, name
+     * included.
      */
     private fun applyToolEvent(type: String, p: kotlinx.serialization.json.JsonObject) {
         val id = p["id"]?.jsonPrimitive?.contentOrNull ?: return
@@ -897,24 +901,33 @@ class ChatRepository(
             EventTypes.TOOL_INPUT_STARTED ->
                 ToolCall(id, p["name"]?.jsonPrimitive?.contentOrNull.orEmpty(), "streaming")
             EventTypes.TOOL_CALLED -> prev?.copy(status = "running", input = p["input"])
+                ?: ToolCall(id, "", "running", input = p["input"])
             EventTypes.TOOL_SUCCESS -> prev?.copy(
                 status = "completed",
-                output = runCatching {
-                    ApiJson.decodeFromJsonElement(
-                        kotlinx.serialization.builtins.ListSerializer(serializer<MessageContent>()),
-                        p["content"] ?: return@runCatching null,
-                    ).toolOutput()
-                }.getOrNull(),
-            )
+                output = parseToolOutput(p),
+            ) ?: ToolCall(id, "", "completed", output = parseToolOutput(p))
             else -> prev?.copy(
                 status = "error",
-                error = p["error"]?.jsonObject?.let { e ->
-                    (e["message"] ?: e["type"])?.jsonPrimitive?.contentOrNull
-                } ?: "failed",
-            )
-        } ?: return
+                error = parseToolError(p),
+            ) ?: ToolCall(id, "", "error", error = parseToolError(p))
+        }
         _state.value = _state.value.copy(liveTools = tools + (id to LiveTool(messageID, next)))
     }
+
+    /** The `content` list of a `tool.success` event as display text, or null. */
+    private fun parseToolOutput(p: kotlinx.serialization.json.JsonObject): String? =
+        runCatching {
+            ApiJson.decodeFromJsonElement(
+                kotlinx.serialization.builtins.ListSerializer(serializer<MessageContent>()),
+                p["content"] ?: return@runCatching null,
+            ).toolOutput()
+        }.getOrNull()
+
+    /** The `error` object of a `tool.failed` event as display text. */
+    private fun parseToolError(p: kotlinx.serialization.json.JsonObject): String =
+        p["error"]?.jsonObject?.let { e ->
+            (e["message"] ?: e["type"])?.jsonPrimitive?.contentOrNull
+        } ?: "failed"
 
     /**
      * Publishes one message's streamed text, at most once per

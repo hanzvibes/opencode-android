@@ -256,8 +256,15 @@ fun ChatScreen(
     onAnswerQuestion: suspend (QuestionAnswer) -> Boolean = { false },
     /** Opens a workspace-relative file from a tool step (Fase 1, item 3). */
     onOpenToolFile: (String) -> Unit = {},
-    /** Asks the agent to revert a rejected edit (Fase 1, item 2). */
-    onRequestDiffRevert: (String, String?) -> Unit = { _, _ -> },
+    /** Asks the agent to revert a rejected edit (Fase 1, item 2). Receives
+     * the call id, so the view model can record the decision against the
+     * step that asked (audit-200 C2, M-052/M-053). */
+    onRequestDiffRevert: (String, String, String?) -> Unit = { _, _, _ -> },
+    /** Accept / Reject decisions per tool call id, owned by the view model
+     * (audit-200 C2, M-053). */
+    diffDecisions: Map<String, DiffDecision> = emptyMap(),
+    /** Records an Accept / Reject decision for one tool call id. */
+    onDiffDecision: (String, DiffDecision) -> Unit = { _, _ -> },
     /** Saves a code block through the system picker (Fase 1, item 4). */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
     /** Submit / cancel the edit in progress in the composer. */
@@ -1605,6 +1612,8 @@ fun ChatScreen(
                                             workspacePath = state.workspacePath,
                                             onOpenToolFile = onOpenToolFile,
                                             onRequestDiffRevert = onRequestDiffRevert,
+                                            diffDecisions = state.diffDecisions,
+                                            onDiffDecision = onDiffDecision,
                                             // #6f: anchor the scroll position
                                             // before a ToolTrace height toggle.
                                             onBeforeToolTraceHeightChange = { captureExpandAnchor() },

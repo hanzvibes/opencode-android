@@ -1427,6 +1427,7 @@ private fun ChatDestination(
         onAnswerQuestion = chatViewModel::answerQuestion,
         onOpenToolFile = { path -> onNavigate(Screen.FileView(path)) },
         onRequestDiffRevert = chatViewModel::requestDiffRevert,
+        onDiffDecision = chatViewModel::recordDiffDecision,
         onSaveCode = { name, code -> app.requestCodeSave(name, code) },
         onSubmitEdit = chatViewModel::submitEdit,
         onCancelEdit = chatViewModel::cancelEdit,
