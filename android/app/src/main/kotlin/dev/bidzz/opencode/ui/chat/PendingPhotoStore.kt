@@ -26,7 +26,13 @@ class PendingPhotoStore(context: Context) {
     fun get(): Uri? = prefs.getString(KEY_URI, null)?.let { Uri.parse(it) }
 
     fun put(uri: Uri) {
-        prefs.edit().putString(KEY_URI, uri.toString()).remove(KEY_DELIVERED).apply()
+        // Audit-200 A9-4 (DL-006, DL-031): commit(), not apply() — the
+        // whole reason this store exists is surviving a process death
+        // while the camera is open, and apply()'s async flush left
+        // exactly that window open: the camera came back with success
+        // and nowhere to deliver the photo. Same rule as lastSessionID
+        // (69-F10). One small string write.
+        prefs.edit().putString(KEY_URI, uri.toString()).remove(KEY_DELIVERED).commit()
     }
 
     /**
@@ -36,13 +42,19 @@ class PendingPhotoStore(context: Context) {
      * death mid-copy leaves a photo to retry from on the next launch.
      */
     fun markDelivered() {
-        prefs.edit().putBoolean(KEY_DELIVERED, true).apply()
+        // Audit-200 A9-4 (DL-006): commit(), for the same reason as put —
+        // a lost acknowledgement would offer the same photo for a second
+        // copy after a death mid-copy.
+        prefs.edit().putBoolean(KEY_DELIVERED, true).commit()
     }
 
     /** True when the camera result arrived but the copy never acknowledged. */
     fun isDelivered(): Boolean = prefs.getBoolean(KEY_DELIVERED, false)
 
     fun clear() {
-        prefs.edit().remove(KEY_URI).remove(KEY_DELIVERED).apply()
+        // Audit-200 A9-4 (DL-006): commit(), for the same reason as put —
+        // a clear lost in the flush window would resurrect a photo the
+        // user already dealt with on the next launch.
+        prefs.edit().remove(KEY_URI).remove(KEY_DELIVERED).commit()
     }
 }
