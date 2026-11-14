@@ -446,16 +446,23 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val usageLimitsViewModel: UsageLimitsViewModel = viewModel(factory = viewModelFactory { _ ->
         UsageLimitsViewModel(app.engineApi)
     })
+    // Shared by the MCP and Providers screens (audit-200 B4, M-457): a
+    // provider restart must ask first when runtime MCP changes are
+    // pending. Created here — one instance for both view models — not in
+    // either view model, so the two never drift apart.
+    val mcpRuntimeChangesSignal = remember { dev.bidzz.opencode.ui.mcp.McpRuntimeChangesSignal() }
+
     val providersViewModel: ProvidersViewModel = viewModel(factory = viewModelFactory { _ ->
         ProvidersViewModel(
             api = app.engineApi,
             configStore = dev.bidzz.opencode.engine.EngineConfigStore(app.engineEnvironment.configHome),
             restartEngine = app::restartEngine,
+            mcpRuntimeChanges = mcpRuntimeChangesSignal,
         )
     })
 
     val mcpServersViewModel: McpServersViewModel = viewModel(factory = viewModelFactory { _ ->
-        McpServersViewModel(app.engineApi)
+        McpServersViewModel(app.engineApi, mcpRuntimeChangesSignal)
     })
 
     val pluginsViewModel: PluginsViewModel = viewModel(factory = viewModelFactory { _ ->
@@ -1062,7 +1069,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 if (app.switchWorkspace(File(option.path))) {
                                     // A different project means a different session: the engine
                                     // binds a session to the directory it was created in.
-                                    chatViewModel.newSession()
+                                    // Audit-200 B4 (M-458): the fresh session waits for
+                                    // the restarted engine — newSession() would build
+                                    // it on the OLD handle, and a prompt sent before
+                                    // the restart lands would edit the old project.
+                                    chatViewModel.newSessionAfterRestart()
                                     // ... and a different file index: the cached one lists
                                     // the old project's files (item 27).
                                     explorerViewModel.invalidateQuickOpenIndex()
@@ -1129,6 +1140,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onSelectAntigravityAccount = providersViewModel::selectAntigravityAccount,
                         onSetAntigravityAccountEnabled = providersViewModel::setAntigravityAccountEnabled,
                         onDeleteJsoncConfig = providersViewModel::deleteJsoncConfig,
+                        onConfirmRestart = providersViewModel::confirmRestart,
+                        onDismissRestart = providersViewModel::dismissRestart,
                     )
 
                     Screen.Diagnostics -> DiagnosticsScreen(
@@ -1367,6 +1380,7 @@ private fun ChatDestination(
         },
         onPathsDropped = chatViewModel::handleDroppedPaths,
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
+        onDismissStaleSelection = chatViewModel::clearStaleSelection,
         onRequestSafFile = app::requestSafFile,
         onRequestCameraPhoto = app::requestCameraPhoto,
         cameraPhotoPicked = app.cameraPhotoPicked,

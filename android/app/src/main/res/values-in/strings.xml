@@ -802,6 +802,7 @@
     <string name="providers_custom_no_models">Tambahkan minimal satu model.</string>
     <string name="providers_custom_model_invalid">ID model tidak boleh mengandung spasi.</string>
     <string name="providers_custom_malformed">Pengaturan provider ini tidak bisa dibaca — edit untuk memperbaikinya.</string>
+    <string name="providers_custom_non_object">Entri ini bukan provider — tersimpan sebagai teks, bukan provider. Hapus untuk memakai nama ini.</string>
     <string name="providers_delete_custom_title">Hapus provider?</string>
     <string name="providers_delete_custom_body">Hapus %1$s beserta modelnya dari konfigurasi? Engine akan di-restart.</string>
     <string name="providers_save_restart">Simpan &amp; mulai ulang</string>
@@ -916,6 +917,10 @@
     <string name="providers_jsonc_deleted_fresh">opencode.jsonc dihapus. Cadangan disimpan sebagai opencode.jsonc.bak. Penyedia akan dikelola di opencode.json baru.</string>
     <string name="providers_config_unreadable">Berkas konfigurasi %1$s tidak bisa dibaca: %2$s. Daftar penyedia mungkin tidak lengkap.</string>
     <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
+    <string name="providers_restart_failed">Engine tidak bisa di-restart. Provider sudah tersimpan, tetapi engine belum menerapkannya.</string>
+    <string name="providers_restart_later">Restart nanti</string>
+    <string name="providers_shadowed_json">%1$d provider di opencode.json diabaikan selama opencode.jsonc ada: %2$s. Hapus opencode.jsonc untuk menggunakannya.</string>
+    <string name="chat_stale_selection">%1$s sudah tidak tersedia — prompt baru memakai default engine.</string>
     <string name="cmd_init_desc">Inisialisasi workspace atau konfigurasi proyek</string>
     <string name="cmd_test_desc">Jalankan test suite atau target test</string>
     <string name="cmd_review_desc">Tinjau perubahan, git diff, atau pull request</string>

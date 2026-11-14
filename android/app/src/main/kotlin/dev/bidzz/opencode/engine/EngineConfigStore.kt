@@ -76,6 +76,16 @@ class EngineConfigStore(configHome: File) {
          * provider were unconfigured; the row now shows a warning instead.
          */
         val malformed: Boolean = false,
+        /**
+         * True when the entry itself is not an object (audit-200 B4,
+         * M-014): a hand-edited config may hold e.g.
+         * `"old": "disabled"`. The old code skipped it entirely, so it
+         * was invisible, could not be deleted from the UI, and blocked
+         * creating a provider with that name (the write refused to
+         * replace it). The row shows it as a broken entry with Delete
+         * instead of Edit.
+         */
+        val nonObject: Boolean = false,
     )
 
     /**
@@ -108,8 +118,23 @@ class EngineConfigStore(configHome: File) {
     fun customProviders(): List<CustomProvider> {
         val root = readRoot() ?: return emptyList()
         val providers = root.optJSONObject("providers") ?: return emptyList()
-        return providers.keys().asSequence().mapNotNull { id ->
-            val entry = providers.optJSONObject(id) ?: return@mapNotNull null
+        return providers.keys().asSequence().map { id ->
+            val entry = providers.optJSONObject(id)
+            if (entry == null) {
+                // Audit-200 B4 (M-014): a non-object entry is still a
+                // provider row — with no URL or models to edit, and a
+                // Delete instead of an edit form. Skipping it hid it
+                // from the list while it kept blocking its name.
+                Log.w(TAG, "custom provider '$id' is not an object; showing as a broken entry")
+                return@map CustomProvider(
+                    id = id,
+                    name = id,
+                    baseURL = "",
+                    models = emptyList(),
+                    malformed = true,
+                    nonObject = true,
+                )
+            }
             val settings = entry.optJSONObject("settings")
             val modelsObj = entry.optJSONObject("models")
             // A hand-edited config may hold settings/models in a non-object
@@ -246,6 +271,22 @@ class EngineConfigStore(configHome: File) {
     fun hasJsonConfig(): Boolean = file.isFile
 
     /**
+     * Provider ids declared in `opencode.json` while the effective config
+     * lives in `opencode.jsonc` (audit-200 B4, M-248): the engine reads
+     * only the `.jsonc`, so these providers are shadowed — invisible in
+     * the list and never loaded. Empty when there is no `.jsonc` (the
+     * `.json` IS the effective file then) or when the `.json` cannot be
+     * read. The UI names them and offers the delete-`.jsonc` flow, which
+     * is the only way to bring them back.
+     */
+    fun shadowedJsonProviderIds(): List<String> {
+        if (!jsoncFile.isFile || !file.isFile) return emptyList()
+        val root = runCatching { JSONObject(stripJsonc(file.readText())) }.getOrNull() ?: return emptyList()
+        val providers = root.optJSONObject("providers") ?: return emptyList()
+        return providers.keys().asSequence().toList()
+    }
+
+    /**
      * Deletes `opencode.jsonc` so the app can manage providers in `opencode.json`
      * again (30-F5/38-F10).
      *
@@ -302,6 +343,20 @@ class EngineConfigStore(configHome: File) {
      * [apiKey] keeps the stored key (30-F2): editing a provider must not force the
      * user to retype a key the app never shows them. Saving a *new* provider with a
      * `null` key is refused — the caller validates first, so this is a guard, not a path.
+     *
+     * Audit-200 B4 (M-250/M-507): the entry is MERGED into the stored one, not
+     * rebuilt from scratch. The old code wrote a fresh object with only the
+     * fields the form owns, so hand-written keys inside the entry — an extra
+     * `settings` key, a per-model `limit`, a top-level `disabled` — vanished
+     * on every edit. Only the form's own fields are set now (name, package,
+     * settings.baseURL, settings.apiKey, and the listed models); a model
+     * removed from the form still leaves the map, and a model whose name the
+     * form clears loses its `name` key.
+     *
+     * [previousId] renames in the same write (M-126): when the provider
+     * being edited got a new slug, the old entry is removed with the new one
+     * — two writes could leave both entries behind if the app died between
+     * them. Null (or equal to [id]) means no rename.
      */
     @Throws(IOException::class)
     fun putOpenAICompatible(
@@ -310,6 +365,7 @@ class EngineConfigStore(configHome: File) {
         baseURL: String,
         apiKey: String?,
         models: List<ModelSpec>,
+        previousId: String? = null,
     ): WriteResult {
         val (rootOrNull, source) = readRootAndSource()
         val root = rootOrNull ?: JSONObject()
@@ -322,9 +378,9 @@ class EngineConfigStore(configHome: File) {
         // a fresh object would silently delete it (audit-70 38-F4). Refuse
         // instead — the caller reports the write as failed and nothing is
         // lost. The same holds for the entry itself: an id whose value is
-        // not an object (e.g. "old": "disabled") is invisible to
-        // customProviders(), so the duplicate-slug check cannot see it, and
-        // overwriting it would delete a hand-made entry without warning.
+        // not an object (e.g. "old": "disabled") is listed as a broken
+        // entry now (M-014), so the user can delete it first — overwriting
+        // it here would still delete a hand-made entry without warning.
         if (root.has("providers") && root.optJSONObject("providers") == null) {
             Log.w(TAG, "refusing to replace a non-object 'providers' value")
             throw IOException("Existing config has a non-object 'providers' value; refusing to replace it")
@@ -335,32 +391,50 @@ class EngineConfigStore(configHome: File) {
             throw IOException("Existing provider '$id' is not an object; refusing to replace it")
         }
 
-        val entry = JSONObject()
+        // Merge into the stored entry (M-250/M-507): unknown keys survive
+        // the edit. A fresh object is used only for a brand-new provider.
+        // A rename (M-126) merges from the OLD entry, not the new id:
+        // looking the key up under the new id would find nothing and the
+        // edit would be refused for "no API key" even though the old entry
+        // has one — and the old entry's hand-written keys would be lost
+        // with it.
+        val entry = (if (previousId != null) providers.optJSONObject(previousId) else null)
+            ?: providers.optJSONObject(id)
+            ?: JSONObject()
         entry.put("name", name)
         entry.put("package", PACKAGE)
-        val settings = JSONObject().put("baseURL", baseURL.trimEnd('/'))
+        val settings = entry.optJSONObject("settings") ?: JSONObject()
+        settings.put("baseURL", baseURL.trimEnd('/'))
         if (apiKey != null) {
             settings.put("apiKey", apiKey)
         } else {
             // Editing without retyping the key (30-F2): keep the stored one.
-            val kept = providers.optJSONObject(id)?.optJSONObject("settings")?.optString("apiKey")
+            val kept = settings.optString("apiKey")
             if (kept.isNullOrEmpty()) throw IOException("Cannot save provider '$id' without an API key")
             settings.put("apiKey", kept)
         }
         entry.put("settings", settings)
+        // The model list is the form's: a model removed from the form
+        // leaves the map, but a model that stays keeps the keys the form
+        // never shows (M-250) — only its `name` is set or cleared.
         val modelMap = JSONObject()
         models.forEach { spec ->
+            val model = entry.optJSONObject("models")?.optJSONObject(spec.id) ?: JSONObject()
             // A bare `{}` means "inherit whatever the provider knows about this model";
             // `name` is only written when the user gave one, so an unnamed model keeps
             // the engine's own answer instead of being pinned to an empty string.
-            val model = JSONObject()
-            spec.name?.let { model.put("name", it) }
+            // Clearing a name the entry already had removes the key, so the
+            // old name does not stick after the user deleted it (M-250).
+            if (spec.name != null) model.put("name", spec.name) else model.remove("name")
             modelMap.put(spec.id, model)
         }
         entry.put("models", modelMap)
         providers.put(id, entry)
+        if (previousId != null && previousId != id) {
+            providers.remove(previousId)
+        }
 
-        write(root)
+        write(root, source)
         Log.i(TAG, "configured custom provider '$id' -> $baseURL (${models.size} models)")
         return WriteResult.Saved(id)
     }
@@ -379,7 +453,7 @@ class EngineConfigStore(configHome: File) {
         val providers = root.optJSONObject("providers") ?: return false
         if (!providers.has(id)) return false
         providers.remove(id)
-        write(root)
+        write(root, source)
         Log.i(TAG, "removed custom provider '$id'")
         return true
     }
@@ -417,9 +491,170 @@ class EngineConfigStore(configHome: File) {
         }
     }
 
-    private fun write(root: JSONObject) {
+    /**
+     * Writes the merged config back to `opencode.json`.
+     *
+     * Audit-200 B4 (M-248/M-249): a hand-edited `.json` may hold comments —
+     * the reader strips them to parse (30-F3), but the old write then
+     * re-serialized the parsed object and the first save wiped every
+     * comment in the file. When [source] still has comments, only the
+     * `providers` value is replaced inside the raw text, so comments
+     * anywhere else in the file survive byte for byte. Comments *inside*
+     * the `providers` object are still lost — they sit in the replaced
+     * span — and a file whose `providers` span cannot be located is
+     * refused rather than rewritten without its comments.
+     */
+    private fun write(root: JSONObject, source: File?) {
         if (!dir.exists() && !dir.mkdirs()) throw IOException("Could not create ${dir.absolutePath}")
-        writeAtomically(file, root.toString(INDENT) + "\n")
+        val raw = source?.takeIf { it.isFile }?.let { runCatching { it.readText() }.getOrNull() }
+        val text = if (raw != null && stripJsonc(raw) != raw) {
+            replaceProvidersValue(raw, root.optJSONObject("providers")?.toString(INDENT) ?: "{}")
+                ?: throw IOException(
+                    "Existing config ${source.name} has comments the app cannot preserve; " +
+                        "refusing to rewrite it",
+                )
+        } else {
+            root.toString(INDENT) + "\n"
+        }
+        writeAtomically(file, text)
+    }
+
+    /**
+     * Replaces the top-level `"providers"` value inside [raw] with
+     * [providersJson], leaving every other byte untouched. Returns null
+     * when the key cannot be located confidently — the caller refuses
+     * the write instead of guessing.
+     *
+     * Comment-aware: the raw text is JSONC, so a `"` inside a `//` or
+     * `/* */` comment must not toggle string tracking, or the scan
+     * desyncs and replaces the wrong span.
+     */
+    internal fun replaceProvidersValue(raw: String, providersJson: String): String? {
+        // Find the root object, then the "providers" key at depth 1.
+        var i = 0
+        while (i < raw.length && raw[i].isWhitespace()) i++
+        if (i >= raw.length || raw[i] != '{') return null
+        var depth = 0
+        var inString = false
+        var keyStart = -1
+        var j = i
+        while (j < raw.length) {
+            val c = raw[j]
+            if (inString) {
+                if (c == '\\') {
+                    j += 2
+                    continue
+                }
+                if (c == '"') inString = false
+                j++
+                continue
+            }
+            // A comment outside a string: skip it whole, quotes and all.
+            if (c == '/' && j + 1 < raw.length && raw[j + 1] == '/') {
+                while (j < raw.length && raw[j] != '\n') j++
+                continue
+            }
+            if (c == '/' && j + 1 < raw.length && raw[j + 1] == '*') {
+                val end = raw.indexOf("*/", j + 2)
+                j = if (end < 0) raw.length else end + 2
+                continue
+            }
+            when (c) {
+                '"' -> {
+                    if (depth == 1 && keyStart < 0) keyStart = j
+                    inString = true
+                    j++
+                }
+                '{', '[' -> {
+                    depth++
+                    j++
+                }
+                '}', ']' -> {
+                    depth--
+                    j++
+                }
+                ':' -> {
+                    if (depth == 1 && keyStart >= 0) {
+                        val key = raw.substring(keyStart, j).trim()
+                        // The key text still carries its quotes; compare
+                        // with them on so an escaped name cannot match.
+                        if (key == "\"providers\"") {
+                            var k = j + 1
+                            while (k < raw.length && raw[k].isWhitespace()) k++
+                            if (k >= raw.length || raw[k] != '{') return null
+                            val end = findValueEnd(raw, k) ?: return null
+                            return raw.substring(0, k) + providersJson + raw.substring(end)
+                        }
+                        keyStart = -1
+                    }
+                    j++
+                }
+                ',' -> {
+                    if (depth == 1) keyStart = -1
+                    j++
+                }
+                else -> j++
+            }
+        }
+        // No "providers" key: insert one after the root's opening brace.
+        val insertAt = i + 1
+        val rest = raw.substring(insertAt).trimStart()
+        val prefix = if (rest.startsWith("}")) {
+            "\"providers\": $providersJson"
+        } else {
+            "\"providers\": $providersJson, "
+        }
+        return raw.substring(0, insertAt) + prefix + raw.substring(insertAt)
+    }
+
+    /**
+     * End index (exclusive) of the JSON value starting at [start],
+     * string- and comment-aware (a `{` inside a comment inside the
+     * providers object must not move the depth, or the replaced span
+     * would swallow the rest of the file). Returns null on unbalanced input.
+     */
+    private fun findValueEnd(raw: String, start: Int): Int? {
+        var depth = 0
+        var inString = false
+        var j = start
+        while (j < raw.length) {
+            val c = raw[j]
+            if (inString) {
+                if (c == '\\') {
+                    j += 2
+                    continue
+                }
+                if (c == '"') inString = false
+                j++
+                continue
+            }
+            if (c == '/' && j + 1 < raw.length && raw[j + 1] == '/') {
+                while (j < raw.length && raw[j] != '\n') j++
+                continue
+            }
+            if (c == '/' && j + 1 < raw.length && raw[j + 1] == '*') {
+                val end = raw.indexOf("*/", j + 2)
+                j = if (end < 0) raw.length else end + 2
+                continue
+            }
+            when (c) {
+                '"' -> {
+                    inString = true
+                    j++
+                }
+                '{', '[' -> {
+                    depth++
+                    j++
+                }
+                '}', ']' -> {
+                    depth--
+                    j++
+                    if (depth == 0) return j
+                }
+                else -> j++
+            }
+        }
+        return null
     }
 
     /**
