@@ -714,7 +714,12 @@ class ChatViewModel(
                         // share one byte budget in the handle — over
                         // budget the keys are left out and the parked
                         // store on disk stays the source of truth.
-                        putBoundedComposerLists(handle, state.queuedPrompts, state.pendingAttachments)
+                        putBoundedComposerLists(
+                            handle,
+                            state.queuedPrompts,
+                            state.pendingAttachments,
+                            attachmentsBeforeEdit.orEmpty(),
+                        )
                     }
                     if (state.lastSentText != lastSent) {
                         lastSent = state.lastSentText
@@ -870,6 +875,20 @@ class ChatViewModel(
     private var draftBeforeEdit: String? = savedStateHandle?.get<String>(DRAFT_BEFORE_EDIT_KEY)
 
     /**
+     * Attachments pending before the edit in progress (audit-200 C4,
+     * M-078): the files picked for the draft that was there before the
+     * user tapped Edit. They are not the edit's — [startEdit] snapshots
+     * them so [submitEdit] only sends files picked during the edit, and
+     * [cancelEdit] puts exactly these back. Persisted in the saved-state
+     * handle (same budget as the live lists, see
+     * [putBoundedComposerLists]) and in the parked composer (see
+     * [ParkedComposer.attachmentsBeforeEdit]), so a process death
+     * mid-edit still restores them. Null when no edit is in progress.
+     */
+    private var attachmentsBeforeEdit: List<AttachedFile>? =
+        savedStateHandle?.get<ArrayList<AttachedFile>>(ATTACHMENTS_BEFORE_EDIT_KEY)?.toList()
+
+    /**
      * Generation counter for the draft (13-F4): every change to the
      * composer text bumps it — typing, clearing, a programmatic set — so
      * a send can tell "the draft is still exactly what I sent" from "the
@@ -922,7 +941,7 @@ class ChatViewModel(
         val attachments = _state.value.pendingAttachments
         val queued = _state.value.queuedPrompts
         if (draft.isNotBlank() || attachments.isNotEmpty() || queued.isNotEmpty() ||
-            draftBeforeEdit != null
+            draftBeforeEdit != null || attachmentsBeforeEdit != null
         ) {
             // Audit-200 A9-3 (DL-034): the edit in progress parks with its
             // backup, so a death mid-edit still offers Cancel afterwards.
@@ -934,6 +953,7 @@ class ChatViewModel(
                     queued,
                     draftBeforeEdit = draftBeforeEdit,
                     editingMessageId = _state.value.editingMessageId,
+                    attachmentsBeforeEdit = attachmentsBeforeEdit,
                 ),
             )
             lastParkKey = id
@@ -991,6 +1011,7 @@ class ChatViewModel(
         reportUnreadableParked(sessionID)
         if (restored != null) {
             draftBeforeEdit = if (restoreEditState) restored.draftBeforeEdit else null
+            attachmentsBeforeEdit = if (restoreEditState) restored.attachmentsBeforeEdit else null
             _state.value = _state.value.copy(
                 draft = restored.draft,
                 pendingAttachments = restored.attachments,
@@ -1003,9 +1024,11 @@ class ChatViewModel(
             // progress — drop any keys the previous session left behind,
             // or a death now would resurrect its edit here.
             draftBeforeEdit = null
+            attachmentsBeforeEdit = null
             _state.value = _state.value.copy(editingMessageId = null)
             savedStateHandle?.remove<String>(DRAFT_KEY)
             savedStateHandle?.remove<String>(DRAFT_BEFORE_EDIT_KEY)
+            savedStateHandle?.remove<ArrayList<AttachedFile>>(ATTACHMENTS_BEFORE_EDIT_KEY)
             savedStateHandle?.remove<String>(EDITING_MESSAGE_KEY)
         }
         return restored
@@ -1038,13 +1061,18 @@ class ChatViewModel(
      * [QueuedPrompt.attachments], which the chips need) — both copies
      * are counted.
      */
-    internal fun estimatedHandleBytes(queue: List<QueuedPrompt>, attachments: List<AttachedFile>): Long {
+    internal fun estimatedHandleBytes(
+        queue: List<QueuedPrompt>,
+        attachments: List<AttachedFile>,
+        beforeEditAttachments: List<AttachedFile> = emptyList(),
+    ): Long {
         var bytes = 0L
         queue.forEach { entry ->
             bytes += entry.fullText.length + entry.typedText.length
             entry.attachments.forEach { bytes += it.content.length + it.name.length }
         }
         attachments.forEach { bytes += it.content.length + it.name.length }
+        beforeEditAttachments.forEach { bytes += it.content.length + it.name.length }
         return bytes * 2L
     }
 
@@ -1053,21 +1081,28 @@ class ChatViewModel(
      * byte budget (audit-200 B5, M-026), and removes both keys when
      * they do not — a stale snapshot must never survive, or a restore
      * after process death could re-send follow-ups that already went.
-     * The parked store on disk keeps the full copy either way.
+     * The parked store on disk keeps the full copy either way. The
+     * pre-edit attachment snapshot (audit-200 C4, M-078) shares the
+     * same budget and the same fate: over budget all three keys go, so
+     * a death can never resurrect a snapshot the live lists did not
+     * survive with.
      */
     internal fun putBoundedComposerLists(
         handle: SavedStateHandle,
         queue: List<QueuedPrompt>,
         attachments: List<AttachedFile>,
+        beforeEditAttachments: List<AttachedFile> = emptyList(),
     ) {
-        if (queue.isEmpty() && attachments.isEmpty()) {
+        if (queue.isEmpty() && attachments.isEmpty() && beforeEditAttachments.isEmpty()) {
             handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
             handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_BEFORE_EDIT_KEY)
             return
         }
-        if (estimatedHandleBytes(queue, attachments) > HANDLE_PAYLOAD_BUDGET_BYTES) {
+        if (estimatedHandleBytes(queue, attachments, beforeEditAttachments) > HANDLE_PAYLOAD_BUDGET_BYTES) {
             handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
             handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_BEFORE_EDIT_KEY)
             return
         }
         if (queue.isEmpty()) {
@@ -1079,6 +1114,11 @@ class ChatViewModel(
             handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
         } else {
             handle[ATTACHMENTS_KEY] = ArrayList(attachments)
+        }
+        if (beforeEditAttachments.isEmpty()) {
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_BEFORE_EDIT_KEY)
+        } else {
+            handle[ATTACHMENTS_BEFORE_EDIT_KEY] = ArrayList(beforeEditAttachments)
         }
     }
 
@@ -1100,7 +1140,7 @@ class ChatViewModel(
         } else {
             handle[DRAFT_KEY] = restored.draft
         }
-        putBoundedComposerLists(handle, restored.queued, restored.attachments)
+        putBoundedComposerLists(handle, restored.queued, restored.attachments, restored.attachmentsBeforeEdit.orEmpty())
         if (!restoreEditState || restored.draftBeforeEdit == null) {
             handle.remove<String>(DRAFT_BEFORE_EDIT_KEY)
         } else {
@@ -1420,6 +1460,7 @@ class ChatViewModel(
                     // (draftBeforeEdit): same staleness as the session
                     // switches in newSession/openSessionById.
                     draftBeforeEdit = null
+                    attachmentsBeforeEdit = null
                     _state.value = _state.value.copy(
                         sessionID = null,
                         busy = false,
@@ -2574,14 +2615,14 @@ class ChatViewModel(
      * Loads a user message back into the composer in editing mode.
      *
      * The composer shows an editing header with Submit/Cancel; submitting
-     * sends the edited text as a new prompt in the same session
-     * ([submitEdit]). It is deliberately NOT a history rewrite: the engine
-     * exposes `POST /api/session/{id}/revert/stage` + `/revert/commit` and
-     * `/fork` (docs/API-REFERENCE.md), but neither request shape is verified
-     * against a live engine — `Session.ForkBoundary` is an untyped `anyOf` —
-     * and guessing would risk corrupting the session's real history. The
-     * original message stays visible and the edited text follows it as a new
-     * turn, so the transcript is never silently rewritten.
+     * an idle edit rewrites the history ([submitEdit]): the transcript
+     * is reverted to just before the edited message (messages only) and
+     * the edited text is sent as the new turn — the revert endpoints
+     * are verified against the pinned engine source (see
+     * [SessionApi.revertStage]), and the header says the later messages
+     * go away. A busy edit still queues as a follow-up: history cannot
+     * be rewritten mid-run. The message's attachments come back as
+     * chips (audit-200 C4, M-079), not as a raw dump in the draft.
      */
     fun startEdit(messageId: String, text: String) {
         if (_state.value.editingMessageId == messageId) return
@@ -2591,30 +2632,78 @@ class ChatViewModel(
         // with the first edit's text, and Cancel would restore the wrong one.
         if (_state.value.editingMessageId != null) cancelEdit()
         draftBeforeEdit = _state.value.draft
+        // Audit-200 C4 (M-078): the attachments pending for the draft are
+        // snapshotted before the edit touches them — a file picked for
+        // the draft must not ride along with the edited message, and
+        // Cancel must put exactly these back. The snapshot is the pending
+        // list itself, so it is written to the handle under its own key
+        // (same budget as the live lists, counted once on top of them).
+        attachmentsBeforeEdit = _state.value.pendingAttachments
+        syncAttachmentsBeforeEditToHandle()
         _state.value = _state.value.copy(editingMessageId = messageId)
         // Audit-200 A9-3 (DL-034): the edit and its backup are persisted
         // with the draft, so a process death mid-edit still offers Cancel.
         draftBeforeEdit?.let { savedStateHandle?.set(DRAFT_BEFORE_EDIT_KEY, it) }
         savedStateHandle?.set(EDITING_MESSAGE_KEY, messageId)
-        onDraftChange(text)
+        // Audit-200 C4 (M-079): the message text carries its attachments
+        // as fenced blocks (see buildMessageWithAttachments) — loading
+        // it raw flooded the composer with a 64 KB dump. Split it back:
+        // the typed text goes in the draft and the blocks come back as
+        // chips, on top of the snapshot (they are the message's files,
+        // not the pre-edit draft's, so they are not in the snapshot).
+        val (typedText, messageAttachments) = splitAttachmentBlocks(text)
+        val merged = _state.value.pendingAttachments +
+            messageAttachments.filter { parsed -> _state.value.pendingAttachments.none { it.name == parsed.name && it.content == parsed.content } }
+        if (merged != _state.value.pendingAttachments) {
+            _state.value = _state.value.copy(pendingAttachments = merged)
+        }
+        onDraftChange(typedText)
+    }
+
+    /** Writes the pre-edit attachment snapshot to the handle, budget-checked. */
+    private fun syncAttachmentsBeforeEditToHandle() {
+        val handle = savedStateHandle ?: return
+        val snapshot = attachmentsBeforeEdit.orEmpty()
+        if (snapshot.isEmpty()) {
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_BEFORE_EDIT_KEY)
+            return
+        }
+        val liveBytes = estimatedHandleBytes(_state.value.queuedPrompts, _state.value.pendingAttachments)
+        val snapshotBytes = snapshot.sumOf { it.content.length + it.name.length } * 2L
+        if (liveBytes + snapshotBytes > HANDLE_PAYLOAD_BUDGET_BYTES) {
+            // Over budget the parked store on disk stays the source of
+            // truth (same rule as putBoundedComposerLists).
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_BEFORE_EDIT_KEY)
+        } else {
+            handle[ATTACHMENTS_BEFORE_EDIT_KEY] = ArrayList(snapshot)
+        }
     }
 
     /** Abandons an edit and restores the draft as it was before it. */
     fun cancelEdit() {
         val restore = draftBeforeEdit
+        // Audit-200 C4 (M-078): the attachments go back with the draft —
+        // files picked during the edit leave with it, and the pre-edit
+        // files come back exactly as they were.
+        val restoreAttachments = attachmentsBeforeEdit
         draftBeforeEdit = null
+        attachmentsBeforeEdit = null
         clearEditHandleKeys()
-        _state.value = _state.value.copy(editingMessageId = null)
+        _state.value = _state.value.copy(
+            editingMessageId = null,
+            pendingAttachments = restoreAttachments ?: _state.value.pendingAttachments,
+        )
         if (restore != null) onDraftChange(restore)
     }
 
     /** Drops the edit keys from the handle (audit-200 A9-3, DL-034). */
     private fun clearEditHandleKeys() {
         savedStateHandle?.remove<String>(DRAFT_BEFORE_EDIT_KEY)
+        savedStateHandle?.remove<ArrayList<AttachedFile>>(ATTACHMENTS_BEFORE_EDIT_KEY)
         savedStateHandle?.remove<String>(EDITING_MESSAGE_KEY)
     }
 
-    /** Submits the edited text (see [startEdit] for why this re-sends). */
+    /** Submits the edited text: a rewrite when idle, a queued follow-up when busy (see [submitEditAsRewrite]). */
     fun submitEdit() {
         val text = _state.value.draft.trim()
         val editingId = _state.value.editingMessageId
@@ -2626,15 +2715,16 @@ class ChatViewModel(
             cancelEdit()
             return
         }
-        // An edit submits like a send, attachments included: a file picked
-        // while editing is part of the message being submitted, not the
-        // draft that was there before the edit.
-        val attachments = _state.value.pendingAttachments
+        // Audit-200 C4 (M-078): only the files picked during the edit go
+        // with it — the snapshot holds the pre-edit draft's files, and
+        // they stay behind with the draft they were picked for.
+        val attachments = editAttachments()
         val full = buildMessageWithAttachments(text, attachments)
         if (_state.value.busy || sendInFlight) {
             if (queuePrompt(full, text, attachments)) {
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
                 draftBeforeEdit = null
+                attachmentsBeforeEdit = null
                 clearEditHandleKeys()
                 _state.value = _state.value.copy(editingMessageId = null)
                 clearDraft()
@@ -2645,10 +2735,109 @@ class ChatViewModel(
             // (audit-70 13-F1).
             return
         }
-        draftBeforeEdit = null
-        clearEditHandleKeys()
-        _state.value = _state.value.copy(editingMessageId = null)
-        sendText(full, text, attachments)
+        // Audit-200 C4 (M-077): an idle edit is a rewrite, not a new
+        // prompt — the edited message replaces the original and the turns
+        // after it go away (revert to just before it, then send the
+        // edited text). The busy branch above keeps the old queued
+        // behaviour: history cannot be rewritten mid-run.
+        submitEditAsRewrite(editingId, full, text, attachments)
+    }
+
+    /**
+     * The attachments that belong to the edit in progress: the pending
+     * list minus the pre-edit snapshot (audit-200 C4, M-078). Files the
+     * message itself carried (parsed back out of its text by [startEdit])
+     * are not in the snapshot, so they stay.
+     */
+    private fun editAttachments(): List<AttachedFile> {
+        val snapshotIds = attachmentsBeforeEdit.orEmpty().map { it.id }.toSet()
+        if (snapshotIds.isEmpty()) return _state.value.pendingAttachments
+        return _state.value.pendingAttachments.filter { it.id !in snapshotIds }
+    }
+
+    /**
+     * Submits an idle edit as a history rewrite (audit-200 C4, M-077).
+     *
+     * The session's transcript is reverted to just before the edited
+     * message — messages only, files stay (`files = false`: the agent's
+     * later file edits are not the message's to undo) — and the edited
+     * text is then sent as the new turn. Each step checks the session
+     * and the edit are still the ones this submit started from: a
+     * Cancel or a switch mid-flight aborts the flow and drops any
+     * staged revert, so the user never loses turns to an edit they
+     * walked away from. A failed stage or commit leaves the edit open
+     * with a failure banner; the original message is untouched. A
+     * failed send after a successful commit is the one unrecoverable
+     * step — the turns are already gone — so the edited text stays in
+     * the composer as an ordinary draft for a retry instead of being
+     * cleared.
+     *
+     * Without a session handle (no engine attached) there is nothing
+     * to rewrite, so the edit falls back to a plain send, as before.
+     */
+    private fun submitEditAsRewrite(
+        editingId: String,
+        full: String,
+        text: String,
+        attachments: List<AttachedFile>,
+    ) {
+        val sessionID = _state.value.sessionID
+        val sessions = handle?.sessions
+        if (sessionID == null || sessions == null) {
+            draftBeforeEdit = null
+            attachmentsBeforeEdit = null
+            clearEditHandleKeys()
+            _state.value = _state.value.copy(editingMessageId = null)
+            sendText(full, text, attachments)
+            return
+        }
+        _state.value = _state.value.copy(revertBusy = true)
+        viewModelScope.launch {
+            try {
+                val stillEditingHere =
+                    _state.value.sessionID == sessionID && _state.value.editingMessageId == editingId
+                if (!stillEditingHere) return@launch
+                when (val staged = sessions.revertStage(sessionID, editingId, files = false)) {
+                    is ApiResult.Failure -> {
+                        reportFailure(staged, RetryKind.NONE)
+                        return@launch
+                    }
+                    is ApiResult.Success -> Unit
+                }
+                if (_state.value.sessionID != sessionID || _state.value.editingMessageId != editingId) {
+                    runCatching { sessions.revertClear(sessionID) }
+                    return@launch
+                }
+                when (val committed = sessions.revertCommit(sessionID)) {
+                    is ApiResult.Failure -> {
+                        runCatching { sessions.revertClear(sessionID) }
+                        reportFailure(committed, RetryKind.NONE)
+                        return@launch
+                    }
+                    is ApiResult.Success -> Unit
+                }
+                if (_state.value.sessionID != sessionID || _state.value.editingMessageId != editingId) return@launch
+                // Committed: the original message and the turns after it
+                // are gone, so Cancel has nothing to restore — the edit
+                // is final. The pre-edit draft goes with it (its text was
+                // cleared as the edit, its files leave the composer too).
+                draftBeforeEdit = null
+                attachmentsBeforeEdit = null
+                clearEditHandleKeys()
+                _state.value = _state.value.copy(
+                    editingMessageId = null,
+                    pendingAttachments = attachments,
+                )
+                // Reload the truncated transcript before sending, so the
+                // user sees the old turns go away instead of watching
+                // the new message land under them. A failed reload does
+                // not block the send — the send's own resync reconciles.
+                runCatching { repository?.refresh() }
+                sendText(full, text, attachments)
+            } finally {
+                _state.value = _state.value.copy(revertBusy = false)
+            }
+        }
     }
 
     /** Re-sends one user message's text (its own Resend pill). */
@@ -2657,17 +2846,25 @@ class ChatViewModel(
             .firstOrNull { it.id == messageId && it.role == Role.USER }
             ?.text?.trim()
             .takeIf { !it.isNullOrBlank() } ?: return
+        // Audit-200 C4 (M-079): the message text carries its attachments
+        // as fenced blocks — re-sending it raw re-sent the whole dump
+        // (and editing it flooded the composer). Split it back: the
+        // typed text is the prompt and the blocks are its attachments,
+        // so the re-send is exactly what was sent the first time.
+        val (typedText, attachments) = splitAttachmentBlocks(text)
+        val full = buildMessageWithAttachments(typedText, attachments)
         if (_state.value.busy || sendInFlight) {
-            // Queued as text only: the resend carries no attachments, and
-            // queueing must not burn the files pending for the message the
-            // user is typing (item 16). A resend deliberately re-sends the
-            // last prompt, so it skips the last-sent dedup (audit-200 C3,
-            // M-071) — without that the most common resend, the last
-            // message, was silently dropped.
-            queuePrompt(text, text, allowResend = true)
+            // The resend carries its own attachments (parsed out of the
+            // message above), not the files pending for the message the
+            // user is typing — queueing must not burn those (item 16).
+            // A resend deliberately re-sends the last prompt, so it
+            // skips the last-sent dedup (audit-200 C3, M-071) — without
+            // that the most common resend, the last message, was
+            // silently dropped.
+            queuePrompt(full, typedText, attachments, allowResend = true)
             return
         }
-        sendText(text, text, emptyList())
+        sendText(full, typedText, attachments)
     }
 
     /**
@@ -3487,6 +3684,14 @@ class ChatViewModel(
         // the composer only offers Stop while busy, so this guards callers
         // that do not check first.
         if (!_state.value.busy || _state.value.stopping) return
+        // Audit-200 C4 (M-082/M-085): the session is captured now, like
+        // sendText does (item 15) — the interrupt POST and every state
+        // write below belong to this session only. The coroutine outlives
+        // the tap, and a switch before it lands used to redirect the
+        // interrupt into the newly opened session (M-082) and let its
+        // late result return the new session's queue to the draft or
+        // plant the old session's failure banner on it (M-085).
+        val stopSessionID = _state.value.sessionID ?: return
         // "Stopping…" until the run actually ends: the interrupt is async and
         // the button must not flip back to Send while the agent still works.
         // The collector clears it when busy goes false.
@@ -3498,6 +3703,13 @@ class ChatViewModel(
         stopIntent = true
         _state.value = _state.value.copy(stopping = true)
         viewModelScope.launch {
+            // Still this session's stop? A switch (or a new session, which
+            // replaces the repository) abandons the writes below — the
+            // new session's queue, banner and button are not this stop's
+            // to touch. The interrupt itself still goes out with the
+            // captured id: the run the user stopped is still running
+            // server-side and should still stop.
+            val stillStoppingHere = { repository === repo && _state.value.sessionID == stopSessionID }
             // The interrupt POST has its own timeout (17-F10): without it
             // a hung engine held "Stopping…" until the client's 120s call
             // timeout, with no way to retry. On timeout the button is
@@ -3505,23 +3717,27 @@ class ChatViewModel(
             // cancelled client-side, and a second interrupt is harmless
             // if the first still lands server-side.
             val result = try {
-                withTimeout(STOP_TIMEOUT_MS) { repo.interrupt() }
+                withTimeout(STOP_TIMEOUT_MS) { repo.interrupt(stopSessionID) }
             } catch (_: TimeoutCancellationException) {
-                _state.value = _state.value.copy(
-                    stopping = false,
-                    failure = null,
-                    failureKey = R.string.stop_unconfirmed,
-                    retryKind = RetryKind.NONE,
-                    selectionFailure = null,
-                )
+                if (stillStoppingHere()) {
+                    _state.value = _state.value.copy(
+                        stopping = false,
+                        failure = null,
+                        failureKey = R.string.stop_unconfirmed,
+                        retryKind = RetryKind.NONE,
+                        selectionFailure = null,
+                    )
+                }
                 return@launch
             }
             when (result) {
                 is ApiResult.Failure -> {
                     // Stopping the run failed; re-sending the prompt would
                     // not stop anything, so no Retry is offered for it.
-                    reportFailure(result, RetryKind.NONE)
-                    _state.value = _state.value.copy(stopping = false)
+                    if (stillStoppingHere()) {
+                        reportFailure(result, RetryKind.NONE)
+                        _state.value = _state.value.copy(stopping = false)
+                    }
                 }
                 is ApiResult.Success -> {
                     // The interrupt only asked the engine to stop — it is
@@ -3535,7 +3751,19 @@ class ChatViewModel(
                     // them, and the queue's fate is decided now: Stop
                     // means stop, so the follow-ups go back to the
                     // composer instead of auto-sending after it.
+                    if (!stillStoppingHere()) return@launch
                     returnQueueToDraft()
+                    // Audit-200 C4 (M-083/M-086): the engine accepted the
+                    // interrupt, so the run is ending and its permission
+                    // prompt is dead — a tap on it now would answer a run
+                    // that is already stopping, and the deferred row would
+                    // offer the same dead prompt back. Both go with the
+                    // queue; the terminal event clears them again if a
+                    // resync restores anything in the meantime.
+                    _state.value = _state.value.copy(
+                        pendingPermission = null,
+                        deferredPermission = null,
+                    )
                     // Audit-200 B3 (M-244): the run is supposed to end
                     // now, but if the terminal event never arrives the
                     // button stays "Stopping…" forever — and the stop
@@ -3548,10 +3776,10 @@ class ChatViewModel(
                     // of flushing it).
                     viewModelScope.launch {
                         delay(STOP_WATCHDOG_MS)
-                        if (_state.value.stopping && _state.value.busy) {
+                        if (_state.value.stopping && _state.value.busy && stillStoppingHere()) {
                             repository?.refresh()
                             delay(1_000)
-                            if (_state.value.stopping && _state.value.busy) {
+                            if (_state.value.stopping && _state.value.busy && stillStoppingHere()) {
                                 _state.value = _state.value.copy(stopping = false)
                             }
                         }
@@ -3572,6 +3800,14 @@ class ChatViewModel(
      * after a failed reply).
      */
     fun replyPermission(decision: String) {
+        // Audit-200 C4 (M-083): the run is stopping — the prompt is
+        // already cleared by stop() on success, and a tap that lands
+        // before the terminal event must not answer a run the user just
+        // stopped. The prompt is hidden while stopping (see ChatScreen),
+        // so this is the backstop for a tap racing the hide, not the
+        // only guard: the engine would reject the reply or, worse,
+        // take it as a reason to keep working.
+        if (stopIntent || _state.value.stopping) return
         val repo = repository ?: return
         _state.value = _state.value.copy(permissionReplyFailed = false)
         viewModelScope.launch {
@@ -3611,6 +3847,11 @@ class ChatViewModel(
 
     /** Brings a deferred permission request back as the pending prompt. */
     fun restoreDeferredPermission() {
+        // Audit-200 C4 (M-086): same guard as replyPermission — the
+        // deferred row is hidden while stopping (see ChatScreen), and
+        // restoring the prompt here would hand the user a dead request
+        // to answer against a run that is already stopping.
+        if (stopIntent || _state.value.stopping) return
         val deferred = _state.value.deferredPermission ?: return
         _state.value = _state.value.copy(pendingPermission = deferred, deferredPermission = null)
     }
@@ -3645,6 +3886,7 @@ class ChatViewModel(
         // one. The edited text itself is parked above as the draft, so
         // nothing typed is lost — only the pre-edit backup goes.
         draftBeforeEdit = null
+        attachmentsBeforeEdit = null
         // Audit-200 B3 (M-080/M-376, M-493): the stop intent and the
         // staged revert belong to the old session too.
         stopIntent = false
@@ -3687,6 +3929,7 @@ class ChatViewModel(
         attached = null
         parkComposer()
         draftBeforeEdit = null
+        attachmentsBeforeEdit = null
         stopIntent = false
         stagedRevertSessionID = null
         lastSentSkills = null
@@ -3856,6 +4099,7 @@ class ChatViewModel(
         // Same as newSession (draftBeforeEdit): the pre-edit backup belongs
         // to the old session's composer and must not survive the switch.
         draftBeforeEdit = null
+        attachmentsBeforeEdit = null
         // Audit-200 A5 (DL-030): the visible draft changed under any
         // in-flight send, so its post-send clear must not fire on the
         // restored text.
@@ -4066,6 +4310,8 @@ class ChatViewModel(
         internal const val DRAFT_BEFORE_EDIT_KEY = "chat_draft_before_edit"
         /** The message being edited (audit-200 A9-3, DL-034). */
         internal const val EDITING_MESSAGE_KEY = "chat_editing_message"
+        /** The attachments pending before the edit in progress (audit-200 C4, M-078). */
+        internal const val ATTACHMENTS_BEFORE_EDIT_KEY = "chat_attachments_before_edit"
         /** Failed reloads before the banner points at a new session (item 24). */
         private const val SESSION_RELOAD_LIMIT = 2
         /** Quiet time after the last composer change before it is parked (audit-200 A9-3, DL-010). */

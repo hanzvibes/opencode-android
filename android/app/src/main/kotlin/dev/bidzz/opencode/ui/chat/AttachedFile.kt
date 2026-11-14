@@ -7,6 +7,7 @@ import android.provider.OpenableColumns
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
+import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.util.Locale
 import java.util.UUID
@@ -62,6 +63,148 @@ data class AttachedFile(
         return "$fence$safeName\n$content\n$fence"
     }
 }
+
+/**
+ * Decodes a picked file's bytes as text, or null when they are not text.
+ *
+ * Audit-200 C4 (M-074): a valid text file used to be refused as "not a
+ * text file" whenever it was not UTF-8 — UTF-16 from Windows Notepad,
+ * Latin-1/Windows-1252 with accented characters. The decode now follows
+ * the file: a UTF-16 byte-order mark picks its half, strict UTF-8 is
+ * tried next, and anything else falls back to Windows-1252, the
+ * single-byte encoding that covers the Latin-1 range. A file whose bytes
+ * decode under none of these (or that only decodes as control-heavy
+ * garbage) is still refused by the caller's NUL check — the fallback
+ * never turns a binary file into "text".
+ *
+ * Pure, so unit tests can feed it exact bytes.
+ */
+internal fun decodeTextFile(bytes: ByteArray): String? {
+    if (bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) {
+        return runCatching {
+            Charsets.UTF_16LE.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes, 2, bytes.size - 2))
+                .toString()
+        }.getOrNull()
+    }
+    if (bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) {
+        return runCatching {
+            Charsets.UTF_16BE.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes, 2, bytes.size - 2))
+                .toString()
+        }.getOrNull()
+    }
+    runCatching {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
+    }.onSuccess { return it }
+    // Windows-1252 maps every byte, so this cannot throw for encoding
+    // reasons — it only ever fails when the charset itself is missing
+    // from the device, and then ISO-8859-1 (guaranteed present) covers
+    // the same range except the 0x80-0x9F printable glyphs.
+    return runCatching {
+        Charset.forName("windows-1252").decode(ByteBuffer.wrap(bytes)).toString()
+    }.getOrElse {
+        Charsets.ISO_8859_1.decode(ByteBuffer.wrap(bytes)).toString()
+    }
+}
+
+/**
+ * Splits a sent message's full text back into the typed text and the
+ * attachment blocks it was built from (audit-200 C4, M-079).
+ *
+ * [buildMessageWithAttachments] pastes each attachment as a fenced block
+ * headed by its filename (see [AttachedFile.toFencedBlock]); Edit and
+ * Resend used to load the whole full text — dump included — into the
+ * composer or re-send it raw, so a 64 KB file flooded the edit field
+ * and was re-sent on every resend. This parses those blocks back out:
+ * the typed text comes back clean and the blocks come back as
+ * [AttachedFile]s, so an edit keeps the files as chips and a resend
+ * re-emits exactly the text that was sent.
+ *
+ * A fenced block counts as an attachment only when its opening fence's
+ * info string looks like a file path — it contains a `/` or ends in a
+ * dot-extension — so a user-typed ```kotlin or ```python fence stays
+ * inline. A block that IS misread (a user fence headed `config.json`,
+ * say) still round-trips losslessly: re-emitting it through
+ * [buildMessageWithAttachments] reproduces the original text, so the
+ * only cost is that it shows as a chip while editing instead of inline
+ * text. The fence length follows [toFencedBlock]: the opening run is
+ * one backtick longer than the longest run inside the content, so the
+ * closing fence is the same run on its own line.
+ *
+ * Pure, so unit tests can feed it exact text.
+ */
+internal fun splitAttachmentBlocks(text: String): Pair<String, List<AttachedFile>> {
+    val lines = text.lines()
+    val typed = StringBuilder()
+    val attachments = mutableListOf<AttachedFile>()
+    var i = 0
+    while (i < lines.size) {
+        val line = lines[i]
+        val fence = attachmentFenceOf(line)
+        if (fence != null) {
+            val (fenceText, name) = fence
+            val body = StringBuilder()
+            var j = i + 1
+            var closed = false
+            while (j < lines.size) {
+                if (lines[j] == fenceText) {
+                    closed = true
+                    break
+                }
+                if (body.isNotEmpty()) body.append('\n')
+                body.append(lines[j])
+                j++
+            }
+            if (closed) {
+                attachments.add(
+                    AttachedFile(
+                        id = UUID.randomUUID().toString(),
+                        name = name,
+                        content = body.toString(),
+                    ),
+                )
+                i = j + 1
+                continue
+            }
+            // An unclosed "fence" is not an attachment block — it is
+            // ordinary text (a half-typed fence, or content that only
+            // looks like one). Fall through and keep the line.
+        }
+        if (typed.isNotEmpty()) typed.append('\n')
+        typed.append(line)
+        i++
+    }
+    return typed.toString().trimEnd('\n') to attachments
+}
+
+/**
+ * The opening fence of an attachment block, or null.
+ *
+ * Returns the fence text (the backtick run) and the filename from its
+ * info string. A fence whose info string is empty, or does not look
+ * like a file path, is a plain code fence, not an attachment.
+ */
+private fun attachmentFenceOf(line: String): Pair<String, String>? {
+    var backticks = 0
+    while (backticks < line.length && line[backticks] == '`') backticks++
+    if (backticks < 3) return null
+    val info = line.substring(backticks)
+    if (info.isBlank() || '`' in info) return null
+    val looksLikePath = '/' in info || FILENAME_EXTENSION_REGEX.containsMatchIn(info)
+    if (!looksLikePath) return null
+    return "`".repeat(backticks) to info
+}
+
+private val FILENAME_EXTENSION_REGEX = Regex("\\.[A-Za-z0-9]{1,10}$")
 
 /** Longest run of consecutive backticks in [text], or 0. */
 private fun longestBacktickRun(text: String): Int {
@@ -215,15 +358,7 @@ fun readSafFile(contentResolver: ContentResolver, uri: Uri): SafReadResult {
         return SafReadResult.Unreadable(name)
     }
 
-    val text = try {
-        Charsets.UTF_8.newDecoder()
-            .onMalformedInput(CodingErrorAction.REPORT)
-            .onUnmappableCharacter(CodingErrorAction.REPORT)
-            .decode(ByteBuffer.wrap(bytes))
-            .toString()
-    } catch (e: CharacterCodingException) {
-        return SafReadResult.NotText(name)
-    }
+    val text = decodeTextFile(bytes) ?: return SafReadResult.NotText(name)
     // NUL bytes mean binary even when the bytes happen to decode.
     if ('\u0000' in text) return SafReadResult.NotText(name)
 

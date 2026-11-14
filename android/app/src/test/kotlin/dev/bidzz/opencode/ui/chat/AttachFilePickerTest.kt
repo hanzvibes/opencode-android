@@ -86,4 +86,41 @@ class AttachFilePickerTest {
         assertEquals(4, rankQuickOpen(files, "").size)
         assertTrue(rankQuickOpen(files, "zzz").isEmpty())
     }
+
+    @Test
+    fun `M-073 a spaced path is quoted on insert`() {
+        assertEquals("@\"my notes.md\" ", insertMention("", "my notes.md"))
+        assertEquals("fix @\"my notes.md\" ", insertMention("fix", "my notes.md"))
+        assertEquals("@README.md ", insertMention("", "README.md"))
+    }
+
+    @Test
+    fun `M-073 a path containing a double quote falls back to unquoted`() {
+        assertEquals("@we\"ird.md ", insertMention("", "we\"ird.md"))
+    }
+
+    @Test
+    fun `M-073 a quoted token keeps its spaced query while typing`() {
+        assertEquals("my notes", extractMentionQuery("@\"my notes"))
+        assertEquals("", extractMentionQuery("@\""))
+        assertEquals("my notes", extractMentionQuery("see @\"my notes"))
+    }
+
+    @Test
+    fun `M-073 a closed quoted token is finished`() {
+        assertNull(extractMentionQuery("@\"my notes.md\" "))
+        assertNull(extractMentionQuery("@\"my notes.md\""))
+        assertNull(extractMentionQuery("@\"my notes.md\"x"))
+    }
+
+    @Test
+    fun `M-073 insertMention replaces a quoted token being typed`() {
+        assertEquals("see @\"my notes.md\" ", insertMention("see @\"my no", "my notes.md"))
+    }
+
+    @Test
+    fun `M-073 removeMentionToken drops a quoted token being typed`() {
+        assertEquals("see ", removeMentionToken("see @\"my no"))
+        assertEquals("see @\"my notes.md\" ", removeMentionToken("see @\"my notes.md\" "))
+    }
 }

@@ -113,6 +113,18 @@ class MainActivity : FragmentActivity() {
                         long = true,
                     )
                 }
+            } else {
+                // Audit-200 C4 (M-075): a folder from a provider whose
+                // tree document id is not `volume:path` (Drive, OneDrive
+                // and friends) used to fail with no sign at all — the
+                // picker closed, the workspace stayed put, and nothing
+                // said why. A cancel is still silent (uri == null above);
+                // an unmapped folder is told.
+                Log.w("MainActivity", "Workspace folder not usable: ${uri}")
+                (application as OpenCodeApplication).showSnackbar(
+                    getString(R.string.workspace_folder_unsupported),
+                    long = true,
+                )
             }
         }
 

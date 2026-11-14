@@ -38,6 +38,13 @@ data class ParkedComposer(
      */
     val draftBeforeEdit: String? = null,
     val editingMessageId: String? = null,
+    /**
+     * The attachments pending before the edit in progress (audit-200 C4,
+     * M-078), and null when no edit is in progress. Nullable for the same
+     * reason as [draftBeforeEdit]: a composer parked before this field
+     * existed still decodes, and null is the only honest value for it.
+     */
+    val attachmentsBeforeEdit: List<AttachedFile>? = null,
 ) : java.io.Serializable {
     companion object {
         private const val serialVersionUID = 1L
