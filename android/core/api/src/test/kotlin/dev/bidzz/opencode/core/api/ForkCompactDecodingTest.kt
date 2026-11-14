@@ -11,6 +11,7 @@ import dev.bidzz.opencode.core.api.dto.SingleResponse
 import dev.bidzz.opencode.core.api.dto.fileImpact
 import dev.bidzz.opencode.core.api.dto.revertFilePaths
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -120,8 +121,8 @@ class ForkCompactDecodingTest {
     fun `DL-013 a staged revert with unreadable file entries reports unknown files`() {
         val revert = SessionRevert(
             files = listOf(
-                buildJsonObject { put("status", "modified") },
-                buildJsonObject { put("additions", 3) },
+                buildJsonObject { put("status", JsonPrimitive("modified")) },
+                buildJsonObject { put("additions", JsonPrimitive(3)) },
             ),
         )
         assertTrue(revert.revertFilePaths().isEmpty())
