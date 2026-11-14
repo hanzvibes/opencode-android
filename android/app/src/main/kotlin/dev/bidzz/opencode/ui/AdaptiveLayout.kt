@@ -1,13 +1,13 @@
 package dev.bidzz.opencode.ui
 
+import android.app.Activity
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 
 /**
@@ -33,16 +33,24 @@ val CollapsedSidebarWidth: Dp = 64.dp
 /** Width of the list pane in a list-detail layout (sessions, files). */
 val ListPaneWidth: Dp = 360.dp
 
-/** Window size class for the current window, recomputed when its size changes. */
+/**
+ * Window size class for the current window, recomputed when its size changes.
+ *
+ * Audit-200 B7 (M-235): this used to compute the class from
+ * `LocalConfiguration.screenWidthDp` — the SCREEN width, not the window.
+ * In split-screen the window can be far narrower than the screen, so the
+ * app still believed it was Expanded: Files wired its detail opener while
+ * the explorer (which measures its real content width) rendered no pane,
+ * swallowing file taps, and the Sessions list-detail + persistent sidebar
+ * squeezed the chat column into the narrow window. The official
+ * [calculateWindowSizeClass] reads the WindowMetrics — the real window
+ * bounds — so the class follows the window, not the screen.
+ */
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun rememberWindowSizeClass(): WindowSizeClass {
-    val config = LocalConfiguration.current
-    return remember(config.screenWidthDp, config.screenHeightDp) {
-        WindowSizeClass.calculateFromSize(
-            DpSize(config.screenWidthDp.dp, config.screenHeightDp.dp),
-        )
-    }
+    val activity = LocalContext.current as Activity
+    return calculateWindowSizeClass(activity)
 }
 
 /** True at [ExpandedWidthBreakpoint] and above. */

@@ -163,6 +163,19 @@ fun ProvidersScreen(
     modifier: Modifier = Modifier,
     /** Last Antigravity plugin patch report from the engine supervisor, if any (31-F2). */
     patchReport: AntigravityPatchReport? = null,
+    /**
+     * Whether the post-start re-patch poll has given up waiting for the
+     * plugin (audit-200 B7, M-209): while it is still polling, the row may
+     * promise the patch will run once the plugin appears; once true, that
+     * promise is over.
+     */
+    patchPollEnded: Boolean = false,
+    /**
+     * Restarts the engine so a patch that landed after start takes effect,
+     * or so a patch whose wait ran out gets another chance (audit-200 B7,
+     * M-206/M-209).
+     */
+    onRestartForPatch: () -> Unit = {},
     onSelectAntigravityAccount: (String) -> Unit = {},
     onSetAntigravityAccountEnabled: (String, Boolean) -> Unit = { _, _ -> },
     onDeleteJsoncConfig: () -> Unit = {},
@@ -818,28 +831,35 @@ fun ProvidersScreen(
 
                     // Patch status (31-F2): only worth a line when something is off or
                     // a restart is pending — a healthy already-patched plugin stays quiet.
+                    // Audit-200 B7 (M-206/M-209): a patch that landed after start,
+                    // or one whose 5-minute wait ran out, offers a restart button
+                    // next to the text — the text alone never got the user there.
                     patchReport?.let { report ->
-                        val patchText = when (report.outcome) {
-                            AntigravityPatchOutcome.APPLIED ->
-                                if (report.restartRequired) {
-                                    stringResource(R.string.providers_patch_applied_restart)
-                                } else {
-                                    null
+                        when (val display = patchDisplayState(report, patchPollEnded)) {
+                            is PatchDisplay.Message -> {
+                                Text(
+                                    text = stringResource(display.textRes),
+                                    style = OpenCodeTypography.bodySmall,
+                                    color = colors.warning,
+                                )
+                            }
+                            is PatchDisplay.WithRestart -> {
+                                Text(
+                                    text = stringResource(display.textRes),
+                                    style = OpenCodeTypography.bodySmall,
+                                    color = colors.warning,
+                                )
+                                TextButton(
+                                    onClick = onRestartForPatch,
+                                    enabled = state.restartPendingFor != ProvidersViewModel.PATCH_RESTART_NAME,
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.providers_patch_restart),
+                                        color = colors.accentText,
+                                    )
                                 }
-                            AntigravityPatchOutcome.VERSION_MISMATCH ->
-                                stringResource(R.string.providers_patch_version_mismatch)
-                            AntigravityPatchOutcome.FAILED ->
-                                stringResource(R.string.providers_patch_failed)
-                            AntigravityPatchOutcome.NOT_FOUND ->
-                                stringResource(R.string.providers_patch_not_found)
-                            AntigravityPatchOutcome.ALREADY_PATCHED -> null
-                        }
-                        patchText?.let {
-                            Text(
-                                text = it,
-                                style = OpenCodeTypography.bodySmall,
-                                color = colors.warning,
-                            )
+                            }
+                            PatchDisplay.Quiet -> Unit
                         }
                     }
 
@@ -1004,6 +1024,49 @@ fun ProvidersScreen(
             },
         )
     }
+}
+
+/**
+ * What the Antigravity patch row shows (audit-200 B7, M-206/M-209).
+ * [Message] is text only; [WithRestart] adds the restart button that
+ * makes the patch take effect (or retries a wait that ran out);
+ * [Quiet] shows nothing — a healthy already-patched plugin, or a patch
+ * applied before start that needs no restart.
+ */
+sealed interface PatchDisplay {
+    data class Message(val textRes: Int) : PatchDisplay
+    data class WithRestart(val textRes: Int) : PatchDisplay
+    data object Quiet : PatchDisplay
+}
+
+/**
+ * Pure: maps a patch report (and whether the post-start poll has given
+ * up waiting) to [PatchDisplay]. Unit-tested in PatchDisplayTest.
+ */
+internal fun patchDisplayState(
+    report: AntigravityPatchReport,
+    pollEnded: Boolean,
+): PatchDisplay = when (report.outcome) {
+    AntigravityPatchOutcome.APPLIED ->
+        if (report.restartRequired) {
+            PatchDisplay.WithRestart(R.string.providers_patch_applied_restart)
+        } else {
+            PatchDisplay.Quiet
+        }
+    AntigravityPatchOutcome.VERSION_MISMATCH ->
+        PatchDisplay.Message(R.string.providers_patch_version_mismatch)
+    AntigravityPatchOutcome.FAILED ->
+        PatchDisplay.Message(R.string.providers_patch_failed)
+    AntigravityPatchOutcome.NOT_FOUND ->
+        // The poll stops after 5 minutes (30 × 10 s): while it is still
+        // running the promise holds, once it ended the text must say the
+        // wait is over — and offer the restart that retries it.
+        if (pollEnded) {
+            PatchDisplay.WithRestart(R.string.providers_patch_not_found_stopped)
+        } else {
+            PatchDisplay.Message(R.string.providers_patch_not_found)
+        }
+    AntigravityPatchOutcome.ALREADY_PATCHED -> PatchDisplay.Quiet
 }
 
 /**

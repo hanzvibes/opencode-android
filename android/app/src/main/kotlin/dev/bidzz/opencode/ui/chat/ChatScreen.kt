@@ -237,9 +237,12 @@ fun ChatScreen(
     onEditMessage: (String, String) -> Unit = { _, _ -> },
     onResendMessage: (String) -> Unit = {},
     /** Fork/revert (mockup group 2): fork the session from a user
-     * message, and stage a revert to just before one. */
+     * message, and stage a revert to just before one. The revert takes
+     * whether the files change too (audit-200 B7, M-027): true restores
+     * the files changed after the message, false reverts the messages
+     * only. */
     onForkMessage: (String) -> Unit = {},
-    onRevertMessage: (String) -> Unit = {},
+    onRevertMessage: (String, Boolean) -> Unit = { _, _ -> },
     /** Compact the session (mockup group 2): offered in the header's
      * status dialog, next to the context meter, behind a confirm. */
     onCompact: () -> Unit = {},
@@ -1069,6 +1072,10 @@ fun ChatScreen(
             // offers Compact; the confirm lives here so it survives the
             // status dialog closing first.
             var showCompactDialog by remember { mutableStateOf(false) }
+            // Audit-200 B7 (M-027): the message a revert was asked for —
+            // the dialog below asks whether the files change too, so the
+            // staging only happens once the user picks.
+            var revertTargetId by remember { mutableStateOf<String?>(null) }
             ChatHeader(
                 title = headerTitle(state.workspacePath),
                 // The active session's own title, so the header says which
@@ -1167,6 +1174,48 @@ fun ChatScreen(
                     },
                     text = {
                         Text(text = stringResource(R.string.compact_dialog_body))
+                    },
+                )
+            }
+
+            // Audit-200 B7 (M-027): reverting used to always restore the
+            // files too. The dialog asks first — "Messages + files" stages
+            // with files, "Messages only" stages the messages alone.
+            // Dismissing (back / outside tap) stages nothing.
+            revertTargetId?.let { targetId ->
+                LocalizedAlertDialog(
+                    onDismissRequest = { revertTargetId = null },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                revertTargetId = null
+                                onRevertMessage(targetId, true)
+                            },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.revert_messages_and_files),
+                                color = colors.accentText,
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                revertTargetId = null
+                                onRevertMessage(targetId, false)
+                            },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.revert_messages_only),
+                                color = colors.onSurfaceMuted,
+                            )
+                        }
+                    },
+                    title = {
+                        Text(text = stringResource(R.string.revert_dialog_title))
+                    },
+                    text = {
+                        Text(text = stringResource(R.string.revert_dialog_text))
                     },
                 )
             }
@@ -1452,7 +1501,7 @@ fun ChatScreen(
                                                 null
                                             },
                                             onRevert = if (message.role == Role.USER) {
-                                                { onRevertMessage(message.id) }
+                                                { revertTargetId = message.id }
                                             } else {
                                                 null
                                             },

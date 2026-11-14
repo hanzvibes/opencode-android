@@ -166,7 +166,16 @@ internal sealed interface Screen {
     data object EngineConfig : Screen
     data object About : Screen
     /** Optional Basic auth for engine URLs (artifact views); public links pass none. */
-    data class InAppBrowser(val url: String, val basicAuth: Pair<String, String>? = null) : Screen
+    /**
+     * Where Back returns to (audit-200 B7, M-158): the browser is opened
+     * from chat links, Artifacts and WebSearch, and each of them is the
+     * right place to come back to — not always Chat.
+     */
+    data class InAppBrowser(
+        val url: String,
+        val basicAuth: Pair<String, String>? = null,
+        val returnTo: Screen = Screen.Chat,
+    ) : Screen
 
     /**
      * Short string key for [ScreenSaver] (audit-100 69-F4): the current
@@ -273,6 +282,9 @@ internal fun Screen.parent(): Screen = when (this) {
     Screen.SessionStats -> Screen.Settings
     Screen.UsageLimits -> Screen.Settings
     Screen.About -> Screen.Chat
+    // Audit-200 B7 (M-158): the browser returns to the screen that
+    // opened it (chat, Artifacts or WebSearch), not always to Chat.
+    is Screen.InAppBrowser -> this.returnTo
     else -> Screen.Chat
 }
 
@@ -884,6 +896,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onFileCancelSwitch = fileViewModel::cancelSwitch,
                         onEnsureQuickOpenIndex = explorerViewModel::ensureQuickOpenIndex,
                         onToggleHidden = explorerViewModel::toggleHidden,
+                        // Audit-200 B7 (M-022): the embedded viewer's
+                        // image/PDF previews resolve against this root.
+                        workspaceRoot = fileViewModel.workspaceRoot(),
                     )
 
                     is Screen.FileView -> FileViewScreen(
@@ -899,6 +914,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onDismissConflict = fileViewModel::dismissConflict,
                         onConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
                         onCancelSwitch = fileViewModel::cancelSwitch,
+                        // Audit-200 B7 (M-022): image/PDF previews resolve
+                        // the relative path against the workspace root.
+                        workspaceRoot = fileViewModel.workspaceRoot(),
                     )
 
                     Screen.DiffList -> DiffListScreen(
@@ -924,7 +942,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     is Screen.InAppBrowser -> InAppBrowserScreen(
                         url = target.url,
                         basicAuth = target.basicAuth,
-                        onBack = { screen = Screen.Chat },
+                        onBack = { screen = target.returnTo },
                     )
 
                     Screen.Sessions -> if (isExpanded) {
@@ -1157,11 +1175,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onReplaceCredential = providersViewModel::replaceCredential,
                         onDeleteCustomProvider = providersViewModel::deleteCustomProvider,
                         patchReport = engineStatus.antigravityPatch,
+                        // Audit-200 B7 (M-209): whether the post-start
+                        // re-patch poll has given up waiting for the plugin.
+                        patchPollEnded = engineStatus.antigravityPatchPollEnded,
                         onSelectAntigravityAccount = providersViewModel::selectAntigravityAccount,
                         onSetAntigravityAccountEnabled = providersViewModel::setAntigravityAccountEnabled,
                         onDeleteJsoncConfig = providersViewModel::deleteJsoncConfig,
                         onConfirmRestart = providersViewModel::confirmRestart,
                         onDismissRestart = providersViewModel::dismissRestart,
+                        // Audit-200 B7 (M-206): restarts the engine so a
+                        // patch that landed after start takes effect.
+                        onRestartForPatch = providersViewModel::restartForPatch,
                     )
 
                     Screen.Diagnostics -> DiagnosticsScreen(
@@ -1206,6 +1230,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 screen = Screen.InAppBrowser(
                                     url = creds.baseUrl + artifact.url,
                                     basicAuth = "opencode" to creds.password,
+                                    // Audit-200 B7 (M-158): back returns to
+                                    // Artifacts, where the link was tapped.
+                                    returnTo = Screen.Artifacts,
                                 )
                             }
                         },
@@ -1240,7 +1267,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onQueryChange = webSearchViewModel::setQuery,
                         onProviderChange = webSearchViewModel::setProvider,
                         onSearch = webSearchViewModel::search,
-                        onOpenUrl = { url -> screen = Screen.InAppBrowser(url) },
+                        // Audit-200 B7 (M-158): back returns to WebSearch,
+                        // where the link was tapped.
+                        onOpenUrl = { url -> screen = Screen.InAppBrowser(url, returnTo = Screen.WebSearch) },
                     )
 
                     Screen.Worktrees -> WorktreesScreen(

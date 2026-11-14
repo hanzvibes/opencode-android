@@ -63,6 +63,14 @@ data class EngineStatus(
      * [AntigravityPatchReport.restartRequired] says a restart is needed.
      */
     val antigravityPatch: AntigravityPatchReport? = null,
+    /**
+     * True once the post-start re-patch poll has given up waiting for the
+     * plugin (audit-200 B7, M-209): 30 × 10 s with the plugin still
+     * NOT_FOUND. While false the UI may promise "the patch will run once
+     * it appears"; once true that promise is over and the UI must say so.
+     * Cleared when a new poll starts.
+     */
+    val antigravityPatchPollEnded: Boolean = false,
 ) {
     /**
      * Never prints the credentials object (audit-100 53-F1): the default
@@ -441,7 +449,14 @@ class ProcessManager(
     /** Publishes a patch report without changing the engine state. */
     private fun updatePatchReport(report: AntigravityPatchReport) {
         synchronized(stateLock) {
-            _status.value = _status.value.copy(antigravityPatch = report)
+            // Audit-200 B7 (M-209): a fresh report restarts the wait — the
+            // "poll ended" flag belongs to the previous wait only. The
+            // flag is set after the loop ends, when no more reports come,
+            // so clearing it here can never fight the exhausted state.
+            _status.value = _status.value.copy(
+                antigravityPatch = report,
+                antigravityPatchPollEnded = false,
+            )
         }
     }
 
@@ -454,7 +469,13 @@ class ProcessManager(
      * disk error can clear) and then left for the next start to retry.
      */
     private suspend fun repatchAntigravityAfterDownload(proc: Process) {
+        // Audit-200 B7 (M-209): a new poll is waiting again — the "stopped
+        // waiting" flag from a previous boot must not linger into it.
+        synchronized(stateLock) {
+            _status.value = _status.value.copy(antigravityPatchPollEnded = false)
+        }
         var failures = 0
+        var lastOutcome: AntigravityPatchOutcome? = null
         repeat(PATCH_POLL_ATTEMPTS) {
             delay(PATCH_POLL_INTERVAL_MS)
             if (!proc.isAlive) return
@@ -462,6 +483,7 @@ class ProcessManager(
                 environment.patchAntigravityPlugin(restartRequired = true)
             }.getOrNull() ?: return
             updatePatchReport(report)
+            lastOutcome = report.outcome
             when (report.outcome) {
                 AntigravityPatchOutcome.APPLIED,
                 AntigravityPatchOutcome.ALREADY_PATCHED,
@@ -471,6 +493,15 @@ class ProcessManager(
                     if (failures >= PATCH_FAILURE_LIMIT) return
                 }
                 AntigravityPatchOutcome.NOT_FOUND -> Unit // plugin not downloaded yet; keep polling
+            }
+        }
+        // Audit-200 B7 (M-209): the 5-minute window ran out with the plugin
+        // still missing — the UI must stop promising the patch will run
+        // once it appears. (FAILED gives up earlier with its own report,
+        // so only NOT_FOUND ends here.)
+        if (lastOutcome == AntigravityPatchOutcome.NOT_FOUND) {
+            synchronized(stateLock) {
+                _status.value = _status.value.copy(antigravityPatchPollEnded = true)
             }
         }
     }

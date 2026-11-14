@@ -138,6 +138,11 @@ fun ExplorerScreen(
     onEnsureQuickOpenIndex: () -> Unit = {},
     /** Shows or hides dot-directories in the list (89-F6). */
     onToggleHidden: () -> Unit = {},
+    /**
+     * Workspace root file paths are relative to (audit-200 B7, M-022):
+     * passed to the embedded viewer so image/PDF previews resolve it.
+     */
+    workspaceRoot: String = "",
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -156,15 +161,25 @@ fun ExplorerScreen(
         if (q.isEmpty()) visible else visible.filter { it.name.lowercase(Locale.ROOT).contains(q) }
     }
 
-    // One tap target for opening a row, wherever it comes from (list or palette):
-    // directories always navigate, files go to the detail pane when it is wired.
-    val detailOpener = onOpenFileDetail
-    val openRow: (FileRow) -> Unit = { row ->
-        if (row.isDirectory) onOpenDirectory(row) else if (detailOpener != null) detailOpener(row) else onOpenFile(row)
-    }
+    // One tap target for opening a row, wherever it comes from (list or palette).
+    // It is built inside the BoxWithConstraints below, next to detailActive:
+    // whether the detail pane renders is decided by the explorer's own width,
+    // and a tap must follow that decision, not merely whether the host wired
+    // an opener (audit-200 B7, M-235 — the host gates the opener on the
+    // WINDOW width, so in split-screen the opener could be wired while this
+    // screen is too narrow to show the pane, and the tap was swallowed).
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val detailActive = maxWidth >= ListDetailBreakpoint && onOpenFileDetail != null
+
+        // Directories always navigate; files go to the detail pane only
+        // while it is actually rendered — otherwise they navigate, like
+        // on a phone, instead of loading invisibly into a pane that
+        // is not on screen.
+        val detailOpener = if (detailActive) onOpenFileDetail else null
+        val openRow: (FileRow) -> Unit = { row ->
+            if (row.isDirectory) onOpenDirectory(row) else if (detailOpener != null) detailOpener(row) else onOpenFile(row)
+        }
 
         ScreenScaffold(
             title = stringResource(R.string.drawer_files),
@@ -243,6 +258,7 @@ fun ExplorerScreen(
                                 onConfirmSwitchDiscard = onFileConfirmSwitchDiscard,
                                 onCancelSwitch = onFileCancelSwitch,
                                 embedded = true,
+                                workspaceRoot = workspaceRoot,
                             )
                         } else {
                             EmptyState(stringResource(R.string.files_detail_empty))

@@ -353,5 +353,12 @@ fi
 if [ "$RUN_ASSEMBLE" = "1" ]; then
     assemble
 fi
+if [ "$RUN_ASSEMBLE" = "1" ]; then
+    # A catalog bump without regenerated lockfiles is silently ignored
+    # (audit-200 Fase B7, M-224) — the build above already ran, so this
+    # only re-resolves and fails if any lockfile moved.
+    log "Verify dependency locks match the catalog"
+    bash "$REPO_ROOT/script/ci/check-dependency-locks.sh"
+fi
 
 log "Done"

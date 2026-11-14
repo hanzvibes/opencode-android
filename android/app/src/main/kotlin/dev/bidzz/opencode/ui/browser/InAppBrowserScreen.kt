@@ -135,6 +135,19 @@ fun shareText(context: Context, text: String): Boolean {
 }
 
 /**
+ * Pure: whether an HTTP-auth challenge from [challengedHost] may be
+ * answered with the engine credentials for the entry page ([entryHost]).
+ *
+ * Audit-200 B7 (M-228): the WebView used to answer ANY host that
+ * challenged — a page the artifact links to, or a subresource on another
+ * host, got the engine password. The credentials belong to the entry
+ * host only. Unit-tested in InAppBrowserAuthTest.
+ */
+fun shouldAnswerBasicAuth(challengedHost: String?, entryHost: String?): Boolean =
+    challengedHost != null && entryHost != null &&
+        challengedHost.equals(entryHost, ignoreCase = true)
+
+/**
  * The in-app browser (Native C): a system WebView in a full screen, so a
  * link tapped in chat never throws the user out of the app.
  *
@@ -154,6 +167,11 @@ fun InAppBrowserScreen(
     val context = LocalContext.current
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
+
+    // Audit-200 B7 (M-228): the host the engine credentials belong to —
+    // the entry URL's host. Any other host that challenges for Basic auth
+    // is refused below, so the password never leaks to a linked page.
+    val entryHost = remember(url) { Uri.parse(url).host }
 
     // 69-F13: the browser state survives a recreate (fold, rotation)
     // instead of reloading the entry URL from scratch. Keyed on the
@@ -229,8 +247,12 @@ fun InAppBrowserScreen(
                     // auth; the caller supplies the engine credentials.
                     // Public links pass none and keep the default
                     // behaviour (the challenge is not answered).
+                    // Audit-200 B7 (M-228): the credentials are answered
+                    // only to the entry page's own host — any other host
+                    // (a linked page, a subresource) is refused, so the
+                    // engine password never goes to a third party.
                     val auth = basicAuth
-                    if (auth != null) {
+                    if (auth != null && shouldAnswerBasicAuth(host, entryHost)) {
                         handler.proceed(auth.first, auth.second)
                     } else {
                         super.onReceivedHttpAuthRequest(view, handler, host, realm)

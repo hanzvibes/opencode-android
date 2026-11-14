@@ -578,6 +578,20 @@ class ProvidersViewModel(
     }
 
     /**
+     * Restarts the engine so a patch that landed after start takes effect
+     * (audit-200 B7, M-206) — or so a patch whose 5-minute wait ran out
+     * gets another chance (M-209). The restart is offered, not forced:
+     * the patch row's button calls this directly (no MCP changes are
+     * pending from a patch — the confirm sheet is for provider writes).
+     * The sentinel name matches no provider row, so no PENDING row
+     * appears; the watch + failure reporting in [doRestart] still apply,
+     * and the screen disables the button while it is pending.
+     */
+    fun restartForPatch() {
+        doRestart(PATCH_RESTART_NAME)
+    }
+
+    /**
      * Requests the restart and watches it land (audit-200 B4, M-125).
      *
      * The old code fired the restart and forgot it: the result was
@@ -621,6 +635,13 @@ class ProvidersViewModel(
         /** How long the restart watch polls for a new engine handle (M-125). */
         private const val RESTART_WATCH_ATTEMPTS = 30
         private const val RESTART_WATCH_INTERVAL_MS = 1_000L
+        /**
+         * Sentinel [ProvidersUiState.restartPendingFor] value for a patch
+         * restart (audit-200 B7, M-206): it matches no provider row, so no
+         * PENDING row appears for it. The screen compares against it to
+         * disable the patch restart button while the restart is in flight.
+         */
+        const val PATCH_RESTART_NAME = "antigravity-patch"
     }
 
     /**

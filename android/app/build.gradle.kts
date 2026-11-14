@@ -103,7 +103,15 @@ android {
         }
         if (hasReleaseKey) {
             create("release") {
-                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                // Audit-200 B7 (M-182/M-223): the properties file lives at
+                // the project root (android/keystore.properties — CI writes
+                // it there next to android/release.keystore), so the
+                // keystore path in it is relative to the ROOT, not to this
+                // app module. `file(...)` resolves against android/app/
+                // and pointed at a keystore that never existed, so release
+                // signing was broken since creation — and adding the secret
+                // would have failed the whole build job instead of signing.
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")

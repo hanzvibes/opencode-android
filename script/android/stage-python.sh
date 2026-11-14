@@ -320,6 +320,7 @@ check_elf() { # $1=file
         case "$n" in
             libc.so|libm.so|libdl.so|liblog.so|libandroid.so|libmediandk.so) ;;
             lib*.so) [ -f "$JNI_OUT/$n" ] || { echo "$file still needs $n, which is not staged" >&2; exit 1; } ;;
+            lib*.so.*) base="${n%%.so.*}.so"; [ -f "$JNI_OUT/$base" ] || { echo "$file still needs $n (versioned; staged as $base), which is not staged" >&2; exit 1; } ;;
             *) ;;
         esac
     done < <("$PATCHELF" --print-needed "$file")
@@ -364,6 +365,7 @@ if [ "$WITH_ASSETS" = "1" ]; then
             case "$need" in
                 libc.so|libm.so|libdl.so|liblog.so|libandroid.so|libmediandk.so) ;;
                 lib*.so) [ -f "$JNI_OUT/$need" ] || { echo "$n still needs $need, which is not staged" >&2; exit 1; } ;;
+                lib*.so.*) base="${need%%.so.*}.so"; [ -f "$JNI_OUT/$base" ] || { echo "$n still needs $need (versioned; staged as $base), which is not staged" >&2; exit 1; } ;;
                 *) ;;
             esac
         done < <("$PATCHELF" --print-needed "$mod")

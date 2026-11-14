@@ -479,8 +479,15 @@ class EngineService : Service() {
 
     override fun onDestroy() {
         Log.i(TAG, "service destroyed")
-        // 55-F1: no failure notification outlives the service.
-        getSystemService(NotificationManager::class.java)?.cancel(FAILED_NOTIFICATION_ID)
+        // Audit-200 B7 (M-171): the failure notification is NOT cancelled
+        // here anymore. The old 55-F1 rule ("no failure notification
+        // outlives the service") deleted the notification on exactly the
+        // paths that post it — a failed start posts "Engine failed to
+        // start" and then stopSelf()s, so onDestroy cancelled it before
+        // the user could ever see it. The notification now survives the
+        // service until the user taps/dismisses it; the cancels that stay
+        // are the meaningful ones — an explicit user stop (requestStop)
+        // and the engine coming up (observeStatus on RUNNING).
         statusJob?.cancel()
         scope.cancel()
         // onDestroy cannot suspend, and the engine must not outlive the service:

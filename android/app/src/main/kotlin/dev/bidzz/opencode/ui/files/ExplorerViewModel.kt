@@ -409,6 +409,12 @@ class FileViewViewModel(
     val state: StateFlow<FileViewState> = _state.asStateFlow()
 
     /**
+     * Workspace root the viewed path is relative to (audit-200 B7, M-022):
+     * image/PDF previews read the file from disk and resolve it here.
+     */
+    fun workspaceRoot(): String = workspace()
+
+    /**
      * Draft left behind by the last process (audit-70 69-F3): the file, the
      * unsaved text, and whether edit mode was on. Applied when the file is
      * next loaded successfully — the content is re-read from the engine,
