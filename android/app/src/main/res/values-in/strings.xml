@@ -256,6 +256,14 @@
     <!-- Chat -->
     <string name="chat_menu">Menu</string>
     <string name="chat_new_session">Sesi baru</string>
+    <string name="chat_find">Cari di chat</string>
+    <string name="chat_find_hint">Cari di percakapan ini</string>
+    <string name="chat_find_count">%1$d/%2$d</string>
+    <string name="chat_find_no_results">Tidak ada hasil</string>
+    <string name="chat_find_loaded_only">Hanya mencari pesan yang sudah dimuat — muat pesan sebelumnya untuk mencari lebih jauh.</string>
+    <string name="chat_find_next">Hasil berikutnya</string>
+    <string name="chat_find_previous">Hasil sebelumnya</string>
+    <string name="chat_find_close">Tutup pencarian</string>
     <string name="chat_jump_latest">Ke pesan terbaru</string>
     <string name="chat_jump_latest_unread">Ke pesan terbaru, %1$d belum dibaca</string>
     <string name="chat_new_messages">Pesan baru</string>
@@ -716,6 +724,8 @@
     <string name="history_search_hint">Cari sesi</string>
     <string name="history_search_no_results">Tidak ada sesi yang cocok dengan "%1$s"</string>
     <string name="history_showing">Menampilkan %1$d dari %2$d</string>
+    <string name="history_showing_search">%1$d hasil · %2$d sesi dimuat</string>
+    <string name="history_search_loaded_only">Pencarian hanya mencakup sesi yang sudah dimuat — muat lagi untuk mencari lebih jauh.</string>
     <string name="history_showing_more">Menampilkan %1$d dari %2$d+ yang dimuat</string>
     <string name="history_load_more">Muat lebih banyak sesi</string>
     <string name="history_previews_loading">Pratinjau masih dimuat — hasil pencarian bisa bertambah.</string>

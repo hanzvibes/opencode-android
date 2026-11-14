@@ -18,6 +18,36 @@ import java.util.Base64
 internal const val UNSENT_SESSION_KEY = "__unsent__"
 
 /**
+ * A parked deferred permission (audit-200 C5, M-093): the slim snapshot
+ * of a [PendingPermission] that a parked composer can hold. The full
+ * [PendingPermission] cannot be stored — its `metadata` is
+ * `Map<String, JsonElement>`, which is not `java.io.Serializable`, and a
+ * parked composer is Java-serialised. The metadata is display-only
+ * (resource paths), so the snapshot drops it; the restore rebuilds a
+ * [PendingPermission] with `metadata = emptyMap()`.
+ */
+data class ParkedPermission(
+    val id: String,
+    val sessionID: String,
+    val action: String,
+    val resources: Set<String> = emptySet(),
+    val save: Set<String> = emptySet(),
+    val message: String? = null,
+) : java.io.Serializable {
+    companion object {
+        private const val serialVersionUID = 1L
+    }
+}
+
+/** Drops the non-serialisable metadata for parking. */
+internal fun dev.bidzz.opencode.core.api.dto.PendingPermission.toParked(): ParkedPermission =
+    ParkedPermission(id, sessionID, action, resources, save, message)
+
+/** Rebuilds the permission from its parked snapshot; metadata is empty (see [ParkedPermission]). */
+internal fun ParkedPermission.toPending(): dev.bidzz.opencode.core.api.dto.PendingPermission =
+    dev.bidzz.opencode.core.api.dto.PendingPermission(id, sessionID, action, resources, save, emptyMap(), message)
+
+/**
  * A composer parked per session (audit-70 20-F4, Fase 1a): the draft, the
  * pending attachment chips, and — since 1a — the queued follow-ups (13-F6).
  * The queue is part of the parked state because a follow-up typed while the
@@ -45,6 +75,21 @@ data class ParkedComposer(
      * existed still decodes, and null is the only honest value for it.
      */
     val attachmentsBeforeEdit: List<AttachedFile>? = null,
+    /**
+     * Prompt history and retry state (audit-200 C5, M-093): the prompts
+     * actually sent in this session, oldest first (the composer's
+     * in-memory Up-history), the last prompt actually sent (the retry
+     * target), and the permission request the user deferred. A switch
+     * used to discard all three — coming back lost the Up-history, and
+     * a deferred permission vanished instead of waiting. [sentPrompts]
+     * is non-null in the type system but reads back null from bytes
+     * parked before this field existed, so readers must go through
+     * [decodeParkedComposer], which normalises it — see
+     * [ParkedComposerStore.removeQueued] for the same bypass.
+     */
+    val sentPrompts: List<String> = emptyList(),
+    val lastSentText: String? = null,
+    val deferredPermission: ParkedPermission? = null,
 ) : java.io.Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -101,7 +146,15 @@ interface ParkedComposerStore {
             if ((current.queued as Any?) == null) emptyList() else current.queued
         val kept = queued.filter { it.id != entry.id }
         if (kept.size == queued.size) return
-        if (current.draft.isBlank() && current.attachments.isEmpty() && kept.isEmpty()) {
+        // Audit-200 C5 (M-093): the entry must not be removed while it
+        // still holds retry/history state — settling a flushed entry
+        // would otherwise delete the parked retry target and Up-history
+        // with it. A null-at-runtime `sentPrompts` (bytes parked before
+        // the field existed) counts as empty, like the queue above.
+        val retryStateEmpty = ((current.sentPrompts as Any?) == null || current.sentPrompts.isEmpty()) &&
+            current.lastSentText.isNullOrBlank() &&
+            current.deferredPermission == null
+        if (current.draft.isBlank() && current.attachments.isEmpty() && kept.isEmpty() && retryStateEmpty) {
             remove(sessionId)
         } else {
             put(sessionId, current.copy(queued = kept))
@@ -179,6 +232,14 @@ internal fun encodeParkedComposer(composer: ParkedComposer): String {
  * with a blank line between non-blank parts, attachments union by id,
  * queues concatenate — ids are unique, so nothing is lost or doubled.
  * Callers pass decoded composers (see [decodeParkedComposer]).
+ *
+ * Audit-200 C5 (M-093): the merge carries only the composer's words
+ * (draft, attachments, queue) — like the edit state, which it already
+ * dropped. The retry/history state (sent prompts, last sent text, the
+ * deferred permission) belongs to its session and is deliberately NOT
+ * carried: the merge's only caller moves a deleted session's unsent
+ * words to the unsent key, and a fresh session must not inherit the
+ * deleted session's Up-history or a dead permission.
  */
 internal fun mergeParkedComposers(first: ParkedComposer, second: ParkedComposer): ParkedComposer {
     val draft = listOf(first.draft, second.draft)
@@ -216,8 +277,14 @@ internal fun decodeParkedComposer(encoded: String): ParkedComposer? {
         val attachmentsNull = (decoded.attachments as Any?) == null
         val attachments: List<AttachedFile> =
             if (attachmentsNull) emptyList() else decoded.attachments
-        if (!queuedNull && fixed == queued && !attachmentsNull) return decoded
-        return decoded.copy(queued = fixed, attachments = attachments)
+        // Audit-200 C5 (M-093): same bypass for the sent-prompts list —
+        // a composer parked before the field existed reads back null at
+        // runtime, and a reader that iterates it would crash.
+        val sentPromptsNull = (decoded.sentPrompts as Any?) == null
+        val sentPrompts: List<String> =
+            if (sentPromptsNull) emptyList() else decoded.sentPrompts
+        if (!queuedNull && fixed == queued && !attachmentsNull && !sentPromptsNull) return decoded
+        return decoded.copy(queued = fixed, attachments = attachments, sentPrompts = sentPrompts)
     } catch (_: Exception) {
         null
     }

@@ -127,9 +127,11 @@ data class ChatUiState(
      */
     val lastSentText: String? = null,
     /** Prompts actually sent in this session, oldest first, for the
-     * composer's in-memory history navigation (C-F). In-memory only —
-     * never persisted — and cleared when the session changes, like
-     * [lastSentText]. Capped so a long session cannot grow it without bound. */
+     * composer's in-memory history navigation (C-F). Parked per session
+     * since audit-200 C5 (M-093): a switch used to discard them, so
+     * coming back lost the Up-history. Capped so a long session cannot
+     * grow it without bound. Cleared when the session changes, like
+     * [lastSentText]. */
     val sentPrompts: List<String> = emptyList(),
     /**
      * Accept / Reject decisions per tool call id (audit-200 C2, M-053):
@@ -211,6 +213,17 @@ data class ChatUiState(
     val stagedRevert: dev.bidzz.opencode.core.api.dto.SessionRevert? = null,
     /** True while a revert commit or clear is in flight. */
     val revertBusy: Boolean = false,
+    /**
+     * Find in chat (audit-200 C5, M-100): the query the user typed, the
+     * ids of the loaded messages that match it, in transcript order,
+     * and the index of the current match (-1 when there is none). The
+     * search covers only the messages loaded in this window — older
+     * pages stay unsearched until "Load earlier" brings them in, and
+     * the screen says so.
+     */
+    val findQuery: String = "",
+    val findMatches: List<String> = emptyList(),
+    val findIndex: Int = -1,
 )
 
 /** One follow-up waiting for the run to end (see [ChatUiState.queuedPrompts]). */
@@ -563,6 +576,64 @@ internal fun sessionOpenRefusal(
  */
 internal fun shouldClearSentDraft(currentDraft: String, sentText: String, editsSinceSend: Int): Boolean =
     editsSinceSend == 0 && currentDraft.trim() == sentText
+
+/**
+ * Whether leaving a session must interrupt its run (audit-200 C5,
+ * M-092): a busy session the user walks away from keeps editing files
+ * invisibly, with no transcript on screen showing it. The policy —
+ * decided under the continue-all mandate — is that leaving a busy
+ * session interrupts it, the same as tapping Stop: the run belongs to
+ * the session the user is looking at. A run that has already ended
+ * (busy false), no session to leave, or a switch to the same session
+ * interrupts nothing. Pure, so the rule is unit-tested here rather
+ * than through a switch.
+ */
+internal fun shouldInterruptOnSwitch(
+    busy: Boolean,
+    leavingSessionID: String?,
+    targetSessionID: String?,
+): Boolean = busy && leavingSessionID != null && leavingSessionID != targetSessionID
+
+/**
+ * Whether a send queues instead of going out now (audit-200 C5,
+ * M-094): a send in flight admits a follow-up only when it belongs
+ * to the SAME session. The old code queued behind any in-flight send,
+ * so a send tapped in session B while session A's admit was still in
+ * flight queued behind A — and when A's admit failed there was never
+ * a busy edge to flush it, so B's entry stuck until another run ended.
+ * A null in-flight session (a send while the session is still being
+ * created) counts as the current session: the create case keeps
+ * today's queueing. Pure, so the rule is unit-tested here rather
+ * than through a send.
+ */
+internal fun shouldQueueForSend(
+    busy: Boolean,
+    sendInFlight: Boolean,
+    sendInFlightSessionID: String?,
+    currentSessionID: String?,
+): Boolean = busy || (sendInFlight && sendInFlightSessionID == currentSessionID)
+
+/**
+ * The ids of the loaded messages matching [query] (audit-200 C5,
+ * M-100), in transcript order. Matches the message text, the
+ * reasoning, and each tool's input, output and error — the whole
+ * turn, not just its first line. Case-insensitive; a blank query
+ * matches nothing. Pure, so the rule is unit-tested here rather
+ * than through the screen.
+ */
+internal fun findMessageIds(messages: List<ChatMessage>, query: String): List<String> {
+    val needle = query.trim()
+    if (needle.isEmpty()) return emptyList()
+    return messages.filter { message ->
+        message.text.contains(needle, ignoreCase = true) ||
+            message.reasoning?.contains(needle, ignoreCase = true) == true ||
+            message.tools.any { tool ->
+                tool.inputText?.contains(needle, ignoreCase = true) == true ||
+                    tool.output?.contains(needle, ignoreCase = true) == true ||
+                    tool.error?.contains(needle, ignoreCase = true) == true
+            }
+    }.map { it.id }
+}
 
 /** Which parts of the VCS status dialog [ChatViewModel.loadBranches] still needs to load (24-F5). */
 internal data class VcsLoadPlan(val loadBranches: Boolean, val loadDetails: Boolean)
@@ -941,7 +1012,12 @@ class ChatViewModel(
         val attachments = _state.value.pendingAttachments
         val queued = _state.value.queuedPrompts
         if (draft.isNotBlank() || attachments.isNotEmpty() || queued.isNotEmpty() ||
-            draftBeforeEdit != null || attachmentsBeforeEdit != null
+            draftBeforeEdit != null || attachmentsBeforeEdit != null ||
+            // Audit-200 C5 (M-093): prompt history and retry state park
+            // with the composer, so coming back finds the Up-history and
+            // the deferred permission still there.
+            _state.value.sentPrompts.isNotEmpty() || _state.value.lastSentText != null ||
+            _state.value.deferredPermission != null
         ) {
             // Audit-200 A9-3 (DL-034): the edit in progress parks with its
             // backup, so a death mid-edit still offers Cancel afterwards.
@@ -954,6 +1030,9 @@ class ChatViewModel(
                     draftBeforeEdit = draftBeforeEdit,
                     editingMessageId = _state.value.editingMessageId,
                     attachmentsBeforeEdit = attachmentsBeforeEdit,
+                    sentPrompts = _state.value.sentPrompts,
+                    lastSentText = _state.value.lastSentText,
+                    deferredPermission = _state.value.deferredPermission?.toParked(),
                 ),
             )
             lastParkKey = id
@@ -1017,6 +1096,12 @@ class ChatViewModel(
                 pendingAttachments = restored.attachments,
                 queuedPrompts = restored.queued,
                 editingMessageId = if (restoreEditState) restored.editingMessageId else null,
+                // Audit-200 C5 (M-093): prompt history and retry state
+                // come back with the composer — not edit state, so they
+                // restore even when restoreEditState is false.
+                sentPrompts = restored.sentPrompts,
+                lastSentText = restored.lastSentText,
+                deferredPermission = restored.deferredPermission?.toPending(),
             )
             syncRestoredComposerToHandle(savedStateHandle, restored, restoreEditState)
         } else {
@@ -1176,10 +1261,23 @@ class ChatViewModel(
         val missingAttachments = parked.attachments.filter { it.id !in liveAttachmentIds }
         val liveQueueIds = live.queuedPrompts.map { it.id }.toSet()
         val missingQueued = parked.queued.filter { it.id !in liveQueueIds }
-        if (missingAttachments.isEmpty() && missingQueued.isEmpty()) return null
+        // Audit-200 C5 (M-093): the parked retry/history state fills
+        // the live composer's gaps too — live wins, so a value already
+        // there is never overwritten. The parked entry stays in place
+        // (see the KDoc above), so a second death still finds the full
+        // copy.
+        val fillSentPrompts = live.sentPrompts.isEmpty() && parked.sentPrompts.isNotEmpty()
+        val fillLastSentText = live.lastSentText == null && parked.lastSentText != null
+        val fillDeferred = live.deferredPermission == null && parked.deferredPermission != null
+        if (missingAttachments.isEmpty() && missingQueued.isEmpty() &&
+            !fillSentPrompts && !fillLastSentText && !fillDeferred
+        ) return null
         _state.value = live.copy(
             pendingAttachments = live.pendingAttachments + missingAttachments,
             queuedPrompts = live.queuedPrompts + missingQueued,
+            sentPrompts = if (fillSentPrompts) parked.sentPrompts else live.sentPrompts,
+            lastSentText = if (fillLastSentText) parked.lastSentText else live.lastSentText,
+            deferredPermission = if (fillDeferred) parked.deferredPermission?.toPending() else live.deferredPermission,
         )
         // Sync the merged composer to the handle so the next death finds
         // it there too — the bounded write drops the over-budget keys
@@ -1193,6 +1291,9 @@ class ChatViewModel(
                 queued = _state.value.queuedPrompts,
                 draftBeforeEdit = draftBeforeEdit,
                 editingMessageId = _state.value.editingMessageId,
+                sentPrompts = _state.value.sentPrompts,
+                lastSentText = _state.value.lastSentText,
+                deferredPermission = _state.value.deferredPermission?.toParked(),
             ),
             restoreEditState = true,
         )
@@ -1603,6 +1704,61 @@ class ChatViewModel(
     }
 
     /**
+     * Find in chat (audit-200 C5, M-100): the query, the matches in the
+     * loaded transcript, and the current match. The search covers only
+     * the messages already loaded — older pages stay unsearched until
+     * "Load earlier" brings them in, and the screen says so. A new
+     * emission recomputes the matches ([onRepoState] below) and keeps
+     * the current match when it still exists, so a streaming answer
+     * does not lose the reader's place.
+     */
+    fun setFindQuery(query: String) {
+        val matches = findMessageIds(_state.value.messages, query)
+        _state.value = _state.value.copy(
+            findQuery = query,
+            findMatches = matches,
+            findIndex = if (matches.isEmpty()) -1 else 0,
+        )
+    }
+
+    /** Moves to the next match, wrapping to the first. A no-op with no matches. */
+    fun findNext() {
+        val matches = _state.value.findMatches
+        if (matches.isEmpty()) return
+        _state.value = _state.value.copy(findIndex = (_state.value.findIndex + 1) % matches.size)
+    }
+
+    /** Moves to the previous match, wrapping to the last. A no-op with no matches. */
+    fun findPrevious() {
+        val matches = _state.value.findMatches
+        if (matches.isEmpty()) return
+        val index = _state.value.findIndex - 1
+        _state.value = _state.value.copy(findIndex = if (index < 0) matches.size - 1 else index)
+    }
+
+    /** Closes the find bar and drops the query and its matches. */
+    fun clearFind() {
+        _state.value = _state.value.copy(findQuery = "", findMatches = emptyList(), findIndex = -1)
+    }
+
+    /**
+     * Recomputes the find matches for [messages] against the current
+     * query, keeping the current match when it still exists. Pure, so
+     * the rule is unit-tested here rather than through an emission.
+     */
+    internal fun recomputeFindMatches(
+        messages: List<ChatMessage>,
+        query: String,
+        currentMatchId: String?,
+    ): Pair<List<String>, Int> {
+        if (query.isBlank()) return emptyList<String>() to -1
+        val matches = findMessageIds(messages, query)
+        if (matches.isEmpty()) return emptyList<String>() to -1
+        val index = if (currentMatchId != null) matches.indexOf(currentMatchId) else -1
+        return matches to if (index >= 0) index else 0
+    }
+
+    /**
      * Folds one repository emission into [_state]. Internal so
      * [ChatViewModelTest] can drive the optimistic-bubble dedup with
      * synthetic [ChatState]s: the repository itself needs a live engine.
@@ -1762,6 +1918,16 @@ class ChatViewModel(
                 previous.permissionReplyFailed
             },
         )
+
+        // Audit-200 C5 (M-100): a new emission may have added, removed
+        // or rewritten messages under an active find — recompute the
+        // matches against the final list, keeping the current match
+        // when it still exists.
+        if (previous.findQuery.isNotBlank()) {
+            val currentMatchId = previous.findMatches.getOrNull(previous.findIndex)
+            val (matches, index) = recomputeFindMatches(finalMessages, previous.findQuery, currentMatchId)
+            _state.value = _state.value.copy(findMatches = matches, findIndex = index)
+        }
 
         // The run just ended and follow-ups were queued while it worked:
         // send the first one now — unless this run was stopped (13-F2/
@@ -2240,7 +2406,7 @@ class ChatViewModel(
         // accepted anywhere, so clearing it would silently destroy what the
         // user typed (audit-70 13-F1). The files stay pending too: they were
         // never baked anywhere.
-        if (_state.value.busy || sendInFlight) {
+        if (shouldQueueForSend(_state.value.busy, sendInFlight, sendInFlightSessionID, _state.value.sessionID)) {
             // Audit-200 C3 (M-067): the pick rides with the queued
             // entry, so the flush still activates the skill. A dropped
             // duplicate keeps the draft — and the pick with it.
@@ -2254,6 +2420,28 @@ class ChatViewModel(
         val skills = skillAttachment(pendingSkill)
         pendingSkill = null
         sendText(full, typed, attachments, skills)
+    }
+
+    /**
+     * Sends a follow-up chip's text as its own turn (audit-200 C5,
+     * M-087/M-088): the chips offer the next thing to ask after a
+     * finished turn, and tapping one must send it — with the files
+     * pending in the composer, not silently dropped — instead of
+     * routing through the draft and the composer's Send path. While
+     * the agent works, or while a send is still being admitted, the
+     * tap is DROPPED, not queued: two chips tapped fast used to
+     * queue the second one behind the first and auto-send it as an
+     * unwanted second turn. The draft is never touched: a chip is a
+     * suggestion, not typing, and the user's own text stays where it
+     * is. Returns false when nothing was sent.
+     */
+    fun sendFollowUp(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+        if (_state.value.busy || sendInFlight) return false
+        val attachments = _state.value.pendingAttachments
+        val full = buildMessageWithAttachments(trimmed, attachments)
+        return sendText(full, trimmed, attachments)
     }
 
     /**
@@ -2304,6 +2492,16 @@ class ChatViewModel(
     }
 
     private var sendInFlight = false
+
+    /**
+     * The session a send in flight belongs to (audit-200 C5, M-094):
+     * the session id captured when [sendText] started the send, or
+     * null while the session is still being created. [send] queues
+     * behind an in-flight send only when it is for the same session
+     * (see [shouldQueueForSend]); a send in another session goes out
+     * on its own. Cleared with [sendInFlight].
+     */
+    private var sendInFlightSessionID: String? = null
 
     /**
      * The optimistic user bubble (#6a): appended to [ChatUiState.messages]
@@ -2405,6 +2603,8 @@ class ChatViewModel(
         // sees their message at once, and the echo hands over to it later.
         stageOptimistic(fullText)
         sendInFlight = true
+        // Audit-200 C5 (M-094): which session this send belongs to,
+        // so a send in another session is not queued behind it.
         // Snapshot the draft generation (13-F4): anything the user types
         // from here on — even the identical text — is new typing, not the
         // draft this send owns, and must survive the send succeeding.
@@ -2413,14 +2613,43 @@ class ChatViewModel(
         // coroutine runs: reading them inside sendNow — after a suspension —
         // could pick up a session the user has already left (item 15).
         val sessionID = _state.value.sessionID
+        sendInFlightSessionID = sessionID
+        // Audit-200 C5 (M-094): a flush send must never drain — the
+        // drain below would re-send the same head the flush just failed
+        // on, in a loop. A flush is recognised by the marker its caller
+        // set before calling sendText.
+        val isFlushSend = flushingEntry != null
         viewModelScope.launch {
+            var sent = false
             try {
-                sendNow(repo, sessionID, fullText, typedText, attachments, skills)
+                sent = sendNow(repo, sessionID, fullText, typedText, attachments, skills)
             } finally {
                 sendInFlight = false
+                sendInFlightSessionID = null
+                // Audit-200 C5 (M-094): a send that never started a run
+                // (admit failed, no engine, session gone) produces no
+                // busy edge, so the run-end flush never fires — and a
+                // follow-up queued behind this send would stick forever.
+                // Drain the queue now, in the same session, unless this
+                // send was itself a flush (see above).
+                if (!isFlushSend && !sent) drainQueueAfterSend(sessionID)
             }
         }
         return true
+    }
+
+    /**
+     * Sends the head of the queue after a send that started no run
+     * (audit-200 C5, M-094): the run-end flush in [onRepoState] only
+     * fires on a busy→idle edge, which a failed admit never produces.
+     * A no-op unless the queue is non-empty, the session is idle, and
+     * the user is still in the session the failed send belonged to.
+     * [flushQueueNow] carries the rest of the guards (in-flight send,
+     * flush already running, no repository).
+     */
+    private fun drainQueueAfterSend(sentSessionID: String?) {
+        if (_state.value.sessionID != sentSessionID) return
+        flushQueueNow()
     }
 
     /**
@@ -3389,6 +3618,12 @@ class ChatViewModel(
      * and the cancellation propagates, as structured concurrency
      * requires.
      */
+    /**
+     * Returns true when the prompt was accepted and a run started
+     * (audit-200 C5, M-094): [sendText] drains the queue only when the
+     * send started no run — a success produces a busy edge, and its
+     * run-end flush owns the queue from there.
+     */
     private suspend fun sendNow(
         repo: ChatRepository,
         capturedSessionID: String?,
@@ -3396,8 +3631,8 @@ class ChatViewModel(
         typedText: String,
         attachments: List<AttachedFile>,
         skills: List<PromptSkillAttachment>? = null,
-    ) {
-        try {
+    ): Boolean {
+        return try {
             sendNowInner(repo, capturedSessionID, text, typedText, attachments, skills)
         } catch (e: CancellationException) {
             settleFlushedEntry(null, sent = false)
@@ -3406,6 +3641,7 @@ class ChatViewModel(
             clearOptimistic()
             settleFlushedEntry(null, sent = false)
             reportFailure(ApiResult.Failure(code = -1, tag = "SendFailed", message = e.message))
+            false
         }
     }
 
@@ -3429,23 +3665,23 @@ class ChatViewModel(
         typedText: String,
         attachments: List<AttachedFile>,
         skills: List<PromptSkillAttachment>? = null,
-    ) {
+    ): Boolean {
         val sessionID = capturedSessionID ?: createSession(repo)
         if (sessionID == null) {
             clearOptimistic()
             settleFlushedEntry(null, sent = false)
-            return
+            return false
         }
         // The session changed under us while the send was in flight.
         if (repository !== repo) {
             clearOptimistic()
             settleFlushedEntry(sessionID, sent = false)
-            return
+            return false
         }
         if (repo.state.value.sessionID != sessionID) {
             clearOptimistic()
             settleFlushedEntry(sessionID, sent = false)
-            return
+            return false
         }
         // A leading slash is a command, not a prompt. The engine runs it and answers
         // 204; the output arrives over the event stream exactly like a normal turn.
@@ -3474,6 +3710,7 @@ class ChatViewModel(
                     reportFailure(result)
                     settleFlushedEntry(sessionID, sent = false)
                 }
+                return false
             }
             is ApiResult.Success -> {
                 // Audit-200 A5 (DL-007, DL-030): the session may have
@@ -3502,6 +3739,7 @@ class ChatViewModel(
                     clearSentAttachments(attachments)
                     settleFlushedEntry(sessionID, sent = true)
                 }
+                return true
             }
         }
     }
@@ -3863,6 +4101,17 @@ class ChatViewModel(
         // engine comes up.
         pendingOpenSessionID = null
         sessionReloadAttempts = 0
+        // Audit-200 C5 (M-092): leaving a busy session interrupts its
+        // run — a fresh session must not leave the old run editing files
+        // invisibly. The old repository is captured before close(): the
+        // interrupt POSTs through its session API, which close() leaves
+        // usable (only the event stream is torn down).
+        val oldRepo = repository
+        val oldSessionID = _state.value.sessionID
+        if (shouldInterruptOnSwitch(_state.value.busy, oldSessionID, null) && oldRepo != null) {
+            val leaving = oldSessionID!!
+            viewModelScope.launch { runCatching { oldRepo.interrupt(leaving) } }
+        }
         repository?.close()
         val attached = handle
         if (attached != null) {
@@ -3901,6 +4150,18 @@ class ChatViewModel(
         // in progress does not come back with it (see restoreEditState):
         // its message belongs to the old session.
         restoreParkedComposer(UNSENT_SESSION_KEY, restoreEditState = false)
+        // Audit-200 C5 (M-095): with no engine attached there is no
+        // session to start — report it instead of announcing a fresh
+        // chat that can never send. The local teardown above still
+        // runs: the draft is parked under its old session and the
+        // pre-edit backup is cleared, so a stray Cancel cannot restore
+        // the old session's draft here (A9-3, 80-F5, DL-020, 6c pin
+        // that). Only the "a new session exists" announcement is
+        // skipped.
+        if (handle == null) {
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            return
+        }
         // The abandoned session must not come back on the next resume:
         // without this, switching workspaces reopened the old workspace's
         // session under the new project's header (item 14).
@@ -3940,6 +4201,14 @@ class ChatViewModel(
 
     /** Loads an existing session. */
     fun openSession(session: SessionInfo) {
+        // Audit-200 C5 (M-095): with no engine attached there is no
+        // session to open — report it before the chip sync, or the
+        // header would show the target's model while the old session
+        // is still the one on screen.
+        if (repository == null) {
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            return
+        }
         // 56-F2: the list hands us the session's own location for free —
         // refuse a cross-workspace pick before parking the composer, the
         // same check the id-only path does over the network below.
@@ -3996,7 +4265,13 @@ class ChatViewModel(
         // nothing (audit-70 13-F6). onResume restores via repo.open()
         // directly and is unaffected by this guard.
         if (sessionID == _state.value.sessionID) return
-        val repo = repository ?: return
+        // Audit-200 C5 (M-095): with no engine attached there is no
+        // session to open — report it instead of returning silently
+        // while the UI still navigates.
+        val repo = repository ?: run {
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            return
+        }
         if (fetchMeta) {
             // 56-F2/56-F6: the id-only path (deep link, widget, notification,
             // pending open — and the session list, whose rows carry only an
@@ -4089,6 +4364,14 @@ class ChatViewModel(
      */
     private fun openSessionUnchecked(sessionID: String, repo: ChatRepository, meta: SessionInfo?) {
         sessionReloadAttempts = 0
+        // Audit-200 C5 (M-092): leaving a busy session interrupts its
+        // run — otherwise it keeps editing files invisibly while the
+        // user works in the new session, with no transcript on screen
+        // showing it. Fire-and-forget: the switch never waits on it.
+        if (shouldInterruptOnSwitch(_state.value.busy, _state.value.sessionID, sessionID)) {
+            val leavingSessionID = _state.value.sessionID!!
+            viewModelScope.launch { runCatching { repo.interrupt(leavingSessionID) } }
+        }
         // A draft belongs to the session it was typed in; opening another
         // session starts with that session's own composer — the outgoing
         // session's draft and attachments are parked under its id, and the
@@ -4185,6 +4468,24 @@ class ChatViewModel(
                                 repositoryChanged = repository !== repo,
                             )
                         ) {
+                            // Audit-200 C5 (M-096): park the live composer
+                            // before the switch — the debounced park may
+                            // not have run yet, and the restore below
+                            // would otherwise overwrite the draft typed
+                            // while the engine was dead. Then clear the
+                            // dead session's retry/history state: the
+                            // restore brings back the TARGET's own parked
+                            // values, and a stale lastSentText would make
+                            // Up-history and Retry offer the dead
+                            // session's prompt in this one.
+                            parkComposer()
+                            _state.value = _state.value.copy(
+                                lastSentText = null,
+                                sentPrompts = emptyList(),
+                                queuedPrompts = emptyList(),
+                                pendingPermission = null,
+                                deferredPermission = null,
+                            )
                             // Audit-200 B3 (M-541): the GET already has
                             // the session's model, agent and title — sync
                             // them now instead of discarding them. Before

@@ -23,16 +23,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.debounce
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -102,6 +106,13 @@ fun SessionListScreen(
     /** Loads the next page of sessions (19-F3). */
     onLoadMore: () -> Unit = {},
     /**
+     * The rows currently visible (audit-200 C5, M-089): the view model
+     * walks previews lazily, so the screen reports which sessions are
+     * actually on screen instead of the view model guessing. Header
+     * and footer keys are filtered out before reporting.
+     */
+    onVisibleSessions: (List<String>) -> Unit = {},
+    /**
      * Animation C shared-element pilot: the scopes for the session-title
      * flight to the chat header. Null disables the flight (the expanded
      * list-detail pane passes null — see OpenCodeApp).
@@ -135,6 +146,7 @@ fun SessionListScreen(
             onDismissRenameFailure = onDismissRenameFailure,
             onDismissLoadFailure = onDismissLoadFailure,
             onLoadMore = onLoadMore,
+            onVisibleSessions = onVisibleSessions,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
             modifier = Modifier.fillMaxSize(),
@@ -176,6 +188,13 @@ fun SessionListPane(
     onDismissLoadFailure: () -> Unit = {},
     /** Loads the next page of sessions (19-F3). */
     onLoadMore: () -> Unit = {},
+    /**
+     * The rows currently visible (audit-200 C5, M-089): the view model
+     * walks previews lazily, so the screen reports which sessions are
+     * actually on screen instead of the view model guessing. Header
+     * and footer keys are filtered out before reporting.
+     */
+    onVisibleSessions: (List<String>) -> Unit = {},
     /**
      * Animation C shared-element pilot: the scopes for the session-title
      * flight to the chat header. Null disables the flight (the expanded
@@ -219,6 +238,21 @@ fun SessionListPane(
     var query by rememberSaveable { mutableStateOf("") }
     val filteredRows = remember(state.rows, query, details) {
         filterSessionRows(state.rows, query, details)
+    }
+    // Audit-200 C5 (M-089): previews are walked lazily, so the screen
+    // reports the rows actually visible — debounced, so a fast scroll
+    // does not spam the view model, and header/footer keys never reach
+    // it (only row ids are session ids).
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, filteredRows) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key } }
+            .debounce(200)
+            .collect { keys ->
+                onVisibleSessions(
+                    keys.filterIsInstance<String>()
+                        .filter { it != "load_more" && !it.startsWith("header_") },
+                )
+            }
     }
     Column(
         modifier = modifier.fillMaxSize(),
@@ -356,6 +390,30 @@ fun SessionListPane(
                     fillMaxSize = false,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // Audit-200 C5 (M-101): a search that matches nothing
+                // may only mean "nothing loaded yet" — the note says the
+                // search covers loaded sessions only, and the previews
+                // note says matches may still arrive.
+                if (query.isNotBlank() && state.hasMoreSessions) {
+                    Text(
+                        text = stringResource(R.string.history_search_loaded_only),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceFaint,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                    )
+                }
+                if (query.isNotBlank() && state.detailsLoading && state.rows.any { details[it.id]?.previewKnown != true }) {
+                    Text(
+                        text = stringResource(R.string.history_previews_loading),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceFaint,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                    )
+                }
                 // Audit-200 B6 (M-090/M-098): a search that matches nothing
                 // on the loaded pages used to hide "Load more" entirely —
                 // the sessions on page 2+ were unreachable through search.
@@ -391,8 +449,13 @@ fun SessionListPane(
                 // The list is paged at 50 (19-F3): while a next page
                 // exists, the count names what was loaded, not the whole
                 // history — "Showing 3 of 50" used to read as a total.
+                // Audit-200 C5 (M-101): while searching, the count is
+                // results-against-loaded, never a total — a search only
+                // covers the sessions loaded so far.
                 Text(
-                    text = if (state.hasMoreSessions) {
+                    text = if (query.isNotBlank()) {
+                        stringResource(R.string.history_showing_search, filteredRows.size, state.rows.size)
+                    } else if (state.hasMoreSessions) {
                         stringResource(R.string.history_showing_more, filteredRows.size, state.rows.size)
                     } else {
                         stringResource(R.string.history_showing, filteredRows.size, state.rows.size)
@@ -406,12 +469,32 @@ fun SessionListPane(
                         .padding(horizontal = spacing.lg, vertical = spacing.xs),
                 )
 
+                // Audit-200 C5 (M-101): search covers loaded sessions
+                // only — a match on a page not yet loaded cannot appear,
+                // and the note says so instead of letting the count read
+                // as a total.
+                if (query.isNotBlank() && state.hasMoreSessions) {
+                    Text(
+                        text = stringResource(R.string.history_search_loaded_only),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceFaint,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .widthIn(max = 720.dp)
+                            .align(Alignment.CenterHorizontally)
+                            .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                    )
+                }
+
                 // Search matches previews only once they land (80-F8), and
                 // the previews arrive one session at a time — without a
                 // word about it, a query reads "no match" and the rows show
                 // up seconds later. The note shows only while searching
-                // and only while some listed session still has no detail.
-                if (query.isNotBlank() && state.rows.any { details[it.id] == null }) {
+                // and only while some listed session's walk has not
+                // finished yet (audit-200 C5, M-089: a completed walk
+                // with no preview means the session is genuinely empty,
+                // not still loading).
+                if (query.isNotBlank() && state.detailsLoading && state.rows.any { details[it.id]?.previewKnown != true }) {
                     Text(
                         text = stringResource(R.string.history_previews_loading),
                         style = OpenCodeTypography.caption,
@@ -425,6 +508,7 @@ fun SessionListPane(
                 }
 
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .widthIn(max = 720.dp)
