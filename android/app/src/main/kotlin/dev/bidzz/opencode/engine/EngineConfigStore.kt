@@ -393,7 +393,14 @@ class EngineConfigStore(configHome: File) {
 
         // Merge into the stored entry (M-250/M-507): unknown keys survive
         // the edit. A fresh object is used only for a brand-new provider.
-        val entry = providers.optJSONObject(id) ?: JSONObject()
+        // A rename (M-126) merges from the OLD entry, not the new id:
+        // looking the key up under the new id would find nothing and the
+        // edit would be refused for "no API key" even though the old entry
+        // has one — and the old entry's hand-written keys would be lost
+        // with it.
+        val entry = (if (previousId != null) providers.optJSONObject(previousId) else null)
+            ?: providers.optJSONObject(id)
+            ?: JSONObject()
         entry.put("name", name)
         entry.put("package", PACKAGE)
         val settings = entry.optJSONObject("settings") ?: JSONObject()

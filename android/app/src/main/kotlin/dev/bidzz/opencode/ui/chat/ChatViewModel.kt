@@ -84,15 +84,6 @@ data class ChatUiState(
      * already applies for an existing session.
      */
     val selectionFailure: ApiResult.Failure? = null,
-    /**
-     * What the active model/agent used to be, when it is gone from the
-     * fresh lists (audit-200 B4, M-459): e.g. "Model gpt-4" or
-     * "Model gpt-4 and agent build". The chip is cleared to the engine
-     * default, and the screen names what vanished — a prompt must not
-     * silently run on the default while the chip claims the old model.
-     * Null when nothing went stale.
-     */
-    val staleSelectionArg: String? = null,
     /** True while the engine answers requests — `DEGRADED` counts, it keeps its credentials. */
     val workspaceReady: Boolean = false,
     val workspacePath: String? = null,
@@ -280,39 +271,6 @@ internal fun resolveReturnedQueue(
 ): Pair<List<QueuedPrompt>, List<QueuedPrompt>> {
     if (inFlightId == null) return queued to emptyList()
     return queued.filter { it.id != inFlightId } to queued.filter { it.id == inFlightId }
-}
-
-/** Which of the active model/agent went stale (audit-200 B4, M-459). Nulls mean "not stale". */
-internal data class StaleSelection(
-    val modelId: String?,
-    val agentId: String?,
-)
-
-/**
- * Which of the active model/agent are no longer in the fresh lists
- * (audit-200 B4, M-459): a provider deleted while the app was closed —
- * or a restart that dropped it — leaves the chip pointing at a model
- * the engine no longer knows, and the next prompt silently runs on the
- * engine default.
- *
- * Returns null when nothing is stale. An empty list means it has not
- * loaded yet, not that everything vanished — so nothing is reported
- * stale until the list actually arrives.
- */
-internal fun findStaleSelection(
-    activeModel: ModelRef?,
-    activeAgent: String?,
-    models: List<dev.bidzz.opencode.core.api.dto.ModelInfo>,
-    agents: List<dev.bidzz.opencode.core.api.dto.AgentInfo>,
-): StaleSelection? {
-    val staleModel = activeModel?.takeIf {
-        models.isNotEmpty() && models.none { info -> info.id == it.id }
-    }?.id
-    val staleAgent = activeAgent?.takeIf {
-        agents.isNotEmpty() && agents.none { info -> info.id == it }
-    }
-    if (staleModel == null && staleAgent == null) return null
-    return StaleSelection(modelId = staleModel, agentId = staleAgent)
 }
 
 /** What the error banner's Retry button does for the current failure. */
@@ -1706,14 +1664,9 @@ class ChatViewModel(
         viewModelScope.launch {
             h.agents.list().let { r ->
                 when (r) {
-                    is ApiResult.Success -> {
-                        _state.value = _state.value.copy(
-                            agents = dev.bidzz.opencode.core.api.AgentApi.selectable(r.value),
-                        )
-                        // Audit-200 B4 (M-459): the fresh list may have
-                        // dropped the agent the chip shows.
-                        validateActiveSelection()
-                    }
+                    is ApiResult.Success -> _state.value = _state.value.copy(
+                        agents = dev.bidzz.opencode.core.api.AgentApi.selectable(r.value),
+                    )
                     // A control-list failure is not a send failure: Retry
                     // must not offer to re-send the last prompt for it.
                     is ApiResult.Failure -> reportFailure(r, RetryKind.NONE)
@@ -1721,12 +1674,7 @@ class ChatViewModel(
             }
             h.models.list().let { r ->
                 when (r) {
-                    is ApiResult.Success -> {
-                        _state.value = _state.value.copy(models = r.value)
-                        // Audit-200 B4 (M-459): the fresh list may have
-                        // dropped the model the chip shows.
-                        validateActiveSelection()
-                    }
+                    is ApiResult.Success -> _state.value = _state.value.copy(models = r.value)
                     is ApiResult.Failure -> reportFailure(r, RetryKind.NONE)
                 }
             }
@@ -1763,7 +1711,6 @@ class ChatViewModel(
             activeAgent = agentID,
             failure = if (picked.selectionFailure != null) null else picked.failure,
             selectionFailure = null,
-            staleSelectionArg = null,
         )
         // A mode chosen before the first message has no session to bind to yet;
         // createSession picks it up from activeAgent when the session is made.
@@ -1793,7 +1740,6 @@ class ChatViewModel(
             activeModel = model,
             failure = if (picked.selectionFailure != null) null else picked.failure,
             selectionFailure = null,
-            staleSelectionArg = null,
         )
         if (sessionID == null) return
         viewModelScope.launch {
@@ -1808,35 +1754,6 @@ class ChatViewModel(
                 is ApiResult.Success -> Unit
             }
         }
-    }
-
-    /**
-     * Clears a stale model/agent chip and names what vanished (audit-200
-     * B4, M-459). Called whenever the lists arrive ([loadControls]) and
-     * whenever a session hands the UI a model/agent ([openSession],
-     * [openSessionUnchecked], [onResume], the revert restore): the two
-     * can arrive in either order after a restart, so both sites validate
-     * — whichever runs last wins, and a stale pick never survives both.
-     * A fresh pick supersedes the notice (see [selectModel]/[selectAgent]).
-     */
-    private fun validateActiveSelection() {
-        val current = _state.value
-        val stale = findStaleSelection(current.activeModel, current.activeAgent, current.models, current.agents)
-            ?: return
-        val names = listOfNotNull(
-            stale.modelId?.let { "Model $it" },
-            stale.agentId?.let { "Agent $it" },
-        )
-        _state.value = current.copy(
-            activeModel = if (stale.modelId != null) null else current.activeModel,
-            activeAgent = if (stale.agentId != null) null else current.activeAgent,
-            staleSelectionArg = names.joinToString(" and "),
-        )
-    }
-
-    /** Dismisses the stale-model/agent notice (M-459). */
-    fun clearStaleSelection() {
-        _state.value = _state.value.copy(staleSelectionArg = null)
     }
 
     fun onDraftChange(text: String) {
@@ -2993,9 +2910,6 @@ class ChatViewModel(
                         activeAgent = reverted.agent,
                         activeModel = reverted.model,
                     )
-                    // Audit-200 B4 (M-459): the reverted session's
-                    // model/agent may be gone from the fresh lists.
-                    validateActiveSelection()
                 }
                 result.value.id
             }
@@ -3177,7 +3091,7 @@ class ChatViewModel(
         // staged revert belong to the old session too.
         stopIntent = false
         stagedRevertSessionID = null
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
         // Text typed before any session exists lives under the unsent key
         // (95-F6): a fresh session is where it belongs, so it comes back
         // as this session's composer instead of starting empty. The edit
@@ -3187,35 +3101,6 @@ class ChatViewModel(
         // The abandoned session must not come back on the next resume:
         // without this, switching workspaces reopened the old workspace's
         // session under the new project's header (item 14).
-        onSessionCleared()
-    }
-
-    /**
-     * Starts a fresh conversation AFTER the engine restarts into a new
-     * workspace (audit-200 B4, M-458). Same UI clearing as [newSession],
-     * but no repository is built: the engine is about to die, and a
-     * repository on the OLD handle would create the fresh session in the
-     * old project — a prompt sent before the restart lands would edit
-     * the wrong workspace. Sends refuse while the repository is null
-     * (`sendText` reports engine-not-running), and the next attach —
-     * on the new engine — rebuilds the repository. The parked composer
-     * and the abandoned session are handled exactly like [newSession].
-     */
-    fun newSessionAfterRestart() {
-        pendingOpenSessionID = null
-        sessionReloadAttempts = 0
-        repository?.close()
-        repository = null
-        collector?.cancel()
-        collector = null
-        handle = null
-        attached = null
-        parkComposer()
-        draftBeforeEdit = null
-        stopIntent = false
-        stagedRevertSessionID = null
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
-        restoreParkedComposer(UNSENT_SESSION_KEY, restoreEditState = false)
         onSessionCleared()
     }
 
@@ -3248,9 +3133,6 @@ class ChatViewModel(
             activeAgent = session.agent,
             sessionTitle = session.title,
         )
-        // Audit-200 B4 (M-459): the row's model/agent may be gone from
-        // the fresh lists (its provider was deleted since).
-        validateActiveSelection()
         // An explicit open supersedes a deep link still waiting for
         // attach (56-F1).
         if (repository != null) pendingOpenSessionID = null
@@ -3389,7 +3271,7 @@ class ChatViewModel(
         // block below re-installs the new session's own.
         stopIntent = false
         stagedRevertSessionID = null
-        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, staleSelectionArg = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
+        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
         restoreParkedComposer(sessionID)
         repo.open(sessionID)
         // Guarded by the repository's attached session (item 23), not the
@@ -3410,9 +3292,6 @@ class ChatViewModel(
                 // loaded for this session.
                 sessionTitle = meta.title,
             )
-            // Audit-200 B4 (M-459): the meta's model/agent may be gone
-            // from the fresh lists (its provider was deleted since).
-            validateActiveSelection()
         }
     }
 
@@ -3470,10 +3349,6 @@ class ChatViewModel(
                                 activeAgent = result.value.agent,
                                 sessionTitle = result.value.title,
                             )
-                            // Audit-200 B4 (M-459): the remembered
-                            // session's model/agent may be gone from the
-                            // fresh lists (its provider was deleted since).
-                            validateActiveSelection()
                             // Audit-200 A9-3 (DL-035): a composer parked
                             // before the process died — by the debounced
                             // park, or before an update — belongs to this

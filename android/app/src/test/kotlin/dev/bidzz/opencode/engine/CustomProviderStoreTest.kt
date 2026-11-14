@@ -32,7 +32,7 @@ class CustomProviderStoreTest {
     }
 
     private fun settingsOf(home: File, providerID: String): JSONObject =
-        JSONObject(configFile(home).readText())
+        JSONObject(EngineConfigStore.stripJsonc(configFile(home).readText()))
             .getJSONObject("providers")
             .getJSONObject(providerID)
             .getJSONObject("settings")
@@ -138,7 +138,7 @@ class CustomProviderStoreTest {
         val home = configHome()
         writeConfig(
             home,
-            """{"providers":{"old":"disabled","good":{"name":"Good","settings":{"baseURL":"https://g.invalid/v1","apiKey":"k"},"models":{"m":{}}}}""",
+            """{"providers":{"old":"disabled","good":{"name":"Good","settings":{"baseURL":"https://g.invalid/v1","apiKey":"k"},"models":{"m":{}}}}}""",
         )
 
         val providers = EngineConfigStore(home).customProviders()
@@ -165,7 +165,11 @@ class CustomProviderStoreTest {
 
         store.putOpenAICompatible(
             id = "probe", name = "Probe 2", baseURL = "https://new.invalid/v1", apiKey = null,
-            models = EngineConfigStore.parseModels("m/one, m/two"),
+            // The form keeps the model name it was given ("One"): only the
+            // keys the form never shows (limit, timeout, disabled) are the
+            // merge's job — a name the form lists without one is a deliberate
+            // clear, covered by the clearing test below.
+            models = EngineConfigStore.parseModels("m/one = One, m/two"),
         )
 
         val entry = JSONObject(configFile(home).readText())

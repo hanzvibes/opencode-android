@@ -123,12 +123,6 @@ internal fun McpServer.statusKind(): McpStatusKind = when (status.status.lowerca
  */
 class McpServersViewModel(
     private val api: EngineApi,
-    /**
-     * Shared with the Providers screen (audit-200 B4, M-457): a provider
-     * restart must ask first when runtime MCP changes are pending. Defaults
-     * to a private instance so existing callers need no wiring.
-     */
-    private val runtimeChangesSignal: McpRuntimeChangesSignal = McpRuntimeChangesSignal(),
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(McpServersUiState())
@@ -171,11 +165,9 @@ class McpServersViewModel(
         // Audit-200 B2 (M-292): a new handle means the engine restarted
         // since the last load — the runtime changes it carried are gone,
         // so the banner clears instead of promising a restart that
-        // already happened. The shared signal clears with it (B4, M-457):
-        // a provider restart after this one has nothing to discard.
+        // already happened.
         if (handle !== lastHandle) {
             lastHandle = handle
-            runtimeChangesSignal.clear()
             _state.value = _state.value.copy(hasRuntimeChanges = false)
         }
         if (showLoading) {
@@ -220,7 +212,6 @@ class McpServersViewModel(
             when (val result = handle.mcp.add(name, config)) {
                 is ApiResult.Success -> {
                     runtimeAdded.added(name)
-                    runtimeChangesSignal.markChanged()
                     _state.value = _state.value.copy(
                         adding = false,
                         actionSuccess = McpActionSuccess(McpAction.ADD, name),
@@ -276,7 +267,6 @@ class McpServersViewModel(
         viewModelScope.launch {
             when (val result = call(handle)) {
                 is ApiResult.Success -> {
-                    runtimeChangesSignal.markChanged()
                     _state.value = _state.value.copy(
                         busyServers = _state.value.busyServers - name,
                         actionSuccess = McpActionSuccess(action, name),
