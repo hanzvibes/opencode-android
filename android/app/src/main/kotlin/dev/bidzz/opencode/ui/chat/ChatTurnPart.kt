@@ -28,6 +28,16 @@ sealed interface ChatTurnPart {
     data class Question(
         val call: ToolCall,
         val questions: List<QuestionItem>,
+        /**
+         * Answers the engine already confirmed, by question index
+         * (audit-200 B5, M-065): the card used to keep them only in its
+         * own rememberSaveable, so a history reload showed a
+         * multi-question card as "expired" even though the answers were
+         * confirmed. The view model records them (see
+         * [ChatViewModel.answerQuestion]) and stamps them here on every
+         * rebuild, so the card survives reloads. "" = unanswered.
+         */
+        val answered: List<String> = emptyList(),
     ) : ChatTurnPart
 }
 
@@ -60,6 +70,8 @@ fun buildTurnParts(
     liveTools: List<ToolCall> = emptyList(),
     explicitReasoning: String? = null,
     fallbackText: String = "",
+    /** Engine-confirmed question answers, by tool call id (audit-200 B5, M-065). */
+    answered: Map<String, List<String>> = emptyMap(),
 ): List<ChatTurnPart> {
     val parts = mutableListOf<ChatTurnPart>()
     val reasoningBuilder = StringBuilder()
@@ -117,7 +129,7 @@ fun buildTurnParts(
                         flushText()
                         flushTools()
                         val questions = parseQuestionInput(call.input)
-                        parts += ChatTurnPart.Question(call = call, questions = questions)
+                        parts += ChatTurnPart.Question(call = call, questions = questions, answered = answered[call.id].orEmpty())
                     } else {
                         flushText()
                         currentTools.add(call)
@@ -149,7 +161,7 @@ fun buildTurnParts(
         }
 
         questionLive.forEach { q ->
-            parts += ChatTurnPart.Question(call = q, questions = parseQuestionInput(q.input))
+            parts += ChatTurnPart.Question(call = q, questions = parseQuestionInput(q.input), answered = answered[q.id].orEmpty())
         }
     }
 
@@ -202,7 +214,7 @@ fun buildTurnParts(
                 parts += ChatTurnPart.ToolGroup(tools = regularLive, streaming = isStreaming)
             }
             questionLive.forEach { q ->
-                parts += ChatTurnPart.Question(call = q, questions = parseQuestionInput(q.input))
+                parts += ChatTurnPart.Question(call = q, questions = parseQuestionInput(q.input), answered = answered[q.id].orEmpty())
             }
         }
 
@@ -275,6 +287,8 @@ fun mergeLiveToolsIntoParts(
     parts: List<ChatTurnPart>,
     liveCalls: List<ToolCall>,
     isStreaming: Boolean,
+    /** Engine-confirmed question answers, by tool call id (audit-200 B5, M-065). */
+    answered: Map<String, List<String>> = emptyMap(),
 ): List<ChatTurnPart> {
     if (liveCalls.isEmpty()) return parts
     val result = parts.toMutableList()
@@ -300,7 +314,7 @@ fun mergeLiveToolsIntoParts(
 
     questionLive.forEach { q ->
         val qIdx = result.indexOfFirst { it is ChatTurnPart.Question && it.call.id == q.id }
-        val question = ChatTurnPart.Question(call = q, questions = parseQuestionInput(q.input))
+        val question = ChatTurnPart.Question(call = q, questions = parseQuestionInput(q.input), answered = (result.getOrNull(qIdx) as? ChatTurnPart.Question)?.answered ?: answered[q.id].orEmpty())
         if (qIdx >= 0) result[qIdx] = question else result += question
     }
     return result

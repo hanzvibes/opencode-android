@@ -27,6 +27,21 @@ class ReadPositionStore(context: Context) {
         private const val KEY_PREFIX = "read_id_"
         /** Legacy count watermark (pre-01-F2): `read_count_<sessionId>`. */
         private const val LEGACY_COUNT_PREFIX = "read_count_"
+
+        /**
+         * Which stored keys are watermarks for sessions the engine no
+         * longer lists (audit-200 B5, M-025). Pure, so it is unit-tested
+         * without a Context; [ReadPositionStore.prune] applies it. Keys
+         * that are not watermarks at all are never returned.
+         */
+        internal fun staleReadPositionKeys(allKeys: Set<String>, knownSessionIds: Set<String>): List<String> {
+            return allKeys.filter { key ->
+                val id = key.removePrefix(KEY_PREFIX).takeIf { key.startsWith(KEY_PREFIX) }
+                    ?: key.removePrefix(LEGACY_COUNT_PREFIX).takeIf { key.startsWith(LEGACY_COUNT_PREFIX) }
+                    ?: return@filter false
+                id !in knownSessionIds
+            }
+        }
     }
 
     fun getReadMessageId(sessionId: String): String? =
@@ -34,6 +49,21 @@ class ReadPositionStore(context: Context) {
 
     fun putReadMessageId(sessionId: String, messageId: String) {
         prefs.edit().putString(KEY_PREFIX + sessionId, messageId).apply()
+    }
+
+    /**
+     * Drops watermarks for sessions the engine no longer lists
+     * (audit-200 B5, M-025): every session ever read leaves one key
+     * behind, and a session deleted on the engine left its key forever
+     * — the file grew without bound. The caller passes the ids the
+     * engine currently lists; anything else (read ids and legacy count
+     * watermarks alike) is removed. Best-effort: a failed edit simply
+     * leaves the stale keys for the next call.
+     */
+    fun prune(knownSessionIds: Set<String>) {
+        val stale = staleReadPositionKeys(prefs.all.keys, knownSessionIds)
+        if (stale.isEmpty()) return
+        prefs.edit().apply { stale.forEach { remove(it) } }.apply()
     }
 
     /**

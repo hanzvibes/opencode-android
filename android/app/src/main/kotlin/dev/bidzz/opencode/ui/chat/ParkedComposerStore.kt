@@ -202,7 +202,15 @@ internal fun decodeParkedComposer(encoded: String): ParkedComposer? {
         val queuedNull = (decoded.queued as Any?) == null
         val queued: List<QueuedPrompt> = if (queuedNull) emptyList() else decoded.queued
         val fixed = queued.withUniqueIds()
-        if (!queuedNull && fixed == queued) decoded else decoded.copy(queued = fixed)
+        // Audit-200 B5 (M-026): same bypass for the attachments list —
+        // a composer parked before attachments existed reads back null
+        // at runtime, and a reader that filters it would crash. The
+        // merge-gap restore reads it on every open.
+        val attachmentsNull = (decoded.attachments as Any?) == null
+        val attachments: List<AttachedFile> =
+            if (attachmentsNull) emptyList() else decoded.attachments
+        if (!queuedNull && fixed == queued && !attachmentsNull) return decoded
+        return decoded.copy(queued = fixed, attachments = attachments)
     } catch (_: Exception) {
         null
     }

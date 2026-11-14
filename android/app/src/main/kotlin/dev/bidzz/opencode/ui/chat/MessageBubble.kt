@@ -589,6 +589,7 @@ fun MessageBubble(
                                     InlineQuestionCard(
                                         call = part.call,
                                         questions = part.questions,
+                                        answered = part.answered,
                                         onAnswer = onAnswerQuestion,
                                         modifier = Modifier.padding(bottom = spacing.sm),
                                     )

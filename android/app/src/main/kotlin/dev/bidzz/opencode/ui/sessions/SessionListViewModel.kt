@@ -7,6 +7,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.TokenUsage
+import dev.bidzz.opencode.ui.chat.ReadPositionStore
 import dev.bidzz.opencode.ui.formatCompactTokens
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,6 +92,7 @@ class SessionListViewModel(
     private val api: EngineApi,
     private val workspace: () -> String,
     private val pinnedStore: PinnedSessionStore? = null,
+    private val readPositionStore: ReadPositionStore? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SessionListUiState())
@@ -152,6 +154,15 @@ class SessionListViewModel(
                     val pinned = pinnedStore?.getPinnedIds().orEmpty()
                     val keptPins = pruneGhostPins(pinned, listedIds, isSessionListIncomplete(directory, page.cursor?.next != null))
                     (pinned - keptPins).forEach { pinnedStore?.remove(it) }
+                    // Read watermarks (audit-200 B5, M-025): same
+                    // completeness rule as the pins — a session deleted
+                    // on the engine leaves its `read_positions` key
+                    // behind forever. Prune only when the list is
+                    // complete, or a session in another project or on
+                    // the next page would look deleted.
+                    if (!isSessionListIncomplete(directory, page.cursor?.next != null)) {
+                        readPositionStore?.prune(listedIds)
+                    }
                     // Details survive a reload (Fase 2, 19-F1): wiping them
                     // made every drawer open refetch every session's full
                     // history. Entries for sessions no longer listed are
