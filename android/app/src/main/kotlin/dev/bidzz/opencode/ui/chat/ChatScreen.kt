@@ -1061,8 +1061,14 @@ fun ChatScreen(
                 title = headerTitle(state.workspacePath),
                 // The active session's own title, so the header says which
                 // conversation this is — not just which folder it is in.
+                // Audit-200 B3 (M-567): the list may never have loaded
+                // this session (fork, new session, deep link, resume), so
+                // the view model's synced title is the fallback. The list
+                // still wins when it knows the session — it carries later
+                // auto-titles the synced value does not.
                 sessionTitle = sessions.firstOrNull { it.id == state.sessionID }
-                    ?.title?.takeIf { it.isNotBlank() },
+                    ?.title?.takeIf { it.isNotBlank() }
+                    ?: state.sessionTitle?.takeIf { it.isNotBlank() },
                 // Shared-element pilot: the header side of the flight.
                 // The id (not the title) is the key — see ChatHeader.
                 sessionId = state.sessionID,

@@ -372,6 +372,15 @@ class ChatRepository(
     /** What one [resync] call did — the terminal retry loop decides on this, not on the state it left behind (see [resyncAfterTerminal]). */
     private enum class ResyncOutcome { SUCCEEDED, FAILED, SKIPPED }
 
+    /**
+     * Re-fetches the transcript without opening a new stream
+     * (audit-200 B3, M-244): the stop watchdog's way to shake loose a
+     * terminal state the stream never delivered.
+     */
+    suspend fun refresh() {
+        resync()
+    }
+
     private suspend fun resync(
         fromTerminal: Boolean = false,
         forSessionID: String? = null,

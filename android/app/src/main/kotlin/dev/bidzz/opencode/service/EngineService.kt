@@ -269,6 +269,18 @@ class EngineService : Service() {
             return START_STICKY
         }
 
+        // Audit-200 B3 (M-514): a stop was requested and has not finished
+        // — a start arriving now (a MainActivity relaunch, a sticky
+        // re-delivery) would resurrect the engine the user just stopped.
+        // The explicit RESTART action above is unaffected: it is a newer
+        // user intent, and the supervisor's lifecycle lock serializes it
+        // after the stop. The resurrect check below already respects this
+        // flag the same way (see shouldResurrect).
+        if (stopping.get()) {
+            Log.i(TAG, "ignoring start while stopping")
+            return START_NOT_STICKY
+        }
+
         // A null intent means the system restarted us after a kill. Treating it as
         // START keeps the engine up without user intervention.
         scope.launch {
