@@ -41,7 +41,10 @@ class EngineDiagnosticsTest {
 
         val tail = fixture.diagnostics.engineLogTail(lines = 5)
 
-        assertEquals(listOf("line 46", "line 47", "line 48", "line 49", "line 50"), tail)
+        assertEquals(listOf("line 46", "line 47", "line 48", "line 49", "line 50"), tail.lines)
+        // Audit-200 C9 (M-136): a small file is read whole — nothing is hidden.
+        assertFalse(tail.wasTruncated)
+        assertEquals(fixture.log.length(), tail.fileBytes)
     }
 
     @Test
@@ -54,20 +57,28 @@ class EngineDiagnosticsTest {
 
         val tail = fixture.diagnostics.engineLogTail(lines = 10)
 
-        assertEquals("a fragment of the cut line reached the tail", 2, tail.size)
-        assertEquals("NEW LINE A", tail.first())
-        assertEquals("NEW LINE B", tail.last())
+        assertEquals("a fragment of the cut line reached the tail", 2, tail.lines.size)
+        assertEquals("NEW LINE A", tail.lines.first())
+        assertEquals("NEW LINE B", tail.lines.last())
         assertTrue(
             "the tail carries a line no log writes",
-            tail.all { it.length < 1_000 },
+            tail.lines.all { it.length < 1_000 },
         )
+        // Audit-200 C9 (M-136): the file is larger than the 256 KB window,
+        // so the result must say older lines exist beyond the tail.
+        assertTrue(tail.wasTruncated)
+        assertEquals(fixture.log.length(), tail.fileBytes)
     }
 
     @Test
     fun missingLogReadsAsEmptyInsteadOfThrowing() = runTest {
         val fixture = fixture()
 
-        assertEquals(emptyList<String>(), fixture.diagnostics.engineLogTail())
+        val tail = fixture.diagnostics.engineLogTail()
+
+        assertEquals(emptyList<String>(), tail.lines)
+        assertFalse(tail.wasTruncated)
+        assertEquals(0, tail.fileBytes)
     }
 
     @Test

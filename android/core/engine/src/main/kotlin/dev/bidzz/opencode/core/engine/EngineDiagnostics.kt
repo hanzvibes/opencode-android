@@ -101,15 +101,29 @@ class EngineDiagnostics(
             }
         }
 
+    /** The tail of the engine's log file, with the facts the viewer needs to be honest about it. */
+    data class LogTail(
+        /** The lines read, newest last. */
+        val lines: List<String>,
+        /** True when the file is larger than the 256 KB read window, so older lines exist but are not shown. */
+        val wasTruncated: Boolean,
+        /** The file's full size in bytes at read time. */
+        val fileBytes: Long,
+    )
+
     /**
      * The engine's own log, newest last.
      *
      * Read backwards from the end because the file grows without bound over a
      * session; pulling the whole thing into memory to show eighty lines is how a
      * diagnostics screen becomes the thing that fails.
+     *
+     * Audit-200 C9 (M-136): the result says whether the file was cut — the
+     * viewer used to show the tail as if it were the whole log, and a crash's
+     * cause before the 256 KB window silently vanished from the diagnosis.
      */
-    suspend fun engineLogTail(lines: Int = 120): List<String> = withContext(Dispatchers.IO) {
-        if (!engineLogFile.isFile) return@withContext emptyList()
+    suspend fun engineLogTail(lines: Int = 120): LogTail = withContext(Dispatchers.IO) {
+        if (!engineLogFile.isFile) return@withContext LogTail(emptyList(), wasTruncated = false, fileBytes = 0)
         runCatching {
             RandomAccessFile(engineLogFile, "r").use { raf ->
                 val length = raf.length()
@@ -117,7 +131,7 @@ class EngineDiagnostics(
                 raf.seek(length - window)
                 val bytes = ByteArray(window.toInt())
                 raf.readFully(bytes)
-                String(bytes, Charsets.UTF_8)
+                val read = String(bytes, Charsets.UTF_8)
                     .lines()
                     .let { if (length > window) it.drop(1) else it } // first line is likely truncated
                     .filter { it.isNotBlank() }
@@ -125,10 +139,11 @@ class EngineDiagnostics(
                     // The engine's own log is read for display and copying:
                     // mask a password line the same way as stdout (item 18).
                     .map(::redactEnginePassword)
+                LogTail(read, wasTruncated = length > window, fileBytes = length)
             }
         }.getOrElse {
             Log.w(TAG, "could not read engine log", it)
-            emptyList()
+            LogTail(emptyList(), wasTruncated = false, fileBytes = 0)
         }
     }
 

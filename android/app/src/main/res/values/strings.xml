@@ -704,6 +704,9 @@
     <string name="diff_loading">Loading diff…</string>
     <string name="diff_git_unavailable">Git is not available in this build, so changes cannot be shown as a diff.\n\nThe file contents are still readable from the file list.</string>
     <string name="diff_none">No changes to show.</string>
+    <string name="diff_binary_changed">This file changed, but it is a binary file — its contents cannot be shown as a diff.</string>
+    <string name="diff_mode_changed">Only the file mode changed (for example, it became executable) — there is no text to show as a diff.</string>
+    <string name="diff_no_text_diff">This file changed, but there is no text diff to show.</string>
     <string name="diff_truncated">Diff truncated by the engine.</string>
     <string name="diff_mode_unified">Unified</string>
     <string name="diff_mode_split">Split</string>
@@ -862,6 +865,7 @@
     <string name="diag_restart_engine">Restart Engine</string>
     <string name="diag_restarting">Restarting…</string>
     <string name="diag_restart_timeout">Restart timed out — the engine did not reach a running state.</string>
+    <string name="diag_restart_not_sent">The restart could not be sent — the engine service is not running.</string>
     <string name="diag_password_show">Show password</string>
     <string name="diag_password_hide">Hide password</string>
     <string name="diag_copy_all">Copy All</string>
@@ -906,6 +910,8 @@
     <string name="diag_log_level_info">Info</string>
     <string name="diag_log_level_warning">Warning</string>
     <string name="diag_log_level_error">Error</string>
+    <string name="diag_log_level_inferred">Levels are guessed from the log text — the engine does not report a severity.</string>
+    <string name="diag_log_truncated_note">The disk log is larger than 256 KB — only its newest lines are shown.</string>
 
     <!-- Tool timeline verbs. Present while the tool runs, past once it has finished.
          "step_target" joins a verb to a file name or command; a language that needs the

@@ -65,6 +65,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.engine.AntigravityPatchOutcome
+import dev.bidzz.opencode.core.engine.EngineBinary
 import dev.bidzz.opencode.core.engine.EngineDiagnostics
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.AppTag
@@ -78,6 +79,8 @@ import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.StatusDot
 import dev.bidzz.opencode.ui.TextAction
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
@@ -100,7 +103,9 @@ private const val PASSWORD_VISIBLE_MS = 10_000L
 /**
  * Most log lines retained in memory for the viewer. The disk log grows
  * without bound, so the viewer keeps only the newest slice; the copy-all
- * report still exports at most 200 lines.
+ * report exports at most 100 console lines + 200 disk lines (300), not
+ * 200 — the old comment claimed 200 and the export silently proved it
+ * wrong (audit-200 C9, M-136).
  */
 private const val MAX_LOG_LINES = 2000
 
@@ -122,25 +127,67 @@ private enum class LogTab {
  * Severity inferred from the log text. The log sources are plain strings —
  * [EngineDiagnostics.engineLogTail] and the engine's recent output carry no
  * structured level — so the filter reuses the same keywords the row colour
- * already used (error/fail/exception, warn, everything else is Info).
+ * already used, widened with the failure wordings engines actually print
+ * (audit-200 C9, M-133). The level is a guess from the text, never the
+ * engine's own severity: the filter chips say so in the UI, and a line like
+ * "no error" still classifies as ERROR, because no negation is detected.
  */
-private enum class LogLevel {
+internal enum class LogLevel {
     ALL,
     INFO,
     WARNING,
     ERROR,
 }
 
-/** One retained log line: its real 1-based number, text, and inferred level. */
+/** One retained log line: its 1-based position in the displayed list, text, and inferred level. */
 private data class IndexedLogLine(val number: Int, val text: String, val level: LogLevel)
 
-private fun classifyLogLevel(line: String): LogLevel {
+/**
+ * Guesses a log line's severity from its text (audit-200 C9, M-133).
+ *
+ * The old set (error/fail/exception, warn) missed the wordings a failing
+ * engine actually prints — "API key not valid", "Is port 41234 in use?",
+ * "fatal", "panic", "timeout", "denied", "unauthorized" — so the Error
+ * filter hid the very lines it exists to find. The widened set still
+ * cannot prove a level: it only makes the guess less blind.
+ */
+internal fun classifyLogLevel(line: String): LogLevel {
     val lower = line.lowercase()
     return when {
-        lower.contains("error") || lower.contains("fail") || lower.contains("exception") -> LogLevel.ERROR
-        lower.contains("warn") -> LogLevel.WARNING
+        lower.contains("error") || lower.contains("fail") || lower.contains("exception") ||
+            lower.contains("fatal") || lower.contains("panic") ||
+            lower.contains("eaddrinuse") || lower.contains("timeout") || lower.contains("timed out") ||
+            lower.contains("denied") || lower.contains("unauthorized") ||
+            lower.contains("not valid") || lower.contains("refused") ||
+            lower.contains("is port") || lower.contains("in use") ||
+            lower.contains("cannot") || lower.contains("can't") || lower.contains("unable to") ||
+            lower.contains("crash") || lower.contains("out of memory") -> LogLevel.ERROR
+        lower.contains("warn") || lower.contains("deprecated") -> LogLevel.WARNING
         else -> LogLevel.INFO
     }
+}
+
+/**
+ * Whether a restart has settled (audit-200 C9, M-135).
+ *
+ * A restart is settled once the supervisor cycled (a transitional state
+ * was seen, or a new PID appeared) and the engine landed on a terminal
+ * state. RUNNING and FAILED were already settled; DEGRADED and STOPPED
+ * are terminal states too (EngineState: RUNNING -> DEGRADED,
+ * STOPPING -> STOPPED), and the old predicate left the button stuck on
+ * "Restarting…" for 30 seconds after a restart that had already finished
+ * degraded or stopped.
+ */
+internal fun isRestartSettled(
+    sawRestart: Boolean,
+    state: EngineState,
+    pidBefore: Int?,
+    pid: Int?,
+): Boolean {
+    val terminal = state == EngineState.RUNNING || state == EngineState.FAILED ||
+        state == EngineState.DEGRADED || state == EngineState.STOPPED
+    val newPid = pidBefore != null && pid != null && pid != pidBefore
+    return (sawRestart || newPid) && terminal
 }
 
 /**
@@ -174,7 +221,9 @@ fun DiagnosticsScreen(
 
     var tools by remember { mutableStateOf(diagnostics.tools()) }
     var probes by remember { mutableStateOf<List<EngineDiagnostics.ProbeResult>>(emptyList()) }
-    var logLines by remember { mutableStateOf<List<String>>(emptyList()) }
+    // Audit-200 C9 (M-136): the tail carries its own truncation fact —
+    // a plain list of lines could not say older lines exist beyond it.
+    var logTail by remember { mutableStateOf(EngineDiagnostics.LogTail(emptyList(), wasTruncated = false, fileBytes = 0)) }
     var running by remember { mutableStateOf(false) }
     var isRestarting by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
@@ -208,11 +257,16 @@ fun DiagnosticsScreen(
             running = true
             tools = diagnostics.tools()
             scope.launch {
-                logLines = diagnostics.engineLogTail(lines = MAX_LOG_LINES)
-                probes = listOf(
-                    diagnostics.probe("git", listOf("--version")),
-                    diagnostics.probe("rg", listOf("--version")),
-                )
+                logTail = diagnostics.engineLogTail(lines = MAX_LOG_LINES)
+                // Audit-200 C9 (M-137): probe every tool the Tools card
+                // lists, not just git and rg — the card only proved the
+                // symlink exists, and node is the riskiest binary the
+                // agent actually runs. Concurrent, so one hung tool
+                // cannot hold the refresh hostage for 8 seconds each;
+                // awaitAll keeps the card's own order.
+                probes = EngineBinary.TOOL_LIBRARIES.values.map { tool ->
+                    async { diagnostics.probe(tool, listOf("--version")) }
+                }.awaitAll()
                 running = false
             }
         }
@@ -222,16 +276,27 @@ fun DiagnosticsScreen(
 
     // The log viewer keeps only the newest slice in memory: the disk tail is
     // already capped at MAX_LOG_LINES and console output at 200 lines.
-    val activeLogs: List<String> = remember(status.recentOutput, logLines, selectedLogTab) {
+    // Audit-200 C9 (M-134): ALL used to put the live console tail BEFORE
+    // the older disk tail, so startup → error → crash read backwards and
+    // the same line had a different number on every tab. Disk first, then
+    // console: the disk history is older, the console is the newest output,
+    // so this order is approximately chronological. The two sources can
+    // overlap and neither carries timestamps, so the merge cannot be exact
+    // — and the numbers are positions in this displayed list, not line
+    // numbers in any file.
+    val activeLogs: List<String> = remember(status.recentOutput, logTail.lines, selectedLogTab) {
         when (selectedLogTab) {
-            LogTab.ALL -> status.recentOutput + logLines
-            LogTab.DISK -> logLines
+            LogTab.ALL -> logTail.lines + status.recentOutput
+            LogTab.DISK -> logTail.lines
             LogTab.CONSOLE -> status.recentOutput
         }.takeLast(MAX_LOG_LINES)
     }
 
-    // Line numbers are the index in the retained list, 1-based, captured
+    // Line numbers are positions in the displayed list, 1-based, captured
     // before filtering so a search never renumbers the lines it shows.
+    // They are NOT line numbers in the log file: the ALL tab merges two
+    // sources, and a refresh shifts every number as new lines arrive
+    // (audit-200 C9, M-134).
     val indexedLogs: List<IndexedLogLine> = remember(activeLogs) {
         activeLogs.mapIndexed { index, line ->
             IndexedLogLine(number = index + 1, text = line, level = classifyLogLevel(line))
@@ -336,11 +401,24 @@ fun DiagnosticsScreen(
                 appendLine("- $k: $v")
             }
             appendLine()
-            appendLine("## Console Output (${status.recentOutput.size} lines)")
-            status.recentOutput.takeLast(100).forEach { appendLine(it) }
+            // Audit-200 C9 (M-136): the headers say how much was kept,
+            // not as if the export were the whole log — the console
+            // section is the last 100 lines, the disk section the last
+            // 200 lines of a file that may be far larger.
+            val consoleTaken = status.recentOutput.takeLast(100)
+            appendLine("## Console Output (last ${consoleTaken.size} of ${status.recentOutput.size} lines)")
+            consoleTaken.forEach { appendLine(it) }
             appendLine()
-            appendLine("## Disk Log (${logLines.size} lines)")
-            logLines.takeLast(200).forEach { appendLine(it) }
+            val diskTaken = logTail.lines.takeLast(200)
+            appendLine(
+                "## Disk Log (last ${diskTaken.size} of ${logTail.lines.size} lines" +
+                    if (logTail.wasTruncated) {
+                        "; file is ${formatBytes(logTail.fileBytes)}, only the last 256 KB were read"
+                    } else {
+                        ""
+                    } + ")",
+            )
+            diskTaken.forEach { appendLine(it) }
         }
 
         // 65-F4: the "copied" snackbar only fires on a real copy.
@@ -571,44 +649,54 @@ fun DiagnosticsScreen(
                                         // state — no fixed delay. A restart is
                                         // settled once the supervisor has cycled
                                         // (STARTING/INITIALIZING/STOPPING seen)
-                                        // and the engine lands on RUNNING or
-                                        // FAILED, or once a new PID is running.
-                                        // StateFlow conflates rapid transitions,
-                                        // so the PID change is a second signal
-                                        // for a restart too fast to observe.
+                                        // and the engine lands on a terminal
+                                        // state (RUNNING, FAILED, DEGRADED or
+                                        // STOPPED — audit-200 C9, M-135), or
+                                        // once a new PID is running. StateFlow
+                                        // conflates rapid transitions, so the PID
+                                        // change is a second signal for a restart
+                                        // too fast to observe.
                                         val pidBefore = status.pid
-                                        app.restartEngine()
-                                        scope.launch {
-                                            val settled = withTimeoutOrNull(RESTART_TIMEOUT_MS) {
-                                                var sawRestart = false
-                                                app.engineStatus.first { engine ->
-                                                    if (
-                                                        engine.state == EngineState.STARTING
-                                                        || engine.state == EngineState.INITIALIZING
-                                                        || engine.state == EngineState.STOPPING
-                                                    ) {
-                                                        sawRestart = true
-                                                    }
-                                                    val newPidRunning =
-                                                        pidBefore != null && engine.pid != null
-                                                            && engine.pid != pidBefore
-                                                            && engine.state == EngineState.RUNNING
-                                                    (sawRestart && (engine.state == EngineState.RUNNING || engine.state == EngineState.FAILED))
-                                                        || newPidRunning
-                                                }
-                                            }
-                                            if (settled == null) {
-                                                (context.applicationContext as OpenCodeApplication).showSnackbar(
-                                                    context.getString(R.string.diag_restart_timeout),
-                                                    long = true,
-                                                )
-                                            }
-                                            refresh()
+                                        // Audit-200 C9 (M-135): restartEngine()
+                                        // returns whether the restart was actually
+                                        // sent — the old code ignored it, so a
+                                        // restart that never left the phone waited
+                                        // the full 30 seconds and then blamed the
+                                        // engine with a timeout. Say so at once.
+                                        if (!app.restartEngine()) {
+                                            (context.applicationContext as OpenCodeApplication).showSnackbar(
+                                                context.getString(R.string.diag_restart_not_sent),
+                                                long = true,
+                                            )
                                             isRestarting = false
+                                        } else {
+                                            scope.launch {
+                                                val settled = withTimeoutOrNull(RESTART_TIMEOUT_MS) {
+                                                    var sawRestart = false
+                                                    app.engineStatus.first { engine ->
+                                                        if (
+                                                            engine.state == EngineState.STARTING
+                                                            || engine.state == EngineState.INITIALIZING
+                                                            || engine.state == EngineState.STOPPING
+                                                        ) {
+                                                            sawRestart = true
+                                                        }
+                                                        isRestartSettled(sawRestart, engine.state, pidBefore, engine.pid)
+                                                    }
+                                                }
+                                                if (settled == null) {
+                                                    (context.applicationContext as OpenCodeApplication).showSnackbar(
+                                                        context.getString(R.string.diag_restart_timeout),
+                                                        long = true,
+                                                    )
+                                                }
+                                                refresh()
+                                                isRestarting = false
+                                            }
+                                            (context.applicationContext as OpenCodeApplication).showSnackbar(
+                                                context.getString(R.string.diag_restarting),
+                                            )
                                         }
-                                        (context.applicationContext as OpenCodeApplication).showSnackbar(
-                                            context.getString(R.string.diag_restarting),
-                                        )
                                     },
                                 )
                                 .padding(horizontal = spacing.md),
@@ -904,6 +992,10 @@ fun DiagnosticsScreen(
                             logListState.scrollToItem(LOG_FIRST_ITEM_INDEX + filteredLogs.size - 1)
                         }
                     },
+                    // Audit-200 C9 (M-136): the note only applies to a
+                    // disk tail — the console tab carries live output,
+                    // not a cut file.
+                    showTruncationNote = selectedLogTab != LogTab.CONSOLE && logTail.wasTruncated,
                 )
             }
 
@@ -972,6 +1064,9 @@ private fun LogViewerControls(
     totalCount: Int,
     filterActive: Boolean,
     onJumpToLatest: () -> Unit,
+    // Audit-200 C9 (M-136): true when the disk log was cut at the 256 KB
+    // window, so the viewer shows only its newest lines.
+    showTruncationNote: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -1064,6 +1159,26 @@ private fun LogViewerControls(
                 title = stringResource(R.string.diag_log_level_error),
                 selected = selectedLevel == LogLevel.ERROR,
                 onClick = { onLevelChange(LogLevel.ERROR) },
+            )
+        }
+
+        // Audit-200 C9 (M-133): the levels are guessed from the log text,
+        // not reported by the engine — the filter must not pretend
+        // otherwise. Audit-200 C9 (M-136): the disk log is read through a
+        // 256 KB window, so when it is cut, say the viewer shows only the
+        // newest lines instead of letting the tail pass for the whole log.
+        Text(
+            text = stringResource(R.string.diag_log_level_inferred),
+            style = OpenCodeTypography.caption,
+            color = colors.onSurfaceFaint,
+            modifier = Modifier.padding(top = spacing.xs),
+        )
+        if (showTruncationNote) {
+            Text(
+                text = stringResource(R.string.diag_log_truncated_note),
+                style = OpenCodeTypography.caption,
+                color = colors.warning,
+                modifier = Modifier.padding(top = spacing.xxs),
             )
         }
 

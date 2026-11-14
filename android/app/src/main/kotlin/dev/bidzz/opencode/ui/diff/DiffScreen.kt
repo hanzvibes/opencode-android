@@ -59,6 +59,25 @@ internal fun diffViewModeForName(name: String): DiffViewMode =
     runCatching { DiffViewMode.valueOf(name) }.getOrDefault(DiffViewMode.Unified)
 
 /**
+ * The message for a file that changed but has no text hunks to show
+ * (audit-200 C9, M-146).
+ *
+ * An empty hunk list means two different things: the file truly did not
+ * change, or the file changed in a way a unified patch cannot render as
+ * text (binary file, mode-only change). The old screen showed "No changes
+ * to show." for both — a lie for the second case. The raw patch text tells
+ * them apart: git writes "Binary files … differ" for binary files and
+ * "old mode"/"new mode" for a mode change. A blank patch means the entry
+ * itself carries no diff, so the caller falls back to `diff_none`.
+ */
+internal fun noTextDiffMessage(patch: String): Int? = when {
+    patch.isBlank() -> null
+    patch.contains("Binary files") -> R.string.diff_binary_changed
+    patch.contains("old mode") -> R.string.diff_mode_changed
+    else -> R.string.diff_no_text_diff
+}
+
+/**
  * Code diff viewer with Side-by-side or Unified layout.
  *
  * Line highlights match Git and Claude Code styling:
@@ -102,7 +121,7 @@ fun DiffScreen(
             state.gitUnavailable -> EmptyState(stringResource(R.string.diff_git_unavailable), isError = true, onRetry = onRetry)
             state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRetry)
             state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true, onRetry = onRetry)
-            state.hunks.isEmpty() -> EmptyState(stringResource(R.string.diff_none))
+            state.hunks.isEmpty() -> EmptyState(stringResource(noTextDiffMessage(state.patch) ?: R.string.diff_none))
             mode == DiffViewMode.Unified -> UnifiedDiffView(state = state)
             mode == DiffViewMode.Split -> SplitDiffView(state = state)
         }
@@ -397,6 +416,18 @@ private fun SplitDiffView(state: DiffUiState) {
                 val pairedRows = DiffParser.toSideBySide(hunk)
                 items(pairedRows) { pair ->
                     SplitDiffRow(pair, colors)
+                }
+            }
+            // Audit-200 C9 (M-144): the unified view had this footer; the
+            // split view silently dropped it, so a cut diff looked complete.
+            if (state.truncated) {
+                item(key = "truncated") {
+                    Text(
+                        text = stringResource(R.string.diff_truncated),
+                        style = OpenCodeTypography.label,
+                        color = colors.onSurfaceFaint,
+                        modifier = Modifier.padding(spacing.md),
+                    )
                 }
             }
         }

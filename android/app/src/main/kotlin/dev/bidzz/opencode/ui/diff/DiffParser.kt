@@ -165,6 +165,12 @@ object DiffParser {
         val rows = mutableListOf<DiffSideBySideRow>()
         val pendingRemoved = mutableListOf<DiffLine>()
         val pendingAdded = mutableListOf<DiffLine>()
+        // Audit-200 C9 (M-145): a "\ No newline at end of file" marker sits
+        // BETWEEN the removed and added line of a pair. Flushing the pair
+        // before the marker arrived split it into (old,null), (marker,marker),
+        // (null,new) — and rendered the marker twice. Stash the marker and
+        // emit it once, after the pair it belongs to.
+        val pendingMarkers = mutableListOf<String>()
 
         fun flushPending() {
             val count = maxOf(pendingRemoved.size, pendingAdded.size)
@@ -176,13 +182,32 @@ object DiffParser {
             }
             pendingRemoved.clear()
             pendingAdded.clear()
+            // One row per distinct marker text, after the pair it annotates.
+            pendingMarkers.distinct().forEach { marker ->
+                val markerLine = DiffLine(DiffLine.Kind.META, marker)
+                rows += DiffSideBySideRow(left = markerLine, right = markerLine)
+            }
+            pendingMarkers.clear()
         }
 
         for (line in hunk.lines) {
             when (line.kind) {
                 DiffLine.Kind.REMOVED -> pendingRemoved += line
                 DiffLine.Kind.ADDED -> pendingAdded += line
-                DiffLine.Kind.CONTEXT, DiffLine.Kind.META, DiffLine.Kind.HUNK_HEADER -> {
+                DiffLine.Kind.META -> {
+                    // A "\ No newline" marker while a pair is still open
+                    // belongs to that pair — hold it until the pair flushes
+                    // instead of flushing the pair around it.
+                    if (line.text.startsWith("\\") &&
+                        (pendingRemoved.isNotEmpty() || pendingAdded.isNotEmpty())
+                    ) {
+                        pendingMarkers += line.text
+                    } else {
+                        flushPending()
+                        rows += DiffSideBySideRow(left = line, right = line)
+                    }
+                }
+                DiffLine.Kind.CONTEXT, DiffLine.Kind.HUNK_HEADER -> {
                     flushPending()
                     rows += DiffSideBySideRow(left = line, right = line)
                 }

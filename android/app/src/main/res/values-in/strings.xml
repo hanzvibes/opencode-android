@@ -697,6 +697,9 @@
     <string name="diff_loading">Memuat diff…</string>
     <string name="diff_git_unavailable">Git tidak tersedia di build ini, sehingga perubahan tidak bisa ditampilkan sebagai diff.\n\nIsi file tetap bisa dibaca dari daftar file.</string>
     <string name="diff_none">Tidak ada perubahan untuk ditampilkan.</string>
+    <string name="diff_binary_changed">File ini berubah, tetapi ini file biner — isinya tidak bisa ditampilkan sebagai diff.</string>
+    <string name="diff_mode_changed">Hanya mode file yang berubah (misalnya jadi bisa dieksekusi) — tidak ada teks untuk ditampilkan sebagai diff.</string>
+    <string name="diff_no_text_diff">File ini berubah, tetapi tidak ada diff teks untuk ditampilkan.</string>
     <string name="diff_truncated">Diff dipotong oleh mesin.</string>
     <string name="diff_mode_unified">Terpadu</string>
     <string name="diff_mode_split">Berdampingan</string>
@@ -855,6 +858,7 @@
     <string name="diag_restart_engine">Mulai Ulang Mesin</string>
     <string name="diag_restarting">Memulai ulang…</string>
     <string name="diag_restart_timeout">Restart kehabisan waktu — mesin tidak mencapai status berjalan.</string>
+    <string name="diag_restart_not_sent">Restart tidak bisa dikirim — service engine tidak berjalan.</string>
     <string name="diag_password_show">Tampilkan sandi</string>
     <string name="diag_password_hide">Sembunyikan sandi</string>
     <string name="diag_copy_all">Salin Semua</string>
@@ -899,6 +903,8 @@
     <string name="diag_log_level_info">Info</string>
     <string name="diag_log_level_warning">Peringatan</string>
     <string name="diag_log_level_error">Error</string>
+    <string name="diag_log_level_inferred">Level ditebak dari teks log — mesin tidak melaporkan tingkat keparahan.</string>
+    <string name="diag_log_truncated_note">Log disk lebih besar dari 256 KB — hanya baris terbarunya yang ditampilkan.</string>
 
     <!-- Kata kerja timeline tool. Bentuk sekarang saat tool berjalan, lampau setelah selesai.
          "step_target" menyambung kata kerja dengan nama berkas atau perintah; bahasa yang

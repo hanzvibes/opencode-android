@@ -237,4 +237,72 @@ class DiffParserTest {
         assertEquals("++ y", lines[4].text)
         assertEquals(2 to 2, DiffParser.counts(hunks))
     }
+
+    // Audit-200 C9 (M-145): a "\ No newline at end of file" marker sits
+    // between the removed and added line of a pair. The old split view
+    // flushed the pair around the marker, splitting it into (old,null),
+    // (marker,marker), (null,new) — and rendered the marker twice.
+
+    @Test
+    fun `no newline marker between a pair stays one row after the pair`() {
+        val patch = """
+            @@ -1 +1 @@
+            -old
+            \ No newline at end of file
+            +new
+            \ No newline at end of file
+        """.trimIndent()
+
+        val rows = DiffParser.toSideBySide(DiffParser.parse(patch).first())
+
+        // The pair stays whole, then the marker once — not split, not doubled.
+        assertEquals(2, rows.size)
+        assertEquals("old", rows[0].left?.text)
+        assertEquals("new", rows[0].right?.text)
+        assertEquals(DiffLine.Kind.META, rows[1].left?.kind)
+        assertEquals(DiffLine.Kind.META, rows[1].right?.kind)
+        assertEquals("\\ No newline at end of file", rows[1].left?.text)
+    }
+
+    @Test
+    fun `one sided no newline marker follows its own line`() {
+        val patch = """
+            @@ -1,2 +1,2 @@
+             context
+            -old
+            \ No newline at end of file
+            +new
+        """.trimIndent()
+
+        val rows = DiffParser.toSideBySide(DiffParser.parse(patch).first())
+
+        assertEquals(3, rows.size)
+        assertEquals("context", rows[0].left?.text)
+        assertEquals("old", rows[1].left?.text)
+        assertEquals("new", rows[1].right?.text)
+        assertEquals(DiffLine.Kind.META, rows[2].left?.kind)
+        assertEquals("\\ No newline at end of file", rows[2].left?.text)
+    }
+
+    @Test
+    fun `marker after a context line still renders as its own row`() {
+        // With no pair open the marker has nothing to belong to — the old
+        // behaviour (flush, then a (marker,marker) row) is kept.
+        val patch = """
+            @@ -1,2 +1,2 @@
+             context
+            \ No newline at end of file
+            -old
+            +new
+        """.trimIndent()
+
+        val rows = DiffParser.toSideBySide(DiffParser.parse(patch).first())
+
+        assertEquals(3, rows.size)
+        assertEquals("context", rows[0].left?.text)
+        assertEquals(DiffLine.Kind.META, rows[1].left?.kind)
+        assertEquals("\\ No newline at end of file", rows[1].left?.text)
+        assertEquals("old", rows[2].left?.text)
+        assertEquals("new", rows[2].right?.text)
+    }
 }
