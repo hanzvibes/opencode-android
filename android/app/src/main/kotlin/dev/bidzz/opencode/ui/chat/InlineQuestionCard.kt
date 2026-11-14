@@ -89,6 +89,13 @@ fun InlineQuestionCard(
      * no way to try again.
      */
     onAnswer: suspend (QuestionAnswer) -> Boolean = { false },
+    /**
+     * Skips a question instead of answering it (audit-200 C3, M-066):
+     * cancels the form, so the agent carries on without the answer.
+     * True only when the engine confirmed the cancel. Receives the
+     * call id, the question index and the card's question count.
+     */
+    onSkip: suspend (String, Int, Int) -> Boolean = { _, _, _ -> false },
 ) {
     if (questions.isEmpty()) return
 
@@ -111,6 +118,11 @@ fun InlineQuestionCard(
     // twice (the second reply would fail as already-settled and drop
     // the answer back into the composer).
     var submitting by remember { mutableStateOf(emptySet<Int>()) }
+
+    // Questions with a skip in flight (audit-200 C3, M-066): same
+    // guard as `submitting` — a second tap while the cancel is
+    // travelling is ignored.
+    var skipping by remember { mutableStateOf(emptySet<Int>()) }
 
     // The card stays "open" while any question is still unanswered.
     val anyPending = questions.indices.any { qIndex ->
@@ -144,6 +156,10 @@ fun InlineQuestionCard(
             // "Answered" only when there is actually an answer to show;
             // a finished call with a blank output is not an answered one.
             val sectionDone = sectionResolved != null
+            // A skipped section (audit-200 C3, M-066) carries the
+            // marker instead of an answer: the card shows "Skipped",
+            // never the marker text itself.
+            val sectionSkipped = sectionAnswer == SKIPPED_QUESTION_MARKER
             // A call that is done with no recorded answer is expired
             // (10-F2): the engine already moved on, so the question can
             // no longer be answered — showing the form invites a tap that
@@ -160,6 +176,33 @@ fun InlineQuestionCard(
                     isDone = sectionDone,
                     resolvedAnswer = sectionResolved,
                     isExpired = sectionExpired,
+                    isSkipped = sectionSkipped,
+                    isSkipping = qIndex in skipping,
+                    onSkip = {
+                        // A second tap while the cancel is still
+                        // travelling is ignored (see `skipping`).
+                        if (qIndex in skipping) return@SingleQuestionSection
+                        skipping = skipping + qIndex
+                        scope.launch {
+                            val skipped = onSkip(call.id, qIndex, questions.size)
+                            skipping = skipping - qIndex
+                            // Only an engine-confirmed cancel marks the
+                            // sections skipped. The cancel ended the
+                            // whole form, so every still-unanswered
+                            // section on the card is skipped too — none
+                            // of them can be answered anymore. On a
+                            // failure the card stays open for another try.
+                            if (skipped) {
+                                val updated = submittedAnswers.toMutableList()
+                                while (updated.size < questions.size) updated.add("")
+                                updated[qIndex] = SKIPPED_QUESTION_MARKER
+                                for (i in updated.indices) {
+                                    if (updated[i].isBlank()) updated[i] = SKIPPED_QUESTION_MARKER
+                                }
+                                submittedAnswers = updated
+                            }
+                        }
+                    },
                     onSubmit = { labels, displayText ->
                         // A second tap while the reply is still
                         // travelling is ignored (see `submitting`).
@@ -202,7 +245,13 @@ private fun SingleQuestionSection(
     isDone: Boolean,
     resolvedAnswer: String?,
     isExpired: Boolean = false,
+    /** The section was skipped instead of answered (audit-200 C3,
+     * M-066): the badge and the answer row say "Skipped", muted. */
+    isSkipped: Boolean = false,
+    /** A skip is in flight: the Skip button is disabled meanwhile. */
+    isSkipping: Boolean = false,
     onSubmit: (labels: List<String>, displayText: String) -> Unit,
+    onSkip: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -278,13 +327,18 @@ private fun SingleQuestionSection(
             )
         }
 
-        // Badge: Multi-choice / Single-choice / Answered
+        // Badge: Multi-choice / Single-choice / Answered / Skipped
         val badgeText = when {
+            isSkipped -> stringResource(R.string.question_skipped)
             isDone -> stringResource(R.string.question_answered)
             item.multiple -> stringResource(R.string.question_multi_choice)
             else -> stringResource(R.string.question_single_choice)
         }
-        val badgeColor = if (isDone) colors.toolSuccess else colors.onSurfaceMuted
+        val badgeColor = when {
+            isSkipped -> colors.onSurfaceMuted
+            isDone -> colors.toolSuccess
+            else -> colors.onSurfaceMuted
+        }
 
         Box(
             modifier = Modifier
@@ -319,7 +373,31 @@ private fun SingleQuestionSection(
 
     if (isDone) {
         // Confirmed Answer View
-        if (!resolvedAnswer.isNullOrBlank()) {
+        if (isSkipped) {
+            // Skipped (audit-200 C3, M-066): the marker is never shown
+            // as text — the row says "Skipped", muted, like the badge.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(radius.sm))
+                    .background(colors.fill)
+                    .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.sm))
+                    .padding(horizontal = spacing.sm, vertical = spacing.xs + 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                GlyphIcon(
+                    glyph = Glyph.ChevronRight,
+                    tint = colors.onSurfaceMuted,
+                    size = 12.dp,
+                )
+                Text(
+                    text = stringResource(R.string.question_skipped),
+                    style = OpenCodeTypography.caption.copy(fontSize = 12.sp),
+                    color = colors.onSurfaceMuted,
+                )
+            }
+        } else if (!resolvedAnswer.isNullOrBlank()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -488,6 +566,28 @@ private fun SingleQuestionSection(
                     )
                 }
             }
+        }
+
+        // Skip (audit-200 C3, M-066): the only way out of a question
+        // the operator cannot or will not answer — it cancels the form
+        // instead of answering at random or killing the run. A quiet
+        // text button under Submit, not a second big target: skipping
+        // is the escape hatch, not the main action.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = spacing.xs),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.question_skip),
+                style = OpenCodeTypography.label.copy(fontSize = 12.sp),
+                color = if (isSkipping) colors.onSurfaceFaint else colors.onSurfaceMuted,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(radius.sm))
+                    .clickable(enabled = !isSkipping, role = Role.Button) { onSkip() }
+                    .padding(horizontal = spacing.md, vertical = spacing.xs),
+            )
         }
     }
 }

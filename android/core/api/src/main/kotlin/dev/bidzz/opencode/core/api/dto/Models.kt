@@ -314,11 +314,47 @@ data class UpdateSessionRequest(
     val title: String? = null,
 )
 
-/** Body of `POST /api/session/{id}/prompt`. `text` is the only required field. */
+/**
+ * Body of `POST /api/session/{id}/prompt`. `text` is the only required
+ * field.
+ *
+ * [skills] carries the skills the operator picked from the palette
+ * (audit-200 C3, M-067): the engine's prompt input takes a structured
+ * skill attachment — `{id, mention}` — and resolves the skill's content
+ * from the id (`PromptInput.SkillAttachment`, verified against the
+ * opencode 2.3.0 bundle on this VM: the prompt route's body is
+ * `{id, text, files, agents, skills, metadata, delivery, resume}`,
+ * and the server materializes each attachment into
+ * `Prompt.SkillAttachment {id, name, text, mention}`, throwing
+ * `SkillNotFoundError` for an unknown id). A bare skill name as plain
+ * text never did that — the agent only ever saw a word — so the pick
+ * now sends the id. Omitted (null) when no skill was picked.
+ */
 @Serializable
 data class PromptRequest(
     val text: String,
     @SerialName("resume") val resume: Boolean? = null,
+    val skills: List<PromptSkillAttachment>? = null,
+)
+
+/** One skill attached to a prompt (`PromptInput.SkillAttachment`). */
+@Serializable
+data class PromptSkillAttachment(
+    val id: String,
+    val mention: PromptMention,
+)
+
+/**
+ * Where a skill was mentioned in the prompt text (`Prompt.Mention`):
+ * the character span of the skill's name in [PromptRequest.text] and
+ * the text itself. The server uses it to locate (and redact) the
+ * mention in the transcript.
+ */
+@Serializable
+data class PromptMention(
+    val start: Int,
+    val end: Int,
+    val text: String,
 )
 
 /** Body of `POST /api/session/{id}/model`. Responds 204, not 200. */

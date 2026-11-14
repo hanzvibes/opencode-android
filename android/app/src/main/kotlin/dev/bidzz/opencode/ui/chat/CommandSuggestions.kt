@@ -93,6 +93,12 @@ data class SlashCommand(
     val glyph: Glyph = Glyph.Terminal,
     /** True for engine skills: picking one mentions it in the draft instead of running a command. */
     val isSkill: Boolean = false,
+    /**
+     * The engine skill's id (audit-200 C3, M-067): the palette used to
+     * drop it and keep only the name, so a pick could never send the
+     * structured attachment the engine resolves. Null for commands.
+     */
+    val skillId: String? = null,
 )
 
 /**
@@ -258,6 +264,7 @@ fun resolveSlashCommands(
                 parameterHint = "skill",
                 glyph = Glyph.Sparkles,
                 isSkill = true,
+                skillId = skill.id,
             )
         )
     }
@@ -427,16 +434,16 @@ class CommandPaletteState(
     /**
      * Intercepts physical keyboard navigation events (Arrow Up/Down, Tab, Enter, Escape).
      *
-     * [onSkillPick] receives a picked skill's name; it defaults to [onPick]
-     * so callers that treat every row as a command keep working, but the
-     * chat composer passes a different handler: a skill is mentioned in
-     * the draft as plain text, not run as `/name`.
+     * [onSkillPick] receives the picked skill row; it defaults to
+     * treating it like a command, but the chat composer passes a
+     * different handler: a skill is mentioned in the draft and sent
+     * with its id, not run as `/name`.
      */
     fun handleKeyEvent(
         event: KeyEvent,
         onPick: (String) -> Unit,
         onDismiss: () -> Unit = {},
-        onSkillPick: (String) -> Unit = onPick,
+        onSkillPick: (SlashCommand) -> Unit = { cmd -> onPick(cmd.name) },
     ): Boolean {
         if (!isActive) return false
         if (event.type != KeyEventType.KeyDown) {
@@ -459,7 +466,7 @@ class CommandPaletteState(
             Key.Tab, Key.Enter, Key.NumPadEnter -> {
                 val selected = currentSelectedCommand()
                 if (selected != null) {
-                    if (selected.isSkill) onSkillPick(selected.name) else onPick(selected.name)
+                    if (selected.isSkill) onSkillPick(selected) else onPick(selected.name)
                     true
                 } else {
                     false
@@ -501,9 +508,9 @@ fun rememberCommandPaletteState(
  * Pro IDE Command Palette popover anchored above the message composer.
  *
  * Features prefix highlighting, parameter syntax hints, smooth slide/expand animations,
- * keyboard navigation, and single-tap selection. [onSkillPick] receives a
- * picked skill's name; it defaults to [onPick] so a skill is treated like
- * a command unless the caller says otherwise.
+ * keyboard navigation, and single-tap selection. [onSkillPick] receives the
+ * picked skill row; it defaults to treating it like a command unless the
+ * caller says otherwise.
  */
 @Composable
 fun CommandSuggestions(
@@ -513,7 +520,7 @@ fun CommandSuggestions(
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit = {},
     skills: List<SkillInfo> = emptyList(),
-    onSkillPick: (String) -> Unit = onPick,
+    onSkillPick: (SlashCommand) -> Unit = { cmd -> onPick(cmd.name) },
 ) {
     val state = rememberCommandPaletteState(commands = commands, draft = draft, skills = skills)
     CommandSuggestions(
@@ -547,7 +554,7 @@ fun CommandSuggestions(
     onPick: (String) -> Unit,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit = {},
-    onSkillPick: (String) -> Unit = onPick,
+    onSkillPick: (SlashCommand) -> Unit = { cmd -> onPick(cmd.name) },
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -643,7 +650,7 @@ fun CommandSuggestions(
                             command = command,
                             query = query,
                             isSelected = isSelected,
-                            onPick = { if (command.isSkill) onSkillPick(command.name) else onPick(command.name) },
+                            onPick = { if (command.isSkill) onSkillPick(command) else onPick(command.name) },
                             onHover = { paletteState.selectIndex(index) },
                             modifier = Modifier
                                 .animateItem()

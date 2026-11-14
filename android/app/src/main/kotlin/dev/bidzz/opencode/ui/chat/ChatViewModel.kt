@@ -14,6 +14,8 @@ import dev.bidzz.opencode.core.api.PermissionRestoreGate
 import dev.bidzz.opencode.core.api.LiveTool
 import dev.bidzz.opencode.core.api.VcsApi
 import dev.bidzz.opencode.core.api.dto.ModelRef
+import dev.bidzz.opencode.core.api.dto.PromptMention
+import dev.bidzz.opencode.core.api.dto.PromptSkillAttachment
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
@@ -29,7 +31,10 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import dev.bidzz.opencode.core.api.dto.toToolCall
 import kotlinx.coroutines.flow.StateFlow
@@ -233,6 +238,32 @@ data class QueuedPrompt(
      * fills the missing field with null) and get one from [withUniqueIds].
      */
     val id: String = UUID.randomUUID().toString(),
+    /**
+     * The skill picked for this follow-up (audit-200 C3, M-067): a skill
+     * mentioned while the agent works queues like any other follow-up,
+     * and the flush sends it with the structured attachment — without
+     * this the pick would silently degrade to plain text. Null when no
+     * skill was picked. Entries read back from storage written before
+     * skills existed carry null here, which is already the no-skill
+     * value, so no normalization is needed.
+     */
+    val skill: PendingSkill? = null,
+) : java.io.Serializable {
+    companion object {
+        private const val serialVersionUID = 1L
+    }
+}
+
+/**
+ * A skill the operator picked from the palette, waiting to be sent
+ * with its prompt (audit-200 C3, M-067). The id is what the engine
+ * resolves; the name is the mention text at the start of the draft.
+ * Serializable so a queued entry keeps it through the parked store
+ * and the saved-state handle, like the rest of [QueuedPrompt].
+ */
+data class PendingSkill(
+    val id: String,
+    val name: String,
 ) : java.io.Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -261,6 +292,7 @@ internal fun List<QueuedPrompt>.withUniqueIds(): List<QueuedPrompt> =
             entry.typedText,
             if (attachmentsNull) emptyList() else entry.attachments,
             if (idNull) UUID.randomUUID().toString() else entry.id,
+            entry.skill,
         )
     }
 
@@ -772,6 +804,14 @@ class ChatViewModel(
      */
     private val confirmedQuestionAnswers = mutableMapOf<String, List<String>>()
     /**
+     * Serialises question-form traffic for one card (audit-200 C3,
+     * M-064): the card's per-question `submitting` guard only stops two
+     * taps on the SAME question — two sections answered at once used to
+     * fire two concurrent listForms + replyForm pairs at one form. A
+     * skip takes the same lock, so it cannot cancel a form mid-reply.
+     */
+    private val questionFormMutex = Mutex()
+    /**
      * Revert prompts the view model sent or queued, by prompt text
      * (audit-200 C2, M-052): when a queued revert is returned to the
      * composer as a draft, the step that asked for it must stop claiming
@@ -1175,6 +1215,26 @@ class ChatViewModel(
     private var flushingEntry: QueuedPrompt? = null
 
     /**
+     * The skill picked from the palette for the message being typed
+     * (audit-200 C3, M-067): the draft holds its name as plain text,
+     * and this holds the id the prompt sends as a structured
+     * attachment. Consumed when the send starts; dropped the moment
+     * the draft no longer starts with the skill's name — an edited
+     * mention is not a pick anymore. A session switch parks the draft
+     * but not this: the mention survives as plain text, like any other
+     * typed word.
+     */
+    private var pendingSkill: PendingSkill? = null
+
+    /**
+     * The skill attachments of the last prompt actually sent (audit-200
+     * C3, M-067): a retry re-sends them with the text, so a failed
+     * skill send does not silently lose the activation on retry.
+     * Cleared with [ChatUiState.lastSentText] on a session change.
+     */
+    private var lastSentSkills: List<PromptSkillAttachment>? = null
+
+    /**
      * The user asked this run to stop (audit-200 B3, M-080/M-376). Unlike
      * [ChatUiState.stopping] — the button state, cleared when the
      * interrupt POST times out or fails so Stop can be tapped again —
@@ -1296,6 +1356,36 @@ class ChatViewModel(
         )
         return true
     }
+
+    /**
+     * Sends the queued follow-ups now (audit-200 C3, M-069): a flush
+     * that failed left the queue stuck — no run edge comes to flush it
+     * again, and the banner's Retry never re-sends a queued entry — so
+     * the "Queued:" row offers this instead of waiting for a run that
+     * may never come. Only the head entry goes now; the rest follows
+     * when the run it starts ends. False when there is nothing to
+     * send, the agent is busy, a send is already in flight, or there
+     * is no engine to send to.
+     */
+    fun flushQueueNow(): Boolean {
+        if (_state.value.queuedPrompts.isEmpty() || _state.value.busy || sendInFlight || flushingEntry != null) return false
+        if (repository == null) return false
+        val next = _state.value.queuedPrompts.firstOrNull() ?: return false
+        flushingEntry = next
+        if (!sendText(next.fullText, next.typedText, emptyList(), skillAttachment(next.skill))) {
+            flushingEntry = null
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Returns the queued follow-ups to the composer (audit-200 C3,
+     * M-069): the other half of the "Queued:" row — the user can give
+     * up on the stuck queue instead of sending it, and edit or delete
+     * the text instead of watching it sit there.
+     */
+    fun cancelQueued(): Boolean = returnQueueToDraft()
 
     /** Called by the screen whenever engine status changes. */
     fun onEngineStatus(status: EngineStatus) {
@@ -1535,6 +1625,8 @@ class ChatViewModel(
         // that same request; a different request supersedes it, and a
         // finished run drops it — the engine no longer waits for it then,
         // and a late reply would only fail with NoPendingPermission.
+        // Audit-200 C3 (M-060): a deferred request queued behind the head
+        // is still waited on too — the head changing must not discard it.
         val repoPending = chat.pendingPermission
         val deferred = previous.deferredPermission
         val effectivePending = when {
@@ -1544,7 +1636,8 @@ class ChatViewModel(
         }
         val effectiveDeferred = when {
             repoPending == null && !chat.busy -> null
-            repoPending != null && deferred != null && repoPending.id != deferred.id -> null
+            repoPending != null && deferred != null && repoPending.id != deferred.id &&
+                chat.pendingPermissionQueue.none { it.id == deferred.id } -> null
             else -> deferred
         }
 
@@ -1658,7 +1751,9 @@ class ChatViewModel(
                 val next = _state.value.queuedPrompts.firstOrNull()
                 if (next != null) {
                     flushingEntry = next
-                    if (!sendText(next.fullText, next.typedText, emptyList())) {
+                    // Audit-200 C3 (M-067): the entry carries its picked
+                    // skill, so the flush activates it like a direct send.
+                    if (!sendText(next.fullText, next.typedText, emptyList(), skillAttachment(next.skill))) {
                         flushingEntry = null
                     }
                 }
@@ -2035,6 +2130,11 @@ class ChatViewModel(
         if (_state.value.sessionID != null) lastParkKey = null
         savedStateHandle?.set(DRAFT_KEY, text)
         draftEditCount++
+        // Audit-200 C3 (M-067): the pending skill only lives while the
+        // draft still starts with its name — editing the mention away
+        // un-picks it, so a stale id never rides along with other text.
+        val skill = pendingSkill
+        if (skill != null && !text.startsWith(skill.name)) pendingSkill = null
         _state.value = _state.value.copy(draft = text)
     }
 
@@ -2049,6 +2149,38 @@ class ChatViewModel(
         draftEditCount++
         _state.value = _state.value.copy(draft = "")
     }
+
+    /**
+     * Records a skill picked from the command palette (audit-200 C3,
+     * M-067/M-068). The draft gets the skill's name as the mention text;
+     * the id is kept in [pendingSkill] so the send carries it as a
+     * structured attachment instead of a bare word the engine may
+     * ignore. Called from every pick path — tap, Enter and IME Send —
+     * so all three agree. A pick without an id (a built-in command
+     * misrouted here) is ignored.
+     */
+    fun pickSkill(command: SlashCommand) {
+        val skillId = command.skillId ?: return
+        onDraftChange("${command.name} ")
+        pendingSkill = PendingSkill(id = skillId, name = command.name)
+    }
+
+    /**
+     * The structured skill attachment for [skill] (audit-200 C3,
+     * M-067): the mention span is the skill's name at the start of the
+     * draft — the pick always inserts it there, and [onDraftChange]
+     * drops the pick the moment the draft no longer starts with it, so
+     * the span cannot go stale. Null when no skill was picked.
+     */
+    private fun skillAttachment(skill: PendingSkill?): List<PromptSkillAttachment>? =
+        skill?.let {
+            listOf(
+                PromptSkillAttachment(
+                    id = it.id,
+                    mention = PromptMention(start = 0, end = it.name.length, text = it.name),
+                ),
+            )
+        }
 
     /** Sends the draft, creating a session first if there is none. */
     fun send() {
@@ -2068,14 +2200,36 @@ class ChatViewModel(
         // user typed (audit-70 13-F1). The files stay pending too: they were
         // never baked anywhere.
         if (_state.value.busy || sendInFlight) {
-            if (queuePrompt(full, typed, attachments)) {
+            // Audit-200 C3 (M-067): the pick rides with the queued
+            // entry, so the flush still activates the skill. A dropped
+            // duplicate keeps the draft — and the pick with it.
+            if (queuePrompt(full, typed, attachments, skill = pendingSkill)) {
+                pendingSkill = null
                 _state.value = _state.value.copy(pendingAttachments = emptyList())
                 clearDraft()
             }
             return
         }
-        sendText(full, typed, attachments)
+        val skills = skillAttachment(pendingSkill)
+        pendingSkill = null
+        sendText(full, typed, attachments, skills)
     }
+
+    /**
+     * Whether queueing [fullText] would duplicate a send (audit-200 C3,
+     * M-071): a text identical to the last prompt actually sent — or to
+     * the entry already at the back of the queue — is a double-tap on
+     * Send, not a second message. A resend deliberately re-sends the
+     * last prompt, so it skips the last-sent check but still drops when
+     * the same text is already queued at the back. Pure, so the rule is
+     * unit-tested here rather than through a send.
+     */
+    internal fun isQueueDuplicate(
+        fullText: String,
+        lastSentText: String?,
+        lastQueuedText: String?,
+        allowResend: Boolean,
+    ): Boolean = (!allowResend && fullText == lastSentText) || lastQueuedText == fullText
 
     /**
      * Appends a follow-up to the queue (see [ChatUiState.queuedPrompts]).
@@ -2085,7 +2239,10 @@ class ChatViewModel(
      * A text identical to the last prompt actually sent — or to the entry
      * already at the back of the queue — is dropped: that is a double-tap
      * on Send, not a second message, and sending it twice would run the
-     * same prompt twice. Queueing never touches
+     * same prompt twice. [allowResend] lifts only the last-sent half of
+     * that rule, for a deliberate resend (audit-200 C3, M-071). [skill]
+     * carries a picked skill with the entry (audit-200 C3, M-067).
+     * Queueing never touches
      * [ChatUiState.pendingAttachments] itself: callers that baked files
      * into the queued text clear them, and callers that did not (a resend,
      * a question answer) leave them pending for the message being typed.
@@ -2094,13 +2251,13 @@ class ChatViewModel(
         fullText: String,
         typedText: String,
         attachments: List<AttachedFile> = emptyList(),
+        skill: PendingSkill? = null,
+        allowResend: Boolean = false,
     ): Boolean {
         val current = _state.value.queuedPrompts
-        val duplicate = fullText == _state.value.lastSentText ||
-            current.lastOrNull()?.fullText == fullText
-        if (duplicate) return false
+        if (isQueueDuplicate(fullText, _state.value.lastSentText, current.lastOrNull()?.fullText, allowResend)) return false
         _state.value = _state.value.copy(
-            queuedPrompts = current + QueuedPrompt(fullText, typedText, attachments),
+            queuedPrompts = current + QueuedPrompt(fullText, typedText, attachments, skill = skill),
         )
         return true
     }
@@ -2180,7 +2337,12 @@ class ChatViewModel(
      * that to clear its in-flight marker instead of waiting on a send that
      * will never resolve (13-F1).
      */
-    private fun sendText(fullText: String, typedText: String, attachments: List<AttachedFile>): Boolean {
+    private fun sendText(
+        fullText: String,
+        typedText: String,
+        attachments: List<AttachedFile>,
+        skills: List<PromptSkillAttachment>? = null,
+    ): Boolean {
         val repo = repository ?: run {
             _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
             return false
@@ -2195,6 +2357,9 @@ class ChatViewModel(
                 (_state.value.sentPrompts + typedText).takeLast(50)
             },
         )
+        // Audit-200 C3 (M-067): the retry target keeps its skills, so a
+        // retry re-sends them with the text.
+        lastSentSkills = skills
         // The bubble goes up now, before the coroutine runs: the user
         // sees their message at once, and the echo hands over to it later.
         stageOptimistic(fullText)
@@ -2209,7 +2374,7 @@ class ChatViewModel(
         val sessionID = _state.value.sessionID
         viewModelScope.launch {
             try {
-                sendNow(repo, sessionID, fullText, typedText, attachments)
+                sendNow(repo, sessionID, fullText, typedText, attachments, skills)
             } finally {
                 sendInFlight = false
             }
@@ -2495,8 +2660,11 @@ class ChatViewModel(
         if (_state.value.busy || sendInFlight) {
             // Queued as text only: the resend carries no attachments, and
             // queueing must not burn the files pending for the message the
-            // user is typing (item 16).
-            queuePrompt(text, text)
+            // user is typing (item 16). A resend deliberately re-sends the
+            // last prompt, so it skips the last-sent dedup (audit-200 C3,
+            // M-071) — without that the most common resend, the last
+            // message, was silently dropped.
+            queuePrompt(text, text, allowResend = true)
             return
         }
         sendText(text, text, emptyList())
@@ -2741,28 +2909,97 @@ class ChatViewModel(
             returnAnswerToDraft(answer.displayText)
             return false
         }
-        val form = when (val result = sessions.listForms(sessionID)) {
-            is ApiResult.Success -> result.value.firstOrNull { it.isQuestionFor(answer.callId) }
-            is ApiResult.Failure -> null
-        } ?: run {
-            returnAnswerToDraft(answer.displayText)
-            return false
+        // Audit-200 C3 (M-064): one form, one lock — two sections
+        // answered at once must not race two listForms + replyForm
+        // pairs at the same form.
+        return questionFormMutex.withLock {
+            val form = when (val result = sessions.listForms(sessionID)) {
+                is ApiResult.Success -> result.value.firstOrNull { it.isQuestionFor(answer.callId) }
+                is ApiResult.Failure -> null
+            } ?: run {
+                returnAnswerToDraft(answer.displayText)
+                return@withLock false
+            }
+            when (sessions.replyForm(sessionID, form.id, questionReplyFields(answer))) {
+                is ApiResult.Success -> {
+                    recordConfirmedQuestionAnswer(answer)
+                    true
+                }
+                is ApiResult.Failure -> {
+                    returnAnswerToDraft(answer.displayText)
+                    false
+                }
+            }
         }
+    }
+
+    /**
+     * The form-reply fields for one answer (audit-200 C3, M-064): a
+     * single-choice answer is the option label as a string, a
+     * multi-choice answer is an array of labels, keyed `q{index}`. One
+     * question per reply — the engine accepts partial answers (see
+     * [SessionApi.replyForm]), so a multi-question card is answered a
+     * section at a time instead of one whole-card reply. Pure, so the
+     * shape is unit-tested here rather than through a send.
+     */
+    internal fun questionReplyFields(answer: QuestionAnswer): Map<String, JsonElement> {
         val value = if (answer.multiple) {
             JsonArray(answer.labels.map { JsonPrimitive(it) })
         } else {
             JsonPrimitive(answer.labels.first())
         }
-        return when (sessions.replyForm(sessionID, form.id, mapOf("q${answer.questionIndex}" to value))) {
-            is ApiResult.Success -> {
-                recordConfirmedQuestionAnswer(answer)
-                true
-            }
-            is ApiResult.Failure -> {
-                returnAnswerToDraft(answer.displayText)
-                false
+        return mapOf("q${answer.questionIndex}" to value)
+    }
+
+    /**
+     * Skips a question (audit-200 C3, M-066): cancels the form instead
+     * of answering it, so the agent carries on without that answer.
+     * The operator's only escape before was answering at random or
+     * killing the run. Cancelling ends the whole form, so every
+     * still-unanswered section on the card is marked skipped too —
+     * none of them can be answered anymore. True only when the engine
+     * confirmed the cancel; a failure leaves the card open for
+     * another try, with the banner saying so.
+     */
+    suspend fun skipQuestion(callId: String, questionIndex: Int, totalQuestions: Int): Boolean {
+        val sessionID = _state.value.sessionID
+        val sessions = handle?.sessions
+        if (sessionID == null || sessions == null) return false
+        return questionFormMutex.withLock {
+            val form = when (val result = sessions.listForms(sessionID)) {
+                is ApiResult.Success -> result.value.firstOrNull { it.isQuestionFor(callId) }
+                is ApiResult.Failure -> null
+            } ?: return@withLock false
+            when (sessions.cancelForm(sessionID, form.id)) {
+                is ApiResult.Success -> {
+                    recordSkippedQuestionAnswers(callId, questionIndex, totalQuestions)
+                    true
+                }
+                is ApiResult.Failure -> {
+                    _state.value = _state.value.copy(failureKey = R.string.question_skip_failed)
+                    false
+                }
             }
         }
+    }
+
+    /**
+     * Records skipped sections (audit-200 C3, M-066): the marker is
+     * what the card shows as "Skipped" and what a history reload
+     * restores — the same shape as a confirmed answer, so a skipped
+     * section never comes back as "expired". The tapped section and
+     * every other still-unanswered section on the card are marked:
+     * the cancel ended the whole form, so none of them can be
+     * answered anymore. Sections already answered keep their answer.
+     */
+    internal fun recordSkippedQuestionAnswers(callId: String, questionIndex: Int, totalQuestions: Int) {
+        val updated = confirmedQuestionAnswers[callId].orEmpty().toMutableList()
+        while (updated.size < totalQuestions) updated.add("")
+        updated[questionIndex] = SKIPPED_QUESTION_MARKER
+        for (i in updated.indices) {
+            if (updated[i].isBlank()) updated[i] = SKIPPED_QUESTION_MARKER
+        }
+        confirmedQuestionAnswers[callId] = updated
     }
 
     /**
@@ -2837,7 +3074,11 @@ class ChatViewModel(
         val trimmed = text.trim()
         if (trimmed.isBlank()) return false
         if (_state.value.busy || sendInFlight) {
-            return queuePrompt(trimmed, trimmed)
+            // Like a resend (audit-200 C3, M-071): a standalone prompt —
+            // a revert request, for example — is a deliberate re-send of
+            // text the user already sent, so the last-sent dedup must not
+            // swallow it while busy.
+            return queuePrompt(trimmed, trimmed, allowResend = true)
         }
         return sendText(trimmed, trimmed, emptyList())
     }
@@ -2882,9 +3123,12 @@ class ChatViewModel(
             try {
                 // A retry re-sends the recorded prompt verbatim — typed text
                 // plus any attachment blocks it already contains — so it
-                // never re-appends the (already cleared) pending files.
-                // The session is captured now, like sendText does (item 15).
-                sendNow(repo, _state.value.sessionID, text, text, emptyList())
+                // never re-appends the (already cleared) pending files. The
+                // session is captured now, like sendText does (item 15). The
+                // retry also re-sends the prompt's skills (audit-200 C3,
+                // M-067), so a failed skill send does not lose the
+                // activation on retry.
+                sendNow(repo, _state.value.sessionID, text, text, emptyList(), lastSentSkills)
             } finally {
                 sendInFlight = false
             }
@@ -2954,9 +3198,10 @@ class ChatViewModel(
         text: String,
         typedText: String,
         attachments: List<AttachedFile>,
+        skills: List<PromptSkillAttachment>? = null,
     ) {
         try {
-            sendNowInner(repo, capturedSessionID, text, typedText, attachments)
+            sendNowInner(repo, capturedSessionID, text, typedText, attachments, skills)
         } catch (e: CancellationException) {
             settleFlushedEntry(null, sent = false)
             throw e
@@ -2986,6 +3231,7 @@ class ChatViewModel(
         text: String,
         typedText: String,
         attachments: List<AttachedFile>,
+        skills: List<PromptSkillAttachment>? = null,
     ) {
         val sessionID = capturedSessionID ?: createSession(repo)
         if (sessionID == null) {
@@ -3006,13 +3252,15 @@ class ChatViewModel(
         }
         // A leading slash is a command, not a prompt. The engine runs it and answers
         // 204; the output arrives over the event stream exactly like a normal turn.
+        // A skill cannot ride a command: the pick inserts a bare name, never a
+        // slash, so a prompt carrying skills never takes this branch.
         val result = if (text.startsWith("/")) {
             val name = text.substring(1).substringBefore(' ')
             val args = text.substringAfter(' ', "").trim()
             handle?.commands?.run(sessionID, name, args)
                 ?: engineDownFailure()
         } else {
-            repo.send(text)
+            repo.send(text, skills)
         }
         when (result) {
             is ApiResult.Failure -> {
@@ -3401,6 +3649,9 @@ class ChatViewModel(
         // staged revert belong to the old session too.
         stopIntent = false
         stagedRevertSessionID = null
+        // Audit-200 C3 (M-067): the retry target's skills belong to the
+        // old session's last send, like the text itself.
+        lastSentSkills = null
         _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
         // Text typed before any session exists lives under the unsent key
         // (95-F6): a fresh session is where it belongs, so it comes back
@@ -3438,6 +3689,7 @@ class ChatViewModel(
         draftBeforeEdit = null
         stopIntent = false
         stagedRevertSessionID = null
+        lastSentSkills = null
         _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
         restoreParkedComposer(UNSENT_SESSION_KEY, restoreEditState = false)
         onSessionCleared()
@@ -3613,6 +3865,7 @@ class ChatViewModel(
         // block below re-installs the new session's own.
         stopIntent = false
         stagedRevertSessionID = null
+        lastSentSkills = null
         _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, staleSelectionArg = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
         restoreParkedComposer(sessionID)
         repo.open(sessionID)

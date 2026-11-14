@@ -254,6 +254,17 @@ fun ChatScreen(
     onClearRevert: () -> Unit = {},
     /** Answers a question card without touching the draft (item 9). */
     onAnswerQuestion: suspend (QuestionAnswer) -> Boolean = { false },
+    /** Skips a question card (audit-200 C3, M-066): cancels the form
+     * instead of answering it. Receives the call id, the question
+     * index and the card's question count. */
+    onSkipQuestion: suspend (String, Int, Int) -> Boolean = { _, _, _ -> false },
+    /** Records a skill picked from the palette (audit-200 C3, M-067):
+     * the draft gets the skill's name, the send carries its id. */
+    onSkillPick: (SlashCommand) -> Unit = {},
+    /** Sends the queued follow-ups now, and returns them to the
+     * composer (audit-200 C3, M-069): the "Queued:" row's actions. */
+    onFlushQueue: () -> Unit = {},
+    onCancelQueue: () -> Unit = {},
     /** Opens a workspace-relative file from a tool step (Fase 1, item 3). */
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2). Receives
@@ -1609,6 +1620,7 @@ fun ChatScreen(
                                                 onDraftChange(prefix + quote)
                                             },
                                             onAnswerQuestion = onAnswerQuestion,
+                                            onSkipQuestion = onSkipQuestion,
                                             workspacePath = state.workspacePath,
                                             onOpenToolFile = onOpenToolFile,
                                             onRequestDiffRevert = onRequestDiffRevert,
@@ -1805,9 +1817,11 @@ fun ChatScreen(
                         paletteState = paletteState,
                         onPick = { name -> onDraftChange("/$name ") },
                         onDismiss = { dismissPalette() },
-                        // A skill is mentioned in the draft as plain text, not
-                        // run as a command: the agent loads it from the mention.
-                        onSkillPick = { name -> onDraftChange("$name ") },
+                        // A skill is mentioned in the draft by name and
+                        // sent with its id (audit-200 C3, M-067): the
+                        // engine resolves and activates it from the
+                        // structured attachment, not from a bare word.
+                        onSkillPick = onSkillPick,
                     )
 
                     // One attach picker for both entry points: the @ chip
@@ -1926,7 +1940,12 @@ fun ChatScreen(
                             null
                         }
                         if (picked != null) {
-                            onDraftChange("/${picked.name} ")
+                            // Audit-200 C3 (M-068): a selected skill goes
+                            // through the skill pick like a tap or Enter —
+                            // completing it as "/name" sent it to the
+                            // command endpoint, where no such command
+                            // exists, so the pick always failed.
+                            if (picked.isSkill) onSkillPick(picked) else onDraftChange("/${picked.name} ")
                         } else if (pickedMention != null) {
                             onDraftChange(insertMention(state.draft, pickedMention.path))
                         } else if (state.editingMessageId != null) {
@@ -2056,11 +2075,17 @@ fun ChatScreen(
                         promptHistory = state.sentPrompts,
                         // The queue is a list (item 6): show the first
                         // follow-up, with a count when more are waiting.
+                        // Audit-200 C3 (M-069): the row is actionable —
+                        // Send flushes the queue now, Cancel returns it
+                        // to the composer — instead of a dead label.
                         queuedText = when {
                             state.queuedPrompts.isEmpty() -> null
                             state.queuedPrompts.size == 1 -> state.queuedPrompts[0].typedText.ifBlank { state.queuedPrompts[0].fullText }
                             else -> state.queuedPrompts[0].typedText.ifBlank { state.queuedPrompts[0].fullText } + " (+${state.queuedPrompts.size - 1})"
                         },
+                        onFlushQueue = onFlushQueue,
+                        onCancelQueue = onCancelQueue,
+                        queuedFlushEnabled = !state.busy,
                         isEditing = state.editingMessageId != null,
                         onCancelEdit = onCancelEdit,
                         modelLabel = modelLabel,
@@ -2112,7 +2137,7 @@ fun ChatScreen(
                                     event = keyEvent,
                                     onPick = { name -> onDraftChange("/$name ") },
                                     onDismiss = { dismissPalette() },
-                                    onSkillPick = { name -> onDraftChange("$name ") },
+                                    onSkillPick = onSkillPick,
                                 )
                             }
                         },

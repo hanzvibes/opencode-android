@@ -7,8 +7,12 @@ import dev.bidzz.opencode.core.api.dto.SkillsResponse
  * Skills, as defined by the engine and any project `skills/` folder.
  *
  * Read-only: the app lists skills so the operator can find and mention
- * them. Activating a skill is `POST /api/experimental/session/{id}/skill`,
- * an experimental endpoint the app deliberately does not call.
+ * them. A pick sends the skill as a structured attachment with the
+ * prompt (`PromptInput.SkillAttachment {id, mention}`, audit-200 C3,
+ * M-067) — the engine resolves and activates it from the id. The
+ * standalone activation endpoint (`POST
+ * /api/experimental/session/{id}/skill`) is deliberately not called:
+ * the prompt attachment is the activation.
  */
 class SkillApi(private val client: EngineClient) {
 

@@ -137,6 +137,12 @@ class CommandSuggestionsTest {
         assertEquals("Write a commit message", skillRows[0].description)
         assertEquals(Glyph.Sparkles, skillRows[0].glyph)
         assertEquals("skill", skillRows[0].parameterHint)
+        // Audit-200 C3 (M-067): the row keeps the engine skill's id —
+        // the pick used to drop it and keep only the name, so a pick
+        // could never send the structured attachment the engine
+        // resolves. Commands carry no skill id.
+        assertEquals(listOf("sk_1", "sk_2"), skillRows.map { it.skillId })
+        assertTrue(resolved.filter { !it.isSkill }.all { it.skillId == null })
         // Skills come after every command, and no command is marked a skill.
         assertTrue(resolved.indexOf(skillRows[0]) > resolved.indexOfFirst { it.name == "help" })
         assertTrue(resolved.filter { !it.isSkill }.none { it.name == "commit" })
