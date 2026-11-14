@@ -315,6 +315,11 @@
     <string name="compact_dialog_body">The transcript will be replaced by a summary to free context. The original turns cannot be read back afterwards.</string>
     <string name="compact_dialog_confirm">Compact</string>
     <string name="revert_banner_title">Revert staged</string>
+    <!-- Audit-200 B7 (M-027): the revert choice — messages only, or messages + files. -->
+    <string name="revert_dialog_title">Revert to this message?</string>
+    <string name="revert_dialog_text">Messages after this point will be removed. Choose whether the files changed after it are restored too.</string>
+    <string name="revert_messages_only">Messages only</string>
+    <string name="revert_messages_and_files">Messages + files</string>
     <string name="revert_banner_files">%1$d files will be restored to how they were before this message.</string>
     <string name="revert_banner_files_unknown">Files may change, but the list could not be read.</string>
     <string name="revert_banner_messages_only">Messages after this point will be removed. No files change.</string>
@@ -789,6 +794,10 @@
     <string name="providers_patch_version_mismatch">Antigravity plugin changed — the patch does not apply to this version.</string>
     <string name="providers_patch_failed">Antigravity plugin patch failed — the original plugin files were kept.</string>
     <string name="providers_patch_not_found">Antigravity plugin not downloaded yet — the patch will run once it appears.</string>
+    <!-- Audit-200 B7 (M-209): the 5-minute wait ran out; the promise above no longer holds. -->
+    <string name="providers_patch_not_found_stopped">Antigravity plugin still not downloaded — the patch stopped waiting after 5 minutes. Restart the engine to try again.</string>
+    <!-- Audit-200 B7 (M-206): restarts the engine so a landed patch takes effect. -->
+    <string name="providers_patch_restart">Restart engine</string>
     <string name="providers_manage_body">The engine keeps these in its own database. The key itself is never read back into the app, so rows are identified by their id.</string>
     <string name="providers_in_use">IN USE</string>
     <string name="providers_add_another">Add another key</string>

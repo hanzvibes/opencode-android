@@ -166,6 +166,12 @@ fun FileViewScreen(
     /** Keeps the current file and drops the held switch request. */
     onCancelSwitch: () -> Unit = {},
     embedded: Boolean = false,
+    /**
+     * Workspace root the viewed [FileViewState.path] is relative to
+     * (audit-200 B7, M-022): image/PDF previews read the file from disk
+     * and must resolve it here, not against the process working directory.
+     */
+    workspaceRoot: String = "",
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -306,7 +312,7 @@ fun FileViewScreen(
         // Editor / Viewer Body
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
-                isPreview -> FilePreview(path = state.path, kind = previewKind)
+                isPreview -> FilePreview(path = state.path, kind = previewKind, workspaceRoot = workspaceRoot)
                 state.loading -> LoadingState(stringResource(R.string.fileview_reading), onRetry = onRetryLoad)
                 state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRetryLoad)
                 state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true, onRetry = onRetryLoad)

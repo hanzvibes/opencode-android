@@ -75,16 +75,36 @@ fun previewKindForPath(path: String): FilePreviewKind {
     }
 }
 
+/**
+ * Pure: resolves a workspace-relative path against the workspace root.
+ * An absolute path is already complete and passes through untouched.
+ *
+ * Audit-200 B7 (M-022): the preview used to read `File(path)` directly,
+ * but the viewer hands it workspace-relative paths (the same strings the
+ * engine serves text for) — resolved against the app process's working
+ * directory, they never pointed at the file, so no image/PDF preview
+ * ever opened. Unit-tested in FilePreviewPathTest.
+ */
+fun resolveWorkspaceFile(workspaceRoot: String, path: String): File {
+    val file = File(path)
+    return if (file.isAbsolute) file else File(workspaceRoot, path)
+}
+
 /** Dispatches on [previewKindForPath]; NONE is a programming error here. */
 @Composable
 fun FilePreview(
     path: String,
     kind: FilePreviewKind,
     modifier: Modifier = Modifier,
+    /** Workspace root the [path] is relative to (M-022); "" keeps the raw path. */
+    workspaceRoot: String = "",
 ) {
+    // Audit-200 B7 (M-022): resolve against the workspace root first —
+    // a bare File(path) points at the process working directory.
+    val file = remember(path, workspaceRoot) { resolveWorkspaceFile(workspaceRoot, path) }
     when (kind) {
-        FilePreviewKind.IMAGE -> ImagePreview(path = path, modifier = modifier)
-        FilePreviewKind.PDF -> PdfPreview(path = path, modifier = modifier)
+        FilePreviewKind.IMAGE -> ImagePreview(file = file, modifier = modifier)
+        FilePreviewKind.PDF -> PdfPreview(file = file, modifier = modifier)
         FilePreviewKind.NONE -> Unit
     }
 }
@@ -141,15 +161,15 @@ private fun decodeSampledBitmap(file: File, maxDimension: Int = 2048): DecodedIm
 
 /** Image preview: sampled decode on IO, fit-to-width, scrollable both ways. */
 @Composable
-private fun ImagePreview(path: String, modifier: Modifier = Modifier) {
+private fun ImagePreview(file: File, modifier: Modifier = Modifier) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    var decoded by remember(path) { mutableStateOf<DecodedImage?>(null) }
-    var failed by remember(path) { mutableStateOf(false) }
+    var decoded by remember(file) { mutableStateOf<DecodedImage?>(null) }
+    var failed by remember(file) { mutableStateOf(false) }
 
-    LaunchedEffect(path) {
+    LaunchedEffect(file) {
         val result = withContext(Dispatchers.IO) {
-            previewOrNull { decodeSampledBitmap(File(path)) }
+            previewOrNull { decodeSampledBitmap(file) }
         }
         if (result == null) failed = true else decoded = result
     }
@@ -203,20 +223,20 @@ private fun ImagePreview(path: String, modifier: Modifier = Modifier) {
  * page changes. A corrupt or empty file lands in the failed state.
  */
 @Composable
-private fun PdfPreview(path: String, modifier: Modifier = Modifier) {
+private fun PdfPreview(file: File, modifier: Modifier = Modifier) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    var renderer by remember(path) { mutableStateOf<PdfRenderer?>(null) }
-    var pageCount by remember(path) { mutableStateOf(0) }
-    var pageIndex by remember(path) { mutableStateOf(0) }
-    var bitmap by remember(path, pageIndex) { mutableStateOf<Bitmap?>(null) }
-    var failed by remember(path) { mutableStateOf(false) }
+    var renderer by remember(file) { mutableStateOf<PdfRenderer?>(null) }
+    var pageCount by remember(file) { mutableStateOf(0) }
+    var pageIndex by remember(file) { mutableStateOf(0) }
+    var bitmap by remember(file, pageIndex) { mutableStateOf<Bitmap?>(null) }
+    var failed by remember(file) { mutableStateOf(false) }
 
-    LaunchedEffect(path) {
+    LaunchedEffect(file) {
         val opened = withContext(Dispatchers.IO) {
             previewOrNull {
                 val fd = ParcelFileDescriptor.open(
-                    File(path),
+                    file,
                     ParcelFileDescriptor.MODE_READ_ONLY,
                 )
                 PdfRenderer(fd)

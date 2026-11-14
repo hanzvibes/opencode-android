@@ -347,6 +347,13 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleRelease --no-daemon
 
+      # Dependency locking (audit-200 Fase B7, M-224): a catalog version bump
+      # without regenerated lockfiles is silently ignored (the old locked
+      # version wins). The build steps above already ran, so this only
+      # re-resolves and fails if any lockfile moved.
+      - name: Verify dependency locks match the catalog
+        run: bash script/ci/check-dependency-locks.sh
+
       # The release APK is built on every run but used to be thrown away
       # (audit-100 Fase 4, 84-F11). Keep it as a workflow artifact so it can be
       # downloaded and tested; the signed-release channel below publishes it to

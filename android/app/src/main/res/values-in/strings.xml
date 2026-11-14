@@ -308,6 +308,11 @@
     <string name="compact_dialog_body">Riwayat akan diganti dengan ringkasan untuk membebaskan konteks. Turn aslinya tidak bisa dibaca lagi setelah itu.</string>
     <string name="compact_dialog_confirm">Ringkas</string>
     <string name="revert_banner_title">Revert sudah disiapkan</string>
+    <!-- Audit-200 B7 (M-027): pilihan revert — pesan saja, atau pesan + file. -->
+    <string name="revert_dialog_title">Kembalikan ke pesan ini?</string>
+    <string name="revert_dialog_text">Pesan setelah titik ini akan dihapus. Pilih apakah file yang berubah setelahnya ikut dikembalikan.</string>
+    <string name="revert_messages_only">Pesan saja</string>
+    <string name="revert_messages_and_files">Pesan + file</string>
     <string name="revert_banner_files">%1$d file akan dikembalikan seperti sebelum pesan ini.</string>
     <string name="revert_banner_files_unknown">File mungkin berubah, tapi daftarnya tidak bisa dibaca.</string>
     <string name="revert_banner_messages_only">Pesan setelah titik ini akan dihapus. Tidak ada file yang berubah.</string>
@@ -782,6 +787,10 @@
     <string name="providers_patch_version_mismatch">Plugin Antigravity berubah — tambalan tidak cocok dengan versi ini.</string>
     <string name="providers_patch_failed">Tambalan plugin Antigravity gagal — berkas plugin asli tetap dipakai.</string>
     <string name="providers_patch_not_found">Plugin Antigravity belum terunduh — tambalan akan jalan begitu plugin muncul.</string>
+    <!-- Audit-200 B7 (M-209): penantian 5 menit habis; janji di atas tidak lagi berlaku. -->
+    <string name="providers_patch_not_found_stopped">Plugin Antigravity masih belum terunduh — tambalan berhenti menunggu setelah 5 menit. Restart engine untuk mencoba lagi.</string>
+    <!-- Audit-200 B7 (M-206): restart engine supaya tambalan yang sudah mendarat berlaku. -->
+    <string name="providers_patch_restart">Restart engine</string>
     <string name="providers_manage_body">Mesin menyimpan kunci ini di databasenya sendiri. Isi kuncinya tidak pernah dibaca kembali ke aplikasi, jadi tiap baris dikenali dari id-nya.</string>
     <string name="providers_in_use">DIPAKAI</string>
     <string name="providers_add_another">Tambah kunci lain</string>

@@ -2563,14 +2563,18 @@ class ChatViewModel(
      * staged revert is shown in a banner until [commitRevert] applies it
      * or [clearRevert] drops it. Only while idle — staging while the
      * session is busy fails server-side.
+     *
+     * Audit-200 B7 (M-027): [files] is the caller's choice — true restores
+     * the files changed after the message, false reverts the messages
+     * only. It used to be always true: there was no message-only revert.
      */
-    fun stageRevert(messageId: String) {
+    fun stageRevert(messageId: String, files: Boolean = true) {
         val sessionID = _state.value.sessionID ?: return
         val sessions = handle?.sessions ?: return
         if (_state.value.busy || _state.value.revertBusy) return
         _state.value = _state.value.copy(revertBusy = true)
         viewModelScope.launch {
-            when (val result = sessions.revertStage(sessionID, messageId)) {
+            when (val result = sessions.revertStage(sessionID, messageId, files)) {
                 is ApiResult.Success -> {
                     // Audit-200 B3 (M-493): the stage only belongs to
                     // the session it was tapped in — a switch mid-flight

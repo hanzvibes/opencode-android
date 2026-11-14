@@ -36,6 +36,15 @@ class EngineApi(private val workspaceDirectory: () -> String) {
 
     private val current = AtomicReference<EngineApi.Handle?>(null)
 
+    companion object {
+        /**
+         * Call timeout for the generation APIs (audit-200 B7, M-497):
+         * 10 minutes. Generations wait for the whole result, and a 120 s
+         * cut mid-generation wastes the cost and invites a paid retry.
+         */
+        const val GENERATE_CALL_TIMEOUT_SECONDS: Long = 600
+    }
+
     class Handle(
         val client: EngineClient,
         val sessions: SessionApi,
@@ -73,6 +82,17 @@ class EngineApi(private val workspaceDirectory: () -> String) {
      */
     fun attach(credentials: EngineCredentials): Handle {
         val client = EngineClient(credentials.baseUrl, credentials.basicAuthHeader)
+        // Audit-200 B7 (M-497): generations are synchronous request/response
+        // calls — text, image and session-generate all wait for the whole
+        // result — so they get their own client with a 10-minute call
+        // timeout. The shared 120 s client used to cut a long generation
+        // off mid-way, and the user retrying paid for it again. Every other
+        // API keeps the shared client (a chat prompt's run streams via SSE).
+        val generateClient = EngineClient(
+            credentials.baseUrl,
+            credentials.basicAuthHeader,
+            callTimeoutSeconds = GENERATE_CALL_TIMEOUT_SECONDS,
+        )
         val handle = Handle(
             client = client,
             sessions = SessionApi(client),
@@ -84,7 +104,7 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             plugins = PluginApi(client),
             artifacts = ArtifactApi(client),
             jobs = JobApi(client),
-            generate = GenerateApi(client),
+            generate = GenerateApi(generateClient),
             websearch = WebSearchApi(client),
             projects = ProjectApi(client),
             worktrees = WorktreeApi(client),

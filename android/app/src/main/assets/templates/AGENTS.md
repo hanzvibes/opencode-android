@@ -9,7 +9,9 @@
 - The shell is `/system/bin/sh`. There is NO bash.
 - The project directory is the working directory. `HOME` is the engine's
   private home, not the project folder.
-- These tools are on `PATH`: `node`, `xz`, `tar`, `ar`, `curl`, `git`, `rg`.
+- These tools are on `PATH`: `node`, `xz`, `tar`, `ar`, `curl`, `git`, `rg`,
+  `python3`, `jq`, `ffmpeg`, `ffprobe`. `pip` is `python3 -m pip` — there is
+  no bare `pip` command.
 
 ## Tools
 
@@ -23,11 +25,16 @@
 | curl | 8.23.0 | `curl --version`; HTTPS works, the CA bundle is bundled |
 | git | 2.56.0 | Local operations only — `clone`, `fetch` and `push` over HTTPS do NOT work (git was built without curl/OpenSSL) |
 | ripgrep | 15.1.0 | `rg --version` |
+| Python | 3.14.10 | `python3 --version` |
+| pip | (bundled with Python) | `python3 -m pip <args>` — there is NO bare `pip` command |
+| jq | 1.8.2 | `jq --version` |
+| ffmpeg | 9.0.2 | `ffmpeg -version` |
+| ffprobe | 9.0.2 | `ffprobe -version` (ships with ffmpeg) |
 
 ## Rules
 
-- Prefer the bundled tools above. Do not try to install Node, Python, or
-  other runtimes — they are not installed and cannot be installed here.
+- Prefer the bundled tools above. Do not try to install other runtimes —
+  they are not installed and cannot be installed here.
 - `npm install` works for pure-JavaScript packages. Prefer small packages:
   native addons (node-gyp, prebuilt binaries) will not build on this device.
 - Remotion: `npm install`, authoring and bundling work. Rendering to MP4

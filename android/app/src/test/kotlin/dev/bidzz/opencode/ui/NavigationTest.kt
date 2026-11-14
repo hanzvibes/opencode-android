@@ -24,6 +24,22 @@ class NavigationTest {
     }
 
     @Test
+    fun `M-158 back from the browser returns to Artifacts when opened there`() {
+        assertEquals(
+            Screen.Artifacts,
+            Screen.InAppBrowser("http://127.0.0.1:1/view", returnTo = Screen.Artifacts).parent(),
+        )
+    }
+
+    @Test
+    fun `M-158 back from the browser returns to WebSearch when opened there`() {
+        assertEquals(
+            Screen.WebSearch,
+            Screen.InAppBrowser("https://example.com", returnTo = Screen.WebSearch).parent(),
+        )
+    }
+
+    @Test
     fun `screen depth orders chat below its children`() {
         // Animation C: the screen-transition slide direction. A deeper
         // screen slides up on entry; going back slides down.
