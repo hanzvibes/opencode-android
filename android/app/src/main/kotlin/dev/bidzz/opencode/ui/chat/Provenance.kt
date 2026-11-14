@@ -153,8 +153,11 @@ fun provenanceLabel(
     }
     // Falls back to the id the message carries, not to the catalog's: after a provider
     // is removed, the transcript should still name the model that answered.
+    // Audit-200 C7 (M-114): provider-aware match, same rule as the
+    // selector — a strict ref() match falls back to the raw id when the
+    // engine's model id is a record id.
     val modelName = model?.id?.trim()?.takeIf { it.isNotEmpty() }?.let { id ->
-        models.firstOrNull { it.ref() == model }?.label() ?: id
+        models.firstOrNull { modelRefMatches(it, model) }?.label() ?: id
     }
     return listOfNotNull(mode, modelName)
         .distinct()

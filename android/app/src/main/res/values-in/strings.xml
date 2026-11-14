@@ -976,6 +976,8 @@
     <string name="model_desc_gemini_flash">Model multimodal super cepat dengan konteks 1M yang besar</string>
     <string name="model_desc_gemini_pro">Model flagship Google dengan konteks token 2M yang mendalam</string>
     <string name="model_desc_gemini">Kecerdasan multimodal dengan kapasitas konteks yang diperluas</string>
+    <!-- Audit-200 C7 (M-115): Antigravity berjalan lewat akun OAuth, bukan API key Gemini. -->
+    <string name="model_desc_antigravity">Berjalan lewat akun Antigravity (OAuth) — bukan API key Gemini</string>
     <string name="model_desc_llama">Model open weights tercanggih untuk alur kerja developer</string>
     <string name="model_desc_qwen">Model coding terbuka khusus dengan dukungan bahasa yang luas</string>
     <string name="model_desc_mistral">Sintesis kode yang efisien dan penjelasan bernalar</string>
@@ -991,6 +993,8 @@
     <string name="agent_desc_default">Konfigurasi agen khusus</string>
     <string name="agent_badge_full_access">Akses Penuh</string>
     <string name="agent_badge_read_only">Hanya Baca</string>
+    <!-- Audit-200 C7 (M-121): agen bertanya sebelum mengedit. -->
+    <string name="agent_badge_asks_first">Tanya Dulu</string>
     <string name="agent_badge_discussion">Diskusi</string>
     <string name="agent_badge_review">Tinjauan</string>
     <string name="browser_back">Kembali</string>

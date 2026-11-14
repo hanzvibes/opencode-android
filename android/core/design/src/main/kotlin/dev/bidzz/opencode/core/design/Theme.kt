@@ -183,6 +183,10 @@ data class OpenCodeColors(
     val providerAnthropic: Color = Color(0xFFD97757),
     val providerOpenAI: Color = Color(0xFF10A37F),
     val providerGoogle: Color = Color(0xFF4285F4),
+    /** Audit-200 C7 (M-115): Antigravity is not Google — its models run
+     * on an Antigravity account (OAuth), so they get their own violet
+     * instead of Google blue. */
+    val providerAntigravity: Color = Color(0xFF7C3AED),
     val providerDeepSeek: Color = Color(0xFF4D88FF),
     val providerMistral: Color = Color(0xFFFF7000),
     val providerOllama: Color = onSurface,
@@ -255,6 +259,9 @@ data class OpenCodeColors(
         return when {
             p.contains("anthropic") || p.contains("claude") -> providerAnthropic
             p.contains("openai") || p.contains("chatgpt") || p.contains("gpt") -> providerOpenAI
+            // Audit-200 C7 (M-115): BEFORE the google/gemini branch — an
+            // "antigravity-gemini-..." string contains "gemini".
+            p.contains("antigravity") -> providerAntigravity
             p.contains("google") || p.contains("gemini") -> providerGoogle
             p.contains("deepseek") -> providerDeepSeek
             p.contains("mistral") || p.contains("codestral") -> providerMistral

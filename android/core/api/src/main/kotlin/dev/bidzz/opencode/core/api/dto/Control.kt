@@ -30,6 +30,21 @@ data class AgentInfo(
     val hidden: Boolean? = null,
     val model: ModelRef? = null,
     val color: String? = null,
+    /**
+     * Audit-200 C7 (M-121): this agent's own permission rules, as the
+     * engine reports them (Agent.Info.permissions). Ordered; the last
+     * matching rule wins. Null when the engine sent no field — the UI
+     * must not guess access from the agent's name in that case.
+     */
+    val permissions: List<PermissionRule>? = null,
+)
+
+/** One permission rule: `{action, resource, effect}` with effect in {allow, deny, ask}. */
+@Serializable
+data class PermissionRule(
+    val action: String,
+    val resource: String,
+    val effect: String,
 )
 
 @Serializable
