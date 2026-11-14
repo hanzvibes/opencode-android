@@ -31,10 +31,17 @@ class AgentDoneIdStore(context: Context) {
         val assigned = assignedIds()
         val result = assignAgentDoneId(sessionID, assigned, nextFree())
         if (result.isNew) {
+            // Audit-200 A9-4 (DL-032): commit(), not apply() — the id is
+            // used immediately as the notification id and the PendingIntent
+            // request code. A death in the async flush window lost both
+            // writes, so the next process assigned the SAME id again:
+            // the new notification replaced the old one, and the old one
+            // could never be cancelled by id. Same rule as lastSessionID
+            // (69-F10). Two small ints.
             prefs.edit()
                 .putInt(KEY_PREFIX + sessionID, result.id)
                 .putInt(KEY_NEXT, result.nextFree)
-                .apply()
+                .commit()
         }
         result.id
     }

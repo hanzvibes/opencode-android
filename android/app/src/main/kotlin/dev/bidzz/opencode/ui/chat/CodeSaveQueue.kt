@@ -56,10 +56,15 @@ class SharedPrefsCodeSaveQueueStore(context: Context) : CodeSaveQueueStore {
     }
 
     override fun save(queue: List<CodeSaveRequest>) {
+        // Audit-200 A9-4 (DL-006): commit(), not apply() — the request
+        // must be on disk before this returns. A process death in the
+        // async flush window lost the queued save exactly when the user
+        // had tapped Save and the picker was open; same rule as
+        // lastSessionID (69-F10). One small string write.
         if (queue.isEmpty()) {
-            prefs.edit().remove(KEY_QUEUE).apply()
+            prefs.edit().remove(KEY_QUEUE).commit()
         } else {
-            prefs.edit().putString(KEY_QUEUE, encodeCodeSaveQueue(queue)).apply()
+            prefs.edit().putString(KEY_QUEUE, encodeCodeSaveQueue(queue)).commit()
         }
     }
 }
