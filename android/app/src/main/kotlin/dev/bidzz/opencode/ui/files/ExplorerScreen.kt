@@ -149,6 +149,11 @@ fun ExplorerScreen(
 
     val atRoot = state.currentPath.isEmpty()
     var searchFilter by remember { mutableStateOf("") }
+    // Audit-200 C9 (M-138): the search text is scoped to the folder it
+    // was typed in — without this reset a stale filter followed the user
+    // into the next folder and hid files that do not match it, with no
+    // search bar in sight (folders with five or fewer rows hide the bar).
+    LaunchedEffect(state.currentPath) { searchFilter = "" }
     var quickOpenOpen by remember { mutableStateOf(false) }
 
     val filteredRows = remember(state.rows, searchFilter, state.showHidden) {
@@ -303,7 +308,10 @@ private fun ExplorerListContent(
     Breadcrumbs(state.breadcrumbs, onBreadcrumb)
 
     // Search bar when there are multiple items
-    if (state.rows.size > 5) {
+    // Audit-200 C9 (M-138): the bar also stays visible while a filter is
+    // active, even if a refresh shrank the list to five rows or fewer —
+    // otherwise the filter keeps hiding rows with no way to clear it.
+    if (state.rows.size > 5 || searchFilter.isNotEmpty()) {
         SearchField(
             query = searchFilter,
             onQueryChange = onSearchFilterChange,
