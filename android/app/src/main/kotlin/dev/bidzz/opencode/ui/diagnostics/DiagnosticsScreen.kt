@@ -937,16 +937,19 @@ fun DiagnosticsScreen(
                                 title = stringResource(R.string.diag_tab_all),
                                 selected = selectedLogTab == LogTab.ALL,
                                 onClick = { selectedLogTab = LogTab.ALL },
+                                modifier = Modifier.weight(1f),
                             )
                             LogTabItem(
                                 title = stringResource(R.string.diag_tab_engine_log),
                                 selected = selectedLogTab == LogTab.DISK,
                                 onClick = { selectedLogTab = LogTab.DISK },
+                                modifier = Modifier.weight(1f),
                             )
                             LogTabItem(
                                 title = stringResource(R.string.diag_tab_output),
                                 selected = selectedLogTab == LogTab.CONSOLE,
                                 onClick = { selectedLogTab = LogTab.CONSOLE },
+                                modifier = Modifier.weight(1f),
                             )
                         }
 
@@ -1144,21 +1147,25 @@ private fun LogViewerControls(
                 title = stringResource(R.string.diag_log_level_all),
                 selected = selectedLevel == LogLevel.ALL,
                 onClick = { onLevelChange(LogLevel.ALL) },
+                modifier = Modifier.weight(1f),
             )
             LogTabItem(
                 title = stringResource(R.string.diag_log_level_info),
                 selected = selectedLevel == LogLevel.INFO,
                 onClick = { onLevelChange(LogLevel.INFO) },
+                modifier = Modifier.weight(1f),
             )
             LogTabItem(
                 title = stringResource(R.string.diag_log_level_warning),
                 selected = selectedLevel == LogLevel.WARNING,
                 onClick = { onLevelChange(LogLevel.WARNING) },
+                modifier = Modifier.weight(1f),
             )
             LogTabItem(
                 title = stringResource(R.string.diag_log_level_error),
                 selected = selectedLevel == LogLevel.ERROR,
                 onClick = { onLevelChange(LogLevel.ERROR) },
+                modifier = Modifier.weight(1f),
             )
         }
 
@@ -1441,13 +1448,14 @@ private fun LogTabItem(
     title: String,
     selected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
     val spacing = OpenCodeTheme.tokens.spacing
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(radius.full))
             .background(if (selected) colors.surfaceRaised else Color.Transparent)
             // 47-F2: a log tab announces as selected, not a plain button.
@@ -1459,6 +1467,13 @@ private fun LogTabItem(
             text = title,
             style = OpenCodeTypography.caption.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium),
             color = if (selected) colors.onSurface else colors.onSurfaceMuted,
+            // Audit-200 C11 (M-167): on a ≤390dp phone the third tab
+            // was measured with ~0dp left and clipped away entirely,
+            // so the Console log could not be opened at all. One line
+            // with an ellipsis keeps every tab tappable; the call sites
+            // give each item an equal weight.
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

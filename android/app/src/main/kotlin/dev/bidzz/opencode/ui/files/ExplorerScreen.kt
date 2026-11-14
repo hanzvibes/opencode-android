@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -650,7 +651,12 @@ private fun QuickOpenPalette(
                                 .animateItem()
                                 .pressScale(motion, rowPressSource)
                                 .background(if (isSelected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
-                                .clickable(
+                                // Audit-200 C11 (M-163): the keyboard
+                                // highlight is the row Enter will pick —
+                                // TalkBack must announce it as selected,
+                                // not just a highlighted button.
+                                .selectable(
+                                    selected = isSelected,
                                     interactionSource = rowPressSource,
                                     indication = LocalIndication.current,
                                     role = Role.Button,
@@ -735,7 +741,10 @@ private fun Crumb(label: String, current: Boolean, glyph: Glyph? = null, onClick
     Box(
         modifier = Modifier
             .heightIn(min = 40.dp)
-            .clickable(role = Role.Button, onClick = onClick),
+            // Audit-200 C11 (M-163): the current directory's crumb
+            // announces as selected, so TalkBack can tell which crumb
+            // is the active folder.
+            .selectable(selected = current, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Row(

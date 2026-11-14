@@ -825,17 +825,37 @@ fun ChatScreen(
     // A permission arriving moves focus to the prompt as well as announcing
     // it: the agent is blocked until it is answered, so the operator must
     // land on the one control that unblocks the conversation.
+    // Audit-200 C11 (M-161): only when the composer is NOT focused. A
+    // permission that lands mid-sentence used to close the keyboard and
+    // swallow the next keystrokes; the announcement still reaches
+    // TalkBack, and answering returns focus to the composer below.
+    // Whether the composer field holds focus right now, reported by the
+    // Composer itself — the permission effect below reads it.
+    var composerFocused by remember { mutableStateOf(false) }
     val permissionFocusRequester = remember { FocusRequester() }
     LaunchedEffect(state.pendingPermission?.id) {
         if (state.pendingPermission != null) {
             announceForAccessibility(a11yContext, permissionArrivedText)
-            permissionFocusRequester.requestFocus()
+            if (shouldFocusPermissionPrompt(composerFocused)) {
+                permissionFocusRequester.requestFocus()
+            }
         }
     }
 
     // Refocuses the composer after a send (see the Composer call below):
     // a timestamp, not a boolean, so repeated sends re-trigger it.
     var composerFocusSignal by remember { mutableLongStateOf(0L) }
+    // Audit-200 C11 (M-162): picking a model or agent returns focus to
+    // the composer, like picking a file does — the menu's search field
+    // had it, and without the bump the keyboard hangs with nowhere to type.
+    val onModelWithFocus: (dev.bidzz.opencode.core.api.dto.ModelRef) -> Unit = { ref ->
+        onModel(ref)
+        composerFocusSignal = System.currentTimeMillis()
+    }
+    val onAgentWithFocus: (String) -> Unit = { id ->
+        onAgent(id)
+        composerFocusSignal = System.currentTimeMillis()
+    }
 
     val targetLastIndex by remember {
         derivedStateOf {
@@ -1228,7 +1248,7 @@ fun ChatScreen(
                 isScrolled = isScrolled,
                 models = state.models,
                 activeModel = state.activeModel,
-                onModel = onModel,
+                onModel = onModelWithFocus,
                 // Context meter (Tier 2): tokens in the session's context
                 // over the window of the model that PRODUCED the last usage
                 // (77-F3) — not the model selected now. A mid-session model
@@ -1925,8 +1945,18 @@ fun ChatScreen(
                         state.pendingPermission?.let { request ->
                             PermissionPrompt(
                                 request = request,
-                                onReply = onPermissionReply,
-                                onAnswerLater = onDeferPermission,
+                                // Audit-200 C11 (M-161): answering returns
+                                // focus to the composer — without this the
+                                // focus stayed on the disposed card and the
+                                // user had to tap the composer to type again.
+                                onReply = { id ->
+                                    onPermissionReply(id)
+                                    composerFocusSignal = System.currentTimeMillis()
+                                },
+                                onAnswerLater = {
+                                    onDeferPermission()
+                                    composerFocusSignal = System.currentTimeMillis()
+                                },
                                 replyFailed = state.permissionReplyFailed,
                                 focusRequester = permissionFocusRequester,
                                 modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
@@ -2248,6 +2278,7 @@ fun ChatScreen(
                         agentLabel = agentLabel,
                         autofocus = true,
                         focusRequestSignal = composerFocusSignal,
+                        onFocusChange = { composerFocused = it },
                         modifier = Modifier
                             .navigationBarsPadding()
                             .onGloballyPositioned { composerBounds.value = it.boundsInRoot() }
@@ -2301,7 +2332,7 @@ fun ChatScreen(
                             ChatControls(
                                 agents = state.agents,
                                 activeAgent = state.activeAgent,
-                                onAgent = onAgent,
+                                onAgent = onAgentWithFocus,
                                 enabled = !state.busy,
                             )
                         },
@@ -2410,6 +2441,16 @@ fun ChatScreen(
         }
     }
 }
+
+/**
+ * Whether an arriving permission may move focus to its prompt
+ * (audit-200 C11, M-161): only when the composer is not focused. A
+ * permission that lands mid-sentence must not close the keyboard and
+ * swallow the next keystrokes; the accessibility announcement still
+ * goes out either way, so TalkBack hears it and can navigate to it.
+ */
+internal fun shouldFocusPermissionPrompt(composerFocused: Boolean): Boolean =
+    !composerFocused
 
 /**
  * Whether the message at this position starts a date divider (audit-100

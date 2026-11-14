@@ -565,6 +565,11 @@ class FileViewViewModel(
     }
 
     private fun load(path: String, allowFull: Boolean) {
+        // Audit-200 C11 (M-164): an empty path is not a file — it is
+        // the "nothing open" state. Every load path goes through here,
+        // so this one guard closes reloadFromDisk, retryLoad and any
+        // future caller that forgets to check.
+        if (path.isEmpty()) return
         // Never overwrite an unsaved draft with another file's content
         // (item 10): every load path goes through requestLoad, and this
         // guard is the backstop for any caller that forgot.
@@ -876,6 +881,11 @@ class FileViewViewModel(
         saveJob?.cancel()
         val s = _state.value
         _state.value = s.copy(editing = false, draft = "", conflict = false, conflictDiskContent = null, saving = false, draftStale = false)
+        // Audit-200 C11 (M-164): with nothing open there is no file to
+        // re-read — the empty-path load is refused inside load() — but
+        // the stored draft is still dropped: that is this function's
+        // point (a restored draft must not survive an explicit reload),
+        // pinned by FileDraftStoreTest.
         clearPersistedDraft()
         load(s.path)
     }
@@ -893,6 +903,22 @@ class FileViewViewModel(
         val path = _state.value.path
         if (path.isEmpty()) return
         load(path)
+    }
+
+    /**
+     * Closes the detail pane (audit-200 C11, M-164/M-165): the viewer
+     * goes back to "nothing open" — an empty path and not loading, so
+     * the host's empty placeholder shows instead of the eternal
+     * "Reading file…" spinner the initial loading=true state used to
+     * paint. The close button and system Back both land here through
+     * onCloseFileDetail, after the dirty-draft guard in FileViewScreen.
+     * An in-flight read is cancelled; its completion is discarded
+     * anyway by the path check in load(), so it cannot resurrect the
+     * pane after the close.
+     */
+    fun clear() {
+        loadJob?.cancel()
+        _state.value = FileViewState(loading = false)
     }
 
     /** Keeps editing after a conflict, so the difference can be looked at by hand. */

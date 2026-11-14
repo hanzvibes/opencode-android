@@ -309,6 +309,15 @@ internal fun engineBasicAuthFor(url: String, credentials: EngineCredentials?): P
  * agree. A single "always Chat" handler skipped the parent: back from a file jumped past
  * the file list, back from Providers past Settings.
  */
+/**
+ * Whether the Files detail pane shows a file (audit-200 C11, M-164):
+ * expanded widths only, and only when a file is actually open. An empty
+ * path means "nothing open" — the placeholder shows instead of the
+ * eternal spinner the view model's initial loading state used to paint.
+ */
+internal fun fileDetailVisible(isExpanded: Boolean, path: String): Boolean =
+    isExpanded && path.isNotEmpty()
+
 internal fun Screen.parent(): Screen = when (this) {
     is Screen.FileView -> this.returnTo
     Screen.DiffList -> Screen.Files
@@ -952,7 +961,13 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         // would swallow the tap — the file would load invisibly
                         // and never navigate anywhere.
                         selectedFilePath = if (isExpanded) selectedFilePath else null,
-                        fileState = if (isExpanded) fileState else null,
+                        // Audit-200 C11 (M-164): the detail pane only
+                        // exists when a file is actually open. The view
+                        // model's state is never null, so passing it
+                        // through unconditionally painted the initial
+                        // loading=true state as an eternal "Reading
+                        // file…" spinner before any file was tapped.
+                        fileState = if (fileDetailVisible(isExpanded, fileState.path)) fileState else null,
                         onOpenFileDetail = if (isExpanded) {
                             { row ->
                                 if (fileViewModel.requestLoad(row.path)) selectedFilePath = row.path
@@ -960,7 +975,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         } else {
                             null
                         },
-                        onCloseFileDetail = { selectedFilePath = null },
+                        onCloseFileDetail = {
+                            // Audit-200 C11 (M-165): closing the detail
+                            // pane resets the viewer to "nothing open".
+                            // Clearing only the highlight left fileState
+                            // non-null, so the pane stayed rendered and
+                            // the close button — and system Back, which
+                            // lands here through FileViewScreen — did
+                            // nothing at all.
+                            selectedFilePath = null
+                            fileViewModel.clear()
+                        },
                         onFileStartEdit = fileViewModel::startEditing,
                         onFileDraftChange = fileViewModel::editDraft,
                         onFileSave = { fileViewModel.save() },
