@@ -70,6 +70,10 @@ internal fun HatchBannerKind.glyph(): Glyph = when (this) {
  * optional dismiss X, on a floating white card. Retry and dismiss keep
  * the 48dp hit areas the old banner had; the retry label is text, so in
  * light it is [AuraPalette.auraBlueText] (dark keeps `accentText`).
+ *
+ * [actionLabel] (audit-200 B2, M-292) renames the action button: the
+ * MCP pending-restart banner's action is "Restart engine", not "Retry".
+ * Null keeps the default retry label.
  */
 @Composable
 fun HatchInlineBanner(
@@ -78,12 +82,13 @@ fun HatchInlineBanner(
     modifier: Modifier = Modifier,
     onRetry: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
+    actionLabel: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
-    val retryLabel = stringResource(R.string.chat_retry)
+    val retryLabel = actionLabel ?: stringResource(R.string.chat_retry)
     val closeDescription = stringResource(R.string.chat_status_dialog_close)
     Row(
         modifier = modifier

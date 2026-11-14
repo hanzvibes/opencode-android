@@ -42,6 +42,8 @@ import dev.bidzz.opencode.core.api.dto.McpServerConfig
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
+import dev.bidzz.opencode.ui.HatchBannerKind
+import dev.bidzz.opencode.ui.HatchInlineBanner
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.RowDivider
@@ -99,6 +101,8 @@ fun McpServersScreen(
     onClearActionFailure: () -> Unit,
     /** True when the server was added at runtime and lives in no config file (DL-015). */
     isRuntimeOnly: (String) -> Boolean = { false },
+    onClearActionSuccess: () -> Unit = {},
+    onRestartEngine: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -109,7 +113,22 @@ fun McpServersScreen(
     // Action failures arrive as values; show once, then clear.
     // message() is @Composable, so resolve it here — not inside LaunchedEffect.
     val actionFailureMessage = state.actionFailure?.message()
+    // Audit-200 B2 (M-293): same one-shot channel for successes — a
+    // quiet reload often showed the same status, so the tap looked like
+    // it did nothing.
+    val actionSuccessMessage = state.actionSuccess?.let { success ->
+        stringResource(
+            when (success.action) {
+                McpAction.ADD -> R.string.mcp_added
+                McpAction.CONNECT -> R.string.mcp_connected
+                McpAction.DISCONNECT -> R.string.mcp_disconnected
+                McpAction.REMOVE -> R.string.mcp_removed
+            },
+            success.name,
+        )
+    }
     var showAddForm by remember { mutableStateOf(false) }
+    var showRestartConfirm by remember { mutableStateOf(false) }
     // While the add form is open, the failure is shown inside it instead:
     // clearing it for the snackbar would erase the form's error before
     // the user reads it (audit-200 A9-1, DL-016). The snackbar fires when
@@ -119,6 +138,11 @@ fun McpServersScreen(
         val message = actionFailureMessage ?: return@LaunchedEffect
         (context.applicationContext as OpenCodeApplication).showSnackbar(message)
         onClearActionFailure()
+    }
+    LaunchedEffect(state.actionSuccess) {
+        val message = actionSuccessMessage ?: return@LaunchedEffect
+        (context.applicationContext as OpenCodeApplication).showSnackbar(message)
+        onClearActionSuccess()
     }
 
     // An add is in flight until the view model says otherwise (DL-016):
@@ -160,6 +184,22 @@ fun McpServersScreen(
                     vertical = spacing.sm,
                 ),
             )
+            // Audit-200 B2 (M-292): runtime changes used to sit silently
+            // until a restart — from another screen, or a provider change
+            // — undid them with no trace. The banner names the pending
+            // restart and offers it; the confirm says what it discards.
+            if (state.hasRuntimeChanges) {
+                HatchInlineBanner(
+                    message = stringResource(R.string.mcp_runtime_changes),
+                    kind = HatchBannerKind.WARNING,
+                    modifier = Modifier.padding(
+                        horizontal = spacing.lg,
+                        vertical = spacing.xxs,
+                    ),
+                    onRetry = { showRestartConfirm = true },
+                    actionLabel = stringResource(R.string.mcp_restart),
+                )
+            }
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
@@ -246,6 +286,39 @@ fun McpServersScreen(
             onAdd = { name, config ->
                 addInFlight = true
                 onAdd(name, config)
+            },
+        )
+    }
+
+    if (showRestartConfirm) {
+        LocalizedAlertDialog(
+            onDismissRequest = { showRestartConfirm = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRestartConfirm = false
+                        onRestartEngine()
+                    },
+                ) {
+                    Text(
+                        text = stringResource(R.string.mcp_restart),
+                        color = colors.danger,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestartConfirm = false }) {
+                    Text(
+                        text = stringResource(R.string.common_cancel),
+                        color = colors.onSurfaceMuted,
+                    )
+                }
+            },
+            title = {
+                Text(text = stringResource(R.string.mcp_restart_title))
+            },
+            text = {
+                Text(text = stringResource(R.string.mcp_restart_body))
             },
         )
     }
@@ -352,6 +425,17 @@ private fun McpServerRow(
                         color = colors.danger,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = spacing.xxs),
+                    )
+                }
+                // Audit-200 B2 (M-294): "Needs auth" was a dead end —
+                // Connect only retries the same handshake, and nothing
+                // said the authentication itself can't happen here.
+                if (kind == McpStatusKind.NEEDS_AUTH) {
+                    Text(
+                        text = stringResource(R.string.mcp_needs_auth_note),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
                         modifier = Modifier.padding(top = spacing.xxs),
                     )
                 }
@@ -467,16 +551,18 @@ private fun mcpStatusWord(kind: McpStatusKind): String = stringResource(
 
 /**
  * The add-server form: name, local (command) or remote (URL), optional
- * working directory for local servers.
+ * working directory for local servers, environment variables / headers
+ * as `KEY=value` lines, and a start-disabled toggle.
  *
  * Validation lives here, not in the ViewModel: the name must be one word
  * of letters, digits, `-` or `_` (the engine takes the name as a path
  * segment, and the client-MCP names use the same alphabet), and the
  * command / URL must be non-blank. The command is split on whitespace,
- * so quoted arguments are not supported — the hint says so. Environment
- * variables, headers, OAuth, timeouts and the protocol are not in this
- * form; the engine defaults apply, and the form's note says the server
- * is runtime-only.
+ * so quoted arguments are not supported — the hint says so. OAuth,
+ * timeouts, the protocol, the pool and Code Mode are not in this form
+ * (audit-200 B2, M-291: they need structured editors, not text lines);
+ * the engine defaults apply, and the form's note says the server is
+ * runtime-only.
  */
 @Composable
 private fun AddMcpServerDialog(
@@ -498,6 +584,12 @@ private fun AddMcpServerDialog(
     var command by rememberSaveable { mutableStateOf("") }
     var url by rememberSaveable { mutableStateOf("") }
     var cwd by rememberSaveable { mutableStateOf("") }
+    // Audit-200 B2 (M-291): environment (local) / headers (remote) as
+    // KEY=value lines, plus a start-disabled toggle — config fields the
+    // form could never set before.
+    var environment by rememberSaveable { mutableStateOf("") }
+    var headers by rememberSaveable { mutableStateOf("") }
+    var disabled by rememberSaveable { mutableStateOf(false) }
 
     val nameValid = name.matches(Regex("^[A-Za-z0-9_-]+$"))
     val detailValid = if (isLocal) command.isNotBlank() else url.isNotBlank()
@@ -513,9 +605,17 @@ private fun AddMcpServerDialog(
                         McpServerConfig.local(
                             command = command.trim().split(Regex("\\s+")),
                             cwd = cwd.trim().takeIf { it.isNotEmpty() },
+                            environment = parseKeyValueLines(environment)
+                                .takeIf { it.isNotEmpty() },
+                            disabled = disabled.takeIf { it },
                         )
                     } else {
-                        McpServerConfig.remote(url.trim())
+                        McpServerConfig.remote(
+                            url.trim(),
+                            headers = parseKeyValueLines(headers)
+                                .takeIf { it.isNotEmpty() },
+                            disabled = disabled.takeIf { it },
+                        )
                     }
                     onAdd(name.trim(), config)
                 },
@@ -595,12 +695,35 @@ private fun AddMcpServerDialog(
                         onValueChange = { cwd = it },
                         placeholder = stringResource(R.string.mcp_add_cwd_hint),
                     )
+                    FormField(
+                        label = stringResource(R.string.mcp_add_environment),
+                        value = environment,
+                        onValueChange = { environment = it },
+                        placeholder = stringResource(R.string.mcp_add_environment_hint),
+                        singleLine = false,
+                    )
                 } else {
                     FormField(
                         label = stringResource(R.string.mcp_add_url),
                         value = url,
                         onValueChange = { url = it },
                         placeholder = stringResource(R.string.mcp_add_url_hint),
+                    )
+                    FormField(
+                        label = stringResource(R.string.mcp_add_headers),
+                        value = headers,
+                        onValueChange = { headers = it },
+                        placeholder = stringResource(R.string.mcp_add_headers_hint),
+                        singleLine = false,
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.sm),
+                ) {
+                    SelectorChip(
+                        label = stringResource(R.string.mcp_add_disabled),
+                        selected = disabled,
+                        onClick = { disabled = !disabled },
                     )
                 }
                 // Audit-200 A9-1 (DL-014): adding with a taken name
@@ -647,6 +770,9 @@ private fun FormField(
     onValueChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
+    // Audit-200 B2 (M-291): environment / headers are one KEY=value
+    // line each, so those fields are multi-line.
+    singleLine: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -667,10 +793,10 @@ private fun FormField(
             onValueChange = onValueChange,
             textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.accent),
-            singleLine = true,
+            singleLine = singleLine,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp)
+                .heightIn(min = if (singleLine) 48.dp else 96.dp)
                 .clip(RoundedCornerShape(radius.md))
                 .background(colors.fill)
                 .border(

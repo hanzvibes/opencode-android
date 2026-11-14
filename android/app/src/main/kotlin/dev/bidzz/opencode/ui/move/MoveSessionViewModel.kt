@@ -88,7 +88,14 @@ class MoveSessionViewModel(
         val sessionID = sessionID ?: return
         val target = _state.value.projects.firstOrNull { it.id == _state.value.selectedProjectID }
             ?: return
-        val handle = api.handle() ?: return
+        // Audit-200 B2 (M-184): a dead engine used to swallow the tap
+        // silently — the screen already renders [failure] as its error
+        // state, so reporting engine-down here is enough to show it.
+        val handle = api.handle()
+        if (handle == null) {
+            _state.value = _state.value.copy(failure = engineDownFailure())
+            return
+        }
         _state.value = _state.value.copy(moving = true, failure = null)
         viewModelScope.launch {
             when (val result = SessionApi(handle.client).move(sessionID, target.canonical)) {

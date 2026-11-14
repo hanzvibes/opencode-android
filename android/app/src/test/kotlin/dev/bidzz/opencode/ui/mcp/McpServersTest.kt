@@ -90,4 +90,43 @@ class McpServersTest {
         added.added("tmp")
         assertEquals(true, added.isRuntimeOnly("tmp"))
     }
+
+    // parseKeyValueLines (audit-200 B2, M-291) --------------------------
+
+    @Test
+    fun `parseKeyValueLines reads KEY equals value lines`() {
+        assertEquals(
+            mapOf("API_KEY" to "secret", "PORT" to "8080"),
+            parseKeyValueLines("API_KEY=secret\nPORT=8080\n"),
+        )
+    }
+
+    @Test
+    fun `parseKeyValueLines reads colon headers and keeps equals in values`() {
+        assertEquals(
+            mapOf(
+                "Authorization" to "Bearer abc=def",
+                "Referer" to "https://example.com/x",
+            ),
+            parseKeyValueLines(
+                "Authorization: Bearer abc=def\nReferer: https://example.com/x\n",
+            ),
+        )
+    }
+
+    @Test
+    fun `parseKeyValueLines skips blanks and lines without a separator`() {
+        assertEquals(
+            mapOf("A" to "1"),
+            parseKeyValueLines("\nA=1\njust-a-word\n =novalue\nKEY= \n"),
+        )
+    }
+
+    @Test
+    fun `parseKeyValueLines lets a later line win on a duplicate key`() {
+        assertEquals(
+            mapOf("A" to "second"),
+            parseKeyValueLines("A=first\nA=second\n"),
+        )
+    }
 }

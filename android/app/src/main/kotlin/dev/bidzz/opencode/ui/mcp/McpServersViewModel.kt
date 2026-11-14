@@ -31,7 +31,29 @@ data class McpServersUiState(
      * confused, because an action failure must not blank the list.
      */
     val actionFailure: ApiResult.Failure? = null,
+    /**
+     * What the last action got right (audit-200 B2, M-293): a success
+     * used to be silent — the quiet reload often showed the same status,
+     * so the tap looked like it did nothing. The screen shows this once
+     * as a snackbar, then clears it, like [actionFailure].
+     */
+    val actionSuccess: McpActionSuccess? = null,
+    /**
+     * True when this session changed a server at runtime (audit-200 B2,
+     * M-292): an add, connect, disconnect or remove that the next engine
+     * restart undoes or deletes. The screen shows the pending-restart
+     * banner while this is true. It clears when the engine handle
+     * changes — a restart already happened, so there is nothing pending
+     * anymore.
+     */
+    val hasRuntimeChanges: Boolean = false,
 )
+
+/** One successful MCP action, for the one-shot success snackbar (M-293). */
+enum class McpAction { ADD, CONNECT, DISCONNECT, REMOVE }
+
+/** A successful MCP action on [name] (M-293). */
+data class McpActionSuccess(val action: McpAction, val name: String)
 
 /** The engine's `Mcp.Status.*` variants, as a word the UI can switch on. */
 enum class McpStatusKind { CONNECTED, DISABLED, FAILED, NEEDS_AUTH, PENDING, UNKNOWN }
@@ -126,11 +148,27 @@ class McpServersViewModel(
      * the server list, and a failed list already reports the engine
      * problem through [McpServersUiState.failure].
      */
+    /**
+     * The engine handle this VM last loaded from (M-292): a restart
+     * attaches a new handle, which is the only signal the runtime
+     * changes are already gone — so the pending-restart banner clears
+     * then, not on a guess.
+     */
+    private var lastHandle: EngineApi.Handle? = null
+
     private fun load(showLoading: Boolean) {
         val handle = api.handle()
         if (handle == null) {
             _state.value = _state.value.copy(loading = false, failure = engineDownFailure())
             return
+        }
+        // Audit-200 B2 (M-292): a new handle means the engine restarted
+        // since the last load — the runtime changes it carried are gone,
+        // so the banner clears instead of promising a restart that
+        // already happened.
+        if (handle !== lastHandle) {
+            lastHandle = handle
+            _state.value = _state.value.copy(hasRuntimeChanges = false)
         }
         if (showLoading) {
             _state.value = _state.value.copy(loading = true, failure = null)
@@ -160,14 +198,25 @@ class McpServersViewModel(
 
     /** Adds a server at runtime and connects it immediately. */
     fun addServer(name: String, config: McpServerConfig) {
-        val handle = api.handle() ?: return
+        // Audit-200 B2 (M-178/M-184): a dead engine used to swallow the
+        // tap silently — the form closed and nothing happened. The
+        // failure is reported the same way a failed add is.
+        val handle = api.handle()
+        if (handle == null) {
+            _state.value = _state.value.copy(actionFailure = engineDownFailure())
+            return
+        }
         if (_state.value.adding) return
         _state.value = _state.value.copy(adding = true, actionFailure = null)
         viewModelScope.launch {
             when (val result = handle.mcp.add(name, config)) {
                 is ApiResult.Success -> {
                     runtimeAdded.added(name)
-                    _state.value = _state.value.copy(adding = false)
+                    _state.value = _state.value.copy(
+                        adding = false,
+                        actionSuccess = McpActionSuccess(McpAction.ADD, name),
+                        hasRuntimeChanges = true,
+                    )
                     load(showLoading = false)
                 }
                 is ApiResult.Failure -> _state.value = _state.value.copy(
@@ -180,28 +229,36 @@ class McpServersViewModel(
 
     /** Connects a server at runtime, overriding a disabled configuration until restart. */
     fun connect(name: String) {
-        mutate(name) { handle -> handle.mcp.connect(name) }
+        mutate(name, McpAction.CONNECT) { handle -> handle.mcp.connect(name) }
     }
 
     /** Disconnects a server at runtime, removing its tools until reconnected. */
     fun disconnect(name: String) {
-        mutate(name) { handle -> handle.mcp.disconnect(name) }
+        mutate(name, McpAction.DISCONNECT) { handle -> handle.mcp.disconnect(name) }
     }
 
     /** Stops a server and removes it from the runtime set until restart. */
     fun remove(name: String) {
-        mutate(name) { handle -> handle.mcp.remove(name) }
+        mutate(name, McpAction.REMOVE) { handle -> handle.mcp.remove(name) }
     }
 
     /**
      * One per-server mutation: guards double taps through [McpServersUiState.busyServers],
-     * reloads quietly on success, reports through `actionFailure` on failure.
+     * reloads quietly on success, reports through `actionFailure` on failure
+     * and through [McpServersUiState.actionSuccess] on success (M-293).
      */
     private fun mutate(
         name: String,
+        action: McpAction,
         call: suspend (EngineApi.Handle) -> ApiResult<Unit>,
     ) {
-        val handle = api.handle() ?: return
+        // Audit-200 B2 (M-178/M-184): same as addServer — a dead engine
+        // used to swallow the tap silently.
+        val handle = api.handle()
+        if (handle == null) {
+            _state.value = _state.value.copy(actionFailure = engineDownFailure())
+            return
+        }
         if (name in _state.value.busyServers) return
         _state.value = _state.value.copy(
             busyServers = _state.value.busyServers + name,
@@ -212,6 +269,8 @@ class McpServersViewModel(
                 is ApiResult.Success -> {
                     _state.value = _state.value.copy(
                         busyServers = _state.value.busyServers - name,
+                        actionSuccess = McpActionSuccess(action, name),
+                        hasRuntimeChanges = true,
                     )
                     load(showLoading = false)
                 }
@@ -227,4 +286,38 @@ class McpServersViewModel(
     fun clearActionFailure() {
         _state.value = _state.value.copy(actionFailure = null)
     }
+
+    /** The screen calls this after showing [McpServersUiState.actionSuccess] once. */
+    fun clearActionSuccess() {
+        _state.value = _state.value.copy(actionSuccess = null)
+    }
+}
+
+/**
+ * Parses `KEY=value` / `KEY: value` lines (one per line) into a map
+ * (audit-200 B2, M-291): the Add form's environment variables and
+ * headers. The split is on the FIRST `=` or `:` — values may contain
+ * either (a URL, a base64 token). Blank lines and lines with no
+ * separator are skipped, not errors: a stray line must not eat the
+ * whole server. A later line wins on a duplicate key.
+ */
+internal fun parseKeyValueLines(text: String): Map<String, String> {
+    val out = LinkedHashMap<String, String>()
+    for (rawLine in text.lineSequence()) {
+        val line = rawLine.trim()
+        if (line.isEmpty()) continue
+        val eq = line.indexOf('=')
+        val colon = line.indexOf(':')
+        val split = when {
+            eq < 0 && colon < 0 -> continue
+            eq < 0 -> colon
+            colon < 0 -> eq
+            else -> minOf(eq, colon)
+        }
+        val key = line.substring(0, split).trim()
+        val value = line.substring(split + 1).trim()
+        if (key.isEmpty() || value.isEmpty()) continue
+        out[key] = value
+    }
+    return out
 }
