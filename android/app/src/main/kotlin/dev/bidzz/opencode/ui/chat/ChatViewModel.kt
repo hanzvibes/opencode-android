@@ -78,6 +78,13 @@ data class ChatUiState(
     /** A message with no failure behind it, e.g. the engine never started. */
     val failureKey: Int? = null,
     /**
+     * Why the engine last failed or stopped (audit-200 C10, M-155/M-156):
+     * the engine's own words from [EngineStatus.lastError], so the status
+     * dialog can show the reason instead of a bare state. Null while the
+     * engine is up or no reason was recorded.
+     */
+    val lastError: String? = null,
+    /**
      * A model/agent selection the engine rejected (audit-100 Fase 6b,
      * 43-F2), owned by the view model — NOT by the repository. `onRepoState`
      * copies the repo's `lastFailure` into [failure] on every emission, and
@@ -379,6 +386,11 @@ enum class RetryKind {
     RESEND,
     /** The engine's credentials rotated: restart the engine to re-auth. */
     REAUTH,
+    /** The engine died or never started: restart it to bring it back.
+     * The banner and the status dialog route here (audit-200 C10,
+     * M-155); the view model itself does nothing — the screen owns the
+     * restart call, like REAUTH. */
+    RESTART_ENGINE,
     /** HTTP 429: re-sending on the same model would fail again immediately,
      * so Retry shows switch-model / wait guidance instead of re-sending. */
     RATE_LIMITED,
@@ -499,6 +511,17 @@ internal fun revertDecisionsForReturnedQueue(
     returned: List<QueuedPrompt>,
     revertPromptCalls: Map<String, String>,
 ): Set<String> = returned.mapNotNull { revertPromptCalls[it.fullText] }.toSet()
+
+/**
+ * Whether a failed revert prompt's decision should be cleared
+ * (audit-200 C10, M-154): only when the prompt definitively did not run.
+ * A transient failure may have landed the prompt (see M-153), and a
+ * flushed entry stays queued for the next run end — in both cases the
+ * request is still outstanding, so the decision stands. A send that
+ * never went out at all (session changed, no session) is not transient.
+ */
+internal fun shouldClearRevertDecision(isTransientFailure: Boolean, wasFlushed: Boolean): Boolean =
+    !isTransientFailure && !wasFlushed
 
 /**
  * What the model/agent chip shows after a `set` call the engine rejected
@@ -1460,6 +1483,19 @@ class ChatViewModel(
     private var lastSentSkills: List<PromptSkillAttachment>? = null
 
     /**
+     * The last confirmed user message before the last send (audit-200
+     * C10, M-153): the retry path's base id. When a POST fails
+     * ambiguously, the retry fetches the transcript and looks for a user
+     * message with the same text and a DIFFERENT id — that is the prompt
+     * that already landed. The base id is what keeps an identical prompt
+     * sent twice in a row from being mistaken for one that landed.
+     * Captured in [sendText] before the optimistic bubble goes up (its
+     * client-side id is not a server message). Cleared with
+     * [ChatUiState.lastSentText] on a session change.
+     */
+    private var lastSendBaseUserMessageId: String? = null
+
+    /**
      * The user asked this run to stop (audit-200 B3, M-080/M-376). Unlike
      * [ChatUiState.stopping] — the button state, cleared when the
      * interrupt POST times out or fails so Stop can be tapped again —
@@ -1669,14 +1705,32 @@ class ChatViewModel(
                         pendingPermission = null,
                         deferredPermission = null,
                         permissionReplyFailed = false,
-                        retryKind = RetryKind.NONE,
+                        // Audit-200 C10 (M-155): the engine is down — the
+                        // banner offers a restart instead of nothing, and
+                        // the status dialog shows the reason. (M-156) a
+                        // stop that recorded a reason also carries the
+                        // reason as the failure, so the banner names it —
+                        // unless the queue was returned, whose notice keeps
+                        // its place and still gets the Restart action.
+                        retryKind = RetryKind.RESTART_ENGINE,
+                        failure = if (status.state == EngineState.STOPPED && !anythingReturned) {
+                            status.lastError?.let { ApiResult.Failure(code = 0, message = it) }
+                        } else {
+                            null
+                        },
                         failureKey = when {
                             anythingReturned -> R.string.chat_queued_returned
                             status.state == EngineState.FAILED -> R.string.error_engine_not_running
                             else -> null
                         },
+                        lastError = status.lastError,
                     )
                 }
+                // Audit-200 C10 (M-155): the engine is back — the old
+                // reason no longer describes anything, so the dialog stops
+                // showing it. (The banner failure clears through the
+                // re-attach, like the existing failureKey.)
+                EngineState.RUNNING -> _state.value = _state.value.copy(lastError = null)
                 else -> Unit
             }
         }
@@ -2844,6 +2898,10 @@ class ChatViewModel(
         // Audit-200 C3 (M-067): the retry target keeps its skills, so a
         // retry re-sends them with the text.
         lastSentSkills = skills
+        // Audit-200 C10 (M-153): the last confirmed user message before
+        // this send — captured before stageOptimistic, whose client-side
+        // id must not stand in for the last message the server holds.
+        lastSendBaseUserMessageId = _state.value.messages.lastOrNull { it.role == Role.USER }?.id
         // The bubble goes up now, before the coroutine runs: the user
         // sees their message at once, and the echo hands over to it later.
         stageOptimistic(fullText)
@@ -3731,6 +3789,18 @@ class ChatViewModel(
     }
 
     /**
+     * Drops a revert decision whose prompt definitively did not run
+     * (audit-200 C10, M-154): the step stops claiming "Revert requested"
+     * and offers Reject again. The map entry goes with it, so a later
+     * re-tap records the request from scratch. Only called where
+     * [shouldClearRevertDecision] already said the prompt will not run.
+     */
+    private fun clearFailedRevertDecision(text: String) {
+        val callId = revertPromptCalls.remove(text.trim()) ?: return
+        recordDiffDecision(callId, DiffDecision.NONE)
+    }
+
+    /**
      * Sends [text] as its own prompt, without touching the draft or the
      * pending attachments. Used by [requestDiffRevert]: an operator
      * decision that must reach the engine even while the user is typing
@@ -3788,10 +3858,35 @@ class ChatViewModel(
                 duplicates.forEach { parkedStore.removeQueued(sessionID, it) }
             }
         }
+        // Audit-200 C10 (M-153): whether this failure is ambiguous — a
+        // network error or a 5xx may have landed the prompt before failing,
+        // so the retry must check before re-sending. A non-transient
+        // failure never reaches RESEND (see retryKindFor), but
+        // retryLastSend is public, so the gate lives here rather than
+        // being assumed.
+        val ambiguous = _state.value.failure?.let(::isTransient) == true
         _state.value = _state.value.copy(failure = null, failureKey = null, selectionFailure = null)
         sendInFlight = true
         viewModelScope.launch {
             try {
+                if (ambiguous && sessionID != null) {
+                    when (val fetched = repo.fetchMessages(sessionID)) {
+                        is ApiResult.Success -> if (promptAlreadyLanded(fetched.value, text, lastSendBaseUserMessageId)) {
+                            // The prompt already landed: do not send it a
+                            // second time. The run is live (or finished) on
+                            // the server — re-sync so the transcript shows
+                            // it instead of leaving the user staring at a
+                            // cleared banner with no answer coming.
+                            _state.value = _state.value.copy(retryKind = RetryKind.NONE)
+                            repo.refresh()
+                            return@launch
+                        }
+                        // Best-effort: a failed check must not block the
+                        // retry — the original failure is the only evidence,
+                        // and re-sending is what the user asked for.
+                        is ApiResult.Failure -> Unit
+                    }
+                }
                 // A retry re-sends the recorded prompt verbatim — typed text
                 // plus any attachment blocks it already contains — so it
                 // never re-appends the (already cleared) pending files. The
@@ -3829,7 +3924,7 @@ class ChatViewModel(
                 retryKind = RetryKind.NONE,
                 selectionFailure = null,
             )
-            RetryKind.REAUTH, RetryKind.NONE -> Unit
+            RetryKind.RESTART_ENGINE, RetryKind.REAUTH, RetryKind.NONE -> Unit
         }
     }
 
@@ -3931,21 +4026,36 @@ class ChatViewModel(
         attachments: List<AttachedFile>,
         skills: List<PromptSkillAttachment>? = null,
     ): Boolean {
+        // Audit-200 C10 (M-154): whether this send is a flushed queue
+        // entry — captured before any settle call takes the marker. A
+        // failed flushed entry stays queued for the next run end, so its
+        // revert decision stands; only a direct send that definitively
+        // did not run clears its decision (see shouldClearRevertDecision).
+        val wasFlushedSend = flushingEntry != null
         val sessionID = capturedSessionID ?: createSession(repo)
         if (sessionID == null) {
             clearOptimistic()
             settleFlushedEntry(null, sent = false)
+            if (shouldClearRevertDecision(isTransientFailure = false, wasFlushed = wasFlushedSend)) {
+                clearFailedRevertDecision(text)
+            }
             return false
         }
         // The session changed under us while the send was in flight.
         if (repository !== repo) {
             clearOptimistic()
             settleFlushedEntry(sessionID, sent = false)
+            if (shouldClearRevertDecision(isTransientFailure = false, wasFlushed = wasFlushedSend)) {
+                clearFailedRevertDecision(text)
+            }
             return false
         }
         if (repo.state.value.sessionID != sessionID) {
             clearOptimistic()
             settleFlushedEntry(sessionID, sent = false)
+            if (shouldClearRevertDecision(isTransientFailure = false, wasFlushed = wasFlushedSend)) {
+                clearFailedRevertDecision(text)
+            }
             return false
         }
         // A leading slash is a command, not a prompt. The engine runs it and answers
@@ -3970,6 +4080,15 @@ class ChatViewModel(
         when (result) {
             is ApiResult.Failure -> {
                 clearOptimistic()
+                // Audit-200 C10 (M-154): a revert prompt that definitively
+                // did not run leaves its step claiming "Revert requested"
+                // with no way to ask again. Clear the decision so the row
+                // offers Reject again — unless the failure is transient
+                // (the prompt may have landed; see M-153) or the send was
+                // a flushed entry (it stays queued for the next run end).
+                if (shouldClearRevertDecision(isTransient(result), wasFlushedSend)) {
+                    clearFailedRevertDecision(text)
+                }
                 // Audit-200 B3 (M-491): the failure belongs to the old
                 // session — the same post-await revalidation the Success
                 // path already has (A5/DL-007). The banner must not land
@@ -5390,3 +5509,17 @@ private const val CONTEXT_REFRESH_BUSY_INTERVAL_MS = 30_000L
 /** Pure throttle decision for the busy-run meter refresh: due once the gap has passed. */
 internal fun contextRefreshDue(nowMs: Long, lastMs: Long, intervalMs: Long = CONTEXT_REFRESH_BUSY_INTERVAL_MS): Boolean =
     nowMs - lastMs >= intervalMs
+
+/**
+ * Whether a prompt already landed server-side (audit-200 C10, M-153):
+ * the transcript holds a user message with the same text and a DIFFERENT
+ * id than the last confirmed user message before the send. The id guard
+ * is what keeps an identical prompt sent twice in a row from counting as
+ * landed: the earlier prompt's message has the base id and is ignored,
+ * so only a genuinely new message with this text counts.
+ */
+internal fun promptAlreadyLanded(
+    messages: List<SessionMessage>,
+    text: String,
+    baseUserMessageId: String?,
+): Boolean = messages.any { it.isUser && it.text == text && it.id != baseUserMessageId }

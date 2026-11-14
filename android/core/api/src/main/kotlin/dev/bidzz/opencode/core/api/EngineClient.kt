@@ -2,6 +2,9 @@ package dev.bidzz.opencode.core.api
 
 import android.util.Log
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -137,6 +140,10 @@ class EngineClient(
             code = code,
             tag = parsed?.tag,
             message = parsed?.message ?: body.take(200).ifBlank { null },
+            // Audit-200 C10 (M-152): the server's asked-for wait, when it
+            // sent one — the banner shows it instead of offering an
+            // immediate re-send that would fail again.
+            retryAfterSeconds = parseRetryAfter(header("Retry-After")),
         )
     }
 
@@ -198,4 +205,25 @@ internal suspend fun Call.await(): Response = suspendCancellableCoroutine { cont
             }
         },
     )
+}
+
+/**
+ * The `Retry-After` header as seconds to wait (audit-200 C10, M-152).
+ *
+ * The header is either a delay in seconds (`120`) or an HTTP-date
+ * (`Wed, 21 Oct 2015 07:28:00 GMT`). A date in the past waits zero
+ * seconds; anything unparseable (or absent) is null, so the caller falls
+ * back to the generic rate-limit wording instead of inventing a wait.
+ */
+internal fun parseRetryAfter(value: String?, nowMillis: Long = System.currentTimeMillis()): Int? {
+    val trimmed = value?.trim().orEmpty()
+    if (trimmed.isEmpty()) return null
+    trimmed.toIntOrNull()?.let { return it.coerceAtLeast(0) }
+    val parsed = runCatching {
+        SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("GMT")
+            isLenient = false
+        }.parse(trimmed)
+    }.getOrNull() ?: return null
+    return ((parsed.time - nowMillis) / 1000).toInt().coerceAtLeast(0)
 }

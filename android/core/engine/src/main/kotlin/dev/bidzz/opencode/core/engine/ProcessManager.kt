@@ -512,38 +512,49 @@ class ProcessManager(
         while (proc.isAlive) {
             delay(HEALTH_INTERVAL_MS)
             val creds = _status.value.credentials ?: continue
-            if (healthCheck.isHealthy(creds)) {
-                failures = 0
-                if (_status.value.state == EngineState.DEGRADED) {
-                    transition(EngineState.RUNNING, credentials = creds)
+            when (healthCheck.checkHealth(creds)) {
+                HealthResult.HEALTHY -> {
+                    failures = 0
+                    if (_status.value.state == EngineState.DEGRADED) {
+                        transition(EngineState.RUNNING, credentials = creds)
+                    }
                 }
-            } else {
-                failures++
-                when (_status.value.state) {
-                    EngineState.RUNNING -> {
-                        if (failures >= HEALTH_FAILURE_LIMIT) {
-                            Log.w(TAG, "engine unhealthy $failures times, marking DEGRADED")
-                            transition(EngineState.DEGRADED, error = "Health check failing")
+                HealthResult.UNRESPONSIVE -> {
+                    // Audit-200 C10 (M-149): the engine is alive but busy
+                    // streaming — the probe timed out, which proves nothing
+                    // about its health. Freeze the counter instead of
+                    // counting a failure: a healthy engine mid-run must not
+                    // be degraded, let alone killed.
+                    Log.i(TAG, "engine unresponsive to health probe; failure count frozen at $failures")
+                }
+                HealthResult.UNREACHABLE -> {
+                    failures++
+                    when (_status.value.state) {
+                        EngineState.RUNNING -> {
+                            if (failures >= HEALTH_FAILURE_LIMIT) {
+                                Log.w(TAG, "engine unhealthy $failures times, marking DEGRADED")
+                                transition(EngineState.DEGRADED, error = "Health check failing")
+                            }
                         }
-                    }
-                    EngineState.DEGRADED -> {
-                        // A server that stays unhealthy does not heal (item 21):
-                        // after a second full failure window the supervisor
-                        // stops waiting and escalates to FAILED, so the
-                        // resurrect path brings a fresh engine and the
-                        // composer stops accepting sends that would hang
-                        // until the 120s timeout. The process is terminated
-                        // first — FAILED with a live process would resurrect
-                        // a second engine next to it.
-                        if (failures >= HEALTH_FAILURE_LIMIT + DEGRADED_ESCALATION_LIMIT) {
-                            Log.w(TAG, "engine unhealthy $failures times while DEGRADED, escalating to FAILED")
-                            terminate(proc)
-                            process.compareAndSet(proc, null)
-                            transition(EngineState.FAILED, error = "Engine stayed unhealthy")
-                            return
+                        EngineState.DEGRADED -> {
+                            // A server that stays unhealthy does not heal (item 21):
+                            // after a second full failure window the supervisor
+                            // stops waiting and escalates to FAILED, so the
+                            // resurrect path brings a fresh engine and the
+                            // composer stops accepting sends that would hang
+                            // until the 120s timeout. The process is terminated
+                            // first — FAILED with a live process would resurrect
+                            // a second engine next to it.
+                            if (failures >= HEALTH_FAILURE_LIMIT + DEGRADED_ESCALATION_LIMIT) {
+                                Log.w(TAG, "engine unhealthy $failures times while DEGRADED, escalating to FAILED")
+                                terminate(proc)
+                                process.compareAndSet(proc, null)
+                                transition(EngineState.FAILED, error = "Engine stayed unhealthy")
+                                return
+                            }
                         }
+                        else -> Unit
                     }
-                    else -> Unit
                 }
             }
         }
@@ -722,10 +733,54 @@ class ProcessManager(
     }
 }
 
+/**
+ * What one health probe found (audit-200 C10, M-149).
+ *
+ * A plain Boolean conflated "the engine is busy streaming and did not
+ * answer in time" with "the engine is dead": while an agent run is
+ * streaming from the provider the engine stops answering `/api/info`
+ * for tens of seconds, and the monitor counted every silent probe as a
+ * failure until it killed a healthy engine mid-run. Only a probe that
+ * proves the server is gone counts towards degradation.
+ */
+enum class HealthResult {
+    /** HTTP 200 on /api/info. */
+    HEALTHY,
+
+    /** The request timed out — the engine is alive but busy, or slow. */
+    UNRESPONSIVE,
+
+    /** Connection refused, non-200, or any other failure: the server is gone. */
+    UNREACHABLE,
+}
+
 /** Seam so the supervisor can be tested without a real HTTP server. */
 interface HealthCheck {
     suspend fun isHealthy(credentials: EngineCredentials): Boolean
+
+    /**
+     * The probe, with the failure mode attached (C10, M-149). The default
+     * keeps old fakes compiling: a Boolean probe cannot tell a timeout
+     * from a refusal, so a failure counts as unreachable, as before.
+     */
+    suspend fun checkHealth(credentials: EngineCredentials): HealthResult =
+        if (isHealthy(credentials)) HealthResult.HEALTHY else HealthResult.UNREACHABLE
 }
+
+/**
+ * Maps a probe failure to its [HealthResult] (C10, M-149). `null` is the
+ * `withTimeoutOrNull` expiry — the request never completed, which is a
+ * timeout, not a refusal.
+ */
+internal fun classifyHealthFailure(error: Throwable?): HealthResult = when (error) {
+    null -> HealthResult.UNRESPONSIVE
+    is java.net.SocketTimeoutException -> HealthResult.UNRESPONSIVE
+    else -> HealthResult.UNREACHABLE
+}
+
+/** Whether this probe outcome counts towards degradation (C10, M-149). */
+internal fun shouldCountHealthFailure(result: HealthResult): Boolean =
+    result == HealthResult.UNREACHABLE
 
 /**
  * Masks the engine password in a log line (item 18, audit-100 53-F1).
@@ -825,8 +880,11 @@ internal fun scanForEnginePids(
 class HttpHealthCheck(
     private val timeoutMs: Int = 10_000,
 ) : HealthCheck {
-    override suspend fun isHealthy(credentials: EngineCredentials): Boolean = withContext(Dispatchers.IO) {
-        withTimeoutOrNull(timeoutMs.toLong()) {
+    override suspend fun isHealthy(credentials: EngineCredentials): Boolean =
+        checkHealth(credentials) == HealthResult.HEALTHY
+
+    override suspend fun checkHealth(credentials: EngineCredentials): HealthResult = withContext(Dispatchers.IO) {
+        val result = withTimeoutOrNull(timeoutMs.toLong()) {
             runCatching {
                 val url = java.net.URL("${credentials.baseUrl}/api/info")
                 val connection = url.openConnection() as java.net.HttpURLConnection
@@ -847,10 +905,21 @@ class HttpHealthCheck(
                 }
             }.onFailure {
                 Log.w("EngineHealth", "GET /api/info failed: ${it::class.java.simpleName}: ${it.message}")
-            }.getOrDefault(false)
-        } ?: run {
-            Log.w("EngineHealth", "GET /api/info timed out after ${timeoutMs}ms")
-            false
+            }
+        }
+        // Audit-200 C10 (M-149): a null result is the withTimeoutOrNull
+        // expiry — the engine did not answer in time, which is
+        // UNRESPONSIVE, not proof it is gone. A failure is classified by
+        // its cause: a socket timeout is unresponsiveness, anything else
+        // (refused connection, reset) is unreachable.
+        when {
+            result == null -> {
+                Log.w("EngineHealth", "GET /api/info timed out after ${timeoutMs}ms")
+                HealthResult.UNRESPONSIVE
+            }
+            result.isFailure -> classifyHealthFailure(result.exceptionOrNull())
+            result.getOrDefault(false) -> HealthResult.HEALTHY
+            else -> HealthResult.UNREACHABLE
         }
     }
 }

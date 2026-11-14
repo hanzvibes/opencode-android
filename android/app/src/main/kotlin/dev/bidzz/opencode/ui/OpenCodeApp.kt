@@ -65,6 +65,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.ThemeMode
 import dev.bidzz.opencode.core.design.ThemeStore
 import dev.bidzz.opencode.core.design.isNightModeActive
+import dev.bidzz.opencode.core.engine.EngineCredentials
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.about.AboutScreen
 import dev.bidzz.opencode.ui.browser.InAppBrowserScreen
@@ -147,7 +148,15 @@ internal sealed interface Screen {
     data object Sessions : Screen
     data object Projects : Screen
     data object Files : Screen
-    data class FileView(val path: String) : Screen
+    /**
+     * Where Back returns to (audit-200 C10, M-160): a file is opened from
+     * the Files list and from a chat tool call, and each of them is the
+     * right place to come back to. Same pattern as [About.returnTo] (C6)
+     * and [InAppBrowser.returnTo] (B7); like them, the return target is
+     * not carried in the saved key, so a restore after process death
+     * returns to Files.
+     */
+    data class FileView(val path: String, val returnTo: Screen = Screen.Files) : Screen
     data object DiffList : Screen
     data class Diff(val file: String) : Screen
     data object SessionDiff : Screen
@@ -159,7 +168,14 @@ internal sealed interface Screen {
     data object UsageLimits : Screen
     data object Settings : Screen
     data object Providers : Screen
-    data object Diagnostics : Screen
+    /**
+     * Where Back returns to (audit-200 C10, M-157): Diagnostics opens from
+     * Settings and from the chat (status pill, drawer), and each of them
+     * is the right place to come back to. Same pattern as [About.returnTo]
+     * (C6); the return target is not carried in the saved key, so a
+     * restore after process death returns to Chat.
+     */
+    data class Diagnostics(val returnTo: Screen = Screen.Chat) : Screen
     data object McpServers : Screen
     data object Plugins : Screen
     data object Artifacts : Screen
@@ -211,7 +227,7 @@ internal sealed interface Screen {
         UsageLimits -> "usagelimits"
         Settings -> "settings"
         Providers -> "providers"
-        Diagnostics -> "diagnostics"
+        is Diagnostics -> "diagnostics"
         McpServers -> "mcpservers"
         Plugins -> "plugins"
         Artifacts -> "artifacts"
@@ -249,7 +265,7 @@ internal fun screenFromSavedKey(key: String): Screen {
         "usagelimits" -> Screen.UsageLimits
         "settings" -> Screen.Settings
         "providers" -> Screen.Providers
-        "diagnostics" -> Screen.Diagnostics
+        "diagnostics" -> Screen.Diagnostics()
         "mcpservers" -> Screen.McpServers
         "plugins" -> Screen.Plugins
         "artifacts" -> Screen.Artifacts
@@ -269,6 +285,24 @@ internal val ScreenSaver: Saver<Screen, String> =
     Saver(save = { it.toSavedKey() }, restore = { screenFromSavedKey(it) })
 
 /**
+ * Basic auth for an engine URL that lost it on restore (audit-200 C10,
+ * M-002): the saved browser key holds only the URL, so a restored
+ * [Screen.InAppBrowser] has `basicAuth == null` and an engine URL would
+ * load without credentials and show the engine's 401 page. The engine's
+ * password is the same for every URL on its loopback base, so the current
+ * credentials re-authenticate it; a URL outside the engine's base is a
+ * public link and keeps no auth. This only covers restores while the
+ * engine is up: after a full process death the engine restarts on a new
+ * ephemeral port, so a restored artifact URL points at a dead port
+ * regardless of auth — that half needs a stable port, not this fix.
+ */
+internal fun engineBasicAuthFor(url: String, credentials: EngineCredentials?): Pair<String, String>? {
+    val creds = credentials ?: return null
+    if (url != creds.baseUrl && !url.startsWith(creds.baseUrl + "/")) return null
+    return "opencode" to creds.password
+}
+
+/**
  * Where back goes from [this]: the screen it was opened from.
  *
  * The same targets as each screen's own back arrow, so the arrow and the system gesture
@@ -276,7 +310,8 @@ internal val ScreenSaver: Saver<Screen, String> =
  * the file list, back from Providers past Settings.
  */
 internal fun Screen.parent(): Screen = when (this) {
-    is Screen.FileView, Screen.DiffList -> Screen.Files
+    is Screen.FileView -> this.returnTo
+    Screen.DiffList -> Screen.Files
     is Screen.Diff -> Screen.DiffList
     Screen.Providers -> Screen.Settings
     Screen.McpServers -> Screen.Settings
@@ -294,6 +329,9 @@ internal fun Screen.parent(): Screen = when (this) {
     Screen.SessionStats -> Screen.Settings
     Screen.UsageLimits -> Screen.Settings
     is Screen.About -> this.returnTo
+    // Audit-200 C10 (M-157): Diagnostics returns to the screen that
+    // opened it (Settings or Chat), not always to Chat.
+    is Screen.Diagnostics -> this.returnTo
     // Audit-200 B7 (M-158): the browser returns to the screen that
     // opened it (chat, Artifacts or WebSearch), not always to Chat.
     is Screen.InAppBrowser -> this.returnTo
@@ -309,7 +347,7 @@ internal fun Screen.parent(): Screen = when (this) {
 internal fun Screen.depth(): Int = when (this) {
     Screen.Chat -> 0
     Screen.Sessions -> 1
-    Screen.Projects, Screen.Files, Screen.Settings, Screen.Diagnostics -> 2
+    Screen.Projects, Screen.Files, Screen.Settings, is Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Artifacts, Screen.Jobs,
     Screen.Generate, Screen.WebSearch,
@@ -943,7 +981,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
                     is Screen.FileView -> FileViewScreen(
                         state = fileState,
-                        onBack = { screen = Screen.Files },
+                        // Audit-200 C10 (M-160): back goes where the file
+                        // came from — Files, or Chat for a chat tool call.
+                        onBack = { screen = screen.parent() },
                         onStartEdit = fileViewModel::startEditing,
                         onDraftChange = fileViewModel::editDraft,
                         onSave = { fileViewModel.save() },
@@ -981,7 +1021,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
                     is Screen.InAppBrowser -> InAppBrowserScreen(
                         url = target.url,
-                        basicAuth = target.basicAuth,
+                        // Audit-200 C10 (M-002): a restored browser screen
+                        // carries no auth (the saved key holds only the
+                        // URL). Re-supply the current engine credentials
+                        // when the URL belongs to this engine; a public
+                        // link keeps none.
+                        basicAuth = target.basicAuth ?: engineBasicAuthFor(target.url, engineStatus.credentials),
                         onBack = { screen = target.returnTo },
                     )
 
@@ -1189,7 +1234,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                             themeMode = chosen
                         },
                         onBack = { screen = Screen.Chat },
-                        onDiagnostics = { screen = Screen.Diagnostics },
+                        onDiagnostics = { screen = Screen.Diagnostics(Screen.Settings) },
                         onProjects = { screen = Screen.Projects },
                         onProviders = { screen = Screen.Providers },
                         onMcpServers = { screen = Screen.McpServers },
@@ -1239,9 +1284,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onRestartForPatch = providersViewModel::restartForPatch,
                     )
 
-                    Screen.Diagnostics -> DiagnosticsScreen(
+                    is Screen.Diagnostics -> DiagnosticsScreen(
                         app = app,
-                        onBack = { screen = Screen.Chat },
+                        // Audit-200 C10 (M-157): back goes where
+                        // Diagnostics came from — the same returnTo the
+                        // system back uses via parent(), not Chat.
+                        onBack = { screen = screen.parent() },
                     )
 
                     Screen.McpServers -> McpServersScreen(
@@ -1465,7 +1513,7 @@ private fun ChatDestination(
         onPermissionReply = chatViewModel::replyPermission,
         onAgent = chatViewModel::selectAgent,
         onModel = chatViewModel::selectModel,
-        onStatusClick = { onNavigate(Screen.Diagnostics) },
+        onStatusClick = { onNavigate(Screen.Diagnostics(Screen.Chat)) },
         onNewSession = chatViewModel::newSession,
         // Audit-200 C6 (M-104/M-105): the dialog's loads are user-triggered
         // (open/expand), so they always refresh — see loadBranches.
@@ -1481,6 +1529,7 @@ private fun ChatDestination(
         onRetryError = chatViewModel::retryError,
         onLoadEarlier = chatViewModel::loadEarlier,
         onReauth = app::restartEngine,
+        onRestartEngine = app::restartEngine,
         onEditMessage = { id, text -> chatViewModel.startEdit(id, text) },
         onResendMessage = chatViewModel::resendMessage,
         onForkMessage = chatViewModel::forkMessage,
@@ -1497,7 +1546,7 @@ private fun ChatDestination(
         onSkillPick = chatViewModel::pickSkill,
         onFlushQueue = chatViewModel::flushQueueNow,
         onCancelQueue = chatViewModel::cancelQueued,
-        onOpenToolFile = { path -> onNavigate(Screen.FileView(path)) },
+        onOpenToolFile = { path -> onNavigate(Screen.FileView(path, Screen.Chat)) },
         onRequestDiffRevert = chatViewModel::requestDiffRevert,
         onDiffDecision = chatViewModel::recordDiffDecision,
         onSaveCode = { name, code -> app.requestCodeSave(name, code) },
@@ -1523,7 +1572,7 @@ private fun ChatDestination(
         onProjectClick = { onNavigate(Screen.Projects) },
         onFilesClick = { onNavigate(Screen.Files) },
         onSettingsClick = { onNavigate(Screen.Settings) },
-        onDiagnosticsClick = { onNavigate(Screen.Diagnostics) },
+        onDiagnosticsClick = { onNavigate(Screen.Diagnostics(Screen.Chat)) },
         onAboutClick = { onNavigate(Screen.About(Screen.Chat)) },
         onRenameSession = { id, title ->
             sessionViewModel.rename(id, title)

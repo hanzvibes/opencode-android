@@ -127,8 +127,8 @@ class OpenCodeApplication : Application() {
 
     /**
      * Single source of truth for engine state, read by both the service and the
-     * UI. Never null: a broken install reports FAILED with the reason attached
-     * instead of forcing every caller to handle absence.
+     * UI. Never null: a broken install reports STOPPED with the reason attached
+     * (audit-200 C10, M-156) instead of forcing every caller to handle absence.
      */
     val engineStatus: StateFlow<EngineStatus>
         get() = processManager?.status ?: unavailableStatus

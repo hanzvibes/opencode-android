@@ -277,6 +277,7 @@
     <string name="chat_retry">Retry</string>
     <string name="chat_load_earlier">Load earlier messages</string>
     <string name="chat_rate_limited_guidance">Rate limited — switch model or wait a moment, then send again.</string>
+    <string name="chat_rate_limited_guidance_action">View guidance</string>
     <string name="chat_agent_failed">The agent failed</string>
     <string name="stop_unconfirmed">Stop not confirmed yet — tap Stop to try again.</string>
     <string name="chat_session_gone_guidance">This session is gone on the engine — start a new session from the drawer.</string>
@@ -315,6 +316,8 @@
     <string name="chat_status_dialog_context">Context</string>
     <string name="chat_status_dialog_state">State</string>
     <string name="chat_status_dialog_diagnostics">Diagnostics</string>
+    <string name="chat_status_dialog_error">Error</string>
+    <string name="chat_status_dialog_restart">Restart engine</string>
     <string name="chat_status_dialog_close">Close</string>
     <string name="dialog_copy_value">Copy %1$s</string>
     <string name="chat_status_dialog_turn_diff">Turn diff</string>
@@ -941,6 +944,8 @@
     <string name="error_location_missing">Project folder is no longer available</string>
     <string name="error_session_missing">Session no longer exists</string>
     <string name="error_unreachable">Cannot reach the engine</string>
+    <string name="error_rate_limited">Rate limited — the model is busy. Switch model or wait a moment, then send again.</string>
+    <string name="error_rate_limited_wait">Rate limited — try again in %1$d seconds, or switch model.</string>
     <string name="error_request_failed">Request failed (%1$d)</string>
     <string name="error_binary_file">Binary file (%1$d bytes)</string>
     <string name="error_not_utf8">This file is not valid UTF-8, so it can\'t be edited here.</string>

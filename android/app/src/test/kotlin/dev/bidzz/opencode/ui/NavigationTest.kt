@@ -1,6 +1,8 @@
 package dev.bidzz.opencode.ui
 
+import dev.bidzz.opencode.core.engine.EngineCredentials
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class NavigationTest {
@@ -19,7 +21,7 @@ class NavigationTest {
 
     @Test
     fun `back from a top level screen goes to the conversation`() {
-        listOf(Screen.Files, Screen.Sessions, Screen.Projects, Screen.Settings, Screen.Diagnostics, Screen.About())
+        listOf(Screen.Files, Screen.Sessions, Screen.Projects, Screen.Settings, Screen.Diagnostics(), Screen.About())
             .forEach { assertEquals(Screen.Chat, it.parent()) }
     }
 
@@ -32,6 +34,28 @@ class NavigationTest {
     fun `M-109 back from About defaults to Chat when opened from the drawer`() {
         assertEquals(Screen.Chat, Screen.About().parent())
         assertEquals(Screen.Chat, Screen.About(Screen.Chat).parent())
+    }
+
+    @Test
+    fun `M-157 back from Diagnostics returns to Settings when opened there`() {
+        assertEquals(Screen.Settings, Screen.Diagnostics(Screen.Settings).parent())
+    }
+
+    @Test
+    fun `M-157 back from Diagnostics defaults to Chat when opened from chat`() {
+        assertEquals(Screen.Chat, Screen.Diagnostics().parent())
+        assertEquals(Screen.Chat, Screen.Diagnostics(Screen.Chat).parent())
+    }
+
+    @Test
+    fun `M-160 back from FileView returns to Chat when opened from a chat tool call`() {
+        assertEquals(Screen.Chat, Screen.FileView("a.kt", Screen.Chat).parent())
+    }
+
+    @Test
+    fun `M-160 back from FileView defaults to Files when opened from the file list`() {
+        assertEquals(Screen.Files, Screen.FileView("a.kt").parent())
+        assertEquals(Screen.Files, Screen.FileView("a.kt", Screen.Files).parent())
     }
 
     @Test
@@ -73,6 +97,22 @@ class NavigationTest {
         assertEquals(3, Screen.Worktrees.depth())
         assertEquals(3, Screen.EngineConfig.depth())
         assertEquals(3, Screen.About().depth())
+    }
+
+    @Test
+    fun `M-002 restored engine URL re-supplies the current engine credentials`() {
+        val creds = EngineCredentials(baseUrl = "http://127.0.0.1:12345", password = "secret")
+        assertEquals("opencode" to "secret", engineBasicAuthFor("http://127.0.0.1:12345/view/x", creds))
+        assertEquals("opencode" to "secret", engineBasicAuthFor("http://127.0.0.1:12345", creds))
+    }
+
+    @Test
+    fun `M-002 public links and missing credentials get no auth`() {
+        val creds = EngineCredentials(baseUrl = "http://127.0.0.1:12345", password = "secret")
+        assertNull(engineBasicAuthFor("https://example.com/page", creds))
+        // A longer port that merely shares the prefix is a different host.
+        assertNull(engineBasicAuthFor("http://127.0.0.1:123456/view", creds))
+        assertNull(engineBasicAuthFor("http://127.0.0.1:12345/view", null))
     }
 
     @Test

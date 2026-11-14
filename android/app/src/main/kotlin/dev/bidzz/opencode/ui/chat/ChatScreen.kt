@@ -247,6 +247,10 @@ fun ChatScreen(
     /** Re-auth after an auth failure: restarts the engine so fresh
      * credentials are issued (the banner routes REAUTH here). */
     onReauth: () -> Unit = {},
+    /** Restart the engine after it died or never started (audit-200
+     * C10, M-155): the banner routes RESTART_ENGINE here, and the
+     * status dialog offers the same action. */
+    onRestartEngine: () -> Unit = {},
     /** Edit/resend (Phase 2, finding 3): load a user message into the
      * composer in editing mode, and re-send one user message's text. */
     onEditMessage: (String, String) -> Unit = { _, _ -> },
@@ -1265,6 +1269,11 @@ fun ChatScreen(
                 vcsBase = state.vcsBase,
                 vcsDetailsFailed = state.vcsDetailsFailed,
                 onLoadBranches = onLoadBranches,
+                // Audit-200 C10 (M-155/M-156): the status dialog's reason
+                // and restart action, threaded through the header that
+                // owns the dialog.
+                lastError = state.lastError,
+                onRestartEngine = onRestartEngine,
             )
 
             // Find in chat (audit-200 C5, M-100): a bar under the
@@ -1447,10 +1456,25 @@ fun ChatScreen(
                                 // Typed retry (Phase 2, finding 18): Retry is
                                 // only offered when the view model classified
                                 // the failure as retryable. Auth routes out to
-                                // the engine restart (re-auth); the rest go
-                                // through the single onRetry callback.
+                                // the engine restart (re-auth); a dead engine
+                                // routes out to the same restart (C10, M-155);
+                                // the rest go through the single onRetry callback.
+                                // Audit-200 C10 (M-152): the rate-limit action
+                                // does not re-send — it only shows guidance —
+                                // so the button says so instead of "Retry".
+                                actionLabel = if (state.retryKind == RetryKind.RATE_LIMITED) {
+                                    stringResource(R.string.chat_rate_limited_guidance_action)
+                                } else {
+                                    null
+                                },
                                 onRetry = if (state.retryKind != RetryKind.NONE) {
-                                    { if (state.retryKind == RetryKind.REAUTH) onReauth() else onRetryError() }
+                                    {
+                                        when (state.retryKind) {
+                                            RetryKind.REAUTH -> onReauth()
+                                            RetryKind.RESTART_ENGINE -> onRestartEngine()
+                                            else -> onRetryError()
+                                        }
+                                    }
                                 } else {
                                     null
                                 },
@@ -2811,6 +2835,13 @@ fun ChatHeader(
     vcsBase: dev.bidzz.opencode.core.api.dto.VcsBase? = null,
     vcsDetailsFailed: Boolean = false,
     onLoadBranches: () -> Unit = {},
+    /** Why the engine last failed or stopped (audit-200 C10, M-155/M-156):
+     * the engine's own words, shown in the status dialog; null while it
+     * is up or no reason was recorded. */
+    lastError: String? = null,
+    /** Restart the engine (M-155); null while it is up, and the dialog
+     * action hides. */
+    onRestartEngine: (() -> Unit)? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -3031,6 +3062,8 @@ fun ChatHeader(
             projectTitle = title,
             workspacePath = workspacePath,
             branch = branch,
+            lastError = lastError,
+            onRestartEngine = onRestartEngine,
             contextUsedTokens = contextUsedTokens,
             contextLimit = contextLimit,
             onTurnDiff = onTurnDiff,
@@ -3065,6 +3098,11 @@ private fun EngineStatusDialog(
     branch: String?,
     onOpenDiagnostics: () -> Unit,
     onDismiss: () -> Unit,
+    /** Why the engine last failed or stopped (audit-200 C10, M-155/M-156):
+     * the engine's own words; null while it is up or no reason was recorded. */
+    lastError: String? = null,
+    /** Restart the engine (M-155); null while it is up, and the action hides. */
+    onRestartEngine: (() -> Unit)? = null,
     workspacePath: String? = null,
     /** Context meter (Tier 2); both null while unknown, and the row hides. */
     contextUsedTokens: Long? = null,
@@ -3173,6 +3211,17 @@ private fun EngineStatusDialog(
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                 )
+
+                // Audit-200 C10 (M-155/M-156): why the engine died, in its
+                // own words — a bare state name says nothing about what
+                // went wrong, and the restart below is the repair for it.
+                if (!lastError.isNullOrBlank()) {
+                    DialogDetailRow(
+                        label = stringResource(R.string.chat_status_dialog_error),
+                        value = lastError,
+                        wrapValue = true,
+                    )
+                }
 
                 Column(
                     modifier = Modifier
@@ -3420,6 +3469,23 @@ private fun EngineStatusDialog(
                     text = stringResource(R.string.chat_status_dialog_close),
                     color = colors.onSurfaceMuted,
                 )
+            }
+            // Audit-200 C10 (M-155): the repair path for a dead engine —
+            // the dialog used to offer only Close and Diagnostics, so a
+            // user who opened it to fix the engine found no way to do it.
+            if (onRestartEngine != null &&
+                (engineState == dev.bidzz.opencode.core.engine.EngineState.FAILED ||
+                    engineState == dev.bidzz.opencode.core.engine.EngineState.STOPPED)
+            ) {
+                TextButton(onClick = {
+                    onDismiss()
+                    onRestartEngine()
+                }) {
+                    Text(
+                        text = stringResource(R.string.chat_status_dialog_restart),
+                        color = colors.accentText,
+                    )
+                }
             }
             TextButton(onClick = onOpenDiagnostics) {
                 Text(

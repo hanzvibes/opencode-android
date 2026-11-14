@@ -307,7 +307,13 @@ class MainActivity : FragmentActivity() {
         }
 
         requestNotificationPermission()
-        (application as OpenCodeApplication).startEngine()
+        // Audit-200 C10 (M-156): a start that never started is not
+        // silent anymore — the reason (usually a missing binary) reaches
+        // the user instead of leaving them on a dead chat screen.
+        val app = application as OpenCodeApplication
+        if (!app.startEngine()) {
+            app.showSnackbar(app.startupFailure ?: getString(R.string.error_engine_not_running))
+        }
         observeDialogRequests()
         observeCameraPhotoCopied()
 

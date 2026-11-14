@@ -21,6 +21,14 @@ sealed interface ApiResult<out T> {
         val tag: String? = null,
         val message: String? = null,
         val cause: Throwable? = null,
+        /**
+         * Seconds the server asked us to wait before retrying (audit-200
+         * C10, M-152): the `Retry-After` header on a 429, in seconds, or
+         * null when the server sent none or an unparseable value. The
+         * banner shows the wait instead of offering an immediate re-send
+         * that would fail again.
+         */
+        val retryAfterSeconds: Int? = null,
     ) : ApiResult<Nothing> {
         val isUnauthorized: Boolean get() = tag == "UnauthorizedError" || code == 401
         val isSessionMissing: Boolean get() = tag == "SessionNotFoundError" || (code == 404 && tag == null)
@@ -49,6 +57,10 @@ sealed interface ApiResult<out T> {
                 isLocationMissing -> FailureReason.LOCATION_MISSING
                 isSessionMissing -> FailureReason.SESSION_MISSING
                 isNetwork -> FailureReason.UNREACHABLE
+                // Audit-200 C10 (M-152): a 429 with a server message used
+                // to surface as raw English SERVER_MESSAGE. It is a rate
+                // limit, and the screen words it in the app's language.
+                code == 429 -> FailureReason.RATE_LIMITED
                 !message.isNullOrBlank() -> FailureReason.SERVER_MESSAGE
                 else -> FailureReason.REQUEST_FAILED
             }
@@ -76,6 +88,8 @@ enum class FailureReason {
     LOCATION_MISSING,
     SESSION_MISSING,
     UNREACHABLE,
+    /** HTTP 429: the model is busy; re-sending on the same model fails again. */
+    RATE_LIMITED,
     /** The engine sent its own message; show it verbatim. */
     SERVER_MESSAGE,
     REQUEST_FAILED,

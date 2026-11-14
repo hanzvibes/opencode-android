@@ -511,6 +511,10 @@ fun NoticeRow(
     modifier: Modifier = Modifier,
     onRetry: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
+    // Audit-200 C10 (M-152): the retry button's label. The default
+    // "Retry" lies when the action does not re-send — a rate-limited
+    // banner's action only shows guidance, so the call site says so.
+    actionLabel: String? = null,
 ) {
     // Batch 2 (Aura full): the coloured banner (kind colour at 12%
     // background + 0.5dp border) is now the Hatch banner — same message,
@@ -527,6 +531,7 @@ fun NoticeRow(
         modifier = modifier,
         onRetry = onRetry,
         onDismiss = onDismiss,
+        actionLabel = actionLabel,
     )
 }
 
