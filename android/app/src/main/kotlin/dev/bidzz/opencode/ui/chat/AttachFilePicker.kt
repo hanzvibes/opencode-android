@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.chat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -404,7 +405,11 @@ fun AttachFilePicker(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(if (isSelected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
-                            .clickable(role = Role.Button, onClick = { onPick(row) })
+                            // Audit-200 C11 (M-163): same as the explorer
+                            // quick-open row — the keyboard highlight is
+                            // the row Enter will pick, so it announces as
+                            // selected.
+                            .selectable(selected = isSelected, role = Role.Button, onClick = { onPick(row) })
                             .padding(horizontal = spacing.md, vertical = spacing.sm)
                             .animateItem(),
                         verticalAlignment = Alignment.CenterVertically,

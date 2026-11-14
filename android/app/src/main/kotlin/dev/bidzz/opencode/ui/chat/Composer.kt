@@ -164,6 +164,9 @@ fun Composer(
     autofocus: Boolean = false,
     /** A timestamp bumped after every send; each bump refocuses the field. */
     focusRequestSignal: Long = 0,
+    /** Reports the field's focus, so the screen can decide whether an
+     * incoming permission may steal it (audit-200 C11, M-161). */
+    onFocusChange: (Boolean) -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -423,7 +426,10 @@ fun Composer(
                     .padding(horizontal = spacing.lg)
                     .heightIn(min = 28.dp, max = dims.composerMaxHeight)
                     .focusRequester(focusRequester)
-                    .onFocusChanged { isFocused = it.isFocused }
+                    .onFocusChanged {
+                        isFocused = it.isFocused
+                        onFocusChange(it.isFocused)
+                    }
                     .then(if (onKeyEvent != null) Modifier.onPreviewKeyEvent(onKeyEvent) else Modifier),
                 decorationBox = { inner ->
                     Box(

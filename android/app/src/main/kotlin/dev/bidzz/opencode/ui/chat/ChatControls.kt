@@ -28,17 +28,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -50,6 +55,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -116,10 +128,78 @@ fun ChatControls(
  */
 
 /** One row of a selector menu: a section header or a selectable entry. */
-private sealed interface SelectorEntry {
+internal sealed interface SelectorEntry {
     data class Header(val text: String) : SelectorEntry
     data class AgentRow(val agent: AgentInfo) : SelectorEntry
     data class ModelRow(val model: ModelInfo) : SelectorEntry
+}
+
+/** Whether an entry can be picked with the keyboard (headers cannot). */
+internal fun SelectorEntry.isRow(): Boolean = this is SelectorEntry.AgentRow || this is SelectorEntry.ModelRow
+
+/**
+ * First pickable entry in a selector menu, or -1 when the menu has no
+ * rows (audit-200 C11, M-162): the keyboard highlight starts here.
+ */
+internal fun firstRowIndex(entries: List<SelectorEntry>): Int =
+    entries.indexOfFirst { it.isRow() }
+
+/**
+ * Next / previous pickable entry from [current], wrapping around and
+ * skipping section headers (M-162). A highlight outside the rows —
+ * -1, or a stale index after the filter changed — restarts at the
+ * first row going down and the last row going up. -1 when no rows.
+ */
+internal fun nextRowIndex(entries: List<SelectorEntry>, current: Int, down: Boolean): Int {
+    val rows = entries.mapIndexedNotNull { index, entry -> if (entry.isRow()) index else null }
+    if (rows.isEmpty()) return -1
+    if (current !in rows) return if (down) rows.first() else rows.last()
+    val pos = rows.indexOf(current)
+    val next = (pos + if (down) 1 else -1 + rows.size) % rows.size
+    return rows[next]
+}
+
+/**
+ * Arrow / Enter / Escape navigation for a selector menu's search field
+ * (audit-200 C11, M-162). Mirrors [handleAttachPickerKeyEvent]:
+ * navigation keys are swallowed on key-up too, so the text field never
+ * sees them as input. Enter picks the highlighted row (or the first row
+ * when nothing is highlighted); Escape closes the menu.
+ */
+internal fun handleSelectorKeyEvent(
+    event: KeyEvent,
+    entries: List<SelectorEntry>,
+    highlightedIndex: Int,
+    onHighlightChange: (Int) -> Unit,
+    onPickHighlighted: () -> Unit,
+    onClose: () -> Unit,
+): Boolean {
+    if (event.type != KeyEventType.KeyDown) {
+        return when (event.key) {
+            Key.DirectionDown, Key.DirectionUp,
+            Key.Enter, Key.NumPadEnter, Key.Escape -> true
+            else -> false
+        }
+    }
+    return when (event.key) {
+        Key.DirectionDown -> {
+            onHighlightChange(nextRowIndex(entries, highlightedIndex, down = true))
+            true
+        }
+        Key.DirectionUp -> {
+            onHighlightChange(nextRowIndex(entries, highlightedIndex, down = false))
+            true
+        }
+        Key.Enter, Key.NumPadEnter -> {
+            onPickHighlighted()
+            true
+        }
+        Key.Escape -> {
+            onClose()
+            true
+        }
+        else -> false
+    }
 }
 
 /**
@@ -216,12 +296,20 @@ private fun AgentSelector(
     val dims = OpenCodeTheme.tokens.dimensions
     var expanded by remember { mutableStateOf(false) }
     var agentQuery by remember { mutableStateOf("") }
+    // Audit-200 C11 (M-162): the search field takes focus when the menu
+    // opens, so typing filters instead of leaking into the draft behind
+    // the menu; arrows move a keyboard highlight over the rows.
+    val searchFocusRequester = remember { FocusRequester() }
+    var highlightedIndex by remember { mutableIntStateOf(-1) }
 
     // Audit-200 C7 (M-116): a run starting while the menu is open closes
     // it. A tap racing the close is still refused by the VM's busy guard
     // in selectAgent, so a pick can never land mid-run.
     LaunchedEffect(enabled) {
         if (!enabled) expanded = false
+    }
+    LaunchedEffect(expanded) {
+        if (expanded) searchFocusRequester.requestFocus()
     }
 
     val context = LocalContext.current
@@ -299,6 +387,38 @@ private fun AgentSelector(
     }
     val selectedRowBringIntoView = remember { BringIntoViewRequester() }
     val menuScrollState = rememberScrollState()
+
+    // Audit-200 C11 (M-162): the keyboard highlight restarts at the
+    // first match whenever the filter changes, and the highlighted row
+    // scrolls into view as the arrows move past the visible area.
+    LaunchedEffect(entries) {
+        highlightedIndex = firstRowIndex(entries)
+    }
+    val highlightedRowBringIntoView = remember { BringIntoViewRequester() }
+    LaunchedEffect(highlightedIndex) {
+        if (highlightedIndex >= 0) {
+            try {
+                highlightedRowBringIntoView.bringIntoView()
+            } catch (_: IllegalStateException) {
+                // The highlighted row left the composition before the
+                // scroll ran; the menu simply stays where it is.
+            }
+        }
+    }
+
+    // Enter / the keyboard's Search action picks the highlighted row,
+    // or the first row when nothing is highlighted yet.
+    val pickHighlighted: () -> Unit = {
+        val target = entries.getOrNull(highlightedIndex)?.takeIf { it.isRow() }
+            ?: entries.getOrNull(firstRowIndex(entries))
+        (target as? SelectorEntry.AgentRow)?.let { row ->
+            recentAgentIds = storeRecentRef(prefs, RECENT_AGENTS_KEY, row.agent.id)
+            onSelect(row.agent.id)
+            expanded = false
+            agentQuery = ""
+        }
+    }
+
     LaunchedEffect(expanded) {
         if (expanded && hasSelectedEntry) {
             try {
@@ -447,7 +567,24 @@ private fun AgentSelector(
                         textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
                         cursorBrush = SolidColor(colors.accent),
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        // Audit-200 C11 (M-162): the search action key
+                        // picks the highlighted row; arrows/Enter/Escape
+                        // are handled before the field sees them.
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { pickHighlighted() }),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(searchFocusRequester)
+                            .onPreviewKeyEvent { event ->
+                                handleSelectorKeyEvent(
+                                    event = event,
+                                    entries = entries,
+                                    highlightedIndex = highlightedIndex,
+                                    onHighlightChange = { highlightedIndex = it },
+                                    onPickHighlighted = pickHighlighted,
+                                    onClose = { expanded = false; agentQuery = "" },
+                                )
+                            },
                     )
                 }
                 // Hoisted: stringResource() is @Composable and cannot be
@@ -494,7 +631,7 @@ private fun AgentSelector(
                             .padding(horizontal = spacing.md, vertical = spacing.md),
                     )
                 }
-                entries.forEach { entry ->
+                entries.forEachIndexed { index, entry ->
                     when (entry) {
                         is SelectorEntry.Header -> {
                             Text(
@@ -514,9 +651,10 @@ private fun AgentSelector(
                             // active, so the menu checkmarked a mode the
                             // user never picked.
                             val isSelected = agent.id == activeAgent
+                            val isHighlighted = index == highlightedIndex
                             val presentation = resolveAgentPresentation(agent, colors)
                             val rowBg by animateColorAsState(
-                                targetValue = if (isSelected) colors.accent.copy(alpha = 0.10f) else Color.Transparent,
+                                targetValue = if (isSelected || isHighlighted) colors.accent.copy(alpha = 0.10f) else Color.Transparent,
                                 animationSpec = motion.tweenQuick(),
                                 label = "agent_row_bg",
                             )
@@ -528,6 +666,7 @@ private fun AgentSelector(
                                     .clip(RoundedCornerShape(radius.sm))
                                     .background(rowBg)
                                     .then(if (isSelected) Modifier.bringIntoViewRequester(selectedRowBringIntoView) else Modifier)
+                                    .then(if (isHighlighted) Modifier.bringIntoViewRequester(highlightedRowBringIntoView) else Modifier)
                                     // A11y (#8c): a single-select row is selectable, not a
                                     // plain button — TalkBack announces which agent is chosen.
                                     .selectable(
@@ -537,6 +676,7 @@ private fun AgentSelector(
                                             recentAgentIds = storeRecentRef(prefs, RECENT_AGENTS_KEY, agent.id)
                                             onSelect(agent.id)
                                             expanded = false
+                                            agentQuery = ""
                                         },
                                     )
                                     .padding(horizontal = spacing.md, vertical = spacing.sm),
@@ -657,12 +797,19 @@ internal fun ModelSelector(
     val dims = OpenCodeTheme.tokens.dimensions
     var expanded by remember { mutableStateOf(false) }
     var modelQuery by remember { mutableStateOf("") }
+    // Audit-200 C11 (M-162): same as the agent menu — the search field
+    // takes focus on open, and arrows move a keyboard highlight.
+    val searchFocusRequester = remember { FocusRequester() }
+    var highlightedIndex by remember { mutableIntStateOf(-1) }
 
     // Audit-200 C7 (M-116): a run starting while the menu is open closes
     // it. A tap racing the close is still refused by the VM's busy guard
     // in selectModel, so a pick can never land mid-run.
     LaunchedEffect(enabled) {
         if (!enabled) expanded = false
+    }
+    LaunchedEffect(expanded) {
+        if (expanded) searchFocusRequester.requestFocus()
     }
 
     val context = LocalContext.current
@@ -732,6 +879,38 @@ internal fun ModelSelector(
     }
     val selectedRowBringIntoView = remember { BringIntoViewRequester() }
     val menuScrollState = rememberScrollState()
+
+    // Audit-200 C11 (M-162): the keyboard highlight restarts at the
+    // first match whenever the filter changes, and the highlighted row
+    // scrolls into view as the arrows move past the visible area.
+    LaunchedEffect(entries) {
+        highlightedIndex = firstRowIndex(entries)
+    }
+    val highlightedRowBringIntoView = remember { BringIntoViewRequester() }
+    LaunchedEffect(highlightedIndex) {
+        if (highlightedIndex >= 0) {
+            try {
+                highlightedRowBringIntoView.bringIntoView()
+            } catch (_: IllegalStateException) {
+                // The highlighted row left the composition before the
+                // scroll ran; the menu simply stays where it is.
+            }
+        }
+    }
+
+    // Enter / the keyboard's Search action picks the highlighted row,
+    // or the first row when nothing is highlighted yet.
+    val pickHighlighted: () -> Unit = {
+        val target = entries.getOrNull(highlightedIndex)?.takeIf { it.isRow() }
+            ?: entries.getOrNull(firstRowIndex(entries))
+        (target as? SelectorEntry.ModelRow)?.let { row ->
+            recentModelRefs = storeRecentRef(prefs, RECENT_MODELS_KEY, modelRefKey(row.model))
+            onSelect(row.model.ref())
+            expanded = false
+            modelQuery = ""
+        }
+    }
+
     LaunchedEffect(expanded) {
         if (expanded && hasSelectedEntry) {
             try {
@@ -893,7 +1072,24 @@ internal fun ModelSelector(
                         textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
                         cursorBrush = SolidColor(colors.accent),
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
+                        // Audit-200 C11 (M-162): same as the agent menu —
+                        // the search action key picks the highlighted row;
+                        // arrows/Enter/Escape are handled first.
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { pickHighlighted() }),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(searchFocusRequester)
+                            .onPreviewKeyEvent { event ->
+                                handleSelectorKeyEvent(
+                                    event = event,
+                                    entries = entries,
+                                    highlightedIndex = highlightedIndex,
+                                    onHighlightChange = { highlightedIndex = it },
+                                    onPickHighlighted = pickHighlighted,
+                                    onClose = { expanded = false; modelQuery = "" },
+                                )
+                            },
                     )
                 }
                 // Hoisted: stringResource() is @Composable and cannot be
@@ -940,7 +1136,7 @@ internal fun ModelSelector(
                             .padding(horizontal = spacing.md, vertical = spacing.md),
                     )
                 }
-                entries.forEach { entry ->
+                entries.forEachIndexed { index, entry ->
                     when (entry) {
                         is SelectorEntry.Header -> {
                             Text(
@@ -955,9 +1151,13 @@ internal fun ModelSelector(
                         is SelectorEntry.ModelRow -> {
                             val model = entry.model
                             val isSelected = modelRefMatches(model, activeModel)
+                            // Audit-200 C11 (M-162): the keyboard highlight
+                            // shares the active row's background; the check
+                            // still marks only the active model.
+                            val isHighlighted = index == highlightedIndex
                             val presentation = resolveModelPresentation(model, colors)
                             val rowBg by animateColorAsState(
-                                targetValue = if (isSelected) colors.accent.copy(alpha = 0.10f) else Color.Transparent,
+                                targetValue = if (isSelected || isHighlighted) colors.accent.copy(alpha = 0.10f) else Color.Transparent,
                                 animationSpec = motion.tweenQuick(),
                                 label = "model_row_bg",
                             )
@@ -969,6 +1169,7 @@ internal fun ModelSelector(
                                     .clip(RoundedCornerShape(radius.sm))
                                     .background(rowBg)
                                     .then(if (isSelected) Modifier.bringIntoViewRequester(selectedRowBringIntoView) else Modifier)
+                                    .then(if (isHighlighted) Modifier.bringIntoViewRequester(highlightedRowBringIntoView) else Modifier)
                                     // A11y (#8c): same as the agent row — the chosen model
                                     // is announced as selected.
                                     .selectable(
