@@ -1,8 +1,10 @@
 package dev.bidzz.opencode.ui.chat
 
+import androidx.lifecycle.SavedStateHandle
 import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ChatState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -203,5 +205,76 @@ class AuditA9_3Test {
         assertEquals("parked", restored?.draft)
         assertEquals("parked", vm.state.value.draft)
         assertNull(store.get("A"))
+    }
+
+    // DL-019: the restore writes the queue and attachments to the handle
+    // synchronously ------------------------------------------------------
+
+    private fun restoredComposer() = ParkedComposer(
+        draft = "hello",
+        attachments = listOf(AttachedFile(id = "f1", name = "a.kt", content = "one\n")),
+        queued = listOf(QueuedPrompt(fullText = "follow up", typedText = "follow up")),
+        draftBeforeEdit = "before",
+        editingMessageId = "msg-1",
+    )
+
+    @Test
+    fun `DL-019 a restore writes draft, queue, attachments and edit keys to the handle at once`() {
+        val vm = viewModel()
+        val handle = SavedStateHandle()
+        // Compare against the same instances: a fresh QueuedPrompt gets
+        // a random id, so a rebuilt one would never equal the stored one.
+        val restored = restoredComposer()
+
+        vm.syncRestoredComposerToHandle(handle, restored, restoreEditState = true)
+
+        assertEquals("hello", handle.get<String>(ChatViewModel.DRAFT_KEY))
+        assertEquals(
+            restored.queued,
+            handle.get<ArrayList<QueuedPrompt>>(ChatViewModel.QUEUE_KEY)?.toList(),
+        )
+        assertEquals(
+            restored.attachments,
+            handle.get<ArrayList<AttachedFile>>(ChatViewModel.ATTACHMENTS_KEY)?.toList(),
+        )
+        assertEquals("before", handle.get<String>(ChatViewModel.DRAFT_BEFORE_EDIT_KEY))
+        assertEquals("msg-1", handle.get<String>(ChatViewModel.EDITING_MESSAGE_KEY))
+    }
+
+    @Test
+    fun `DL-019 a restore with an empty queue and attachments clears those keys`() {
+        val vm = viewModel()
+        val handle = SavedStateHandle()
+        handle[ChatViewModel.QUEUE_KEY] = arrayListOf(
+            QueuedPrompt(fullText = "stale", typedText = "stale"),
+        )
+        handle[ChatViewModel.ATTACHMENTS_KEY] = arrayListOf(
+            AttachedFile(id = "f0", name = "old.kt", content = ""),
+        )
+        handle[ChatViewModel.DRAFT_KEY] = "stale draft"
+
+        vm.syncRestoredComposerToHandle(
+            handle,
+            ParkedComposer(draft = "", attachments = emptyList(), queued = emptyList()),
+            restoreEditState = true,
+        )
+
+        assertFalse(handle.keys().contains(ChatViewModel.QUEUE_KEY))
+        assertFalse(handle.keys().contains(ChatViewModel.ATTACHMENTS_KEY))
+        assertFalse(handle.keys().contains(ChatViewModel.DRAFT_KEY))
+    }
+
+    @Test
+    fun `DL-019 a restore without edit state writes the content but drops the edit keys`() {
+        val vm = viewModel()
+        val handle = SavedStateHandle()
+
+        vm.syncRestoredComposerToHandle(handle, restoredComposer(), restoreEditState = false)
+
+        assertEquals("hello", handle.get<String>(ChatViewModel.DRAFT_KEY))
+        assertEquals(1, handle.get<ArrayList<QueuedPrompt>>(ChatViewModel.QUEUE_KEY)?.size)
+        assertEquals(1, handle.get<ArrayList<AttachedFile>>(ChatViewModel.ATTACHMENTS_KEY)?.size)
+        assertFalse(handle.keys().contains(ChatViewModel.DRAFT_BEFORE_EDIT_KEY))
+        assertFalse(handle.keys().contains(ChatViewModel.EDITING_MESSAGE_KEY))
     }
 }
