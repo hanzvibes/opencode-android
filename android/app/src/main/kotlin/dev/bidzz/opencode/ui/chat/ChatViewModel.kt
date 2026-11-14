@@ -186,7 +186,10 @@ data class QueuedPrompt(
      * The files baked into [fullText]. They are carried so the queue can
      * give them back as chips when the engine dies (audit-70 13-F3) instead
      * of losing the file content with the baked block. The drain sends
-     * [fullText] directly, so these are never baked a second time.
+     * [fullText] directly, so these are never baked a second time. Entries
+     * read back from storage written before attachments existed carry a
+     * null list at runtime (same deserialization bypass as [id]) and get
+     * an empty one from [withUniqueIds] (audit-200 A9-9, DL-036).
      */
     val attachments: List<AttachedFile> = emptyList(),
     /**
@@ -205,14 +208,28 @@ data class QueuedPrompt(
 }
 
 /**
- * Gives every entry without an id one (audit-200 A5, DL-001): entries
- * read back from storage written before [QueuedPrompt.id] existed have a
- * null id at runtime. Entries that already have one keep it, so a second
- * pass is a no-op.
+ * Gives every entry without an id one, and every entry without an
+ * attachments list an empty one (audit-200 A5, DL-001; A9-9, DL-036):
+ * entries read back from storage written before [QueuedPrompt.id] or
+ * [QueuedPrompt.attachments] existed carry a null field at runtime (Java
+ * deserialization bypasses the constructor, so the defaults never apply).
+ * A null id breaks identity matching (DL-001); a null attachments list
+ * throws in [returnQueueToDraft] and loses the whole queue (DL-036).
+ * Entries that already have both keep them, so a second pass is a no-op.
+ * A bad entry is rebuilt, not copied: copy() would pass the other null
+ * field straight back into the constructor, which rejects it.
  */
 internal fun List<QueuedPrompt>.withUniqueIds(): List<QueuedPrompt> =
     map { entry ->
-        if ((entry.id as Any?) == null) entry.copy(id = UUID.randomUUID().toString()) else entry
+        val idNull = (entry.id as Any?) == null
+        val attachmentsNull = (entry.attachments as Any?) == null
+        if (!idNull && !attachmentsNull) entry
+        else QueuedPrompt(
+            entry.fullText,
+            entry.typedText,
+            if (attachmentsNull) emptyList() else entry.attachments,
+            if (idNull) UUID.randomUUID().toString() else entry.id,
+        )
     }
 
 /**
@@ -492,9 +509,10 @@ class ChatViewModel(
      */
     private val restoredQueue: List<QueuedPrompt> =
         savedStateHandle?.get<ArrayList<QueuedPrompt>>(QUEUE_KEY)?.toList().orEmpty()
-            // Audit-200 A5 (DL-001): a queue saved before ids existed
-            // carries null ids at runtime; give them ids before anything
-            // matches on them.
+            // Audit-200 A5 (DL-001) + A9-9 (DL-036): a queue saved
+            // before ids or attachments existed carries null fields at
+            // runtime; normalize them before anything matches on ids
+            // or reads the attachment lists.
             .withUniqueIds()
     private val restoredAttachments: List<AttachedFile> =
         savedStateHandle?.get<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)?.toList().orEmpty()

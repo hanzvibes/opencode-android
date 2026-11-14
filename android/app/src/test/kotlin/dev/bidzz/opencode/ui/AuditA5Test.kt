@@ -67,6 +67,39 @@ class AuditA5Test {
         assertNotEquals(fixed[0].id, fixed[1].id)
     }
 
+    // DL-036: entries written before attachments existed carry a null
+    // list at runtime, the same deserialization bypass as the id --------
+
+    /** A queued entry whose attachments were never written, via reflection. */
+    private fun legacyEntryWithoutAttachments(text: String): QueuedPrompt {
+        val entry = QueuedPrompt(text, text)
+        val field = QueuedPrompt::class.java.getDeclaredField("attachments")
+        field.isAccessible = true
+        field.set(entry, null)
+        return entry
+    }
+
+    @Test
+    fun `withUniqueIds gives a legacy entry without attachments an empty list`() {
+        val fixed = listOf(legacyEntryWithoutAttachments("lama")).withUniqueIds()
+
+        assertEquals(emptyList<AttachedFile>(), fixed[0].attachments)
+        assertNotNull(fixed[0].id)
+    }
+
+    @Test
+    fun `withUniqueIds fixes an entry with both a null id and null attachments`() {
+        val entry = legacyEntry("lama")
+        val field = QueuedPrompt::class.java.getDeclaredField("attachments")
+        field.isAccessible = true
+        field.set(entry, null)
+
+        val fixed = listOf(entry).withUniqueIds()
+
+        assertNotNull(fixed[0].id)
+        assertEquals(emptyList<AttachedFile>(), fixed[0].attachments)
+    }
+
     @Test
     fun `decode of a pre-id composer gives its entries fresh distinct ids`() {
         val composer = ParkedComposer(

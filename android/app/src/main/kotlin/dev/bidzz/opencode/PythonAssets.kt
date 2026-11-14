@@ -48,13 +48,19 @@ object PythonAssets {
             return false
         }
         return try {
-            pythonDir.deleteRecursively()
+            // Audit-200 A9-9 (DL-038): delete only the paths the bundle
+            // ships, never the whole tree — `pip install` lands user
+            // packages in this tree (lib/python3.14/site-packages/<pkg>)
+            // and a wipe deleted them on every VERSION bump.
+            val refused = deleteOwnedPaths(pythonDir, listAssetFiles(assets, ASSET_ROOT) + MARKER_NAME)
+            if (refused.isNotEmpty()) {
+                Log.w(TAG, "python assets could not clear stale paths, leaving them: $refused")
+            }
             pythonDir.mkdirs()
             copyDir(assets, ASSET_ROOT, pythonDir)
             val sentinel = File(pythonDir, "lib/python3.14/os.py")
             if (!sentinel.isFile) {
                 Log.w(TAG, "python assets missing lib/python3.14/os.py after copy; not marking synced")
-                pythonDir.deleteRecursively()
                 return false
             }
             marker.writeText(VERSION)
