@@ -387,14 +387,25 @@ fun ChatScreen(
     // (resolved once here — a transitionSpec cannot read LocalDensity).
     val messageEntrySlidePx = with(density) { 24.dp.roundToPx() }
 
-    var lastReadMessageCount by remember { mutableStateOf(state.messages.size) }
+    // The read watermark is per session (audit-200 B5, M-201/M-251):
+    // the state is keyed on the session id, so switching sessions gives
+    // the new session a fresh watermark instead of inheriting the old
+    // one's. Two effects used to share one global `lastReadMessageId`:
+    // the nearBottom effect of the NEW session could overwrite it before
+    // the open effect saved the OLD session, so saveReadPosition(oldId)
+    // wrote the new session's id under the old session's key — a poisoned
+    // watermark. Keying the state on the session removes the shared
+    // variable entirely: the open effect re-seeds both values from the
+    // store on every session open, and every advance persists immediately,
+    // so the store always holds the latest id.
+    var lastReadMessageCount by remember(state.sessionID) { mutableStateOf(state.messages.size) }
 
     // The id behind the count (01-F2): persisted instead of the count, so
     // prepends and relaunches cannot shift the watermark. Null until the
     // first restore or advance; kept even when the id is windowed out
     // (count 0) — loading earlier can bring it back into the window, and
     // the resolver then lands on the right message again.
-    var lastReadMessageId by remember { mutableStateOf<String?>(null) }
+    var lastReadMessageId by remember(state.sessionID) { mutableStateOf<String?>(null) }
 
     // Read watermark, persisted per session (#6d): the in-memory count died
     // with the process, so returning to a session always showed a phantom

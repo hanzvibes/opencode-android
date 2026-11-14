@@ -73,6 +73,15 @@ fun InlineQuestionCard(
     questions: List<QuestionItem>,
     modifier: Modifier = Modifier,
     /**
+     * Answers the engine already confirmed, by question index
+     * (audit-200 B5, M-065). The view model records them and stamps
+     * them into the part on every rebuild — without this, a history
+     * reload recreated the card with no memory of the confirmed
+     * answers and a multi-question card showed "expired" for every
+     * question. "" = unanswered.
+     */
+    answered: List<String> = emptyList(),
+    /**
      * Sends one answer to the engine. True only when the engine
      * confirmed the reply — the card marks the question answered
      * only then (audit-70 44-F1): marking it before the reply lands
@@ -92,7 +101,10 @@ fun InlineQuestionCard(
     // One answer per question, indexed by qIndex ("" = unanswered). A single
     // shared answer used to mark every question done — and show the same
     // answer on all of them — as soon as the first one was submitted.
-    var submittedAnswers by rememberSaveable(call.id) { mutableStateOf(listOf<String>()) }
+    // Seeded from [answered]: answers the engine already confirmed
+    // (audit-200 B5, M-065) — a card recreated after a history reload
+    // starts from the recorded answers instead of empty.
+    var submittedAnswers by rememberSaveable(call.id) { mutableStateOf(answered) }
 
     // Questions with a reply in flight: a second tap while the first is
     // still travelling is ignored, so the same answer is never sent

@@ -119,6 +119,32 @@ internal fun mergeMessageTime(a: MessageTime?, b: MessageTime?): MessageTime? {
 }
 
 /**
+ * Folds one assistant chunk into the previous chunk of the same turn
+ * (Fase 2, 01-F3).
+ *
+ * Audit-200 B5 (M-036): the merged turn keeps the LATER chunk's id,
+ * not the first chunk's. A turn grows at its head when "load earlier"
+ * pulls in older chunks — with the first chunk's id the merged id
+ * changed on every prepend, so a read watermark pointing at the turn
+ * vanished from the window and the unread badge came back as a ghost.
+ * The last chunk is stable under head growth: prepending older chunks
+ * never moves it.
+ */
+internal fun mergeAssistantMessages(target: SessionMessage, addition: SessionMessage): SessionMessage {
+    return target.copy(
+        id = addition.id,
+        content = target.content + addition.content,
+        finish = addition.finish ?: target.finish,
+        cost = (target.cost ?: 0.0) + (addition.cost ?: 0.0),
+        tokens = mergeTokenUsage(target.tokens, addition.tokens),
+        time = mergeMessageTime(target.time, addition.time),
+        error = addition.error ?: target.error,
+        model = addition.model ?: target.model,
+        agent = addition.agent ?: target.agent,
+    )
+}
+
+/**
  * Message ids whose streaming buffers survive a resync (Fase 2, 03-F1).
  *
  * [chronological] is the history just fetched, oldest first. Live are the
@@ -349,18 +375,8 @@ class ChatRepository(
         return current.isAssistant && prev.isAssistant
     }
 
-    private fun mergeAssistant(target: SessionMessage, addition: SessionMessage): SessionMessage {
-        return target.copy(
-            content = target.content + addition.content,
-            finish = addition.finish ?: target.finish,
-            cost = (target.cost ?: 0.0) + (addition.cost ?: 0.0),
-            tokens = mergeTokenUsage(target.tokens, addition.tokens),
-            time = mergeMessageTime(target.time, addition.time),
-            error = addition.error ?: target.error,
-            model = addition.model ?: target.model,
-            agent = addition.agent ?: target.agent,
-        )
-    }
+    private fun mergeAssistant(target: SessionMessage, addition: SessionMessage): SessionMessage =
+        mergeAssistantMessages(target, addition)
 
     /**
      * Rebuilds from REST. Called on open and after every reconnect.

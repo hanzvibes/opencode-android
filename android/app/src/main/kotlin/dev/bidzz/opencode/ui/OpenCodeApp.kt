@@ -118,6 +118,7 @@ import dev.bidzz.opencode.ui.projects.ProjectOption
 import dev.bidzz.opencode.ui.projects.ProjectPickerScreen
 import dev.bidzz.opencode.ui.providers.ProvidersScreen
 import dev.bidzz.opencode.ui.providers.ProvidersViewModel
+import dev.bidzz.opencode.ui.chat.ReadPositionStore
 import dev.bidzz.opencode.ui.sessions.PinnedSessionStore
 import dev.bidzz.opencode.ui.sessions.SessionListPane
 import dev.bidzz.opencode.ui.sessions.SessionListScreen
@@ -377,6 +378,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
             app.engineApi,
             { app.workspaceStore.resolve().absolutePath },
             PinnedSessionStore(app),
+            ReadPositionStore(app),
         )
     })
 
@@ -533,7 +535,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // internal one (item 12): say so once per path, instead of on every engine
     // restart, and let the user re-pick it in Projects.
     var workspaceUnavailableNoted by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(engineStatus.state) {
+    // Audit-200 B5 (M-230): keyed on the credentials too, not only the
+    // state. The engine's credentials rotate on every restart (new
+    // baseUrl + password) while the state can stay RUNNING — with only
+    // the state as the key this effect never re-ran, so the freshly
+    // attached repository (see the attach effect above, which IS keyed
+    // on baseUrl) never restored the remembered session. The attach
+    // effect is declared first and attaches synchronously, so by the
+    // time this runs the repository is the new one and onResume's own
+    // guards (no session open, no pending deep link) decide.
+    LaunchedEffect(engineStatus.state, engineStatus.credentials?.baseUrl) {
         if (engineStatus.state == EngineState.RUNNING) {
             chatViewModel.onResume(app.lastSessionID)
         }

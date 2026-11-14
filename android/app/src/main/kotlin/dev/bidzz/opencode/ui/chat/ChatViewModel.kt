@@ -328,6 +328,9 @@ enum class RetryKind {
     RATE_LIMITED,
     /** The session is gone server-side: reload (re-open) it. */
     RELOAD_SESSION,
+    /** Restoring the remembered session after an engine restart failed:
+     * re-run the restore (the GET, not a re-send). */
+    RESTORE_SESSION,
 }
 
 /** A single rendered message. */
@@ -648,21 +651,14 @@ class ChatViewModel(
                     _state.value.queuedPrompts,
                 )
                 _state.collect { state ->
-                    if (state.queuedPrompts != lastQueue) {
+                    if (state.queuedPrompts != lastQueue || state.pendingAttachments != lastAttachments) {
                         lastQueue = state.queuedPrompts
-                        if (state.queuedPrompts.isEmpty()) {
-                            handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
-                        } else {
-                            handle[QUEUE_KEY] = ArrayList(state.queuedPrompts)
-                        }
-                    }
-                    if (state.pendingAttachments != lastAttachments) {
                         lastAttachments = state.pendingAttachments
-                        if (state.pendingAttachments.isEmpty()) {
-                            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
-                        } else {
-                            handle[ATTACHMENTS_KEY] = ArrayList(state.pendingAttachments)
-                        }
+                        // Audit-200 B5 (M-026): the queue + attachments
+                        // share one byte budget in the handle — over
+                        // budget the keys are left out and the parked
+                        // store on disk stays the source of truth.
+                        putBoundedComposerLists(handle, state.queuedPrompts, state.pendingAttachments)
                     }
                     if (state.lastSentText != lastSent) {
                         lastSent = state.lastSentText
@@ -677,7 +673,11 @@ class ChatViewModel(
                         if (state.sentPrompts.isEmpty()) {
                             handle.remove<ArrayList<String>>(SENT_PROMPTS_KEY)
                         } else {
-                            handle[SENT_PROMPTS_KEY] = ArrayList(state.sentPrompts)
+                            // Audit-200 B5 (M-026): prompt history in the
+                            // handle is capped — navigation only needs
+                            // the recent ones, and the full history is
+                            // unbounded text.
+                            handle[SENT_PROMPTS_KEY] = ArrayList(state.sentPrompts.takeLast(HANDLE_SENT_HISTORY))
                         }
                     }
                     // Audit-200 A9-3 (DL-010): the composer itself is
@@ -708,7 +708,18 @@ class ChatViewModel(
                             // that window would resurrect sent text.
                             parkComposer()
                         } else {
-                            composerParkJob = viewModelScope.launch {
+                            // Audit-200 B5 (M-247): the park runs on IO,
+                            // not the main thread. Serializing the composer
+                            // (Java serialization + Base64) and the
+                            // store's synchronous commit() of unbounded
+                            // content — draft, full attachment text, queue
+                            // with the same text baked in again — used to
+                            // run on Main 750 ms after every composer
+                            // change, janking typing. The switch-time park
+                            // stays synchronous on Main: durability there
+                            // (DL-004) outranks jank, and a switch already
+                            // does disk I/O.
+                            composerParkJob = viewModelScope.launch(Dispatchers.IO) {
                                 delay(COMPOSER_PARK_DEBOUNCE_MS)
                                 parkComposer()
                             }
@@ -727,6 +738,15 @@ class ChatViewModel(
      * dead-run suppressions must survive the rebuild.
      */
     private val permissionRestoreGate = PermissionRestoreGate()
+    /**
+     * Question answers the engine already confirmed, by tool call id
+     * (audit-200 B5, M-065): the card used to keep them only in its own
+     * rememberSaveable, so a history reload showed a multi-question card
+     * as "expired" for every question. Recorded here on every confirmed
+     * reply and stamped into the Question parts on every rebuild.
+     * Cleared when the session changes — call ids belong to a session.
+     */
+    private val confirmedQuestionAnswers = mutableMapOf<String, List<String>>()
     private var collector: Job? = null
     /** The pending debounced composer park (audit-200 A9-3, DL-010). */
     private var composerParkJob: Job? = null
@@ -884,7 +904,14 @@ class ChatViewModel(
             if (live.draft.isNotBlank() || live.pendingAttachments.isNotEmpty() ||
                 live.queuedPrompts.isNotEmpty()
             ) {
-                return null
+                // Audit-200 B5 (M-026): the live composer may hold only
+                // PART of the parked copy — the handle drops over-budget
+                // queue/attachments and keeps the draft, so "not empty"
+                // no longer means "nothing to restore". Fill the gaps
+                // from the parked copy by id instead of skipping: live
+                // entries always win and the draft is never overwritten,
+                // so newer typing (the DL-035 concern) is still safe.
+                return mergeParkedGaps(sessionID)
             }
         }
         val restored = takeParkedComposer(sessionID)
@@ -930,6 +957,65 @@ class ChatViewModel(
      * without a view-model scope (which needs a Main dispatcher the
      * JVM tests do not have).
      */
+    /**
+     * Estimated serialized size of a queue + attachments, in bytes
+     * (audit-200 B5, M-026): characters are ~2 bytes in the parcel,
+     * plus per-entry overhead. A queue entry carries its attachment
+     * content twice (baked into [QueuedPrompt.fullText] and again in
+     * [QueuedPrompt.attachments], which the chips need) — both copies
+     * are counted.
+     */
+    internal fun estimatedHandleBytes(queue: List<QueuedPrompt>, attachments: List<AttachedFile>): Long {
+        var bytes = 0L
+        queue.forEach { entry ->
+            bytes += entry.fullText.length + entry.typedText.length
+            entry.attachments.forEach { bytes += it.content.length + it.name.length }
+        }
+        attachments.forEach { bytes += it.content.length + it.name.length }
+        return bytes * 2L
+    }
+
+    /**
+     * Writes the queue + attachments to the handle when they fit the
+     * byte budget (audit-200 B5, M-026), and removes both keys when
+     * they do not — a stale snapshot must never survive, or a restore
+     * after process death could re-send follow-ups that already went.
+     * The parked store on disk keeps the full copy either way.
+     */
+    internal fun putBoundedComposerLists(
+        handle: SavedStateHandle,
+        queue: List<QueuedPrompt>,
+        attachments: List<AttachedFile>,
+    ) {
+        if (queue.isEmpty() && attachments.isEmpty()) {
+            handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
+            return
+        }
+        if (estimatedHandleBytes(queue, attachments) > HANDLE_PAYLOAD_BUDGET_BYTES) {
+            handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
+            return
+        }
+        if (queue.isEmpty()) {
+            handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
+        } else {
+            handle[QUEUE_KEY] = ArrayList(queue)
+        }
+        if (attachments.isEmpty()) {
+            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
+        } else {
+            handle[ATTACHMENTS_KEY] = ArrayList(attachments)
+        }
+    }
+
+    /**
+     * Writes a restored composer to the saved-state handle (audit-200
+     * A9-8, DL-019). The queue and attachments go through the same byte
+     * budget as the live collector below (audit-200 B5, M-026): over
+     * budget the keys are left out and the parked store stays the source
+     * of truth, instead of risking a TransactionTooLargeException.
+     */
     internal fun syncRestoredComposerToHandle(
         handle: SavedStateHandle?,
         restored: ParkedComposer,
@@ -941,16 +1027,7 @@ class ChatViewModel(
         } else {
             handle[DRAFT_KEY] = restored.draft
         }
-        if (restored.queued.isEmpty()) {
-            handle.remove<ArrayList<QueuedPrompt>>(QUEUE_KEY)
-        } else {
-            handle[QUEUE_KEY] = ArrayList(restored.queued)
-        }
-        if (restored.attachments.isEmpty()) {
-            handle.remove<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)
-        } else {
-            handle[ATTACHMENTS_KEY] = ArrayList(restored.attachments)
-        }
+        putBoundedComposerLists(handle, restored.queued, restored.attachments)
         if (!restoreEditState || restored.draftBeforeEdit == null) {
             handle.remove<String>(DRAFT_BEFORE_EDIT_KEY)
         } else {
@@ -964,6 +1041,51 @@ class ChatViewModel(
     }
 
     /** Takes the parked composer for [sessionID], if the user left one there. */
+    /**
+     * Fills the gaps in the live composer from the parked copy, by id
+     * (audit-200 B5, M-026): attachments and queued entries the live
+     * composer lacks are added; live entries are never replaced and the
+     * draft is never touched. The parked entry is LEFT in place — it is
+     * the durable backup until the next park overwrites it with the
+     * merged state, so a second death before then still finds the full
+     * copy. Returns the parked composer when anything was filled, else
+     * null. An undecodable entry is reported (same as the take path)
+     * and removed.
+     */
+    internal fun mergeParkedGaps(sessionID: String): ParkedComposer? {
+        val parked = parkedStore.get(sessionID)
+        if (parked == null) {
+            reportUnreadableParked(sessionID)
+            return null
+        }
+        val live = _state.value
+        val liveAttachmentIds = live.pendingAttachments.map { it.id }.toSet()
+        val missingAttachments = parked.attachments.filter { it.id !in liveAttachmentIds }
+        val liveQueueIds = live.queuedPrompts.map { it.id }.toSet()
+        val missingQueued = parked.queued.filter { it.id !in liveQueueIds }
+        if (missingAttachments.isEmpty() && missingQueued.isEmpty()) return null
+        _state.value = live.copy(
+            pendingAttachments = live.pendingAttachments + missingAttachments,
+            queuedPrompts = live.queuedPrompts + missingQueued,
+        )
+        // Sync the merged composer to the handle so the next death finds
+        // it there too — the bounded write drops the over-budget keys
+        // again instead of risking the transaction, and the parked copy
+        // left above still holds them.
+        syncRestoredComposerToHandle(
+            savedStateHandle,
+            ParkedComposer(
+                draft = live.draft,
+                attachments = _state.value.pendingAttachments,
+                queued = _state.value.queuedPrompts,
+                draftBeforeEdit = draftBeforeEdit,
+                editingMessageId = _state.value.editingMessageId,
+            ),
+            restoreEditState = true,
+        )
+        return parked
+    }
+
     private fun takeParkedComposer(sessionID: String): ParkedComposer? {
         val parked = parkedStore.get(sessionID) ?: return null
         parkedStore.remove(sessionID)
@@ -1171,16 +1293,19 @@ class ChatViewModel(
                         busy = false,
                         stopping = false,
                         editingMessageId = null,
-                        // 69-F1: the transcript belongs to the dead session.
-                        // Leaving it while the id is null strands the UI:
-                        // onResume refuses to restore the remembered
-                        // session while messages are non-empty, so the
-                        // stale transcript blocks the restore forever.
-                        // The restore re-opens the session and reloads
-                        // the messages from the engine.
-                        messages = emptyList(),
-                        // The engine is gone, so a prompt it was waiting on
-                        // is dead too (item 22): leaving it would show
+                        // Audit-200 B5 (M-190/M-231): the transcript is
+                        // KEPT when the engine dies. It used to be wiped
+                        // here (69-F1) because onResume refused to
+                        // restore while messages were non-empty — so the
+                        // stale transcript blocked the restore forever.
+                        // onResume's guard is now "a session is already
+                        // open" (sessionID != null) instead, so the kept
+                        // transcript no longer blocks anything: while the
+                        // engine is dead the answers stay readable, and
+                        // the restore re-opens the session and reloads
+                        // the messages from the engine when it is back.
+                        // The pending permission still dies with the
+                        // engine (item 22): leaving it would show
                         // buttons that silently do nothing — the repository
                         // is closed and replyPermission has nowhere to go.
                         pendingPermission = null,
@@ -1291,7 +1416,7 @@ class ChatViewModel(
             lastUnmergedMessages = overlaid
             return mergeContiguousAssistant(overlaid)
         }
-        lastUnmergedMessages = chat.buildUnmergedMessages(toolDurations, toolStartedAt)
+        lastUnmergedMessages = chat.buildUnmergedMessages(toolDurations, toolStartedAt, confirmedQuestionAnswers)
         lastMessagesRef = chat.messages
         lastLiveToolsRef = chat.liveTools
         lastToolDurations = toolDurations
@@ -1330,6 +1455,10 @@ class ChatViewModel(
         if (sessionChanged) {
             toolStartedAt.clear()
             toolCompletedAt.clear()
+            // Audit-200 B5 (M-065): confirmed question answers belong
+            // to a session's calls — a new session must not inherit
+            // another session's answered cards.
+            confirmedQuestionAnswers.clear()
             lastCollectorSessionID = chat.sessionID
         }
         // Stamp live tools: first sight starts the clock, a terminal status
@@ -2567,12 +2696,28 @@ class ChatViewModel(
             JsonPrimitive(answer.labels.first())
         }
         return when (sessions.replyForm(sessionID, form.id, mapOf("q${answer.questionIndex}" to value))) {
-            is ApiResult.Success -> true
+            is ApiResult.Success -> {
+                recordConfirmedQuestionAnswer(answer)
+                true
+            }
             is ApiResult.Failure -> {
                 returnAnswerToDraft(answer.displayText)
                 false
             }
         }
+    }
+
+    /**
+     * Records an engine-confirmed question answer (audit-200 B5, M-065),
+     * so a history reload still shows the question as answered instead
+     * of "expired". Indexed by question, "" where unanswered — the same
+     * shape the card keeps in its own state.
+     */
+    private fun recordConfirmedQuestionAnswer(answer: QuestionAnswer) {
+        val updated = confirmedQuestionAnswers[answer.callId].orEmpty().toMutableList()
+        while (updated.size <= answer.questionIndex) updated.add("")
+        updated[answer.questionIndex] = answer.displayText
+        confirmedQuestionAnswers[answer.callId] = updated
     }
 
     /**
@@ -2684,6 +2829,7 @@ class ChatViewModel(
         when (_state.value.retryKind) {
             RetryKind.RESEND -> retryLastSend()
             RetryKind.RELOAD_SESSION -> reloadSession()
+            RetryKind.RESTORE_SESSION -> lastRestoreTargetSessionID?.let { onResume(it) }
             RetryKind.RATE_LIMITED -> _state.value = _state.value.copy(
                 failure = null,
                 failureKey = R.string.chat_rate_limited_guidance,
@@ -3438,8 +3584,13 @@ class ChatViewModel(
         if (pendingOpenSessionID != null) return
         val repo = repository ?: return
         val target = lastSessionID ?: return
-        if (_state.value.messages.isNotEmpty()) return
+        // Audit-200 B5 (M-190/M-231): the guard is "a session is already
+        // open", not "messages are non-empty". The transcript is kept
+        // when the engine dies, so a non-empty transcript must not block
+        // the restore — only an actually open session may.
+        if (_state.value.sessionID != null) return
         val h = handle ?: return
+        lastRestoreTargetSessionID = target
         viewModelScope.launch {
             when (val result = h.sessions.get(target)) {
                 is ApiResult.Success -> {
@@ -3482,14 +3633,44 @@ class ChatViewModel(
                             // the live composer is empty: the handle may
                             // already hold newer text for this session.
                             restoreParkedComposer(target, onlyIfComposerEmpty = true)
+                            // Audit-200 B5 (M-190/M-231): a restore that
+                            // failed earlier left a retry banner behind —
+                            // a restore that succeeds now clears it, or
+                            // the banner would linger over the live
+                            // session.
+                            _state.value = _state.value.copy(
+                                failure = null,
+                                failureKey = null,
+                                retryKind = RetryKind.NONE,
+                            )
                             repo.open(target)
                         }
                     }
                 }
-                is ApiResult.Failure -> Unit
+                // Audit-200 B5 (M-190/M-231): a failed restore used to
+                // fail silently — the kept transcript stayed with no
+                // banner and no way back. A session the engine says is
+                // gone is terminal (retrying cannot bring it back); any
+                // other failure offers a retry that re-runs this restore.
+                is ApiResult.Failure -> {
+                    if (result.isSessionMissing) {
+                        _state.value = _state.value.copy(
+                            failureKey = R.string.error_session_missing,
+                            retryKind = RetryKind.NONE,
+                        )
+                    } else {
+                        _state.value = _state.value.copy(
+                            failure = result,
+                            retryKind = RetryKind.RESTORE_SESSION,
+                        )
+                    }
+                }
             }
         }
     }
+
+    /** The session id of the last attempted restore (audit-200 B5, M-190/M-231). */
+    private var lastRestoreTargetSessionID: String? = null
 
     /** Same directory, allowing for symlinked storage roots. */
     private fun sameDirectory(a: String, b: String): Boolean {
@@ -3549,7 +3730,7 @@ class ChatViewModel(
         /** Retry target, so Retry still works after a restore (audit-70 69-F2). */
         private const val LAST_SENT_KEY = "chat_last_sent"
         /** Prompt history (Up navigation), same reason as [LAST_SENT_KEY]. */
-        private const val SENT_PROMPTS_KEY = "chat_sent_prompts"
+        internal const val SENT_PROMPTS_KEY = "chat_sent_prompts"
         /** The draft as it was before the edit in progress (audit-200 A9-3, DL-034). */
         internal const val DRAFT_BEFORE_EDIT_KEY = "chat_draft_before_edit"
         /** The message being edited (audit-200 A9-3, DL-034). */
@@ -3558,6 +3739,21 @@ class ChatViewModel(
         private const val SESSION_RELOAD_LIMIT = 2
         /** Quiet time after the last composer change before it is parked (audit-200 A9-3, DL-010). */
         private const val COMPOSER_PARK_DEBOUNCE_MS = 750L
+        /**
+         * Byte budget for the queue + attachments in the saved-state
+         * handle (audit-200 B5, M-026): the handle is parceled into the
+         * Activity's saved state, which crosses Binder (~1 MB per
+         * transaction) — an unbounded queue/attachment payload risks
+         * TransactionTooLargeException on process death. 256 KB leaves
+         * room for the draft and the rest of the bundle. Over budget the
+         * keys are left out entirely (never a stale snapshot: a stale
+         * queue could re-send follow-ups that already went) — the parked
+         * store on disk holds the full copy and the restore fills the
+         * gaps back (see [restoreParkedComposer]).
+         */
+        internal const val HANDLE_PAYLOAD_BUDGET_BYTES = 256 * 1024
+        /** Prompt-history entries kept in the handle (audit-200 B5, M-026): history navigation only needs the recent ones. */
+        internal const val HANDLE_SENT_HISTORY = 20
         /**
          * How long an interrupt POST may hang before Stop is released for
          * another tap (17-F10): the client's 120s call timeout left
@@ -3595,6 +3791,8 @@ class ChatViewModel(
 private fun ChatState.buildUnmergedMessages(
     toolDurations: Map<String, Long> = emptyMap(),
     toolStartedAt: Map<String, Long> = emptyMap(),
+    /** Engine-confirmed question answers, by tool call id (audit-200 B5, M-065). */
+    answered: Map<String, List<String>> = emptyMap(),
 ): List<ChatMessage> {
     val result = mutableListOf<ChatMessage>()
     messages.forEach { message ->
@@ -3645,6 +3843,7 @@ private fun ChatState.buildUnmergedMessages(
                     liveTools = msgLiveTools,
                     explicitReasoning = message.reasoningText,
                     fallbackText = message.plainText,
+                    answered = answered,
                 )
 
                 val footer = turnFooterValues(message)
@@ -3693,6 +3892,7 @@ private fun ChatState.buildUnmergedMessages(
                 content = emptyList(),
                 liveTools = liveCalls,
                 isStreaming = true,
+                answered = answered,
             )
             result += ChatMessage(
                 id = messageID,
@@ -3715,7 +3915,7 @@ private fun ChatState.buildUnmergedMessages(
             // re-running it on every rebuild is a no-op. mergedTools (not
             // just the live calls) is passed so a turn whose parts are
             // empty but whose tools came from history keeps them too.
-            val parts = mergeLiveToolsIntoParts(curr.parts, mergedTools, curr.streaming)
+            val parts = mergeLiveToolsIntoParts(curr.parts, mergedTools, curr.streaming, answered)
             result[idx] = curr.copy(tools = mergedTools, parts = parts)
         }
     }
@@ -3782,7 +3982,7 @@ private fun applyStreamingOverlay(result: MutableList<ChatMessage>, streaming: M
 }
 
 /** Merges contiguous assistant messages into one unified turn. */
-private fun mergeContiguousAssistant(messages: List<ChatMessage>): List<ChatMessage> {
+internal fun mergeContiguousAssistant(messages: List<ChatMessage>): List<ChatMessage> {
     // Merge contiguous assistant messages into one unified turn
     val merged = mutableListOf<ChatMessage>()
     messages.forEach { msg ->
@@ -3796,6 +3996,12 @@ private fun mergeContiguousAssistant(messages: List<ChatMessage>): List<ChatMess
             val mergedTools = orderedIds.mapNotNull { toolMap[it] }
             val mergedParts = mergeTurnParts(last.parts, msg.parts)
             merged[merged.lastIndex] = last.copy(
+                // Audit-200 B5 (M-036): the merged turn keeps the LATER
+                // chunk's id — same rule as the repository merge. A turn
+                // grows at its head when "load earlier" pulls in older
+                // chunks; the first chunk's id changed on every prepend
+                // and orphaned the read watermark (ghost unread badge).
+                id = msg.id,
                 text = combinedText,
                 reasoning = combinedReasoning,
                 tools = mergedTools,

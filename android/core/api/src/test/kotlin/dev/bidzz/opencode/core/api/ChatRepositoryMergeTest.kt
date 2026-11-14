@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.core.api
 
 import dev.bidzz.opencode.core.api.dto.CacheUsage
+import dev.bidzz.opencode.core.api.dto.MessageContent
 import dev.bidzz.opencode.core.api.dto.MessageTime
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
@@ -110,5 +111,35 @@ class ChatRepositoryMergeTest {
             SessionMessage(id = "a1", type = "assistant", time = MessageTime(created = 1, completed = 10)),
         )
         assertEquals(emptySet<String>(), liveStreamingIds(history, setOf("a1")))
+    }
+
+    @Test
+    fun `B5 M-036 a merged turn keeps the later chunk's id`() {
+        fun chunk(id: String, text: String) = SessionMessage(
+            id = id,
+            type = "assistant",
+            content = listOf(MessageContent(type = "text", text = text)),
+        )
+        val merged = mergeAssistantMessages(chunk("a1", "first "), chunk("a2", "second"))
+        assertEquals("a2", merged.id)
+        assertEquals("first second", merged.plainText)
+    }
+
+    @Test
+    fun `B5 M-036 prepending an older chunk leaves the merged id alone`() {
+        fun chunk(id: String, text: String) = SessionMessage(
+            id = id,
+            type = "assistant",
+            content = listOf(MessageContent(type = "text", text = text)),
+        )
+        // The window held [a2, a3] merged under a3; "load earlier" adds
+        // a1 at the head. The merged turn must still be a3, or a read
+        // watermark pointing at it vanishes and the unread badge returns
+        // as a ghost.
+        val before = mergeAssistantMessages(chunk("a2", "middle "), chunk("a3", "last"))
+        assertEquals("a3", before.id)
+        val after = mergeAssistantMessages(chunk("a1", "first "), before)
+        assertEquals("a3", after.id)
+        assertEquals("first middle last", after.plainText)
     }
 }

@@ -59,6 +59,59 @@ class ChatTurnPartsTest {
     }
 
     @Test
+    fun `B5 M-065 buildTurnParts stamps recorded answers onto a question part`() {
+        val questionInput = Json.parseToJsonElement(
+            """{"questions":[{"question":"A?","options":["1","2"]},{"question":"B?","options":["3","4"]}]}""",
+        )
+        val blocks = listOf(
+            MessageContent(
+                type = "tool",
+                id = "q1",
+                name = "question",
+                state = ToolState(status = "completed", input = questionInput),
+            ),
+        )
+
+        val parts = buildTurnParts(content = blocks, answered = mapOf("q1" to listOf("1", "")))
+
+        val qPart = parts.filterIsInstance<ChatTurnPart.Question>().single()
+        assertEquals(2, qPart.questions.size)
+        assertEquals(listOf("1", ""), qPart.answered)
+    }
+
+    @Test
+    fun `B5 M-065 a question with no recorded answers stays unanswered`() {
+        val questionInput = Json.parseToJsonElement("""{"question":"Continue?","options":["Yes","No"]}""")
+        val blocks = listOf(
+            MessageContent(
+                type = "tool",
+                id = "q1",
+                name = "question",
+                state = ToolState(status = "running", input = questionInput),
+            ),
+        )
+
+        val parts = buildTurnParts(content = blocks)
+
+        val qPart = parts.filterIsInstance<ChatTurnPart.Question>().single()
+        assertEquals(emptyList<String>(), qPart.answered)
+    }
+
+    @Test
+    fun `B5 M-065 mergeLiveToolsIntoParts keeps the recorded answers when rebuilding`() {
+        val questionInput = Json.parseToJsonElement("""{"question":"Continue?","options":["Yes","No"]}""")
+        val call = ToolCall(id = "q1", name = "question", status = "running", input = questionInput)
+        val existing = listOf(
+            ChatTurnPart.Question(call = call, questions = parseQuestionInput(questionInput), answered = listOf("Yes")),
+        )
+
+        val merged = mergeLiveToolsIntoParts(existing, listOf(call), isStreaming = true)
+
+        val qPart = merged.filterIsInstance<ChatTurnPart.Question>().single()
+        assertEquals(listOf("Yes"), qPart.answered)
+    }
+
+    @Test
     fun `mergeTurnParts merges adjacent text and tool groups correctly`() {
         val first = listOf(
             ChatTurnPart.Text("Part 1 text"),
