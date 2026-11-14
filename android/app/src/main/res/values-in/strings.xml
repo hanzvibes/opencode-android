@@ -271,6 +271,7 @@
     <string name="chat_parked_unreadable">Draft tersimpan tidak bisa dibaca.</string>
     <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
     <string name="workspace_too_broad">Folder itu adalah seluruh storage — pilih folder proyek saja.</string>
+    <string name="workspace_folder_unsupported">Folder ini tidak bisa dipakai sebagai workspace — pilih folder dari penyimpanan perangkat.</string>
     <string name="a11y_run_finished">Proses selesai</string>
     <string name="a11y_run_failed">Proses gagal</string>
     <string name="a11y_permission_arrived">Izin diminta</string>
@@ -487,7 +488,7 @@
     <string name="composer_hint_named">Tanya %1$s…</string>
     <string name="composer_stopping">Menghentikan…</string>
     <string name="composer_queued">Antrean: %1$s</string>
-    <string name="composer_editing">Mengedit pesan</string>
+    <string name="composer_editing">Mengedit pesan — dikirim akan menggantinya dan menghapus pesan setelahnya</string>
     <string name="composer_send">Kirim</string>
     <string name="model_search_hint">Cari model</string>
     <string name="model_search_no_results">Tidak ada model yang cocok dengan “%1$s”</string>

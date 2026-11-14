@@ -278,6 +278,7 @@
     <string name="chat_parked_unreadable">Saved draft could not be read.</string>
     <string name="workspace_unavailable">Workspace unavailable — using the internal workspace for now. Re-pick it in Projects.</string>
     <string name="workspace_too_broad">That folder is the whole storage — pick a project folder instead.</string>
+    <string name="workspace_folder_unsupported">This folder can\'t be used as a workspace — pick a folder from device storage instead.</string>
     <string name="a11y_run_finished">Run finished</string>
     <string name="a11y_run_failed">Run failed</string>
     <string name="a11y_permission_arrived">Permission requested</string>
@@ -494,7 +495,7 @@
     <string name="composer_hint_named">Ask %1$s…</string>
     <string name="composer_stopping">Stopping…</string>
     <string name="composer_queued">Queued: %1$s</string>
-    <string name="composer_editing">Editing message</string>
+    <string name="composer_editing">Editing message — submitting replaces it and removes later messages</string>
     <string name="composer_send">Send</string>
     <string name="model_search_hint">Search models</string>
     <string name="model_search_no_results">No models match “%1$s”</string>

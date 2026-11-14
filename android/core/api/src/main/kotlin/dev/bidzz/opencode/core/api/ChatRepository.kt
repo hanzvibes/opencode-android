@@ -761,15 +761,23 @@ class ChatRepository(
         return sessionApi.setModel(id, model)
     }
 
-    suspend fun interrupt(): ApiResult<Unit> {
-        val id = sessionID ?: return ApiResult.Failure(code = -1, tag = "NoSession")
-        val result = sessionApi.interrupt(id)
+    /**
+     * Interrupts the run in [sessionID] (`POST /api/session/{id}/interrupt`).
+     *
+     * Audit-200 C4 (M-082): the session is a parameter, not read from the
+     * repository's mutable [sessionID] at call time — `stop()` captures
+     * the id when the user taps Stop, and a switch before the POST runs
+     * must not redirect the interrupt into the session the user just
+     * opened (or fail with NoSession after a New session cleared it).
+     */
+    suspend fun interrupt(sessionID: String): ApiResult<Unit> {
+        val result = sessionApi.interrupt(sessionID)
         // Audit-200 B3 (M-081): the interrupt was accepted, so the run is
         // ending — its ask is dead even if the terminal event never
         // arrives (stream dropped), and the resync that follows must not
         // restore it. The terminal branch sets the same flag; this covers
         // the event's absence.
-        if (result is ApiResult.Success) permissionGate.suppressedSessionID = id
+        if (result is ApiResult.Success) permissionGate.suppressedSessionID = sessionID
         return result
     }
 

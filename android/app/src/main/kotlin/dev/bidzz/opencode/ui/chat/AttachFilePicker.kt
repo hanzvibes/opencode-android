@@ -61,14 +61,32 @@ import dev.bidzz.opencode.ui.files.FileTypes
  * a word (start of text or preceded by whitespace) — so `user@host` and a
  * finished `@path ` (trailing space) never open the picker. The query is the
  * text after the `@`, lowercasing left to the ranking in [rankQuickOpen].
+ *
+ * Audit-200 C4 (M-073): a file whose name contains spaces could never be
+ * completed while typing — the query rejected any whitespace, so the
+ * picker closed the moment the name's first space was typed, and the
+ * picker itself then inserted a token its own grammar could not
+ * represent. A quoted token fixes both sides: after `@"` the query runs
+ * to the closing quote (spaces allowed), and [insertMention] quotes a
+ * spaced path on insert. The server never parses `@path` out of plain
+ * text (opencode 2.3.0: file mentions arrive only as structured prompt
+ * attachments with a span), so quoting changes nothing server-side — it
+ * makes the token the app inserts one its own grammar can read back.
+ * A closed quote (with or without a trailing space) is a finished
+ * token and returns null, like the unquoted form.
  */
 fun extractMentionQuery(draft: String): String? {
     val at = draft.lastIndexOf('@')
     if (at < 0) return null
     if (at > 0 && !draft[at - 1].isWhitespace()) return null
-    val query = draft.substring(at + 1)
-    if (query.any { it.isWhitespace() }) return null
-    return query
+    val after = draft.substring(at + 1)
+    if (after.startsWith("\"")) {
+        val body = after.substring(1)
+        if ('"' in body) return null
+        return body
+    }
+    if (after.any { it.isWhitespace() }) return null
+    return after
 }
 
 /**
@@ -76,12 +94,18 @@ fun extractMentionQuery(draft: String): String? {
  * next word starts cleanly and the mention token ends (a finished mention
  * must not re-open the inline picker).
  *
- * When the draft ends in a mention token being typed (`see @READ`), the
- * token is replaced; otherwise the mention is appended, separated from
- * existing text by one space.
+ * Audit-200 C4 (M-073): a path containing whitespace is quoted
+ * (`@"my notes.md" `) so the token stays one token under
+ * [extractMentionQuery] — the unquoted form split at the first space and
+ * the grammar could not represent what the picker had just inserted. A
+ * path containing a double quote cannot be quoted safely, so it falls
+ * back to the unquoted form (the old behaviour). When the draft ends in
+ * a mention token being typed (`see @READ`), the token is replaced;
+ * otherwise the mention is appended, separated from existing text by one
+ * space.
  */
 fun insertMention(draft: String, path: String): String {
-    val mention = "@$path "
+    val mention = if (path.any { it.isWhitespace() } && '"' !in path) "@\"$path\" " else "@$path "
     if (draft.isEmpty()) return mention
     val at = draft.lastIndexOf('@')
     if (at >= 0 && extractMentionQuery(draft) != null) {

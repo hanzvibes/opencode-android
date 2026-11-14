@@ -1771,8 +1771,16 @@ fun ChatScreen(
                         .fillMaxWidth()
                         .widthIn(max = dims.contentMaxWidth),
                 ) {
+                    // Audit-200 C4 (M-083): the prompt hides while the run
+                    // is stopping — the engine accepted the interrupt, so
+                    // the request is dead, and a tap now would answer a
+                    // run the user just stopped. The view model refuses
+                    // the reply too (see replyPermission); this is the
+                    // visible half of the same guard. If the interrupt
+                    // did not take (timeout/failure) stopping clears and
+                    // the prompt comes back, answerable again.
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = state.pendingPermission != null,
+                        visible = state.pendingPermission != null && !state.stopping,
                         enter = fadeIn(motion.tweenStandard()) + expandVertically(motion.tweenStandard()),
                         exit = fadeOut(motion.tweenQuick()) + shrinkVertically(motion.tweenStandard()),
                     ) {
@@ -1792,7 +1800,10 @@ fun ChatScreen(
                     // the engine is still blocked on it, so it must stay one
                     // tap away rather than vanishing. It disappears on its
                     // own when the run ends (see ChatViewModel.onRepoState).
-                    if (state.pendingPermission == null && state.deferredPermission != null) {
+                    // Audit-200 C4 (M-086): not while stopping — restoring
+                    // the prompt then would offer a dead request to answer
+                    // against a run that is already stopping.
+                    if (state.pendingPermission == null && state.deferredPermission != null && !state.stopping) {
                         DeferredPermissionRow(
                             onRestore = onRestoreDeferredPermission,
                             modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.sm),
