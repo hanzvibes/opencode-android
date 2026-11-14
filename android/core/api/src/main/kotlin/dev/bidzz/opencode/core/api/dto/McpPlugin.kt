@@ -103,12 +103,32 @@ data class McpServerConfig(
 ) {
     companion object {
         /** A local (stdio) server: `command` is already split into entries. */
-        fun local(command: List<String>, cwd: String? = null): McpServerConfig =
-            McpServerConfig(type = "local", command = command, cwd = cwd)
+        fun local(
+            command: List<String>,
+            cwd: String? = null,
+            // Audit-200 B2 (M-291): the Add form now covers environment
+            // and disabled too — they were config fields the app could
+            // never set.
+            environment: Map<String, String>? = null,
+            disabled: Boolean? = null,
+        ): McpServerConfig =
+            McpServerConfig(
+                type = "local",
+                command = command,
+                cwd = cwd,
+                environment = environment,
+                disabled = disabled,
+            )
 
         /** A remote (HTTP) server. */
-        fun remote(url: String): McpServerConfig =
-            McpServerConfig(type = "remote", url = url)
+        fun remote(
+            url: String,
+            // Audit-200 B2 (M-291): same as local — headers and
+            // disabled were config fields the app could never set.
+            headers: Map<String, String>? = null,
+            disabled: Boolean? = null,
+        ): McpServerConfig =
+            McpServerConfig(type = "remote", url = url, headers = headers, disabled = disabled)
     }
 }
 

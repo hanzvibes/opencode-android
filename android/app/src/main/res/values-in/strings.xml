@@ -123,6 +123,20 @@
     <string name="mcp_add_overwrite_warning">Server bernama %1$s sudah ada (%2$s). Menambah akan menggantinya, dan konfigurasi lamanya akan hilang.</string>
     <string name="mcp_add_replace">Ganti</string>
     <string name="mcp_remove_body_runtime">Server ini ditambahkan di sesi ini dan tidak tersimpan di berkas konfigurasi. Menghapusnya berarti hilang permanen — tidak akan kembali setelah restart.</string>
+    <string name="mcp_added">%1$s ditambahkan dan terhubung</string>
+    <string name="mcp_connected">%1$s terhubung</string>
+    <string name="mcp_disconnected">%1$s diputus</string>
+    <string name="mcp_removed">%1$s dihapus</string>
+    <string name="mcp_runtime_changes">Perubahan di sini hanya berlaku selama engine berjalan — hilang saat engine di-restart.</string>
+    <string name="mcp_restart">Restart engine</string>
+    <string name="mcp_restart_title">Restart engine?</string>
+    <string name="mcp_restart_body">Sesi yang sedang berjalan berhenti, dan perubahan MCP runtime hilang: server yang ditambahkan lenyap, yang dihapus kembali, dan server yang dihubungkan atau diputus kembali ke keadaan konfigurasinya.</string>
+    <string name="mcp_needs_auth_note">Butuh autentikasi yang tidak bisa dilakukan dari aplikasi — Connect hanya mencoba lagi. Autentikasi server ini di tempat engine berjalan, lalu ketuk Connect.</string>
+    <string name="mcp_add_environment">Variabel environment (opsional)</string>
+    <string name="mcp_add_environment_hint">KEY=value, satu per baris</string>
+    <string name="mcp_add_headers">Header (opsional)</string>
+    <string name="mcp_add_headers_hint">Nama: nilai, satu per baris</string>
+    <string name="mcp_add_disabled">Mulai nonaktif</string>
     <string name="mcp_resources_title">Resource</string>
     <string name="mcp_resource_line">%1$s · %2$s</string>
     <string name="mcp_resource_template_line">%1$s · %2$s (template)</string>

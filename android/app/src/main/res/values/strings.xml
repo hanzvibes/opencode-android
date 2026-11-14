@@ -130,6 +130,20 @@
     <string name="mcp_add_overwrite_warning">A server named %1$s already exists (%2$s). Adding will replace it, and its current configuration will be lost.</string>
     <string name="mcp_add_replace">Replace</string>
     <string name="mcp_remove_body_runtime">This server was added in this session and is not saved in the config file. Removing it deletes it permanently — it will not come back after a restart.</string>
+    <string name="mcp_added">%1$s added and connected</string>
+    <string name="mcp_connected">%1$s connected</string>
+    <string name="mcp_disconnected">%1$s disconnected</string>
+    <string name="mcp_removed">%1$s removed</string>
+    <string name="mcp_runtime_changes">Changes here are runtime-only — they are lost when the engine restarts.</string>
+    <string name="mcp_restart">Restart engine</string>
+    <string name="mcp_restart_title">Restart the engine?</string>
+    <string name="mcp_restart_body">The running session stops, and the runtime MCP changes are lost: added servers disappear, removed ones come back, and connected or disconnected servers return to their configured state.</string>
+    <string name="mcp_needs_auth_note">Needs authentication the app can\'t do — Connect only retries the handshake. Authenticate this server where the engine runs, then tap Connect.</string>
+    <string name="mcp_add_environment">Environment variables (optional)</string>
+    <string name="mcp_add_environment_hint">KEY=value, one per line</string>
+    <string name="mcp_add_headers">Headers (optional)</string>
+    <string name="mcp_add_headers_hint">Name: value, one per line</string>
+    <string name="mcp_add_disabled">Start disabled</string>
     <string name="mcp_resources_title">Resources</string>
     <string name="mcp_resource_line">%1$s · %2$s</string>
     <string name="mcp_resource_template_line">%1$s · %2$s (template)</string>

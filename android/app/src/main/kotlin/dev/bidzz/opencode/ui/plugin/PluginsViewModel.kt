@@ -146,7 +146,15 @@ class PluginsViewModel(
      * with the `outdated` flags stamped in.
      */
     fun checkUpdates(target: String? = null) {
-        val handle = api.handle() ?: return
+        // Audit-200 B2 (M-184/M-260): a dead engine used to swallow the
+        // tap silently — the button spun down and nothing happened.
+        // refresh() already reports engine-down through [failure]; an
+        // action reports it through [actionFailure], like a failed check.
+        val handle = api.handle()
+        if (handle == null) {
+            _state.value = _state.value.copy(actionFailure = engineDownFailure())
+            return
+        }
         if (_state.value.checking) return
         _state.value = _state.value.copy(checking = true, actionFailure = null)
         viewModelScope.launch {
@@ -169,7 +177,12 @@ class PluginsViewModel(
      * update error is reported and no re-check runs.
      */
     fun update(targets: List<String>) {
-        val handle = api.handle() ?: return
+        // Audit-200 B2 (M-184/M-260): same as checkUpdates.
+        val handle = api.handle()
+        if (handle == null) {
+            _state.value = _state.value.copy(actionFailure = engineDownFailure())
+            return
+        }
         if (targets.isEmpty() || targets.any { it in _state.value.updatingTargets }) return
         _state.value = _state.value.copy(
             updatingTargets = _state.value.updatingTargets + targets,
