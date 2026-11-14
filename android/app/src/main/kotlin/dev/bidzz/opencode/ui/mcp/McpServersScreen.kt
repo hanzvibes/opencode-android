@@ -163,6 +163,15 @@ fun McpServersScreen(
         onBack = onBack,
         contentMaxWidth = 720.dp,
         actions = {
+            // Audit-200 C12 (M-176): the list used to refresh only on
+            // entry — a server that dropped while the screen was open kept
+            // its green "Connected" dot forever, with no way to re-check.
+            // Refresh sits next to Add, disabled while a load is running.
+            TextAction(
+                label = stringResource(R.string.common_refresh),
+                onClick = onRefresh,
+                enabled = !state.loading,
+            )
             TextAction(
                 label = stringResource(R.string.mcp_add),
                 onClick = { showAddForm = true },

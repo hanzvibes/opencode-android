@@ -291,6 +291,14 @@ class ChatRepository(
     /** Transcript window for resync: grows with "load earlier", resets on open (item 28). */
     private var messageLimit = INITIAL_MESSAGE_LIMIT
 
+    /**
+     * Cursor for the page older than the loaded window (audit-200 C12,
+     * M-169): the `cursor.next` of the newest window's fetch, or null when
+     * the engine did not return one. [loadEarlier] walks it instead of
+     * growing [messageLimit] and re-reading the whole window.
+     */
+    private var messagesCursor: String? = null
+
     /** Last streaming emission, for the publish throttle (item 28). */
     private var lastPublishAtMs = 0L
 
@@ -356,6 +364,7 @@ class ChatRepository(
         // A fresh open starts at the default window (item 28): earlier
         // messages are one tap away, not fetched up front every time.
         messageLimit = INITIAL_MESSAGE_LIMIT
+        messagesCursor = null
         _state.value = ChatState(sessionID = sessionID)
 
         streamJob = scope.launch {
@@ -400,21 +409,82 @@ class ChatRepository(
 
     /**
      * Grows the transcript window by one page and re-fetches (item 28).
-     * The engine's message endpoint only takes a limit, so paging grows
-     * the window instead of cursoring: each load re-reads a bigger newest
-     * slice. Loads are user-initiated and rare; the window resets on open.
+     *
+     * Audit-200 C12 (M-169): the window used to grow by one page and the
+     * whole window was re-read on every tap — 100 → 200 → 300 → … messages
+     * fetched and re-parsed, quadratic in total. Now the tap walks the
+     * cursor the newest window's fetch returned ([messagesPage]): one page
+     * of older messages is prepended to the transcript already on screen,
+     * and the window itself is never re-read. The cursor is opaque — the
+     * client never decodes it — and the preview walk in
+     * [dev.bidzz.opencode.ui.sessions.SessionListViewModel] already walks
+     * it the same way, so the endpoint behaviour is proven in-app. When
+     * the engine returns no cursor (an engine that does not paginate),
+     * the old grow-the-window path runs instead, so "load earlier" keeps
+     * working there too.
      */
     fun loadEarlier() {
         val id = sessionID ?: return
         if (_state.value.loadingEarlier || !_state.value.hasMoreOlder) return
-        messageLimit += MESSAGE_PAGE
         _state.value = _state.value.copy(loadingEarlier = true)
         scope.launch {
-            // Pinned to the session the tap was for (audit-200 B3,
-            // M-490): an unpinned resync would adopt whatever session is
-            // current when it runs.
-            resync(forSessionID = id)
+            val cursor = messagesCursor
+            if (cursor != null) {
+                prependOlderPage(id, cursor)
+            } else {
+                messageLimit += MESSAGE_PAGE
+                // Pinned to the session the tap was for (audit-200 B3,
+                // M-490): an unpinned resync would adopt whatever session is
+                // current when it runs.
+                resync(forSessionID = id)
+            }
             if (sessionID == id) _state.value = _state.value.copy(loadingEarlier = false)
+        }
+    }
+
+    /**
+     * Prepends one older page to the loaded transcript (audit-200 C12,
+     * M-169): the page is merged the same way [resync] merges a window
+     * (assistant continuations folded, blank user text restored from
+     * [sentText]), then joined to the messages already on screen. The
+     * boundary between the page's newest message and the window's oldest
+     * one merges too — an assistant turn split across the page edge stays
+     * one turn. A failed page leaves the window untouched, so the tap stays
+     * available for a retry. Streaming state, busy and permissions are
+     * untouched: the page is strictly older than anything live.
+     */
+    private suspend fun prependOlderPage(id: String, cursor: String) {
+        when (val page = sessionApi.messagesPage(id, limit = MESSAGE_PAGE, cursor = cursor)) {
+            is ApiResult.Success -> {
+                if (sessionID != id) return
+                val rawChronological = page.value.data.reversed().map { m ->
+                    // A user entry that comes back without text keeps what we sent.
+                    if (m.isUser && m.text.isNullOrBlank()) sentText[m.id]?.let { m.copy(text = it) } ?: m else m
+                }
+                val pageMerged = mutableListOf<SessionMessage>()
+                for (msg in rawChronological) {
+                    val last = pageMerged.lastOrNull()
+                    if (last != null && isAssistantContinuation(msg, last)) {
+                        pageMerged[pageMerged.lastIndex] = mergeAssistant(last, msg)
+                    } else {
+                        pageMerged += msg
+                    }
+                }
+                val existing = _state.value.messages
+                val combined = if (pageMerged.isNotEmpty() && existing.isNotEmpty() &&
+                    isAssistantContinuation(existing.first(), pageMerged.last())
+                ) {
+                    pageMerged.dropLast(1) + mergeAssistant(pageMerged.last(), existing.first()) + existing.drop(1)
+                } else {
+                    pageMerged + existing
+                }
+                messagesCursor = page.value.cursor?.next
+                _state.value = _state.value.copy(
+                    messages = combined,
+                    hasMoreOlder = page.value.cursor?.next != null,
+                )
+            }
+            is ApiResult.Failure -> Log.w(TAG, "load earlier page failed: ${page.message}")
         }
     }
 
@@ -467,7 +537,7 @@ class ChatRepository(
         if (terminalGeneration != null && terminalGeneration != runGeneration) {
             return ResyncOutcome.SKIPPED
         }
-        when (val result = sessionApi.messages(id, limit = messageLimit)) {
+        when (val result = sessionApi.messagesPage(id, limit = messageLimit)) {
             is ApiResult.Success -> {
                 // The session may have changed while the call was in flight:
                 // the terminal-event resync is launched on the repository
@@ -478,10 +548,13 @@ class ChatRepository(
                 if (terminalGeneration != null && terminalGeneration != runGeneration) {
                     return ResyncOutcome.SKIPPED
                 }
+                // Audit-200 C12 (M-169): the page's cursor walks toward
+                // older messages — [loadEarlier] starts its next page here.
+                messagesCursor = result.value.cursor?.next
                 // The engine returns history newest-first (idle, assistant, user...).
                 // Reversing here means the UI and every consumer can assume
                 // oldest-first, which is the only order a chat transcript can use.
-                val rawChronological = result.value.reversed().map { m ->
+                val rawChronological = result.value.data.reversed().map { m ->
                     // A user entry that comes back without text keeps what we sent.
                     if (m.isUser && m.text.isNullOrBlank()) sentText[m.id]?.let { m.copy(text = it) } ?: m else m
                 }
@@ -497,7 +570,7 @@ class ChatRepository(
                     }
                 }
 
-                val newest = result.value.firstOrNull()
+                val newest = result.value.data.firstOrNull()
                 // A resync mid-run must not wipe the streaming text (Fase 2,
                 // 03-F1): the success path used to clear every buffer and
                 // every streaming entry, so the in-flight answer collapsed
@@ -574,8 +647,11 @@ class ChatRepository(
                     // A full page back means the window may have cut older
                     // messages (item 28); a short page means we are at the
                     // beginning. Exactly one full page with nothing older
-                    // costs one harmless extra tap.
-                    hasMoreOlder = result.value.size >= messageLimit,
+                    // costs one harmless extra tap. A next cursor says the
+                    // same thing directly (audit-200 C12, M-169): the
+                    // engine paginates smaller than the requested window.
+                    hasMoreOlder = result.value.data.size >= messageLimit ||
+                        result.value.cursor?.next != null,
                 )
                 // A permission the engine still waits on survives reconnects
                 // and reopens (item 22): the stream only announces new asks,

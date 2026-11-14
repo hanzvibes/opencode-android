@@ -86,7 +86,7 @@ class SessionApi(private val client: EngineClient) {
     suspend fun listPage(directory: String? = null, limit: Int = 50, cursor: String? = null): ApiResult<SessionsResponse> {
         val query = buildString {
             append("/api/session?limit=").append(limit)
-            if (directory != null) append("&directory=").append(java.net.URLEncoder.encode(directory, "UTF-8"))
+            if (directory != null) append("&directory=").append(encodeQueryValue(directory))
             if (cursor != null) append("&cursor=").append(java.net.URLEncoder.encode(cursor, "UTF-8"))
         }
         val request = client.request(query).get().build()
@@ -488,6 +488,18 @@ class SessionApi(private val client: EngineClient) {
  */
 internal fun encodePathSegment(segment: String): String =
     URLEncoder.encode(segment, Charsets.UTF_8.name()).replace("+", "%20")
+
+/**
+ * Percent-encodes one query value (audit-200 C12, M-173/M-175).
+ *
+ * Same `+` → `%20` rewrite as [encodePathSegment]: the engine reads query
+ * values as percent-encoded, where `+` is a literal plus — so a space sent
+ * as `+` looks up a different name (a directory `my app` read as `my+app`,
+ * a branch search `fix login` matching nothing). Valid values without
+ * spaces pass through unchanged.
+ */
+internal fun encodeQueryValue(value: String): String =
+    URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
 
 /**
  * A session export: the decoded transcript plus the verbatim JSON it

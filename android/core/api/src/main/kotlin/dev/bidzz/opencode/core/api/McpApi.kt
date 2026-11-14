@@ -5,7 +5,6 @@ import dev.bidzz.opencode.core.api.dto.McpResourceCatalog
 import dev.bidzz.opencode.core.api.dto.McpResourceCatalogResponse
 import dev.bidzz.opencode.core.api.dto.McpServer
 import dev.bidzz.opencode.core.api.dto.McpServerConfig
-import dev.bidzz.opencode.core.api.dto.McpServersResponse
 import kotlinx.serialization.encodeToString
 import java.net.URLEncoder
 
@@ -31,7 +30,13 @@ class McpApi(private val client: EngineClient) {
     suspend fun list(): ApiResult<List<McpServer>> {
         val request = client.request("/api/mcp").get().build()
         return client.execute(request) { raw ->
-            ApiJson.decodeFromString<McpServersResponse>(raw).data
+            // Audit-200 C12 (M-177): one malformed entry used to fail the
+            // whole decode, so a single deviating server hid every healthy
+            // one behind an error screen. decodeDataList skips the entries
+            // it cannot decode (logging how many) and returns the rest; it
+            // still fails when EVERY entry is malformed, so a contract
+            // mismatch is reported instead of read as "no servers".
+            client.decodeDataList<McpServer>(raw)
         }
     }
 

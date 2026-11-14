@@ -1040,6 +1040,16 @@ class ChatViewModel(
     private var lastLiveToolsRef: Map<String, LiveTool>? = null
     private var lastToolDurations: Map<String, Long> = emptyMap()
     private var lastToolStartedAt: Map<String, Long> = emptyMap()
+    // Audit-200 C12 (M-016): the last merged transcript and the streaming
+    // map it was merged for — re-merging on every emission is skipped
+    // while the overlay input is unchanged. Sizes of the tool clocks at
+    // the last durations build — both maps only grow (getOrPut) and are
+    // cleared together on a session change, so the sizes are a complete
+    // change signal for the durations rebuild.
+    private var lastMergedMessages: List<ChatMessage> = emptyList()
+    private var lastMergedStreaming: Map<String, String>? = null
+    private var lastToolStartedSize: Int = 0
+    private var lastToolCompletedSize: Int = 0
 
     /**
      * Draft as it was before an edit loaded a message into the composer;
@@ -1814,6 +1824,13 @@ class ChatViewModel(
         if (chat.messages === lastMessagesRef && chat.liveTools === lastLiveToolsRef &&
             toolDurations == lastToolDurations && toolStartedAt == lastToolStartedAt
         ) {
+            // Audit-200 C12 (M-016): the merge below used to re-run on every
+            // emission even when nothing but the clock ticked — re-joining
+            // the whole transcript's text on every 100 ms publish. On this
+            // path the only input that can still move is the streaming
+            // overlay, so a merged result for the same streaming map is
+            // reused verbatim instead of merged again.
+            if (chat.streaming == lastMergedStreaming) return lastMergedMessages
             val overlaid = lastUnmergedMessages.toMutableList()
             applyStreamingOverlay(overlaid, chat.streaming)
             // A ghost streaming bubble (03-F5): the overlay only adds or
@@ -1826,14 +1843,20 @@ class ChatViewModel(
             val historyIds = chat.messages.map { it.id }.toSet()
             overlaid.removeAll { it.streaming && it.id !in historyIds && it.id !in chat.streaming }
             lastUnmergedMessages = overlaid
-            return mergeContiguousAssistant(overlaid)
+            val merged = mergeContiguousAssistant(overlaid)
+            lastMergedMessages = merged
+            lastMergedStreaming = chat.streaming
+            return merged
         }
         lastUnmergedMessages = chat.buildUnmergedMessages(toolDurations, toolStartedAt, confirmedQuestionAnswers)
         lastMessagesRef = chat.messages
         lastLiveToolsRef = chat.liveTools
         lastToolDurations = toolDurations
         lastToolStartedAt = toolStartedAt
-        return mergeContiguousAssistant(lastUnmergedMessages)
+        val merged = mergeContiguousAssistant(lastUnmergedMessages)
+        lastMergedMessages = merged
+        lastMergedStreaming = chat.streaming
+        return merged
     }
 
     /** Grows the transcript window and re-fetches older messages (item 28). */
@@ -1950,11 +1973,27 @@ class ChatViewModel(
                 toolStartedAt.getOrPut(id) { now }
             }
         }
-        val toolDurations = toolCompletedAt.mapNotNull { (id, end) ->
-            toolStartedAt[id]?.let { start ->
-                if (end >= start) id to (end - start) else null
-            }
-        }.toMap()
+        // Audit-200 C12 (M-016): the durations and the started snapshot are
+        // rebuilt only when a tool clock actually gained an entry. Both maps
+        // only ever grow here (getOrPut above) and are cleared together on a
+        // session change, so their sizes are a complete change signal —
+        // rebuilding both maps on every 100 ms emission just to compare them
+        // equal inside buildUiMessages was pure allocation.
+        val toolDurations: Map<String, Long>
+        val startedSnapshot: Map<String, Long>
+        if (toolCompletedAt.size == lastToolCompletedSize && toolStartedAt.size == lastToolStartedSize) {
+            toolDurations = lastToolDurations
+            startedSnapshot = lastToolStartedAt
+        } else {
+            toolDurations = toolCompletedAt.mapNotNull { (id, end) ->
+                toolStartedAt[id]?.let { start ->
+                    if (end >= start) id to (end - start) else null
+                }
+            }.toMap()
+            startedSnapshot = toolStartedAt.toMap()
+            lastToolCompletedSize = toolCompletedAt.size
+            lastToolStartedSize = toolStartedAt.size
+        }
 
         // A deferred permission stays hidden while the engine still waits on
         // that same request; a different request supersedes it, and a
@@ -1984,7 +2023,7 @@ class ChatViewModel(
         // A run that ends without an echo (a command the engine does not
         // record as a user message) drops the bubble too — its job is done.
         // And a bubble staged for another session never lands in this one.
-        val repoMessages = buildUiMessages(chat, toolDurations, toolStartedAt.toMap())
+        val repoMessages = buildUiMessages(chat, toolDurations, startedSnapshot)
         val optimistic = pendingOptimistic
         val (finalMessages, optimisticAlive) = when {
             optimistic == null -> repoMessages to false
@@ -2121,15 +2160,17 @@ class ChatViewModel(
             if (!chat.busy) returnQueueToDraft()
         }
 
-        // Context meter (Tier 2): a new session starts unknown, and a
-        // finished run changed the context — refresh both times. A failure
-        // clears the value (23-F2): keeping the old number would show a
-        // stale, too-small figure, the same lie the session-switch path
-        // avoids by clearing first. While a run is still going the meter
-        // refreshes at most every 30s (23-F3) — throttled, so a long run's
-        // streaming state does not hammer the endpoint. A run that ends
-        // into a queued follow-up still refreshes: the new send will end
-        // later and refresh again.
+        // Context meter (Tier 2): a new session starts unknown and refreshes
+        // on open. A failure clears the value (23-F2): keeping the old
+        // number would show a stale, too-small figure, the same lie the
+        // session-switch path avoids by clearing first. While a run is still
+        // going the meter refreshes at most every 30s (23-F3) — throttled, so
+        // a long run's streaming state does not hammer the endpoint.
+        // Audit-200 C12 (M-168): the run-end refresh is gone. It downloaded
+        // the FULL context on every turn just to re-sum the tokens, and the
+        // meter already refreshes on open and during the run — the value at
+        // run end is at most one throttle window stale, and the next open
+        // or run refreshes it.
         // Audit-200 A9-3 (DL-029): the app remembers which session has a
         // run in flight, so an engine start after the process died knows
         // an orphan may still be working. Reported only when it changes —
@@ -2145,10 +2186,10 @@ class ChatViewModel(
             _state.value = _state.value.copy(contextUsedTokens = null, contextModel = null)
             refreshContextUsage()
         } else if (wasBusy && !chat.busy) {
-            refreshContextUsage()
             // Audit-200 C6 (M-104/M-105): the run may have created, deleted
             // or switched branches — the list and details are stale the
-            // moment it ends, so they refresh with the context meter.
+            // moment it ends, so they refresh here. (The context meter no
+            // longer refreshes on run end — audit-200 C12, M-168.)
             loadBranches(force = true)
         } else if (chat.busy && contextRefreshDue(System.currentTimeMillis(), lastContextRefreshMillis)) {
             refreshContextUsage()

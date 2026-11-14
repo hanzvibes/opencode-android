@@ -164,6 +164,18 @@ jobs:
               echo "architecture mismatch: $file reports e_machine=0x$machine, expected 0x$expected" >&2
               exit 1
             fi
+            # 16 KB gate (audit-200 C12, M-170): every PT_LOAD segment must
+            # have p_align >= 0x4000, or the library cannot load on 16 KB
+            # page-size devices (Android 15+). The Termux staging scripts
+            # enforce the same gate for the libraries they stage; the
+            # upstream engine/git/rg libraries had no gate at all, so a
+            # 4 KB-linked upstream .so would only fail at exec time on
+            # those devices. readelf -lW prints one line per LOAD segment
+            # and the last field is its Align.
+            local align
+            while IFS= read -r align; do
+              [ "$((align))" -ge 16384 ] || { echo "$file has a PT_LOAD segment with p_align=$align; needs 0x4000 for 16 KB page sizes" >&2; exit 1; }
+            done < <(readelf -lW "$file" | awk '$1 == "LOAD" { print $NF }')
           }
 
           for abi in arm64-v8a x86_64; do
