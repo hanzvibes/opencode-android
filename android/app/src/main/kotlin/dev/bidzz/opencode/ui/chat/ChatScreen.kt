@@ -87,6 +87,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -374,6 +375,12 @@ fun ChatScreen(
     // (its bottom edge within ~48dp of the viewport bottom), not merely
     // "within two items", or a half-visible last bubble would still count
     // as "at the bottom" and yank the reader down mid-read.
+    // Audit-200 C1 (M-040): the comparison is against the VISIBLE bottom,
+    // not the viewport end — the list carries 64dp of bottom content
+    // padding (air under the last message for the jump button), and the
+    // old check counted that padding as visible content, so the real
+    // tolerance was ~112dp (48 + 64): scrolling up ~100dp during a
+    // stream still yanked the reader down. See [isNearBottomOffset].
     val density = LocalDensity.current
     val nearBottom by remember(density) {
         derivedStateOf {
@@ -381,8 +388,35 @@ fun ChatScreen(
             if (info.totalItemsCount == 0) return@derivedStateOf true
             val last = info.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
             if (last.index < info.totalItemsCount - 1) return@derivedStateOf false
-            val tolerancePx = with(density) { 48.dp.toPx() }
-            last.offset + last.size <= info.viewportEndOffset + tolerancePx
+            val tolerancePx = with(density) { 48.dp.toPx() }.toInt()
+            isNearBottomOffset(
+                lastOffset = last.offset,
+                lastSize = last.size,
+                viewportEndOffset = info.viewportEndOffset,
+                afterContentPadding = info.afterContentPadding,
+                tolerancePx = tolerancePx,
+            )
+        }
+    }
+
+    // Whether the reader is PINNED to the bottom (audit-200 C1, M-041):
+    // a user intent, not a layout fact. [nearBottom] is purely
+    // layout-derived, so any viewport shrink — keyboard, chips, rotation,
+    // a queued-prompt row appearing above the composer — silently
+    // released the pin: the last item slid out of view, nearBottom went
+    // false, and follow stopped although the reader never scrolled.
+    // The pin is set only by the reader scrolling to the bottom (or a
+    // follow/open scroll landing there) and cleared only by the reader
+    // scrolling away; viewport resizes never touch it. The follow
+    // effect below re-pins on a resize while the pin holds.
+    var pinnedToBottom by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+            // A scroll ending at the bottom (re)arms the pin; a scroll
+            // ending above clears it. Programmatic snaps (open/follow)
+            // do not set isScrollInProgress, so they never trip this —
+            // those paths set the pin directly where they land.
+            if (!scrolling) pinnedToBottom = nearBottom
         }
     }
 
@@ -777,35 +811,51 @@ fun ChatScreen(
     // used to run first and the open snap second — a visible swoop then
     // jump through the shared list mutex (Fase 2, 76-F2). The follow stays
     // off until the open effect has landed this session.
-    var scrolledSessionID by remember { mutableStateOf<String?>(null) }
+    var scrolledSessionID by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Follow keys include the last message's tools and parts: a stream
     // that only runs tools (no new text) used to never trigger a follow.
+    // Audit-200 C1: two more growth signals were missing — reasoning
+    // (M-037: a reasoning-only stretch changes neither the text nor the
+    // part count, so follow never fired for it) and a tool's output
+    // growing in place (M-038: same call id, longer output, same size).
+    // Both are folded into [followKeysOf]. The viewport height is a key
+    // too (M-041): a shrink that leaves the pin held must re-pin, which
+    // the old keys never noticed. Read through derivedStateOf, not
+    // directly: layoutInfo is replaced on every layout pass, and a
+    // direct read would recompose the whole screen on every scroll
+    // frame; the derived value only changes when the height itself
+    // changes.
+    val viewportHeightPx by remember {
+        derivedStateOf { listState.layoutInfo.viewportSize.height }
+    }
     LaunchedEffect(
         state.messages.size,
-        state.messages.lastOrNull()?.text?.length,
-        state.messages.lastOrNull()?.tools?.size,
-        state.messages.lastOrNull()?.parts?.size,
+        followKeysOf(state.messages.lastOrNull()),
         state.busy,
+        viewportHeightPx,
     ) {
         // Never fight an in-progress gesture: a token landing mid-drag
         // used to yank the list out from under the reader's finger, which
         // is half of the "stuck scroll" feeling. After the gesture ends
         // the next token re-evaluates and follows normally.
-        if (state.messages.isNotEmpty() && nearBottom && !listState.isScrollInProgress && scrolledSessionID == state.sessionID) {
+        // The gate is the PIN (M-041), not nearBottom: a viewport shrink
+        // must not silently unpin a reader who never scrolled.
+        if (state.messages.isNotEmpty() && pinnedToBottom && !listState.isScrollInProgress && scrolledSessionID == state.sessionID) {
             // Bottom-pin, not top-pin (see scrollToItemBottom). While
             // busy, #6e: animate when the remaining distance is small
             // so the list glides with the stream instead of snapping
             // per token (the streaming flicker, laporan #23); snap
             // only for a large jump, otherwise the animation queues
             // behind the tokens and the list lags. When idle, always
-            // animate. The nearBottom gate is untouched: a reader
+            // animate. The pin gate is untouched: a reader
             // reading above is never followed.
             if (state.busy) {
                 listState.followScrollToBottom(targetLastIndex)
             } else {
                 listState.animateScrollToItemBottom(targetLastIndex)
             }
+            pinnedToBottom = true
         }
     }
 
@@ -821,9 +871,18 @@ fun ChatScreen(
     // it sets scrolledSessionID, which is what lets the follow effect
     // above run again — the old "declared after, so its scroll wins"
     // comment was wrong, both effects ran through the same mutex.
+    // Audit-200 C1 (M-042): scrolledSessionID is saveable, so a rotation
+    // does not re-run the landing scroll and throw the reader out of the
+    // middle of the history — the list state itself already restores.
+    // The watermark reseed still runs on every invocation (a reload after
+    // process death re-seeds from the store); only the SCROLL is gated
+    // on a genuinely new session.
     LaunchedEffect(state.sessionID, state.messages.size) {
-        if (state.messages.isNotEmpty() && scrolledSessionID != state.sessionID) {
-            scrolledSessionID?.let { saveReadPosition(it) }
+        if (state.messages.isNotEmpty()) {
+            val isNewSession = scrolledSessionID != state.sessionID
+            if (isNewSession) {
+                scrolledSessionID?.let { saveReadPosition(it) }
+            }
             // The watermark is a message id (01-F2): resolved to a count
             // against the messages actually in the window — no coerceIn
             // clamp, a count was exactly what the prepends broke.
@@ -834,14 +893,30 @@ fun ChatScreen(
             }
             lastReadMessageCount = resolveReadCount(restoredId, state.messages)
             lastReadMessageId = restoredId ?: state.messages.lastOrNull()?.id
-            scrolledSessionID = state.sessionID
-            val firstUnread = state.messages.withIndex().firstOrNull { (index, message) ->
-                index >= lastReadMessageCount && message.role == Role.ASSISTANT
-            }?.index ?: -1
-            if (firstUnread >= 0) {
-                listState.scrollToItem(firstUnread + (if (state.hasMoreOlder) 1 else 0), 0)
-            } else {
-                listState.scrollToItemBottom(targetLastIndex)
+            if (isNewSession) {
+                scrolledSessionID = state.sessionID
+                val firstUnread = state.messages.withIndex().firstOrNull { (index, message) ->
+                    index >= lastReadMessageCount && message.role == Role.ASSISTANT
+                }?.index ?: -1
+                if (firstUnread >= 0) {
+                    // Audit-200 C1 (M-039): when the first unread IS the
+                    // last message, a top-pin lands ABOVE it — its top at
+                    // the viewport top, newest tokens below the fold —
+                    // and, for a message taller than the viewport,
+                    // nearBottom never turns true, so follow never
+                    // resumes. Bottom-pin it instead; a mid-list unread
+                    // still lands top-pinned, as the reader asked.
+                    if (firstUnread == state.messages.size - 1) {
+                        listState.scrollToItemBottom(targetLastIndex)
+                        pinnedToBottom = true
+                    } else {
+                        listState.scrollToItem(firstUnread + (if (state.hasMoreOlder) 1 else 0), 0)
+                        pinnedToBottom = false
+                    }
+                } else {
+                    listState.scrollToItemBottom(targetLastIndex)
+                    pinnedToBottom = true
+                }
             }
         }
     }
@@ -1608,10 +1683,23 @@ fun ChatScreen(
                                         // left off, so it stays top-pinned.
                                         // With nothing unread it still falls
                                         // through to the latest, bottom-pinned.
-                                        if (firstUnreadListIndex >= 0) {
+                                        // Audit-200 C1 (M-039): a first unread
+                                        // that IS the last message is
+                                        // bottom-pinned instead — top-pinning
+                                        // it hides the newest tokens below
+                                        // the fold and follow never resumes.
+                                        // The jump sets the pin (M-041): to
+                                        // the bottom it arms follow, to a
+                                        // mid-list unread it leaves it off.
+                                        if (firstUnreadListIndex >= 0 && firstUnreadIndex == state.messages.size - 1) {
+                                            listState.animateScrollToItemBottom(targetLastIndex)
+                                            pinnedToBottom = true
+                                        } else if (firstUnreadListIndex >= 0) {
                                             listState.animateScrollToItem(firstUnreadListIndex)
+                                            pinnedToBottom = false
                                         } else {
                                             listState.animateScrollToItemBottom(targetLastIndex)
+                                            pinnedToBottom = true
                                         }
                                     }
                                 },
@@ -4187,6 +4275,49 @@ private fun AssistantWorkingPlaceholder(
         }
     }
 }
+
+/**
+ * Whether the last item counts as "at the bottom" (audit-200 C1, M-040).
+ *
+ * Pure so it can be tested without a layout: [lastOffset] + [lastSize]
+ * is the last item's bottom edge; the visible bottom is
+ * [viewportEndOffset] MINUS [afterContentPadding] — the list carries
+ * 64dp of bottom content padding (air under the last message for the
+ * jump button), and comparing against the raw viewport end counted
+ * that padding as visible content, stretching the real tolerance
+ * from 48dp to ~112dp.
+ */
+internal fun isNearBottomOffset(
+    lastOffset: Int,
+    lastSize: Int,
+    viewportEndOffset: Int,
+    afterContentPadding: Int,
+    tolerancePx: Int,
+): Boolean = lastOffset + lastSize <= viewportEndOffset - afterContentPadding + tolerancePx
+
+/** The follow effect's content keys (audit-200 C1, M-037/M-038). */
+internal data class FollowKeys(
+    val textLength: Int,
+    val reasoningLength: Int,
+    val toolsSize: Int,
+    val toolOutputLength: Int,
+    val partsSize: Int,
+)
+
+/**
+ * What the follow effect watches on the last message: text growth,
+ * reasoning growth (M-037 — a reasoning-only stretch changed neither
+ * the text nor the part count), tool-count AND tool-output growth
+ * (M-038 — an output growing in place keeps the same call id and
+ * list size), and part-count growth.
+ */
+internal fun followKeysOf(message: ChatMessage?): FollowKeys = FollowKeys(
+    textLength = message?.text?.length ?: 0,
+    reasoningLength = message?.reasoning?.length ?: 0,
+    toolsSize = message?.tools?.size ?: 0,
+    toolOutputLength = message?.tools?.sumOf { (it.output?.length ?: 0) + (it.error?.length ?: 0) } ?: 0,
+    partsSize = message?.parts?.size ?: 0,
+)
 
 /**
  * Scrolls so the BOTTOM edge of the item at [index] sits at the viewport

@@ -25,6 +25,21 @@ class MarkdownLinkTest {
     }
 
     @Test
+    fun `C1 M-047 an empty link text stays literal, not invisible`() {
+        val result = spans("see [](https://example.com) here")
+        // No link with empty spans: the old render produced exactly
+        // that, so the whole thing vanished from the screen. (The bare
+        // URL itself still autolinks — that is correct markdown, and
+        // the brackets around it stay visible as plain text.)
+        assertTrue(
+            "empty link rendered as a link with no text: $result",
+            result.filterIsInstance<MdSpan.Link>().none { it.spans.isEmpty() },
+        )
+        val text = result.filterIsInstance<MdSpan.Text>().joinToString("") { it.text }
+        assertTrue("expected the literal brackets to survive: $result", text.contains("[]("))
+    }
+
+    @Test
     fun `javascript intent and file urls are plain text, not links`() {
         for (url in listOf("javascript:alert(1)", "intent://x", "file:///etc/passwd", "/relative/path")) {
             assertTrue("expected no link for $url", spans("[x]($url)").none { it is MdSpan.Link })

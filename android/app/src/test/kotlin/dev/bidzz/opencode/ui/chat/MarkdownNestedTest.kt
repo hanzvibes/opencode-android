@@ -95,6 +95,38 @@ class MarkdownNestedTest {
     }
 
     @Test
+    fun `C1 M-048 a pipe inside link text does not split the cell`() {
+        assertEquals(
+            listOf("[a|b](https://example.com)", "c"),
+            Markdown.splitCells("| [a|b](https://example.com) | c |"),
+        )
+    }
+
+    @Test
+    fun `C1 M-048 a pipe inside a link destination does not split the cell`() {
+        assertEquals(
+            listOf("[a](https://example.com/?q=1|2)", "c"),
+            Markdown.splitCells("| [a](https://example.com/?q=1|2) | c |"),
+        )
+    }
+
+    @Test
+    fun `C1 M-048 a pipe inside an angle destination does not split the cell`() {
+        assertEquals(
+            listOf("[a](<https://example.com/a|b>)", "c"),
+            Markdown.splitCells("| [a](<https://example.com/a|b>) | c |"),
+        )
+    }
+
+    @Test
+    fun `C1 M-048 a pipe inside plain parens still splits the cell`() {
+        assertEquals(
+            listOf("(a", "b)", "c"),
+            Markdown.splitCells("| (a|b) | c |"),
+        )
+    }
+
+    @Test
     fun `04-F5 double backticks render one code span with no stray backticks`() {
         val code = spans("run ``code`` now").filterIsInstance<MdSpan.Code>()
         assertEquals(listOf(MdSpan.Code("code")), code)
