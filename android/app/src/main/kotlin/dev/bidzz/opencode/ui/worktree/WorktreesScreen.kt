@@ -67,7 +67,7 @@ fun WorktreesScreen(
             )
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
-                state.failure != null -> EmptyState(state.failure.message(), isError = true)
+                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
                 state.sections.isEmpty() -> EmptyState(stringResource(R.string.worktree_empty))
                 else -> {
                     LazyColumn(

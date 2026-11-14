@@ -59,6 +59,23 @@ class FileViewSaveTest {
     }
 
     @Test
+    fun `M-141 the draft kept after a save is based on the new disk content`() {
+        // The save wrote "one\ntwo\n"; the typing that landed during it
+        // ("three\n") is an edit of what is now on disk. The persisted
+        // basis hash must therefore be the hash of the resolved content —
+        // hashing the pre-save content would restore this draft as a
+        // false stale conflict after a process death, so the save path
+        // re-persists the draft once the new content is known.
+        val now = snapshot().copy(saving = true, draft = "one\ntwo\nthree\n")
+
+        val resolved = resolveSaveSuccess(now, snapshot())
+
+        assertEquals("one\ntwo\n", resolved!!.content)
+        assertEquals(sha256Hex("one\ntwo\n"), sha256Hex(resolved.content))
+        assertFalse(sha256Hex("one\n") == sha256Hex(resolved.content))
+    }
+
+    @Test
     fun `typing during the save keeps the stale flag`() {
         val now = snapshot().copy(saving = true, draft = "one\ntwo\nthree\n", draftStale = true)
 

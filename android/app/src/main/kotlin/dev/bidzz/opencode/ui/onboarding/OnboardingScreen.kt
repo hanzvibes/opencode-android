@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +68,17 @@ fun OnboardingScreen(
     var step by remember { mutableIntStateOf(0) }
     var samplePath by remember { mutableStateOf<String?>(null) }
     var sampleError by remember { mutableStateOf<String?>(null) }
+    // Audit-200 B6 (M-525): "Choose a folder" only launches the picker —
+    // advancing here also advanced on cancel, on denial, and when the
+    // picker never opened. Remember the path at tap time and advance only
+    // when the workspace actually changes, i.e. a folder was picked.
+    var folderPickBaseline by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(workspacePath) {
+        if (folderPickBaseline != null && workspacePath != folderPickBaseline) {
+            folderPickBaseline = null
+            step = 1
+        }
+    }
 
     Column(
         modifier = modifier
@@ -122,8 +134,8 @@ fun OnboardingScreen(
                     },
                     onSampleContinue = { step = 1 },
                     onChooseFolder = {
+                        folderPickBaseline = workspacePath
                         onChooseFolder()
-                        step = 1
                     },
                     onUseDefault = { step = 1 },
                 )

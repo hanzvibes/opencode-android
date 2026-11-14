@@ -49,6 +49,21 @@ class QuickOpenFilterTest {
     }
 
     @Test
+    fun `M-139 a flat directory that drops files at the cap is truncated even with an empty queue`() {
+        // A workspace with 3,000 files in one directory fills `found` while
+        // the queue is already empty: without the dropped-entries flag the
+        // walk looked complete and the partial index was served as whole.
+        assertTrue(quickOpenWalkTruncated(queueRemaining = 0, foundSize = 2000, dirsVisited = 1, droppedEntries = true))
+        assertTrue(quickOpenWalkTruncated(queueRemaining = 0, foundSize = 2000, dirsVisited = 200, droppedEntries = true))
+    }
+
+    @Test
+    fun `M-139 no dropped entries means an empty queue is still a complete walk`() {
+        assertFalse(quickOpenWalkTruncated(queueRemaining = 0, foundSize = 2000, dirsVisited = 1, droppedEntries = false))
+        assertFalse(quickOpenWalkTruncated(queueRemaining = 0, foundSize = 12, dirsVisited = 3, droppedEntries = false))
+    }
+
+    @Test
     fun `89-F6 dot-directories are hidden except github and vscode`() {
         assertTrue(isHiddenDirectory(".git", isDirectory = true))
         assertTrue(isHiddenDirectory(".idea", isDirectory = true))

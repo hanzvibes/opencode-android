@@ -76,6 +76,24 @@ fun filterSessionRows(
 }
 
 /**
+ * Whether the "Load more" footer stays under an empty search result
+ * (audit-200 B6, M-090/M-098): a query that matches nothing on the loaded
+ * pages must not hide the next page — the sessions on page 2+ are only
+ * reachable by paging on while searching.
+ */
+fun shouldShowLoadMoreOnEmptySearch(query: String, hasMoreSessions: Boolean): Boolean =
+    query.isNotBlank() && hasMoreSessions
+
+/**
+ * Whether History shows the full-screen loading state (audit-200 B6,
+ * M-213): only the first load, when no rows are on screen yet. A reload
+ * with rows keeps the list (and its scroll position) and shows a thin
+ * progress bar instead of emptying the screen.
+ */
+fun shouldShowFullScreenLoading(loading: Boolean, rowsEmpty: Boolean): Boolean =
+    loading && rowsEmpty
+
+/**
  * An instant estimated from a relative age (80-F12).
  *
  * A relative age is a duration, not a day: "3 hours ago" at 01:00 is
