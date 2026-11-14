@@ -170,6 +170,30 @@ internal fun shouldRestorePermission(
 internal const val ANSWERED_PERMISSION_SUPPRESS_MS = 60_000L
 
 /**
+ * Permission-restore memory shared across [ChatRepository] instances
+ * (audit-200 B3, M-547/M-081).
+ *
+ * The repository is rebuilt on every attach, reload and new session, but
+ * the answers live in the view model that outlives it: a permission
+ * answered moments ago must stay suppressed when the next repository
+ * resyncs (the engine can keep listing it until it processes the reply),
+ * and a permission left over from a run that ended — stopped or finished
+ * — must not come back until that session sends again (the run is over,
+ * so the ask is dead; restoring it shows a prompt whose reply can only
+ * fail). Both live here, owned by the view model and handed to every
+ * repository it builds; a repository built without one (unit tests) gets
+ * a fresh, empty gate. The suppression is per session: stopping session
+ * A must not hide a live ask in session B.
+ */
+class PermissionRestoreGate {
+    var lastAnsweredId: String? = null
+    var lastAnsweredAtMs: Long = 0L
+    var lastAnsweredSessionID: String? = null
+    /** Session whose dead-run asks must not be restored until it sends again. */
+    var suppressedSessionID: String? = null
+}
+
+/**
  * Owns one session's conversation state.
  *
  * Streaming text is accumulated per assistant message id, not per "last message":
@@ -180,6 +204,7 @@ class ChatRepository(
     private val sessionApi: SessionApi,
     private val eventStream: EventStream,
     private val scope: CoroutineScope,
+    private val permissionGate: PermissionRestoreGate = PermissionRestoreGate(),
 ) {
     companion object {
         private const val TAG = "ChatRepository"
@@ -222,13 +247,23 @@ class ChatRepository(
     private var replyingPermissionId: String? = null
 
     /**
-     * Last permission id answered successfully, with the time it was
-     * answered (58-F5): the engine can keep listing it until it processes
-     * the reply, and a resync in that window must not resurrect the dead
-     * prompt. See [shouldRestorePermission].
+     * Counts the runs this repository has started (audit-200 B3, M-375):
+     * the terminal resync's retry loop must stop touching state the
+     * moment a new run starts, or a late retry overwrites the new run's
+     * streaming entries, live tools and failure with the old run's.
+     * Bumped in [send] on success; read by [resyncAfterTerminal] and
+     * [resync].
      */
-    private var lastAnsweredPermissionId: String? = null
-    private var lastAnsweredPermissionAtMs: Long = 0L
+    private var runGeneration = 0
+
+    /**
+     * True after a terminal run event until the next run starts
+     * (audit-200 B3, M-558): any text event after this point is stale —
+     * the finished answer already arrived through the terminal resync,
+     * so a late delta must not resurrect a streaming entry over it.
+     * Cleared in [send] and on EXECUTION_STARTED, and on [open].
+     */
+    private var runEnded = false
 
     /**
      * Text received per (assistant message id, block ordinal), for the message
@@ -251,6 +286,7 @@ class ChatRepository(
     fun open(sessionID: String) {
         if (this.sessionID == sessionID && streamJob?.isActive == true) return
         close()
+        runEnded = false
         this.sessionID = sessionID
         // A fresh open starts at the default window (item 28): earlier
         // messages are one tap away, not fetched up front every time.
@@ -300,7 +336,10 @@ class ChatRepository(
         messageLimit += MESSAGE_PAGE
         _state.value = _state.value.copy(loadingEarlier = true)
         scope.launch {
-            resync()
+            // Pinned to the session the tap was for (audit-200 B3,
+            // M-490): an unpinned resync would adopt whatever session is
+            // current when it runs.
+            resync(forSessionID = id)
             if (sessionID == id) _state.value = _state.value.copy(loadingEarlier = false)
         }
     }
@@ -333,8 +372,20 @@ class ChatRepository(
     /** What one [resync] call did — the terminal retry loop decides on this, not on the state it left behind (see [resyncAfterTerminal]). */
     private enum class ResyncOutcome { SUCCEEDED, FAILED, SKIPPED }
 
-    private suspend fun resync(fromTerminal: Boolean = false): ResyncOutcome {
-        val id = sessionID ?: return ResyncOutcome.SKIPPED
+    private suspend fun resync(
+        fromTerminal: Boolean = false,
+        forSessionID: String? = null,
+        terminalGeneration: Int? = null,
+    ): ResyncOutcome {
+        val id = forSessionID ?: sessionID ?: return ResyncOutcome.SKIPPED
+        // Pinned to another session (audit-200 B3, M-490): the switch
+        // already happened — do not even fetch for the abandoned one.
+        if (sessionID != id) return ResyncOutcome.SKIPPED
+        // A new run started since this terminal resync was launched
+        // (audit-200 B3, M-375): its state is not this resync's to write.
+        if (terminalGeneration != null && terminalGeneration != runGeneration) {
+            return ResyncOutcome.SKIPPED
+        }
         when (val result = sessionApi.messages(id, limit = messageLimit)) {
             is ApiResult.Success -> {
                 // The session may have changed while the call was in flight:
@@ -343,6 +394,9 @@ class ChatRepository(
                 // An old transcript must never overwrite the new session's
                 // (item 26) — and neither must its failure or permission.
                 if (sessionID != id) return ResyncOutcome.SKIPPED
+                if (terminalGeneration != null && terminalGeneration != runGeneration) {
+                    return ResyncOutcome.SKIPPED
+                }
                 // The engine returns history newest-first (idle, assistant, user...).
                 // Reversing here means the UI and every consumer can assume
                 // oldest-first, which is the only order a chat transcript can use.
@@ -377,7 +431,23 @@ class ChatRepository(
                 // never hide in that set. When the run is over the live
                 // set is empty and this is the old full clear.
                 val liveIds = liveStreamingIds(rawChronological, _state.value.streaming.keys)
-                buffers.keys.retainAll { (id, _) -> id in liveIds }
+                // Audit-200 B3 (M-044): the resync keeps the buffers of
+                // messages still streaming — but history may already hold
+                // MORE text for one of them (deltas missed during a
+                // disconnect). The overlay prefers streaming text, so a
+                // shorter buffer would shadow the newer history until the
+                // next delta. When history is longer, it wins: drop the
+                // streaming entry and its buffers, and the transcript
+                // shows the persisted text. The comparison is
+                // deliberately one-sided — the buffer joins blocks with
+                // blank lines, so it can look longer than history while
+                // holding less; only a clearly longer history drops it.
+                val historyById = rawChronological.associateBy { it.id }
+                val staleIds = liveIds.filter { liveId ->
+                    val historyText = historyById[liveId]?.plainText.orEmpty()
+                    historyText.length > streamedText(liveId).length
+                }.toSet()
+                buffers.keys.retainAll { (id, _) -> id in liveIds && id !in staleIds }
                 // A run that died after partial content (01-F4): the error
                 // lives on the newest assistant message, and the old
                 // unconditional clear hid the failure — the partial answer
@@ -396,7 +466,7 @@ class ChatRepository(
                 }
                 _state.value = _state.value.copy(
                     messages = chronological,
-                    streaming = _state.value.streaming.filterKeys { it in liveIds },
+                    streaming = _state.value.streaming.filterKeys { it in liveIds && it !in staleIds },
                     liveTools = emptyMap(),
                     // A run is over when the newest entry is `idle`, or when the
                     // newest assistant message is finished. The second case matters:
@@ -423,17 +493,33 @@ class ChatRepository(
                 when (val pending = sessionApi.listPermissions(id)) {
                     is ApiResult.Success -> {
                         if (sessionID != id) return ResyncOutcome.SUCCEEDED
-                        pending.value.firstOrNull()?.let { request ->
-                            if (shouldRestorePermission(
-                                    requestId = request.id,
-                                    replyingPermissionId = replyingPermissionId,
-                                    lastAnsweredPermissionId = lastAnsweredPermissionId,
-                                    lastAnsweredPermissionAtMs = lastAnsweredPermissionAtMs,
-                                    nowMs = System.currentTimeMillis(),
-                                )
-                            ) {
-                                _state.value = _state.value.copy(pendingPermission = request)
-                            }
+                        if (terminalGeneration != null && terminalGeneration != runGeneration) {
+                            return ResyncOutcome.SUCCEEDED
+                        }
+                        // Audit-200 B3 (M-081): asks from a run that ended
+                        // stay unrestored until this session sends again —
+                        // the engine still lists them, but the run is over
+                        // and no answer can land anymore.
+                        if (permissionGate.suppressedSessionID == id) {
+                            return ResyncOutcome.SUCCEEDED
+                        }
+                        // Audit-200 B3 (M-550): the first entry is not
+                        // always the restorable one — a just-answered
+                        // request at the head used to hide a fresh request
+                        // waiting behind it. Restore the first entry that
+                        // passes the suppression check instead.
+                        val nowMs = System.currentTimeMillis()
+                        pending.value.firstOrNull { request ->
+                            shouldRestorePermission(
+                                requestId = request.id,
+                                replyingPermissionId = replyingPermissionId,
+                                lastAnsweredPermissionId = permissionGate.lastAnsweredId
+                                    .takeIf { permissionGate.lastAnsweredSessionID == id },
+                                lastAnsweredPermissionAtMs = permissionGate.lastAnsweredAtMs,
+                                nowMs = nowMs,
+                            )
+                        }?.let { request ->
+                            _state.value = _state.value.copy(pendingPermission = request)
                         }
                     }
                     is ApiResult.Failure -> Log.w(TAG, "permission restore failed: ${pending.message}")
@@ -442,6 +528,9 @@ class ChatRepository(
             }
             is ApiResult.Failure -> {
                 if (sessionID != id) return ResyncOutcome.SKIPPED
+                if (terminalGeneration != null && terminalGeneration != runGeneration) {
+                    return ResyncOutcome.SKIPPED
+                }
                 Log.w(TAG, "resync failed: ${result.message}")
                 // A failed resync must not leave the streaming entry behind:
                 // the run is over, no more deltas are coming, and the entry
@@ -489,9 +578,18 @@ class ChatRepository(
      * would read "unchanged" and give up after the first retry even
      * though the next attempt never ran.
      */
-    private suspend fun resyncAfterTerminal() {
+    private suspend fun resyncAfterTerminal(expectedSessionID: String) {
+        // Audit-200 B3 (M-375): the generation is captured here — a new
+        // run started after the terminal event stops the loop before its
+        // next attempt, and [resync] re-checks it after every await, so
+        // a late retry can neither fetch for nor write over the new run.
+        // The session is pinned too (M-490): an orphan loop that wakes
+        // after a switch must not adopt the new session and stick the old
+        // run's failure onto it.
+        val generation = runGeneration
         repeat(TERMINAL_RESYNC_ATTEMPTS) { attempt ->
-            when (resync(fromTerminal = true)) {
+            if (runGeneration != generation) return
+            when (resync(fromTerminal = true, forSessionID = expectedSessionID, terminalGeneration = generation)) {
                 ResyncOutcome.SUCCEEDED, ResyncOutcome.SKIPPED -> return
                 ResyncOutcome.FAILED -> {
                     if (attempt + 1 < TERMINAL_RESYNC_ATTEMPTS) {
@@ -513,6 +611,14 @@ class ChatRepository(
         val id = sessionID ?: return ApiResult.Failure(code = -1, tag = "NoSession")
         val result = sessionApi.prompt(id, text)
         if (result is ApiResult.Success) {
+            // A new run starts: late text events are live again (M-558),
+            // the terminal retry loop must stand down (M-375), and asks
+            // from the previous run may be restored again (M-081).
+            runEnded = false
+            runGeneration++
+            if (permissionGate.suppressedSessionID == id) {
+                permissionGate.suppressedSessionID = null
+            }
             // The admit response may carry no text; what the user typed is known here, so
             // the bubble never renders empty. Remembered by id for later resyncs too.
             val shown = if (result.value.text.isNullOrBlank()) result.value.copy(text = text) else result.value
@@ -540,7 +646,14 @@ class ChatRepository(
 
     suspend fun interrupt(): ApiResult<Unit> {
         val id = sessionID ?: return ApiResult.Failure(code = -1, tag = "NoSession")
-        return sessionApi.interrupt(id)
+        val result = sessionApi.interrupt(id)
+        // Audit-200 B3 (M-081): the interrupt was accepted, so the run is
+        // ending — its ask is dead even if the terminal event never
+        // arrives (stream dropped), and the resync that follows must not
+        // restore it. The terminal branch sets the same flag; this covers
+        // the event's absence.
+        if (result is ApiResult.Success) permissionGate.suppressedSessionID = id
+        return result
     }
 
     /**
@@ -567,9 +680,13 @@ class ChatRepository(
                     // would leave the run blocked with no prompt on screen.
                     // Remember the answer (58-F5): the engine can keep
                     // listing this id until it processes the reply, and a
-                    // resync in that window must not resurrect it.
-                    lastAnsweredPermissionId = pending.id
-                    lastAnsweredPermissionAtMs = System.currentTimeMillis()
+                    // resync in that window must not resurrect it. The
+                    // memory lives in the shared gate (audit-200 B3,
+                    // M-547), not in this repository instance, so a
+                    // rebuild does not lose the suppression.
+                    permissionGate.lastAnsweredId = pending.id
+                    permissionGate.lastAnsweredSessionID = pending.sessionID
+                    permissionGate.lastAnsweredAtMs = System.currentTimeMillis()
                     _state.value = _state.value.copy(
                         pendingPermission = _state.value.pendingPermission?.takeIf { it.id != pending.id },
                     )
@@ -590,12 +707,18 @@ class ChatRepository(
         when (event.type) {
             EventTypes.TEXT_STARTED -> {
                 val started = event.decode<TextStarted>() ?: return
+                // Audit-200 B3 (M-558): a text event for a run that already
+                // ended — or for a message the history already finished —
+                // is stale (a replay after a reconnect). It must not
+                // resurrect a streaming entry over the finished answer.
+                if (runEnded || isCompletedMessage(started.assistantMessageID)) return
                 buffers.getOrPut(started.assistantMessageID to started.ordinal) { StringBuilder() }
                 publish(started.assistantMessageID)
             }
 
             EventTypes.TEXT_DELTA -> {
                 val delta = event.decode<TextDelta>() ?: return
+                if (runEnded || isCompletedMessage(delta.assistantMessageID)) return
                 buffers.getOrPut(delta.assistantMessageID to delta.ordinal) { StringBuilder() }
                     .append(delta.delta)
                 publish(delta.assistantMessageID)
@@ -603,6 +726,7 @@ class ChatRepository(
 
             EventTypes.TEXT_ENDED -> {
                 val ended = event.decode<TextEnded>() ?: return
+                if (runEnded || isCompletedMessage(ended.assistantMessageID)) return
                 // The final text is authoritative: replace whatever the deltas
                 // built, so a dropped delta does not leave a truncated
                 // message — but only this block's buffer, never the whole
@@ -613,7 +737,10 @@ class ChatRepository(
                 publish(ended.assistantMessageID, force = true)
             }
 
-            EventTypes.EXECUTION_STARTED -> _state.value = _state.value.copy(busy = true)
+            EventTypes.EXECUTION_STARTED -> {
+                runEnded = false
+                _state.value = _state.value.copy(busy = true)
+            }
 
             EventTypes.TOOL_INPUT_STARTED, EventTypes.TOOL_CALLED,
             EventTypes.TOOL_SUCCESS, EventTypes.TOOL_FAILED -> applyToolEvent(event.type, payload)
@@ -650,6 +777,12 @@ class ChatRepository(
                 // A finished run cannot still be waiting for an answer; drop the
                 // prompt so a dead request does not sit on screen.
                 _state.value = _state.value.copy(busy = false, pendingPermission = null)
+                // Audit-200 B3 (M-558/M-081): the run is over — later text
+                // events are stale, and any ask the engine still lists
+                // belongs to this dead run, so no resync restores it
+                // until the session sends again.
+                runEnded = true
+                permissionGate.suppressedSessionID = sessionID
                 // The run is over: no more deltas will arrive for its
                 // messages, so their buffers are stale (item 25). The
                 // streaming entries themselves stay until the resync below
@@ -665,8 +798,13 @@ class ChatRepository(
                 // that never appeared as deltas are included. Retried with
                 // backoff (03-F2): this resync is the only way the finished
                 // answer reaches the transcript, so one transient failure
-                // used to hide it until the next run.
-                scope.launch { resyncAfterTerminal() }
+                // used to hide it until the next run. The session is
+                // captured here (audit-200 B3, M-490): the loop must resync
+                // THIS session, never whatever is current when it wakes.
+                val terminalSessionID = sessionID
+                if (terminalSessionID != null) {
+                    scope.launch { resyncAfterTerminal(terminalSessionID) }
+                }
             }
 
             else -> {
@@ -736,6 +874,14 @@ class ChatRepository(
         lastPublishAtMs = System.currentTimeMillis()
         _state.value = _state.value.copy(streaming = _state.value.streaming + (messageID to streamedText(messageID)))
     }
+
+    /**
+     * Whether the history already finished this assistant message
+     * (audit-200 B3, M-558): a completed time means the run's text for
+     * it is persisted, so any later delta for the id is a stale replay.
+     */
+    private fun isCompletedMessage(messageID: String): Boolean =
+        _state.value.messages.any { it.id == messageID && it.isAssistant && it.time?.completed != null }
 
     /** Current streamed text for one message: its blocks in ordinal order. */
     private fun streamedText(messageID: String): String =

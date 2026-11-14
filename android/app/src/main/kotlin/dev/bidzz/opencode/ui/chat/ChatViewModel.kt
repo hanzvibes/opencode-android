@@ -10,6 +10,7 @@ import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.ChatState
+import dev.bidzz.opencode.core.api.PermissionRestoreGate
 import dev.bidzz.opencode.core.api.LiveTool
 import dev.bidzz.opencode.core.api.VcsApi
 import dev.bidzz.opencode.core.api.dto.ModelRef
@@ -642,6 +643,13 @@ class ChatViewModel(
     }
 
     private var repository: ChatRepository? = null
+    /**
+     * Permission-restore memory shared by every repository this view
+     * model builds (audit-200 B3, M-547/M-081): the repository is
+     * rebuilt on attach, reload and new session, but the answered and
+     * dead-run suppressions must survive the rebuild.
+     */
+    private val permissionRestoreGate = PermissionRestoreGate()
     private var collector: Job? = null
     /** The pending debounced composer park (audit-200 A9-3, DL-010). */
     private var composerParkJob: Job? = null
@@ -1094,7 +1102,7 @@ class ChatViewModel(
         // The header names the folder the engine just started in, so this is the moment
         // to record it: earlier than this the value would be a guess.
         _state.value = _state.value.copy(workspacePath = workspace())
-        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope)
+        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope, permissionRestoreGate)
         repository = repo
 
         collectRepo(repo)
@@ -2458,7 +2466,7 @@ class ChatViewModel(
         val attachedHandle = handle ?: return
         sessionReloadAttempts++
         repository?.close()
-        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope)
+        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope, permissionRestoreGate)
         repository = repo
         _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE, selectionFailure = null)
         collectRepo(repo)
@@ -2804,7 +2812,7 @@ class ChatViewModel(
         repository?.close()
         val attached = handle
         if (attached != null) {
-            val repo = ChatRepository(attached.sessions, attached.stream, viewModelScope)
+            val repo = ChatRepository(attached.sessions, attached.stream, viewModelScope, permissionRestoreGate)
             repository = repo
             collectRepo(repo)
         }
