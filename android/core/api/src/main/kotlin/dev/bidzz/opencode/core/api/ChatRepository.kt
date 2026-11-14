@@ -169,6 +169,24 @@ internal fun liveStreamingIds(
 }
 
 /**
+ * Whether a streaming buffer is strictly AHEAD of the persisted history
+ * for the same message (audit-200 C1, M-043): same content, more of it.
+ *
+ * The buffer joins text blocks with blank lines while history joins them
+ * with nothing ([SessionMessage.plainText]), so the comparison strips
+ * newlines from both sides first — otherwise a multi-block buffer could
+ * never be a prefix of its history. A diverged buffer (edit/rewrite,
+ * replayed delta) is not a prefix extension of history and is not
+ * ahead; neither is an equal or shorter one. Only an ahead buffer is
+ * authoritative; anything else drops to the persisted text.
+ */
+internal fun isBufferAheadOfHistory(buffered: String, history: String): Boolean {
+    val buf = buffered.filterNot { it == '\n' }.trim()
+    val hist = history.filterNot { it == '\n' }.trim()
+    return buf.length > hist.length && buf.startsWith(hist)
+}
+
+/**
  * Whether a permission request the engine still lists may be restored by a
  * resync (58-F5).
  *
@@ -322,7 +340,16 @@ class ChatRepository(
         streamJob = scope.launch {
             resync()
             try {
-                eventStream.events(onReconnect = { resync() }).collect { event ->
+                eventStream.events(onReconnect = {
+                    // Audit-200 C1 (M-004): the flow builder runs on
+                    // Dispatchers.IO (flowOn), while the delta handler
+                    // runs on this scope — a reconnect resync used to
+                    // mutate buffers/sentText/_state from IO concurrently
+                    // with the Main handler. Run it on the scope instead
+                    // and wait for it, so every mutation is confined to
+                    // one dispatcher.
+                    scope.launch { resync() }.join()
+                }).collect { event ->
                     if (event.type == EventTypes.SERVER_CONNECTED) return@collect
                     if (event.sessionIDOf() != sessionID) return@collect
                     handle(event)
@@ -456,21 +483,21 @@ class ChatRepository(
                 // never hide in that set. When the run is over the live
                 // set is empty and this is the old full clear.
                 val liveIds = liveStreamingIds(rawChronological, _state.value.streaming.keys)
-                // Audit-200 B3 (M-044): the resync keeps the buffers of
-                // messages still streaming — but history may already hold
-                // MORE text for one of them (deltas missed during a
-                // disconnect). The overlay prefers streaming text, so a
-                // shorter buffer would shadow the newer history until the
-                // next delta. When history is longer, it wins: drop the
+                // Audit-200 B3 (M-044), extended by C1 (M-043): the
+                // resync keeps the buffers of messages still streaming —
+                // but history may already hold NEWER text for one of them
+                // (deltas missed during a disconnect, or an edit/rewrite).
+                // The overlay prefers streaming text, so a stale buffer
+                // would shadow the persisted text. The buffer is
+                // authoritative only while it is strictly ahead of history
+                // (same content, more of it — see
+                // [isBufferAheadOfHistory]); anything else drops the
                 // streaming entry and its buffers, and the transcript
-                // shows the persisted text. The comparison is
-                // deliberately one-sided — the buffer joins blocks with
-                // blank lines, so it can look longer than history while
-                // holding less; only a clearly longer history drops it.
+                // shows the persisted text.
                 val historyById = rawChronological.associateBy { it.id }
                 val staleIds = liveIds.filter { liveId ->
                     val historyText = historyById[liveId]?.plainText.orEmpty()
-                    historyText.length > streamedText(liveId).length
+                    !isBufferAheadOfHistory(streamedText(liveId), historyText)
                 }.toSet()
                 buffers.keys.retainAll { (id, _) -> id in liveIds && id !in staleIds }
                 // A run that died after partial content (01-F4): the error
@@ -489,15 +516,30 @@ class ChatRepository(
                 } else {
                     null
                 }
+                val keptStreaming = _state.value.streaming.filterKeys { it in liveIds && it !in staleIds }
                 _state.value = _state.value.copy(
                     messages = chronological,
-                    streaming = _state.value.streaming.filterKeys { it in liveIds && it !in staleIds },
+                    streaming = keptStreaming,
                     liveTools = emptyMap(),
                     // A run is over when the newest entry is `idle`, or when the
                     // newest assistant message is finished. The second case matters:
                     // a rejected permission aborts the run without ever writing an
                     // `idle` message, so an idle-only check spins "Working" forever.
-                    busy = newest != null && !newest.isIdle && newest.time?.completed == null,
+                    // Audit-200 C1: two corrections to that read. (M-045) A
+                    // TERMINAL resync follows a run that is over by
+                    // definition — the newest row being unfinished (aborted
+                    // mid-stream) must not revive the "Working" spinner.
+                    // (M-046) A MID-RUN resync (reconnect) must not clear
+                    // busy while streaming buffers/entries are still
+                    // arriving: the history snapshot can lag the live run
+                    // (its newest row idle/completed from the previous
+                    // turn), and clearing busy flushes a queued follow-up
+                    // into the middle of the run.
+                    busy = when {
+                        fromTerminal -> false
+                        buffers.isNotEmpty() || keptStreaming.isNotEmpty() -> true
+                        else -> newest != null && !newest.isIdle && newest.time?.completed == null
+                    },
                     lastFailure = terminalFailure,
                     resyncFailed = false,
                     // A full page back means the window may have cut older

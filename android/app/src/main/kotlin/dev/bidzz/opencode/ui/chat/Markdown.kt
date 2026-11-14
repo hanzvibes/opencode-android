@@ -385,7 +385,12 @@ object Markdown {
      *
      * A pipe inside an inline code span (`|`a\|b``) or escaped as `\|` is part
      * of the cell, not a separator (04-F4) — a plain `split('|')` cut those
-     * cells in two.
+     * cells in two. Audit-200 C1 (M-048): the same holds for a pipe inside
+     * a link — its text `[a|b](url)` or its destination `(http://x?a|b)`
+     * (including an angle destination `<a|b>`) — which used to split the
+     * cell, shift every column after it, and lose content. A pipe inside
+     * plain parentheses in prose still splits: only a `(` that directly
+     * follows a `]` opens a destination.
      */
     internal fun splitCells(line: String): List<String> {
         val trimmed = line.trim().removePrefix("|").removeSuffix("|")
@@ -394,11 +399,21 @@ object Markdown {
         var i = 0
         var inCode = false
         var codeRun = 0
+        var bracketDepth = 0
+        var parenDepth = 0
+        var angleDepth = 0
+        var afterBracket = false
         while (i < trimmed.length) {
             val c = trimmed[i]
             when {
                 c == '\\' && i + 1 < trimmed.length &&
-                    (trimmed[i + 1] == '|' || trimmed[i + 1] == '\\') -> {
+                    (trimmed[i + 1] == '|' || trimmed[i + 1] == '\\' ||
+                        trimmed[i + 1] == '[' || trimmed[i + 1] == ']' ||
+                        trimmed[i + 1] == '(' || trimmed[i + 1] == ')') -> {
+                    // An escaped bracket/paren is literal text, not a
+                    // link boundary — consume both so the depth tracking
+                    // below never sees it.
+                    afterBracket = false
                     current.append(trimmed[i + 1])
                     i += 2
                 }
@@ -412,15 +427,58 @@ object Markdown {
                         inCode = false
                         codeRun = 0
                     }
+                    afterBracket = false
                     repeat(run) { current.append('`') }
                     i += run
                 }
-                c == '|' && !inCode -> {
+                c == '|' && !inCode && bracketDepth == 0 && parenDepth == 0 && angleDepth == 0 -> {
                     cells += current.toString().trim()
                     current.setLength(0)
+                    afterBracket = false
+                    i++
+                }
+                c == '[' && !inCode -> {
+                    bracketDepth++
+                    afterBracket = false
+                    current.append(c)
+                    i++
+                }
+                c == ']' && !inCode && bracketDepth > 0 -> {
+                    bracketDepth--
+                    // A `(` directly after this `]` opens the link
+                    // destination; any other character cancels that.
+                    afterBracket = bracketDepth == 0
+                    current.append(c)
+                    i++
+                }
+                c == '(' && !inCode && afterBracket -> {
+                    parenDepth = 1
+                    afterBracket = false
+                    current.append(c)
+                    i++
+                }
+                c == '(' && !inCode && parenDepth > 0 -> {
+                    parenDepth++
+                    current.append(c)
+                    i++
+                }
+                c == ')' && !inCode && parenDepth > 0 -> {
+                    parenDepth--
+                    current.append(c)
+                    i++
+                }
+                c == '<' && !inCode && parenDepth > 0 && angleDepth == 0 -> {
+                    angleDepth = 1
+                    current.append(c)
+                    i++
+                }
+                c == '>' && !inCode && angleDepth > 0 -> {
+                    angleDepth = 0
+                    current.append(c)
                     i++
                 }
                 else -> {
+                    afterBracket = false
                     current.append(c)
                     i++
                 }
@@ -696,6 +754,11 @@ object Markdown {
         }
         if (close + 1 >= text.length || text[close + 1] != '(') return null
         val linkText = text.substring(i + 1, close)
+        // Audit-200 C1 (M-047): an empty link `[](url)` is malformed —
+        // rendering it as a link shows nothing at all (empty spans, and
+        // the URL is not text), so the whole thing vanished from the
+        // screen. Returning null leaves it literal, as it was before.
+        if (linkText.isBlank()) return null
         // Destination: `<...>` or a paren-balanced run, then an optional title.
         var k = close + 2
         while (k < text.length && (text[k] == ' ' || text[k] == '\t')) k++

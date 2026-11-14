@@ -25,6 +25,16 @@ class MarkdownLinkTest {
     }
 
     @Test
+    fun `C1 M-047 an empty link text stays literal, not invisible`() {
+        val result = spans("see [](https://example.com) here")
+        assertTrue("expected no link for empty text", result.none { it is MdSpan.Link })
+        assertTrue(
+            "expected the raw source to survive: $result",
+            result.filterIsInstance<MdSpan.Text>().any { it.text.contains("[](https://example.com)") },
+        )
+    }
+
+    @Test
     fun `javascript intent and file urls are plain text, not links`() {
         for (url in listOf("javascript:alert(1)", "intent://x", "file:///etc/passwd", "/relative/path")) {
             assertTrue("expected no link for $url", spans("[x]($url)").none { it is MdSpan.Link })
