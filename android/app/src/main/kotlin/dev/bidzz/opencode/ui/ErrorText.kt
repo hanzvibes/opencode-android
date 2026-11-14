@@ -19,6 +19,18 @@ fun ApiResult.Failure.message(): String = when (reason) {
     FailureReason.LOCATION_MISSING -> stringResource(R.string.error_location_missing)
     FailureReason.SESSION_MISSING -> stringResource(R.string.error_session_missing)
     FailureReason.UNREACHABLE -> stringResource(R.string.error_unreachable)
+    // Audit-200 C10 (M-152): the wait the server asked for, when it sent
+    // one — the user sees how long to wait instead of a bare "busy".
+    // (A local first: the property lives in another module, so it does
+    // not smart-cast.)
+    FailureReason.RATE_LIMITED -> {
+        val wait = retryAfterSeconds
+        if (wait != null) {
+            stringResource(R.string.error_rate_limited_wait, wait)
+        } else {
+            stringResource(R.string.error_rate_limited)
+        }
+    }
     FailureReason.REQUEST_FAILED -> stringResource(R.string.error_request_failed, code)
     FailureReason.LOST_CONNECTION -> stringResource(R.string.error_lost_connection, code)
     FailureReason.NO_SESSION -> stringResource(R.string.error_no_session)

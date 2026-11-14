@@ -437,6 +437,14 @@ class ChatRepository(
     private enum class ResyncOutcome { SUCCEEDED, FAILED, SKIPPED }
 
     /**
+     * The session's transcript from the server (audit-200 C10, M-153):
+     * the retry path's way to check whether a prompt whose POST failed
+     * ambiguously already landed before re-sending it.
+     */
+    suspend fun fetchMessages(sessionID: String): ApiResult<List<SessionMessage>> =
+        sessionApi.messages(sessionID)
+
+    /**
      * Re-fetches the transcript without opening a new stream
      * (audit-200 B3, M-244): the stop watchdog's way to shake loose a
      * terminal state the stream never delivered.

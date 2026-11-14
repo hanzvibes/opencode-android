@@ -26,3 +26,12 @@ fun shouldResurrect(
     attempts: Int,
     limit: Int,
 ): Boolean = state == EngineState.FAILED && !stopping && !inFlight && attempts < limit
+
+/**
+ * Whether a stop is still the latest intent (audit-200 C10, M-147):
+ * a stop tears the service down only while its own epoch is still
+ * current. A RESTART bumps the epoch, so a stop that was in flight
+ * when the restart arrived no longer owns the teardown.
+ */
+internal fun isStopStillCurrent(epochAtStop: Int, currentEpoch: Int): Boolean =
+    epochAtStop == currentEpoch

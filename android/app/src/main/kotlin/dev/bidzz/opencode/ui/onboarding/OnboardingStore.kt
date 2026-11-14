@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.onboarding
 
 import android.content.Context
+import dev.bidzz.opencode.WorkspaceAgentsMd
 import dev.bidzz.opencode.workspace.WorkspaceStore
 
 /**
@@ -35,6 +36,19 @@ object OnboardingStore {
     fun shouldShow(context: Context, workspaceStore: WorkspaceStore): Boolean {
         if (isCompleted(context)) return false
         val dir = workspaceStore.resolve()
-        return dir.listFiles()?.isEmpty() ?: true
+        return workspaceLooksFirstRun(dir.listFiles()?.map { it.name })
     }
+}
+
+/**
+ * Whether a workspace counts as untouched (audit-200 C10, M-015):
+ * empty, or holding only the `AGENTS.md` the app itself seeds on
+ * startup ([WorkspaceAgentsMd.ensure]). The seed runs before the UI
+ * appears, so a fresh install's workspace is never literally empty
+ * and onboarding never showed. A workspace with any other file is a
+ * real workspace, even if it also holds AGENTS.md.
+ */
+internal fun workspaceLooksFirstRun(fileNames: List<String>?): Boolean {
+    if (fileNames == null) return true
+    return fileNames.all { it == WorkspaceAgentsMd.FILE_NAME }
 }

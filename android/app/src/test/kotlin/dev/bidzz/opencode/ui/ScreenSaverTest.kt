@@ -24,7 +24,7 @@ class ScreenSaverTest {
             Screen.UsageLimits,
             Screen.Settings,
             Screen.Providers,
-            Screen.Diagnostics,
+            Screen.Diagnostics(),
             Screen.McpServers,
             Screen.Plugins,
             Screen.Worktrees,

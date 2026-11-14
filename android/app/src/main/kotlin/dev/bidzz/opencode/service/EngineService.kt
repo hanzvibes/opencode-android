@@ -28,6 +28,7 @@ import dev.bidzz.opencode.core.engine.ProcessManager
 import dev.bidzz.opencode.ui.isAgentRunEndEvent
 import dev.bidzz.opencode.ui.notifyAgentDone
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,6 +36,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -210,6 +212,17 @@ class EngineService : Service() {
     private val stopping = AtomicBoolean(false)
     private var consecutiveFailures = 0
 
+    /**
+     * Stop epoch (audit-200 C10, M-147): each stop request bumps the epoch,
+     * and the stop coroutine only tears the service down while its own epoch
+     * is still current. A RESTART is a newer user intent that arrives while
+     * the stop is in flight — the supervisor's lifecycle lock serializes it
+     * after the stop, so without the epoch the stale `stopSelf()` would
+     * destroy the service (and `onDestroy` would kill the just-restarted
+     * engine) right after the restart finished.
+     */
+    private val stopEpoch = AtomicInteger(0)
+
     /** The agent-done stream watcher (55-F6), if one is running. */
     private var agentDoneJob: Job? = null
 
@@ -218,6 +231,9 @@ class EngineService : Service() {
 
     /** Guards against two resurrection attempts overlapping while one is in flight. */
     private val resurrecting = AtomicBoolean(false)
+
+    /** The in-flight resurrection coroutine, if one is running (M-148). */
+    private var resurrectJob: Job? = null
 
     private val manager: ProcessManager?
         get() = (application as OpenCodeApplication).processManager
@@ -252,6 +268,13 @@ class EngineService : Service() {
         }
 
         if (action == ACTION_RESTART) {
+            // Audit-200 C10 (M-147): a restart during a stop is a newer
+            // intent — clear the stop flag (it would otherwise suppress
+            // notifications and future starts forever, since nothing ever
+            // resets it) and invalidate the in-flight stop's epoch so its
+            // stale stopSelf() cannot kill the restarted engine.
+            stopping.set(false)
+            stopEpoch.incrementAndGet()
             scope.launch {
                 Log.i(TAG, "restarting engine for workspace change")
                 // `restart()` holds the supervisor's lifecycle lock, so a start that
@@ -274,7 +297,9 @@ class EngineService : Service() {
         // re-delivery) would resurrect the engine the user just stopped.
         // The explicit RESTART action above is unaffected: it is a newer
         // user intent, and the supervisor's lifecycle lock serializes it
-        // after the stop. The resurrect check below already respects this
+        // after the stop (and it invalidates the stop's epoch, C10 M-147,
+        // so the stop's stopSelf() cannot kill the restarted engine).
+        // The resurrect check below already respects this
         // flag the same way (see shouldResurrect).
         if (stopping.get()) {
             Log.i(TAG, "ignoring start while stopping")
@@ -320,12 +345,31 @@ class EngineService : Service() {
     private fun requestStop() {
         if (!stopping.compareAndSet(false, true)) return
         Log.i(TAG, "stop requested")
+        // Audit-200 C10 (M-148): cancel a resurrection that is still in
+        // flight — if it is waiting on the supervisor's lifecycle lock the
+        // cancel aborts the start; if the start already holds the lock it
+        // completes and this stop (queued on the same lock) stops it after.
+        // Either way the engine ends STOPPED.
+        resurrectJob?.cancel()
         // 55-F1: a stopped service leaves no failure behind either.
         getSystemService(NotificationManager::class.java)?.cancel(FAILED_NOTIFICATION_ID)
+        val myEpoch = stopEpoch.incrementAndGet()
         scope.launch {
             manager?.stop()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            // Audit-200 C10 (M-147): the teardown runs on the main thread,
+            // where RESTART intents are also handled, so the epoch check and
+            // the stopSelf() cannot straddle a restart: a restart that
+            // arrived before this point already invalidated the epoch, and
+            // one that arrives after it is too late — the service is
+            // already stopping.
+            withContext(Dispatchers.Main) {
+                if (isStopStillCurrent(myEpoch, stopEpoch.get())) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                } else {
+                    Log.i(TAG, "stop superseded by a restart; service stays up")
+                }
+            }
         }
     }
 
@@ -435,16 +479,31 @@ class EngineService : Service() {
         if (!resurrecting.compareAndSet(false, true)) return
         consecutiveFailures++
         Log.w(TAG, "engine failed; resurrecting (attempt $consecutiveFailures/$RESTART_FAILURE_LIMIT)")
-        scope.launch {
-            val result = supervisor.start()
-            resurrecting.set(false)
-            result.onSuccess { Log.i(TAG, "engine resurrected at ${it.baseUrl}") }
-                .onFailure { e ->
-                    Log.e(TAG, "resurrect failed: ${e.message}")
-                    if (consecutiveFailures >= RESTART_FAILURE_LIMIT) {
-                        postFailureNotification(R.string.engine_notif_restart_failed_text)
-                    }
+        resurrectJob = scope.launch {
+            try {
+                // Audit-200 C10 (M-148): re-check the stop flag inside the
+                // coroutine — a stop that arrived after the gate in
+                // observeStatus() must not resurrect the engine the user
+                // just stopped.
+                if (stopping.get()) {
+                    Log.i(TAG, "stop arrived while resurrecting; not starting")
+                    return@launch
                 }
+                val result = supervisor.start()
+                result.onSuccess { Log.i(TAG, "engine resurrected at ${it.baseUrl}") }
+                    .onFailure { e ->
+                        Log.e(TAG, "resurrect failed: ${e.message}")
+                        if (consecutiveFailures >= RESTART_FAILURE_LIMIT) {
+                            postFailureNotification(R.string.engine_notif_restart_failed_text)
+                        }
+                    }
+            } finally {
+                // Audit-200 C10 (M-148): the flag must clear even when the
+                // coroutine is cancelled (a stop cancels the in-flight
+                // resurrect) — otherwise no resurrection could ever run
+                // again.
+                resurrecting.set(false)
+            }
         }
     }
 

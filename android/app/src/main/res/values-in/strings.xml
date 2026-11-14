@@ -270,6 +270,7 @@
     <string name="chat_retry">Coba lagi</string>
     <string name="chat_load_earlier">Muat pesan sebelumnya</string>
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="chat_rate_limited_guidance_action">Lihat panduan</string>
     <string name="chat_agent_failed">Agen gagal</string>
     <string name="stop_unconfirmed">Stop belum terkonfirmasi — ketuk Stop untuk mencoba lagi.</string>
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
@@ -308,6 +309,8 @@
     <string name="chat_status_dialog_context">Konteks</string>
     <string name="chat_status_dialog_state">Status</string>
     <string name="chat_status_dialog_diagnostics">Diagnostik</string>
+    <string name="chat_status_dialog_error">Kesalahan</string>
+    <string name="chat_status_dialog_restart">Mulai ulang engine</string>
     <string name="chat_status_dialog_close">Tutup</string>
     <string name="dialog_copy_value">Salin %1$s</string>
     <string name="chat_status_dialog_turn_diff">Diff turn</string>
@@ -934,6 +937,8 @@
     <string name="error_location_missing">Folder proyek sudah tidak tersedia</string>
     <string name="error_session_missing">Sesi sudah tidak ada</string>
     <string name="error_unreachable">Tidak bisa menjangkau engine</string>
+    <string name="error_rate_limited">Batas laju tercapai — model sedang sibuk. Ganti model atau tunggu sebentar, lalu kirim lagi.</string>
+    <string name="error_rate_limited_wait">Batas laju tercapai — coba lagi dalam %1$d detik, atau ganti model.</string>
     <string name="error_request_failed">Permintaan gagal (%1$d)</string>
     <string name="error_binary_file">Berkas biner (%1$d byte)</string>
     <string name="error_not_utf8">Berkas ini bukan UTF-8 yang valid, jadi tidak bisa diedit di sini.</string>

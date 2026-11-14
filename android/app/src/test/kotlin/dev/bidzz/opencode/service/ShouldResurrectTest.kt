@@ -55,4 +55,10 @@ class ShouldResurrectTest {
         assertFalse(decide(EngineState.FAILED, attempts = limit))
         assertFalse(decide(EngineState.FAILED, attempts = limit + 5))
     }
+
+    @Test
+    fun `M-147 a stop is current only while no restart bumped the epoch`() {
+        assertTrue(isStopStillCurrent(epochAtStop = 3, currentEpoch = 3))
+        assertFalse(isStopStillCurrent(epochAtStop = 3, currentEpoch = 4))
+    }
 }
