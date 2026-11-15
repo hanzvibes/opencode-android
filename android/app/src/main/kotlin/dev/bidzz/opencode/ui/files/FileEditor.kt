@@ -133,13 +133,30 @@ object LargeFileGuard {
      * understates how much was held back.
      */
     fun preview(text: String, totalLines: Int): Pair<String, Int> {
-        val lines = text.lines()
         if (!isLarge(text)) return text to totalLines
-        return lines.take(PreviewLines).joinToString("\n") to totalLines
+        // Audit-200 D1 (m-360): the old `text.lines().take(...)` split the
+        // whole (up to 8 MB) string into a list just to keep the first
+        // 2,000 lines. Cut at the 2,000th newline instead — no allocation
+        // beyond the preview itself.
+        var linesSeen = 0
+        var end = text.length
+        var i = 0
+        while (i < text.length) {
+            if (text[i] == '\n') {
+                linesSeen++
+                if (linesSeen == PreviewLines) {
+                    end = i
+                    break
+                }
+            }
+            i++
+        }
+        return text.substring(0, end) to totalLines
     }
 
     /** Same as [preview] with the line count read off the text itself. */
-    fun preview(content: String): Pair<String, Int> = preview(content, content.lines().size)
+    fun preview(content: String): Pair<String, Int> =
+        preview(content, if (content.isEmpty()) 1 else content.count { it == '\n' } + 1)
 }
 
 /**

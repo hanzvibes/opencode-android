@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -886,17 +887,27 @@ fun DiagnosticsScreen(
                     RowDivider(inset = spacing.md + 30.dp + spacing.md)
 
                     // Storage
-                    val storageFreeStr = formatBytes(storageFree)
-                    val storageTotalStr = formatBytes(storageTotal)
-                    val isLowStorage = storageFree < 500L * 1024 * 1024
+                    // Audit-200 D1 (m-231): the storage row used to reuse the
+                    // RAM tag ("Low Memory"). It has its own tag now. A
+                    // failed StatFs reads as 0/0 — that is "unknown", not
+                    // "0 B free" with a low tag.
+                    val storageUnknown = storageTotal == 0L
+                    val storageFreeStr = if (storageUnknown) stringResource(R.string.diag_storage_unknown) else formatBytes(storageFree)
+                    val storageTotalStr = if (storageUnknown) stringResource(R.string.diag_storage_unknown) else formatBytes(storageTotal)
+                    val isLowStorage = !storageUnknown && storageFree < 500L * 1024 * 1024
                     HealthRow(
                         glyph = Glyph.Folder,
                         badgeColor = Color(0xFF34C759),
                         title = stringResource(R.string.diag_storage),
-                        primaryText = "$storageFreeStr free",
+                        primaryText = if (storageUnknown) storageFreeStr else "$storageFreeStr free",
                         secondaryText = "Total: $storageTotalStr",
-                        tagLabel = stringResource(if (isLowStorage) R.string.diag_health_low_mem else R.string.diag_health_normal),
-                        tagColor = if (isLowStorage) colors.warning else colors.success,
+                        tagLabel = stringResource(
+                            if (storageUnknown) R.string.diag_storage_unknown
+                            else if (isLowStorage) R.string.diag_health_low_storage
+                            else R.string.diag_health_normal,
+                        ),
+                        tagColor = if (storageUnknown) colors.onSurfaceMuted
+                        else if (isLowStorage) colors.warning else colors.success,
                     )
                     RowDivider(inset = spacing.md + 30.dp + spacing.md)
 
@@ -1087,12 +1098,20 @@ fun DiagnosticsScreen(
                         Spacer(Modifier.width(spacing.sm))
 
                         // Quick Copy Logs Button (copies the filtered lines)
+                        // Audit-200 D1 (m-234): disabled when nothing matches —
+                        // the old button copied an empty string and still
+                        // showed "Copied to clipboard".
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(radius.sm))
                                 .background(colors.fill)
                                 // A11y (#8b): the "Copy logs" text inside is the name.
-                                .clickable(role = Role.Button, onClick = { copyLogs(filteredLogs.map { it.text }) })
+                                .clickable(
+                                    enabled = filteredLogs.isNotEmpty(),
+                                    role = Role.Button,
+                                    onClick = { copyLogs(filteredLogs.map { it.text }) },
+                                )
+                                .alpha(if (filteredLogs.isEmpty()) 0.4f else 1f)
                                 .padding(horizontal = spacing.sm, vertical = spacing.xs),
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {

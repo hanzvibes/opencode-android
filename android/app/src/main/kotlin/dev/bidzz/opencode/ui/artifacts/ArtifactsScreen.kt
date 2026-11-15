@@ -31,14 +31,12 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.HatchDeleteConfirmationDialog
+import dev.bidzz.opencode.ui.appLocale
+import dev.bidzz.opencode.ui.formatAppDateTime
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /**
  * Published artifacts on the engine.
@@ -203,7 +201,7 @@ private fun ArtifactRow(
                 text = stringResource(
                     R.string.artifact_row_meta,
                     artifact.provider,
-                    formatTime(artifact.time.updated),
+                    formatAppDateTime(artifact.time.updated, appLocale()),
                 ),
                 style = OpenCodeTypography.bodySmall,
                 color = colors.onSurfaceMuted,
@@ -229,8 +227,3 @@ private fun ArtifactRow(
         }
     }
 }
-
-private fun formatTime(millis: Long): String =
-    Instant.ofEpochMilli(millis)
-        .atZone(ZoneId.systemDefault())
-        .format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.getDefault()))

@@ -61,6 +61,13 @@ sealed interface ApiResult<out T> {
                 // to surface as raw English SERVER_MESSAGE. It is a rate
                 // limit, and the screen words it in the app's language.
                 code == 429 -> FailureReason.RATE_LIMITED
+                // Audit-200 D1 (m-664): the same treatment for the two
+                // provider/engine tags WebSearch promises, and for a
+                // decode failure (code -1) — the raw exception text is
+                // English, and it can carry a path or a token.
+                isServiceUnavailable -> FailureReason.SERVICE_UNAVAILABLE
+                isInvalidRequest -> FailureReason.INVALID_REQUEST
+                code == -1 -> FailureReason.DECODE_FAILED
                 !message.isNullOrBlank() -> FailureReason.SERVER_MESSAGE
                 else -> FailureReason.REQUEST_FAILED
             }
@@ -79,6 +86,12 @@ sealed interface ApiResult<out T> {
 
         /** The file is text but not valid UTF-8; [message] carries its size in bytes. */
         val isNotUtf8: Boolean get() = tag == "NotUtf8"
+
+        /** The provider/engine is down (e.g. a search provider outage). */
+        val isServiceUnavailable: Boolean get() = tag == "ServiceUnavailableError"
+
+        /** The engine refused the request itself (bad query, bad parameters). */
+        val isInvalidRequest: Boolean get() = tag == "InvalidRequestError"
     }
 }
 
@@ -90,6 +103,12 @@ enum class FailureReason {
     UNREACHABLE,
     /** HTTP 429: the model is busy; re-sending on the same model fails again. */
     RATE_LIMITED,
+    /** The provider/engine is down; the user should try another provider or wait. */
+    SERVICE_UNAVAILABLE,
+    /** The engine refused the request itself. */
+    INVALID_REQUEST,
+    /** The engine answered, but the response could not be decoded. */
+    DECODE_FAILED,
     /** The engine sent its own message; show it verbatim. */
     SERVER_MESSAGE,
     REQUEST_FAILED,

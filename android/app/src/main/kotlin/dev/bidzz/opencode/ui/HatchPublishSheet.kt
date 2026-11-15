@@ -70,16 +70,42 @@ fun hatchPublishStateLabelRes(state: HatchPublishState): Int = when (state) {
 }
 
 /**
+ * The default title for a state (Audit-200 D1, m-696): a sheet called
+ * with no title used to render an empty title line. Pure so it is
+ * unit-testable, like [hatchPublishStateLabelRes].
+ */
+fun hatchPublishTitleRes(state: HatchPublishState): Int = when (state) {
+    HatchPublishState.PUBLISH -> R.string.publish_title_publish
+    HatchPublishState.SUCCESS -> R.string.publish_title_success
+    HatchPublishState.FAILED -> R.string.publish_title_failed
+    HatchPublishState.UP_TO_DATE -> R.string.publish_title_up_to_date
+    HatchPublishState.UNPUBLISHED -> R.string.publish_title_unpublished
+}
+
+/** The default message for a state (Audit-200 D1, m-696). */
+fun hatchPublishMessageRes(state: HatchPublishState): Int = when (state) {
+    HatchPublishState.PUBLISH -> R.string.publish_message_publish
+    HatchPublishState.SUCCESS -> R.string.publish_message_success
+    HatchPublishState.FAILED -> R.string.publish_message_failed
+    HatchPublishState.UP_TO_DATE -> R.string.publish_message_up_to_date
+    HatchPublishState.UNPUBLISHED -> R.string.publish_message_unpublished
+}
+
+/**
  * A publish-state sheet: a 4dp status band on top (mesh gradient while
  * publishing / on success, danger while failed, hairline otherwise),
  * the state label with its dot, then title + message and an optional
  * primary action. Actions are 48dp tall (a11y).
+ *
+ * [title] and [message] default to the per-state text (D1 m-696): a
+ * caller that passes nothing — or an empty string — gets a sheet that
+ * still says what happened, never a bare dot and band.
  */
 @Composable
 fun HatchPublishBottomSheet(
     state: HatchPublishState,
-    title: String,
-    message: String,
+    title: String? = null,
+    message: String? = null,
     onDismiss: () -> Unit,
     primaryLabel: String? = null,
     onPrimary: (() -> Unit)? = null,
@@ -135,13 +161,13 @@ fun HatchPublishBottomSheet(
                         )
                 }
                 Text(
-                    text = title,
+                    text = title?.takeIf { it.isNotBlank() } ?: stringResource(hatchPublishTitleRes(state)),
                     style = OpenCodeTypography.title,
                     color = colors.onSurface,
                     modifier = Modifier.padding(top = spacing.sm),
                 )
                 Text(
-                    text = message,
+                    text = message?.takeIf { it.isNotBlank() } ?: stringResource(hatchPublishMessageRes(state)),
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                     modifier = Modifier.padding(top = spacing.xs),

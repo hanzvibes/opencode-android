@@ -33,4 +33,22 @@ class LargeFileGuardTest {
         assertEquals(trueTotal, total)
         assertTrue(LargeFileGuard.isLarge(kept))
     }
+
+    @Test
+    fun `D1 m-360 single-arg preview counts lines without splitting the text`() {
+        val (shown, total) = LargeFileGuard.preview("a\nb\nc")
+        assertEquals("a\nb\nc", shown)
+        assertEquals(3, total)
+        val (emptyShown, emptyTotal) = LargeFileGuard.preview("")
+        assertEquals("", emptyShown)
+        assertEquals(1, emptyTotal)
+    }
+
+    @Test
+    fun `D1 m-360 large preview keeps the first lines verbatim`() {
+        val big = (1..3_000).joinToString("\n") { "x".repeat(500) }
+        val (shown, _) = LargeFileGuard.preview(big, 3_000)
+        assertEquals((1..2_000).joinToString("\n") { "x".repeat(500) }, shown)
+        assertEquals(2_000, shown.lines().size)
+    }
 }

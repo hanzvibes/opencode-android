@@ -104,11 +104,13 @@ internal fun sessionLogSummary(event: SessionLogEvent): String {
     return data.toString().take(SUMMARY_CHARS)
 }
 
-/** Wall-clock of a log event as "14:32:05"; null when unknown. */
+/** Wall-clock of a log event as "14:32:05"; null when unknown.
+ * Audit-200 D1 (m-554): `Locale.ROOT` — the pattern is digits only, so it
+ * must stay ASCII digits whatever the device locale. */
 internal fun formatLogTime(createdMs: Long?): String? {
     if (createdMs == null) return null
     val ms = if (createdMs < 1_000_000_000_000L) createdMs * 1_000 else createdMs
-    return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(ms))
+    return SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(Date(ms))
 }
 
 private const val SUMMARY_CHARS: Int = 160

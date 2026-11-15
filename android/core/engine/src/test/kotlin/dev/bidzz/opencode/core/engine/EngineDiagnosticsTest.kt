@@ -113,16 +113,18 @@ class EngineDiagnosticsTest {
         // Audit-200 C13 (M-003): the old prefix-only redaction only caught
         // `server password: <value>`; a line like this one — the password
         // echoed without its prefix — reached the viewer verbatim.
+        // Fixture is 8 chars: D1 m-395 only masks the bare value when the
+        // password is at least MIN_REDACTED_PASSWORD_LENGTH (8) long.
         val fixture = fixture()
         fixture.log.writeText(
             "server started\n" +
-                "auth failed for user opencode: hunter2\n" +
+                "auth failed for user opencode: hunter22\n" +
                 "still running\n",
         )
 
-        val redacted = fixture.diagnostics.engineLogTail(password = "hunter2")
+        val redacted = fixture.diagnostics.engineLogTail(password = "hunter22")
 
-        assertTrue(redacted.lines.none { it.contains("hunter2") })
+        assertTrue(redacted.lines.none { it.contains("hunter22") })
         assertTrue(redacted.lines.any { it.contains("[redacted]") })
         assertEquals("still running", redacted.lines.last())
     }

@@ -725,7 +725,8 @@ private fun CommandPaletteHeader(
                 horizontalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 Text(
-                    text = if (matchesCount == totalCount) "$totalCount available" else "$matchesCount of $totalCount",
+                    text = if (matchesCount == totalCount) stringResource(R.string.commands_available_count, totalCount)
+                    else stringResource(R.string.commands_available_filtered, matchesCount, totalCount),
                     style = OpenCodeTypography.caption,
                     color = colors.onSurfaceFaint,
                 )

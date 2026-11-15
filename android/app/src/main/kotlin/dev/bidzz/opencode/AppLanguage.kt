@@ -53,3 +53,16 @@ object LanguageStore {
         return base.createConfigurationContext(config)
     }
 }
+
+/**
+ * [context] showing the language currently stored in [LanguageStore].
+ *
+ * Audit-200 D1 (m-530): surfaces outside the Compose tree (service
+ * notifications) read the stored language fresh on every use, instead of
+ * relying on the Application's base context — which is wrapped once per
+ * process, so a language change used to reach them only after the next
+ * process start. Cheap enough for one notification at a time; do not
+ * call it per log line.
+ */
+fun appLanguageContext(context: Context): Context =
+    LanguageStore.wrap(context, LanguageStore.get(context))

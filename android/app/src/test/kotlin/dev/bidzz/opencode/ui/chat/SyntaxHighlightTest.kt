@@ -151,4 +151,35 @@ class SyntaxHighlightTest {
     fun `empty code produces no tokens`() {
         assertTrue(highlight("kotlin", "").isEmpty())
     }
+
+    @Test
+    fun `a kotlin triple-quoted string is one string token`() {
+        // Audit-200 D1 (m-077): the old dialect swallowed the first `""` as an
+        // empty string and opened a runaway string at the third quote.
+        val code = "val s = \"\"\"hello\nworld\"\"\""
+        val string = highlight("kotlin", code).first { it.kind == TokenKind.String }
+        assertEquals("\"\"\"hello\nworld\"\"\"", string.text)
+        assertFalse(highlight("kotlin", code).any { it.kind == TokenKind.String && it.text == "\"\"" })
+    }
+
+    @Test
+    fun `a java text block is one string token`() {
+        val code = "String s = \"\"\"hello\nworld\"\"\";"
+        val string = highlight("java", code).first { it.kind == TokenKind.String }
+        assertEquals("\"\"\"hello\nworld\"\"\"", string.text)
+    }
+
+    @Test
+    fun `a rust lifetime is not a string`() {
+        // Audit-200 D1 (m-079): `'a` in `&'a` used to open a string that ran
+        // to the next quote — `>(x: &'` — swallowing the generic and the
+        // reference.
+        val code = "fn foo<'a>(x: &'a str) {}"
+        val tokens = highlight("rust", code)
+        assertTrue(tokens.joinToString("") { it.text } == code)
+        assertFalse(tokens.any { it.kind == TokenKind.String && it.text.contains(">(x: &") })
+        assertFalse(tokens.any { it.kind == TokenKind.String && it.text == "'a>(x: &'" })
+        // A real char literal is still a string.
+        assertEquals(TokenKind.String, kind("rust", "'a'", "let c = 'a';"))
+    }
 }

@@ -130,6 +130,18 @@ class SessionGroupTest {
     }
 
     @Test
+    fun `a multi-word query matches every token in any order`() {
+        // Audit-200 D1 (m-176): "fix login" used to match nothing, because
+        // the whole phrase was one substring search.
+        val s1 = session("1").copy(title = "Fix the login crash")
+        val s2 = session("2").copy(title = "Refactor parser")
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "fix login"))
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "login crash"))
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "crash fix"))
+        assertTrue(filterSessionRows(listOf(s1, s2), "fix missing").isEmpty())
+    }
+
+    @Test
     fun `80-F8 an Indonesian status query matches the English engine outcome`() {
         val detail = SessionDetail(preview = null, model = null, status = "failed")
         val row = session("a", timestamp = now)

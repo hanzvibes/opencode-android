@@ -85,6 +85,7 @@ import dev.bidzz.opencode.ui.diff.DiffParser
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -488,10 +489,13 @@ fun ToolTrace(
     }
 }
 
-/** Short clock time ("14:32") in the device timezone, for the trace header and turn timestamps. */
+/** Short clock time ("14:32") in the device timezone, for the trace header and turn timestamps.
+ * Audit-200 D1 (m-435/m-554): `Locale.ROOT` — the pattern is digits only, so it
+ * must stay ASCII digits whatever the device locale (Arabic/Farsi locales
+ * render Eastern Arabic digits with the default locale). */
 internal fun formatClock(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
-        .format(DateTimeFormatter.ofPattern("HH:mm"))
+        .format(DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT))
 
 /** The only four timeline filters. Edit covers file writes and edits. */
 // Audit-200 A2: internal (was private) so the name-mapping helper

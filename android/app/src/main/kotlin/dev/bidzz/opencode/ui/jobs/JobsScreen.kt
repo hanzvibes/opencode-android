@@ -26,15 +26,13 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
+import dev.bidzz.opencode.ui.appLocale
+import dev.bidzz.opencode.ui.formatAppDateTime
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SelectorChip
 import dev.bidzz.opencode.ui.StatusDot
 import dev.bidzz.opencode.ui.message
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 /**
  * Background jobs on the engine.
@@ -165,7 +163,7 @@ private fun JobRow(job: JobInfo) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = stringResource(R.string.job_started, formatTime(job.time.started)),
+                text = stringResource(R.string.job_started, formatAppDateTime(job.time.started, appLocale())),
                 style = OpenCodeTypography.bodySmall,
                 color = colors.onSurfaceMuted,
                 maxLines = 1,
@@ -209,8 +207,3 @@ private fun jobStatusLabel(status: String): Int = when (status.lowercase()) {
     "cancelled" -> R.string.job_status_cancelled
     else -> R.string.job_status_unknown
 }
-
-private fun formatTime(millis: Long): String =
-    Instant.ofEpochMilli(millis)
-        .atZone(ZoneId.systemDefault())
-        .format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.getDefault()))

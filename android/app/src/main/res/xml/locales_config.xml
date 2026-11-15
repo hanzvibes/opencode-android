@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The languages this app offers (Audit-200 D1, m-027): without this
+  file — and the `android:localeConfig` that points at it — Android 13+'s
+  per-app language picker in system Settings offers nothing for this app,
+  even though the app itself ships full Indonesian resources
+  (`values-in/`) and an in-app language setting. The tag is "id" (BCP 47),
+  matching `AppLanguage.Indonesian("id", "id")`; the framework maps it to
+  the legacy `in` qualifier when resolving resources. -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="id" />
+</locale-config>

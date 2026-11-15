@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.AuraPalette
 import dev.bidzz.opencode.core.design.OpenCodeTokens
+import dev.bidzz.opencode.ui.chat.blockquoteBarColor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -107,6 +108,15 @@ class AuraThemeTest {
         val white = Color(0xFFFFFFFF)
         assertTrue(contrastRatio(AuraPalette.auraBlue, white) < 4.5)
         assertTrue(contrastRatio(AuraPalette.auraFaint, white) < 4.5)
+    }
+
+    @Test
+    fun `the quote bar keeps the aura fill in light and the app accent in dark`() {
+        // Audit-200 D1 (m-062): the bar used the light-only Aura fill in both
+        // themes, contradicting the file's own docstring.
+        val accent = Color(0xFF007AFF)
+        assertEquals(AuraPalette.auraBlueFill, blockquoteBarColor(isDark = false, accent))
+        assertEquals(accent, blockquoteBarColor(isDark = true, accent))
     }
 
     @Test

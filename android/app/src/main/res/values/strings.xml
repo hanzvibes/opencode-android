@@ -4,7 +4,7 @@
         Some strings are intentionally identical in values/ and values-in/ (92-F12):
         proper nouns (GitHub, OpenCode Go, STDOUT), technical terms Indonesian uses
         as-is (Model, Shell, Branch, Diff, Edit, Root, Menu, Normal, Info, Error,
-        Pro, Compaction, Steer), and format-only strings ("%1$s · %2$ds"). They are
+        Pro), and format-only strings ("%1$s · %2$ds"). They are
         not missing translations. If a value here ever gains a real Indonesian
         translation, it leaves this list — and an English value that reads as
         Indonesian is a bug, not a member of it (the 2026-11-13 pass fixed 33 such
@@ -537,6 +537,7 @@
     <string name="instructions_save">Save</string>
     <string name="instructions_key_invalid">Keys start with a lowercase letter or digit, then lowercase letters, digits, dots, underscores, or hyphens.</string>
     <string name="instructions_too_large">That value is too large. The maximum is 256 KB.</string>
+    <string name="instructions_non_string_note">This value isn’t text (object, list, or number), so it can’t be edited here — delete it to replace it.</string>
 
     <!-- Usage limits -->
     <string name="usage_title">Usage limits</string>
@@ -640,6 +641,8 @@
     <string name="commands_no_match">No command matches “%1$s”</string>
     <string name="commands_standard">Standard commands: %1$s</string>
     <string name="commands_palette">Command palette</string>
+    <string name="commands_available_count">%1$d available</string>
+    <string name="commands_available_filtered">%1$d of %2$d</string>
     <string name="chat_agent_mode">Agent mode</string>
     <string name="chat_select_model">Select model</string>
     <string name="chat_mode_label">Mode: %1$s</string>
@@ -885,6 +888,11 @@
     <string name="providers_keys_left">Key deleted. %1$d left for %2$s.</string>
     <string name="providers_subtitle_free_tier">Built-in free-tier models</string>
     <string name="providers_subtitle_local">Local &amp;amp; OpenAI-compatible models</string>
+    <!-- intentionally untranslated: model names are proper nouns -->
+    <string name="providers_featured_anthropic_subtitle">Claude 3.5 Sonnet, Opus &amp; Haiku</string>
+    <string name="providers_featured_openai_subtitle">GPT-4o, o1, o3-mini</string>
+    <string name="providers_featured_deepseek_subtitle">DeepSeek V3, R1 reasoning</string>
+    <string name="providers_antigravity_models_list">Gemini 3.8 Flash, Gemini 3.1 Pro, and Claude Opus 4.6 Thinking</string>
     <string name="providers_antigravity_title">Google (Gemini &amp; Antigravity)</string>
     <string name="providers_antigravity_connected">Antigravity OAuth: Connected</string>
     <string name="providers_antigravity_active_account">Active account: %1$s</string>
@@ -983,6 +991,8 @@
     <string name="diag_tab_output">Console</string>
     <string name="diag_health_good">Good</string>
     <string name="diag_health_low_mem">Low Memory</string>
+    <string name="diag_health_low_storage">Low Storage</string>
+    <string name="diag_storage_unknown">Unknown</string>
     <string name="diag_health_normal">Normal</string>
     <string name="diag_health_active">Active</string>
     <string name="diag_health_inactive">Inactive</string>
@@ -1046,6 +1056,9 @@
     <string name="error_rate_limited">Rate limited — the model is busy. Switch model or wait a moment, then send again.</string>
     <string name="error_rate_limited_wait">Rate limited — try again in %1$d seconds, or switch model.</string>
     <string name="error_request_failed">Request failed (%1$d)</string>
+    <string name="error_service_unavailable">Service unavailable — try another provider, or wait a moment and try again.</string>
+    <string name="error_invalid_request">This request could not be processed.</string>
+    <string name="error_decode_failed">The engine sent a response this app could not read.</string>
     <string name="error_binary_file">Binary file (%1$d bytes)</string>
     <string name="error_not_utf8">This file is not valid UTF-8, so it can\'t be edited here.</string>
     <string name="error_reread_failed">Could not re-read the file to check whether it changed, so nothing was overwritten.</string>
@@ -1148,4 +1161,14 @@
     <string name="publish_state_failed">Publish failed</string>
     <string name="publish_state_up_to_date">Up to date</string>
     <string name="publish_state_unpublished">Not published</string>
+    <string name="publish_title_publish">Publish this artifact</string>
+    <string name="publish_message_publish">Share it so others can open it.</string>
+    <string name="publish_title_success">Published</string>
+    <string name="publish_message_success">Your artifact is live.</string>
+    <string name="publish_title_failed">Publish failed</string>
+    <string name="publish_message_failed">Something went wrong. Try publishing again.</string>
+    <string name="publish_title_up_to_date">Up to date</string>
+    <string name="publish_message_up_to_date">This artifact is already published with the latest changes.</string>
+    <string name="publish_title_unpublished">Not published</string>
+    <string name="publish_message_unpublished">Publish it to share it with others.</string>
 </resources>

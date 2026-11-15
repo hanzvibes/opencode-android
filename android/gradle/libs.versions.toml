@@ -18,6 +18,12 @@ compileSdk = "35"
 minSdk = "29"
 targetSdk = "35"
 java = "17"
+# The app's own version base (Audit-200 D1, m-400): the single source of
+# truth for versionName. It used to be hardcoded both here in Gradle
+# ("0.1.1+<sha>") and in .github/workflows/ci.yml, so the release body
+# and the APK could drift apart on a manual bump. CI reads this same
+# value out of the toml (see the "Compute release version" step).
+appVersion = "0.1.1"
 activityCompose = "1.9.3"
 biometric = "1.1.0"
 fragmentKtx = "1.8.2"

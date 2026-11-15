@@ -11,6 +11,7 @@ import android.os.Build
 import android.util.Log
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.appLanguageContext
 
 private const val TAG = "AgentDoneNotifier"
 private const val CHANNEL_ID = "agent_done"
@@ -47,10 +48,13 @@ internal fun isAgentRunEndEvent(type: String): Boolean =
 fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
     runCatching {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        // Audit-200 D1 (m-530): the stored language, read fresh — the
+        // service's base context lags a language change by one restart.
+        val strings = appLanguageContext(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                context.getString(R.string.notification_agent_done_channel),
+                strings.getString(R.string.notification_agent_done_channel),
                 NotificationManager.IMPORTANCE_DEFAULT,
             )
             manager.createNotificationChannel(channel)
@@ -68,10 +72,10 @@ fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
         )
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle(context.getString(R.string.notification_agent_done_title))
+            .setContentTitle(strings.getString(R.string.notification_agent_done_title))
             .setContentText(
                 title?.takeIf { it.isNotBlank() }
-                    ?: context.getString(R.string.notification_agent_done_body),
+                    ?: strings.getString(R.string.notification_agent_done_body),
             )
             .setContentIntent(pending)
             .setAutoCancel(true)

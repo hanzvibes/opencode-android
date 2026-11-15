@@ -112,7 +112,7 @@
     <string name="mcp_add_title">Tambah server MCP</string>
     <string name="mcp_add_confirm">Tambah</string>
     <string name="mcp_add_local">Lokal</string>
-    <string name="mcp_add_remote">Remote</string>
+    <string name="mcp_add_remote">Jarak jauh</string>
     <string name="mcp_add_name">Nama</string>
     <string name="mcp_add_name_hint">server-saya</string>
     <string name="mcp_add_name_invalid">Huruf, angka, - dan _ saja.</string>
@@ -170,9 +170,9 @@
     <string name="plugin_status_active">Aktif</string>
     <string name="plugin_status_failed">Gagal</string>
     <string name="plugin_status_unknown">Tidak diketahui</string>
-    <string name="generate_title">Generate</string>
+    <string name="generate_title">Hasilkan</string>
     <string name="generate_body">Generate teks dan gambar sekali jalan dari engine, tanpa memulai sesi. Teks memakai model bawaan kecuali dipilih; gambar butuh model gambar.</string>
-    <string name="generate_action">Generate</string>
+    <string name="generate_action">Hasilkan</string>
     <string name="generate_mode_text">Teks</string>
     <string name="generate_mode_image">Gambar</string>
     <string name="generate_model_default">Model bawaan</string>
@@ -209,13 +209,14 @@
     <string name="job_body">Job latar belakang di engine — perintah shell, subagent, dan generate gambar yang berjalan di balik sesi.</string>
     <string name="job_empty">Tidak ada job yang cocok dengan filter ini.</string>
     <string name="job_kind_all">Semua</string>
+    <!-- intentionally untranslated: "Shell" is a standard developer loanword in Indonesian UI -->
     <string name="job_kind_shell">Shell</string>
-    <string name="job_kind_subagent">Subagent</string>
+    <string name="job_kind_subagent">Subagen</string>
     <string name="job_kind_image">Gambar</string>
     <string name="job_status_all">Semua</string>
     <string name="job_status_running">Berjalan</string>
     <string name="job_status_completed">Selesai</string>
-    <string name="job_status_error">Error</string>
+    <string name="job_status_error">Galat</string>
     <string name="job_status_cancelled">Dibatalkan</string>
     <string name="job_status_unknown">Tidak diketahui</string>
     <string name="job_started">Dimulai %1$s</string>
@@ -226,11 +227,13 @@
     <string name="config_body">Dokumen konfigurasi yang dibaca engine, dari prioritas terendah ke tertinggi. Mengubah konfigurasi dari aplikasi belum tersedia.</string>
     <string name="config_empty">Tidak ada dokumen konfigurasi di engine.</string>
     <string name="config_directory">Direktori yang dicari — tidak berisi dokumen.</string>
+    <!-- intentionally untranslated: "Model" is a standard developer loanword in Indonesian UI -->
     <string name="config_field_model">Model</string>
-    <string name="config_field_agent">Agent default</string>
+    <string name="config_field_agent">Agen default</string>
+    <!-- intentionally untranslated: "Shell" is a standard developer loanword in Indonesian UI -->
     <string name="config_field_shell">Shell</string>
     <string name="config_field_timezone">Zona waktu</string>
-    <string name="config_field_username">Username</string>
+    <string name="config_field_username">Nama pengguna</string>
 
     <!-- Onboarding: first-run flow, shown once while the workspace is empty -->
     <string name="onboarding_skip">Lewati</string>
@@ -466,10 +469,10 @@
     <string name="inbox_switch_queue">Antrekan saja</string>
     <string name="inbox_type_user">Pesan</string>
     <string name="inbox_type_synthetic">Catatan</string>
-    <string name="inbox_type_compaction">Compaction</string>
+    <string name="inbox_type_compaction">Kompaksi</string>
     <string name="inbox_type_move">Pindah</string>
     <string name="inbox_type_unknown">Item antrean</string>
-    <string name="inbox_delivery_steer">Steer</string>
+    <string name="inbox_delivery_steer">Arahkan</string>
     <string name="inbox_delivery_queue">Antre</string>
     <string name="inbox_files">%1$d berkas</string>
 
@@ -530,6 +533,7 @@
     <string name="instructions_save">Simpan</string>
     <string name="instructions_key_invalid">Kunci diawali huruf kecil atau angka, lalu huruf kecil, angka, titik, garis bawah, atau strip.</string>
     <string name="instructions_too_large">Nilai itu terlalu besar. Maksimum 256 KB.</string>
+    <string name="instructions_non_string_note">Nilai ini bukan teks (objek, daftar, atau angka), jadi tidak bisa diubah di sini — hapus untuk menggantinya.</string>
 
     <!-- Batas pemakaian -->
     <string name="usage_title">Batas pemakaian</string>
@@ -541,11 +545,12 @@
     <string name="usage_meter_monthly">Bulanan</string>
     <string name="usage_limited">Dibatasi</string>
     <string name="usage_resets">Reset %1$s</string>
-    <string name="usage_section_budgets">Budget</string>
+    <string name="usage_section_budgets">Anggaran</string>
     <string name="usage_budget_spent">%1$s dari %2$s</string>
     <string name="usage_scope_each">Per anggota</string>
     <string name="usage_scope_combined">Gabungan</string>
     <string name="usage_per_set">Lintas model</string>
+    <!-- intentionally untranslated: "Per model" keeps the technical term "model" as-is -->
     <string name="usage_per_model">Per model</string>
     <string name="usage_coverage_all">Semua model dan layanan</string>
     <string name="usage_coverage_models">Model terpilih</string>
@@ -633,10 +638,14 @@
     <string name="commands_no_match">Tidak ada perintah yang cocok dengan “%1$s”</string>
     <string name="commands_standard">Perintah standar: %1$s</string>
     <string name="commands_palette">Palet perintah</string>
+    <string name="commands_available_count">%1$d tersedia</string>
+    <string name="commands_available_filtered">%1$d dari %2$d</string>
     <string name="chat_agent_mode">Mode agen</string>
     <string name="chat_select_model">Pilih model</string>
+    <!-- intentionally untranslated: "Mode"/"Model" are standard developer loanwords in Indonesian UI -->
     <string name="chat_mode_label">Mode: %1$s</string>
     <string name="chat_mode_fallback">Mode</string>
+    <!-- intentionally untranslated: "Model" is a standard developer loanword in Indonesian UI -->
     <string name="chat_model_label">Model: %1$s</string>
     <string name="chat_model_fallback">Model</string>
     <string name="chat_models_available">%1$d tersedia</string>
@@ -878,6 +887,11 @@
     <string name="providers_keys_left">Kunci dihapus. Tersisa %1$d untuk %2$s.</string>
     <string name="providers_subtitle_free_tier">Model tingkat gratis bawaan</string>
     <string name="providers_subtitle_local">Model lokal &amp; kompatibel OpenAI</string>
+    <!-- intentionally untranslated: model names are proper nouns -->
+    <string name="providers_featured_anthropic_subtitle">Claude 3.5 Sonnet, Opus &amp; Haiku</string>
+    <string name="providers_featured_openai_subtitle">GPT-4o, o1, o3-mini</string>
+    <string name="providers_featured_deepseek_subtitle">DeepSeek V3, R1 reasoning</string>
+    <string name="providers_antigravity_models_list">Gemini 3.8 Flash, Gemini 3.1 Pro, dan Claude Opus 4.6 Thinking</string>
     <string name="providers_antigravity_title">Google (Gemini &amp; Antigravity)</string>
     <string name="providers_antigravity_connected">Antigravity OAuth: Terhubung</string>
     <string name="providers_antigravity_active_account">Akun aktif: %1$s</string>
@@ -976,6 +990,8 @@
     <string name="diag_tab_output">Konsol</string>
     <string name="diag_health_good">Baik</string>
     <string name="diag_health_low_mem">Memori Rendah</string>
+    <string name="diag_health_low_storage">Penyimpanan Rendah</string>
+    <string name="diag_storage_unknown">Tidak diketahui</string>
     <string name="diag_health_normal">Normal</string>
     <string name="diag_health_active">Aktif</string>
     <string name="diag_health_inactive">Tidak aktif</string>
@@ -1039,6 +1055,9 @@
     <string name="error_rate_limited">Batas laju tercapai — model sedang sibuk. Ganti model atau tunggu sebentar, lalu kirim lagi.</string>
     <string name="error_rate_limited_wait">Batas laju tercapai — coba lagi dalam %1$d detik, atau ganti model.</string>
     <string name="error_request_failed">Permintaan gagal (%1$d)</string>
+    <string name="error_service_unavailable">Layanan tidak tersedia — coba provider lain, atau tunggu sebentar lalu coba lagi.</string>
+    <string name="error_invalid_request">Permintaan ini tidak bisa diproses.</string>
+    <string name="error_decode_failed">Engine mengirim jawaban yang tidak bisa dibaca aplikasi ini.</string>
     <string name="error_binary_file">Berkas biner (%1$d byte)</string>
     <string name="error_not_utf8">Berkas ini bukan UTF-8 yang valid, jadi tidak bisa diedit di sini.</string>
     <string name="error_reread_failed">Berkas tidak bisa dibaca ulang untuk memeriksa perubahannya, jadi tidak ada yang ditimpa.</string>
@@ -1141,4 +1160,14 @@
     <string name="publish_state_failed">Gagal dipublikasikan</string>
     <string name="publish_state_up_to_date">Sudah terbaru</string>
     <string name="publish_state_unpublished">Belum dipublikasikan</string>
+    <string name="publish_title_publish">Publikasikan artefak ini</string>
+    <string name="publish_message_publish">Bagikan agar orang lain bisa membukanya.</string>
+    <string name="publish_title_success">Dipublikasikan</string>
+    <string name="publish_message_success">Artefakmu sudah tayang.</string>
+    <string name="publish_title_failed">Publikasi gagal</string>
+    <string name="publish_message_failed">Terjadi kesalahan. Coba publikasikan lagi.</string>
+    <string name="publish_title_up_to_date">Sudah terbaru</string>
+    <string name="publish_message_up_to_date">Artefak ini sudah dipublikasikan dengan perubahan terbaru.</string>
+    <string name="publish_title_unpublished">Belum dipublikasikan</string>
+    <string name="publish_message_unpublished">Publikasikan untuk membagikannya ke orang lain.</string>
 </resources>

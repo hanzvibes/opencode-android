@@ -38,13 +38,13 @@ import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SelectorChip
 import dev.bidzz.opencode.ui.TextAction
+import dev.bidzz.opencode.ui.appLocale
+import dev.bidzz.opencode.ui.formatAppDateShort
 import dev.bidzz.opencode.ui.message
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 
 /**
@@ -176,7 +176,7 @@ private fun ScheduleRow(
     }
     val metaText = buildString {
         append(schedule.whenText())
-        formatScheduleInstant(schedule.nextDueAt)?.let {
+        formatScheduleInstant(schedule.nextDueAt, appLocale())?.let {
             if (isNotEmpty()) append(" · ")
             append(stringResource(R.string.schedule_next_due, it))
         }
@@ -264,15 +264,16 @@ private fun scheduleStatusWord(status: String): String = stringResource(
 /**
  * Formats a schedule instant (`DateTimeUtcFromMillis` — a number of
  * millis in JSON, or an ISO string on older engines) as "27 Oct 09:00".
- * Null when the element carries nothing readable.
+ * Null when the element carries nothing readable. The month abbreviation
+ * follows the app language (Audit-200 D1: m-554), not the system locale.
  */
-private fun formatScheduleInstant(element: JsonElement?): String? {
+private fun formatScheduleInstant(element: JsonElement?, locale: Locale): String? {
     val primitive = element as? JsonPrimitive ?: return null
     val millis = primitive.longOrNull
         ?: primitive.contentOrNull?.toLongOrNull()
         ?: return primitive.contentOrNull?.takeIf { it.isNotBlank() }
     val ms = if (millis < 1_000_000_000_000L) millis * 1_000 else millis
-    return SimpleDateFormat("d MMM HH:mm", Locale.getDefault()).format(Date(ms))
+    return formatAppDateShort(ms, locale)
 }
 
 @Composable

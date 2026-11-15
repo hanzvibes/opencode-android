@@ -80,6 +80,25 @@ class HatchBatch1Test {
     }
 
     @Test
+    fun `publish titles and messages default per state, five distinct each (D1 m-696)`() {
+        // A sheet with no title/message must still say what happened.
+        val titles = HatchPublishState.entries.map { hatchPublishTitleRes(it) }
+        val messages = HatchPublishState.entries.map { hatchPublishMessageRes(it) }
+        assertEquals(5, titles.toSet().size)
+        assertEquals(5, messages.toSet().size)
+        assertEquals(R.string.publish_title_publish, titles[0])
+        assertEquals(R.string.publish_title_success, titles[1])
+        assertEquals(R.string.publish_title_failed, titles[2])
+        assertEquals(R.string.publish_title_up_to_date, titles[3])
+        assertEquals(R.string.publish_title_unpublished, titles[4])
+        assertEquals(R.string.publish_message_publish, messages[0])
+        assertEquals(R.string.publish_message_success, messages[1])
+        assertEquals(R.string.publish_message_failed, messages[2])
+        assertEquals(R.string.publish_message_up_to_date, messages[3])
+        assertEquals(R.string.publish_message_unpublished, messages[4])
+    }
+
+    @Test
     fun `failed and success dots differ, unpublished is the faint dot`() {
         assertTrue(
             HatchPublishState.FAILED.dotColor().toArgb() !=

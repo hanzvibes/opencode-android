@@ -32,6 +32,9 @@ fun ApiResult.Failure.message(): String = when (reason) {
         }
     }
     FailureReason.REQUEST_FAILED -> stringResource(R.string.error_request_failed, code)
+    FailureReason.SERVICE_UNAVAILABLE -> stringResource(R.string.error_service_unavailable)
+    FailureReason.INVALID_REQUEST -> stringResource(R.string.error_invalid_request)
+    FailureReason.DECODE_FAILED -> stringResource(R.string.error_decode_failed)
     FailureReason.LOST_CONNECTION -> stringResource(R.string.error_lost_connection, code)
     FailureReason.NO_SESSION -> stringResource(R.string.error_no_session)
     FailureReason.NO_PENDING_PERMISSION -> stringResource(R.string.error_no_pending_permission)

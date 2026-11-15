@@ -84,6 +84,13 @@ fun highlight(language: String?, code: String, streaming: Boolean = false): List
         }
 
         if (c == '"' || (c == '\'' && dialect.singleQuote)) {
+            if (c == '\'' && dialect.lifetime && isLifetime(code, i)) {
+                // `&'a`, `<'a>`: the quote belongs to the lifetime, not to a
+                // string — a char literal (`'a'`) still falls through below.
+                tokens.add(c.toString(), TokenKind.Plain)
+                i++
+                continue
+            }
             val end = scanString(code, i, c, dialect.triple)
             tokens.add(code.substring(i, end), TokenKind.String)
             i = end
@@ -130,6 +137,14 @@ fun highlight(language: String?, code: String, streaming: Boolean = false): List
         i++
     }
     return tokens.toList()
+}
+
+/** True when the quote at [start] opens a Rust lifetime, not a char literal. */
+private fun isLifetime(code: String, start: Int): Boolean {
+    var j = start + 1
+    if (j >= code.length || !(code[j].isLetter() || code[j] == '_')) return false
+    while (j < code.length && (code[j].isLetterOrDigit() || code[j] == '_')) j++
+    return j >= code.length || code[j] != '\''
 }
 
 /** True when the next non-blank character after [end] opens a call. */
@@ -224,6 +239,8 @@ private class Dialect(
     val block: Boolean = false,
     val triple: Boolean = false,
     val singleQuote: Boolean = true,
+    /** Rust lifetimes (`'a`): a quote followed by an identifier that no closing quote follows. */
+    val lifetime: Boolean = false,
 )
 
 private val ClikeKeywords = setOf(
@@ -261,6 +278,15 @@ private val RubyKeywords = setOf(
 )
 
 private val DialectClike = Dialect(ClikeKeywords, lineSlash = true, block = true)
+/**
+ * Audit-200 D1 (m-077): Kotlin/Java text blocks, Swift and Scala all have
+ * triple-quoted raw strings (`"""…"""`), and Dart has `'''`/`"""` — the
+ * plain C-like dialect would swallow the first `""` as an empty string and
+ * open a runaway string at the third quote.
+ */
+private val DialectClikeTriple = Dialect(ClikeKeywords, lineSlash = true, block = true, triple = true)
+/** Audit-200 D1 (m-079): Rust lifetimes (`'a`) are not string openers. */
+private val DialectRust = Dialect(ClikeKeywords, lineSlash = true, block = true, lifetime = true)
 private val DialectPython = Dialect(PythonKeywords, hash = true, triple = true)
 private val DialectShell = Dialect(ShellKeywords, hash = true)
 /** YAML, TOML, Dockerfile and friends: comments and strings, no reserved words. */
@@ -276,9 +302,11 @@ private fun dialectOf(language: String?): Dialect? {
     // Same stripping as formatLanguageName() in MarkdownText.kt.
     val tag = language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()
     return when (tag) {
-    "kt", "kts", "kotlin", "java", "js", "jsx", "mjs", "ts", "tsx", "typescript",
-    "javascript", "swift", "rust", "rs", "go", "c", "h", "cpp", "cc", "cxx", "hpp",
-    "c++", "cs", "c#", "csharp", "scala", "dart", "php" -> DialectClike
+    "kt", "kts", "kotlin", "java", "swift", "scala", "dart" -> DialectClikeTriple
+    "rust", "rs" -> DialectRust
+    "js", "jsx", "mjs", "ts", "tsx", "typescript",
+    "javascript", "go", "c", "h", "cpp", "cc", "cxx", "hpp",
+    "c++", "cs", "c#", "csharp", "php" -> DialectClike
     "py", "python" -> DialectPython
     "rb", "ruby" -> DialectRuby
     "sh", "bash", "zsh", "shell", "console", "terminal" -> DialectShell

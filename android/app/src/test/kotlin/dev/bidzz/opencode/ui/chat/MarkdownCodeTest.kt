@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MarkdownCodeTest {
@@ -84,5 +85,29 @@ class MarkdownCodeTest {
         // further than that is content, not a closer.
         val code = Markdown.parse("    ```\ncode\n        ```\nmore").single() as MdBlock.Code
         assertEquals("code\n        ```\nmore", code.code)
+    }
+
+    @Test
+    fun `D1 m-754 a backtick in a backtick fence info string is not a fence`() {
+        // CommonMark: the info string of a backtick fence must not contain
+        // a backtick, so "``` `foo`" is prose — the whole input is one
+        // paragraph, not a code block.
+        val blocks = Markdown.parse("``` `foo`\ncode")
+        assertEquals(1, blocks.size)
+        assertTrue(blocks.single() is MdBlock.Paragraph)
+    }
+
+    @Test
+    fun `D1 m-754 a backtick in a tilde fence info string still opens a fence`() {
+        val code = Markdown.parse("~~~ `foo`\ncode\n~~~").single() as MdBlock.Code
+        assertEquals("`foo`", code.language)
+        assertEquals("code", code.code)
+    }
+
+    @Test
+    fun `D1 m-754 a 4-backtick fence with a backtick info string is not a fence`() {
+        val blocks = Markdown.parse("```` ```\ncode")
+        assertEquals(1, blocks.size)
+        assertTrue(blocks.single() is MdBlock.Paragraph)
     }
 }

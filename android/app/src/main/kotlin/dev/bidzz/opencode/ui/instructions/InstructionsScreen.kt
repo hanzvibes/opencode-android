@@ -117,8 +117,17 @@ fun InstructionsScreen(
                     onValueChange = onValueChange,
                     hintRes = R.string.instructions_value_hint,
                     singleLine = false,
+                    readOnly = state.editingNonString,
                     modifier = Modifier.padding(top = spacing.sm),
                 )
+                if (state.editingNonString) {
+                    Text(
+                        text = stringResource(R.string.instructions_non_string_note),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier.padding(top = spacing.xs),
+                    )
+                }
                 if (state.keyInvalid) {
                     Text(
                         text = stringResource(R.string.instructions_key_invalid),
@@ -162,12 +171,12 @@ fun InstructionsScreen(
                     )
                     TextButton(
                         onClick = onSave,
-                        enabled = state.key.isNotBlank() && !state.saving,
+                        enabled = state.key.isNotBlank() && !state.saving && !state.editingNonString,
                     ) {
                         Text(
                             text = stringResource(R.string.instructions_save),
                             style = OpenCodeTypography.label,
-                            color = if (state.key.isNotBlank() && !state.saving) {
+                            color = if (state.key.isNotBlank() && !state.saving && !state.editingNonString) {
                                 colors.accent
                             } else {
                                 colors.onSurfaceFaint
@@ -246,6 +255,7 @@ private fun EditorField(
     hintRes: Int,
     singleLine: Boolean,
     modifier: Modifier = Modifier,
+    readOnly: Boolean = false,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -263,6 +273,7 @@ private fun EditorField(
             value = value,
             onValueChange = onValueChange,
             singleLine = singleLine,
+            readOnly = readOnly,
             minLines = if (singleLine) 1 else 3,
             textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.accent),
