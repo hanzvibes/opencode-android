@@ -2862,7 +2862,9 @@ private fun AttachNoticeRow(
         )
         Box(
             modifier = Modifier
-                .size(40.dp)
+                // Audit-200 D3 (m-921): the dismiss button was 40dp while
+                // the banner row and its NoticeRow replacement are 48dp.
+                .size(dims.minTouchTarget)
                 .clickable(
                     role = SemanticsRole.Button,
                     onClick = onDismiss,

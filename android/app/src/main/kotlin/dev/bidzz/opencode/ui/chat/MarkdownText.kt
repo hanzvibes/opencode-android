@@ -939,6 +939,7 @@ private fun BlockAction(
     glyphRotation: Float = 0f,
 ) {
     val colors = OpenCodeTheme.colors
+    val dims = OpenCodeTheme.tokens.dimensions
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
 
@@ -948,7 +949,9 @@ private fun BlockAction(
 
     Box(
         modifier = Modifier
-            .sizeIn(minHeight = 32.dp)
+            // Audit-200 D3 (m-070): the code-block pills (Copy/Save/
+            // Expand/Run) were 32dp — under the 48dp touch target.
+            .sizeIn(minHeight = dims.minTouchTarget)
             .clip(RoundedCornerShape(radius.full))
             .background(pillBg)
             .border(0.5.dp, pillBorder, RoundedCornerShape(radius.full))

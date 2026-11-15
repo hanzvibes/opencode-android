@@ -68,6 +68,22 @@ class SessionApiEncodingTest {
         assertEquals("a%20b", encodePathSegment("a b"))
     }
 
+    // Audit-200 D3 (m-897): a bare "." / ".." segment is refused outright —
+    // URLEncoder lets dots through and OkHttp resolves them away (".." pops
+    // the previous segment), and percent-encoding the dots does not help
+    // either (OkHttp normalises %2E too).
+    @Test
+    fun `dot-only path segments are refused`() {
+        for (segment in listOf(".", "..")) {
+            try {
+                encodePathSegment(segment)
+                org.junit.Assert.fail("expected IllegalArgumentException for segment \"$segment\"")
+            } catch (e: IllegalArgumentException) {
+                // expected
+            }
+        }
+    }
+
     @Test
     fun `get with a slash in the id requests the encoded path`() {
         Stub().use { stub ->

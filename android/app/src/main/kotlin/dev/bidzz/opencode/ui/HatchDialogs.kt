@@ -30,6 +30,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -196,6 +198,10 @@ fun HatchRenameDialog(
                         .background(colors.surfaceSunken)
                         .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
                         .focusRequester(focusRequester)
+                        // Audit-200 D3 (m-911): the rename field was
+                        // silent for TalkBack when empty — label it with
+                        // the dialog title.
+                        .semantics { contentDescription = title }
                         .padding(horizontal = spacing.md, vertical = spacing.sm),
                     decorationBox = { inner ->
                         if (tfv.text.isEmpty()) {

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -1253,6 +1254,10 @@ private fun LogViewerControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 16.dp)
+            // Audit-200 D3 (m-911): the log search field was silent for
+            // TalkBack when empty — label it with its hint. Resolved
+            // here, not inside .semantics {}.
+            val searchDescription = stringResource(R.string.diag_log_search_hint)
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
@@ -1262,7 +1267,8 @@ private fun LogViewerControls(
                 singleLine = true,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = spacing.sm),
+                    .padding(start = spacing.sm)
+                    .semantics { contentDescription = searchDescription },
                 decorationBox = { innerTextField ->
                     if (query.isEmpty()) {
                         Text(
@@ -1368,6 +1374,10 @@ private fun LogViewerControls(
                         modifier = Modifier
                             .clip(RoundedCornerShape(radius.full))
                             .background(colors.fill)
+                            // Audit-200 D3 (m-339, neighbour): same 48dp
+                            // floor as the Follow pill below — this pill
+                            // was ~22dp too.
+                            .defaultMinSize(minHeight = 48.dp)
                             .clickable(role = Role.Button, onClick = onJumpToLatest)
                             .padding(horizontal = spacing.md, vertical = spacing.xs),
                         contentAlignment = Alignment.Center,
@@ -1392,6 +1402,11 @@ private fun LogViewerControls(
                         // on-colour (5.98:1 / 5.57:1), the same pair
                         // PrimaryButton uses.
                         .background(if (follow) colors.accentFill else colors.fill)
+                        // Audit-200 D3 (m-339): the pill was ~22dp tall —
+                        // below even the 24dp WCAG floor. The colour pair
+                        // above already passes AA (C8 M-131); only the
+                        // height was still wrong.
+                        .defaultMinSize(minHeight = 48.dp)
                         .clickable(role = Role.Button) { onFollowChange(!follow) }
                         .semantics {
                             contentDescription = followDescription

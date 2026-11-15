@@ -562,6 +562,10 @@ private fun AgentSelector(
                             color = colors.onSurfaceFaint,
                         )
                     }
+                    // Audit-200 D3 (m-911): the agent search field was
+                    // silent for TalkBack when empty — label it with its
+                    // hint. Resolved here, not inside .semantics {}.
+                    val agentSearchDescription = stringResource(R.string.agent_search_hint)
                     BasicTextField(
                         value = agentQuery,
                         onValueChange = { agentQuery = it },
@@ -576,6 +580,7 @@ private fun AgentSelector(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(searchFocusRequester)
+                            .semantics { contentDescription = agentSearchDescription }
                             .onPreviewKeyEvent { event ->
                                 handleSelectorKeyEvent(
                                     event = event,
@@ -1067,6 +1072,9 @@ internal fun ModelSelector(
                             color = colors.onSurfaceFaint,
                         )
                     }
+                    // Audit-200 D3 (m-911): same as the agent search
+                    // above — label the model search field with its hint.
+                    val modelSearchDescription = stringResource(R.string.model_search_hint)
                     BasicTextField(
                         value = modelQuery,
                         onValueChange = { modelQuery = it },
@@ -1081,6 +1089,7 @@ internal fun ModelSelector(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(searchFocusRequester)
+                            .semantics { contentDescription = modelSearchDescription }
                             .onPreviewKeyEvent { event ->
                                 handleSelectorKeyEvent(
                                     event = event,

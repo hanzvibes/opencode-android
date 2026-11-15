@@ -440,8 +440,9 @@ private fun BrowserAction(
     val colors = OpenCodeTheme.colors
     Box(
         modifier = Modifier
-            .sizeIn(minWidth = 40.dp, minHeight = 40.dp)
-            .size(40.dp)
+            // Audit-200 D3 (m-859): the browser toolbar actions were 40dp.
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .size(48.dp)
             // A11y (#8a/#8b): the action had a description parameter that
             // was never announced — role + description on the clickable node.
             .semantics { contentDescription = description }

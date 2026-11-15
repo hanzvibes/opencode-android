@@ -39,6 +39,8 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -256,6 +258,10 @@ fun AttachFilePicker(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 15.dp)
+                // Audit-200 D3 (m-911): the search field was silent for
+                // TalkBack when empty — label it with its hint. Resolved
+                // here, not inside .semantics {}.
+                val searchDescription = stringResource(R.string.attach_picker_hint)
                 BasicTextField(
                     value = query,
                     onValueChange = onQueryChange,
@@ -267,6 +273,7 @@ fun AttachFilePicker(
                         .weight(1f)
                         .padding(start = spacing.sm)
                         .focusRequester(focusRequester)
+                        .semantics { contentDescription = searchDescription }
                         .onKeyEvent { event ->
                             handleAttachPickerKeyEvent(
                                 event = event,

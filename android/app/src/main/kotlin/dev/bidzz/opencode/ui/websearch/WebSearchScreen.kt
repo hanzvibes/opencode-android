@@ -25,6 +25,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -179,12 +184,24 @@ private fun ProviderPicker(
     val selected = selectedProviderId?.let { id -> providers.firstOrNull { it.id == id } }
     val label = selected?.name ?: stringResource(R.string.websearch_provider_default)
 
+    // Audit-200 D3 (m-340/m-556/m-662/m-859): same fix as the Generate
+    // model picker — role + name + open/closed state, and 48dp height.
+    // Resolved here, not inside .semantics {}.
+    val pickerDescription = stringResource(R.string.websearch_provider_pick, label)
+    val pickerState = stringResource(if (expanded) R.string.dropdown_expanded else R.string.dropdown_collapsed)
+
     Box(modifier = modifier) {
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(radius.md))
                 .background(colors.fill)
                 .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+                .heightIn(min = 48.dp)
+                .semantics {
+                    role = Role.DropdownList
+                    contentDescription = pickerDescription
+                    stateDescription = pickerState
+                }
                 .clickable { expanded = true }
                 .padding(horizontal = spacing.md, vertical = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
@@ -238,10 +255,19 @@ private fun WebSearchRow(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
+    // Audit-200 D3 (m-340/m-556/m-662): the result row is tappable but
+    // TalkBack read it as plain text — give it a Button role and a name.
+    // Resolved here, not inside .semantics {}.
+    val openDescription = stringResource(R.string.websearch_open_result, result.title ?: result.url)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = openDescription
+            }
             .clickable(onClick = onOpen)
             .padding(vertical = spacing.sm),
         verticalArrangement = Arrangement.spacedBy(spacing.xxs),

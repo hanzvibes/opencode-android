@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -965,10 +966,14 @@ private fun SettingsRow(
 /**
  * Grouped settings row with a trailing switch, for on/off preferences.
  * Mirrors [SettingsRow]'s badge + title + subtitle layout; the switch
- * takes the value slot, so there is no chevron. The whole row is a button
- * that flips the switch (a11y #8: the row, not just the small switch, is
- * the tap target); tapping the switch itself fires only its own
- * onCheckedChange, never both.
+ * takes the value slot, so there is no chevron.
+ *
+ * Audit-200 D3 (m-905): the row used to be TWO TalkBack nodes — a
+ * "Button" row with no state plus a separate Switch — so TalkBack read
+ * the setting twice and flipping the row never announced the new state.
+ * The row is now one [Role.Switch] node (toggleable + mergeDescendants)
+ * and the Switch inside is a visual indicator only
+ * (onCheckedChange = null). The 54dp row stays the tap target.
  */
 @Composable
 private fun SettingsToggleRow(
@@ -987,10 +992,12 @@ private fun SettingsToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 54.dp)
-            .clickable(
-                role = Role.Button,
+            .semantics(mergeDescendants = true) {}
+            .toggleable(
+                value = checked,
                 enabled = enabled,
-                onClick = { onCheckedChange(!checked) },
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
             )
             .padding(horizontal = spacing.md, vertical = spacing.sm + 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1026,7 +1033,9 @@ private fun SettingsToggleRow(
 
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            // Visual indicator only — the row's toggleable owns the
+            // interaction (D3 m-905), so this must not be a second node.
+            onCheckedChange = null,
             enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = colors.onAccent,

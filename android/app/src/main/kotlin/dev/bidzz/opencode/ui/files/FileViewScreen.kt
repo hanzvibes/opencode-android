@@ -37,6 +37,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -653,6 +655,10 @@ private fun FindBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 15.dp)
+            // Audit-200 D3 (m-911): the find field was silent for TalkBack
+            // when empty — label it with its hint. Resolved here, not
+            // inside .semantics {}.
+            val findDescription = stringResource(R.string.fileview_find_hint)
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
@@ -662,7 +668,8 @@ private fun FindBar(
                 singleLine = true,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = spacing.sm),
+                    .padding(start = spacing.sm)
+                    .semantics { contentDescription = findDescription },
                 decorationBox = { inner ->
                     if (query.isEmpty()) {
                         Text(
@@ -781,6 +788,9 @@ private fun CodeEditorPane(
                 .weight(1f)
                 .padding(horizontal = spacing.sm, vertical = spacing.xs),
         ) {
+            // Audit-200 D3 (m-911): the editor had no name at all for
+            // TalkBack — label it. Resolved here, not inside .semantics {}.
+            val editorDescription = stringResource(R.string.code_editor_desc)
             BasicTextField(
                 value = draft,
                 onValueChange = onDraftChange,
@@ -793,7 +803,8 @@ private fun CodeEditorPane(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+                    .horizontalScroll(rememberScrollState())
+                    .semantics { contentDescription = editorDescription },
             )
         }
     }

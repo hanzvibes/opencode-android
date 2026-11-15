@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -820,6 +822,10 @@ private fun WriteInOptionRow(
                         color = colors.onSurfaceFaint,
                     )
                 }
+                // Audit-200 D3 (m-911): the write-in field was silent for
+                // TalkBack when empty — label it with its hint. Resolved
+                // here, not inside .semantics {}.
+                val writeInDescription = stringResource(R.string.question_write_in_hint)
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
@@ -833,7 +839,8 @@ private fun WriteInOptionRow(
                     keyboardActions = KeyboardActions(onDone = { onDone() }),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(focusRequester),
+                        .focusRequester(focusRequester)
+                        .semantics { contentDescription = writeInDescription },
                 )
             }
         }
