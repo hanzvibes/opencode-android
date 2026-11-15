@@ -1,8 +1,6 @@
 package dev.bidzz.opencode.ui.browser
 
 import android.app.DownloadManager
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -54,6 +52,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.copyPlainText
 
 /**
  * True when [url] is a web page the in-app browser can open: http/https
@@ -371,11 +370,19 @@ fun InAppBrowserScreen(
                 // A11y (#8b): the URL row copies on tap; the URL text
                 // inside is its name.
                 .clickable(role = Role.Button) {
-                    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    manager.setPrimaryClip(ClipData.newPlainText("url", currentUrl))
-                    (context.applicationContext as OpenCodeApplication).showSnackbar(
-                        context.getString(R.string.browser_copied),
-                    )
+                    // Audit-200 D6 (m-407): the hard cast crashed when the
+                    // clipboard service was missing — copyPlainText
+                    // returns false instead, and only a real copy earns
+                    // the "Copied" snackbar.
+                    if (copyPlainText(context, "url", currentUrl)) {
+                        (context.applicationContext as OpenCodeApplication).showSnackbar(
+                            context.getString(R.string.browser_copied),
+                        )
+                    } else {
+                        (context.applicationContext as OpenCodeApplication).showSnackbar(
+                            context.getString(R.string.copy_failed),
+                        )
+                    }
                 }
                 // 92-F11: without a description TalkBack only reads the
                 // raw URL — it never says the row copies on tap.

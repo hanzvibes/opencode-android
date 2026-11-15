@@ -299,6 +299,10 @@ fun SessionListPane(
         // and the retry re-sends the same title. A delete or rename that
         // never ran because the engine is down (65-F3) has no failure
         // value, only a message key — the banner shows either.
+        // Audit-200 D6 (m-011/m-408): the three banners are INDEPENDENT
+        // `if`s, not an `if / else if` chain — the old chain showed only
+        // the first failure, so a load failure that arrived while a
+        // delete banner was up never appeared at all.
         val deleteFailure = state.deleteFailure
         val deleteFailureKey = state.deleteFailureKey
         if (deleteFailure != null || deleteFailureKey != null) {
@@ -315,7 +319,8 @@ fun SessionListPane(
                     .align(Alignment.CenterHorizontally)
                     .padding(horizontal = spacing.lg, vertical = spacing.xs),
             )
-        } else if (state.renameFailure != null || state.renameFailureKey != null) {
+        }
+        if (state.renameFailure != null || state.renameFailureKey != null) {
             val failedRow = state.rows.find { it.id == state.renameFailedSessionID }
             val failedTitle = state.renameFailedTitle
             NoticeRow(
@@ -334,7 +339,8 @@ fun SessionListPane(
                     .align(Alignment.CenterHorizontally)
                     .padding(horizontal = spacing.lg, vertical = spacing.xs),
             )
-        } else if (state.rows.isNotEmpty()) {
+        }
+        if (state.rows.isNotEmpty()) {
             val loadFailure = state.failure
             val loadFailureKey = state.failureKey
             if (loadFailure != null || loadFailureKey != null) {

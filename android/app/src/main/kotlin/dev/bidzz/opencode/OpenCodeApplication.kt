@@ -23,6 +23,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,12 @@ import kotlinx.coroutines.launch
 class OpenCodeApplication : Application() {
     companion object {
         private const val TAG = "OpenCodeApp"
+        /**
+         * Delay before a dropped priority snackbar is retried once
+         * (audit-200 D6, m-593): a Short snackbar shows ~4s, so 6s gives
+         * the drain loop room to free a buffer slot.
+         */
+        private const val SNACKBAR_RETRY_DELAY_MS = 6_000L
         /** SharedPreferences file the app restores from (also read by the widget). */
         const val PREFS_NAME = "app"
         /** Last opened session id (also read by the widget). */
@@ -504,25 +511,19 @@ class OpenCodeApplication : Application() {
      * above — a SharedFlow with no replay, so each request shows once.
      * The request carries the already-resolved string (like Toast did:
      * `context.getString` / `stringResource` at the call site), so no
-     * @StringRes plumbing is needed.
+     * @StringRes plumbing is needed. The queue itself lives in
+     * [SnackbarQueue] so the buffer contract is unit-testable.
      *
-     * The buffer holds up to 16 pending requests: while one snackbar is
-     * on screen the collector is suspended in `showSnackbar`, and a
-     * burst (two quick copies, say) must not silently drop the second
-     * one the way a capacity-1 buffer would. 16, not 8 (65-F8): a burst
-     * of 9 feedbacks inside ~30s was enough to overflow the old buffer,
-     * and the drop was silent. A drop past 16 is still possible — it is
-     * now logged instead of vanishing (see [showSnackbar]).
+     * Which call sites check the return (audit-200 D6, m-593): a dropped
+     * "Copied" is harmless, so the 30+ plain-feedback sites keep the bare
+     * call and ignore the Boolean. A dropped failure or action-bearing
+     * message loses the user's only path — the notification-permission
+     * hints show once, the restart failure has no other surface — so
+     * those sites use [showSnackbarWithRetry], which retries once after
+     * a short delay. A full buffer holds 16 requests for 64–160s of
+     * queue, so a retry after 6s usually finds room.
      */
-    data class SnackbarRequest(
-        val message: String,
-        val actionLabel: String? = null,
-        val long: Boolean = false,
-        val onAction: (() -> Unit)? = null,
-    )
-
-    /** Snackbar requests; the root composable shows them one at a time. */
-    val snackbarRequests = MutableSharedFlow<SnackbarRequest>(replay = 0, extraBufferCapacity = 16)
+    internal val snackbarQueue = SnackbarQueue()
 
     /**
      * Asks the UI to show a snackbar. Returns false when the request was
@@ -535,11 +536,32 @@ class OpenCodeApplication : Application() {
         long: Boolean = false,
         onAction: (() -> Unit)? = null,
     ): Boolean {
-        val delivered = snackbarRequests.tryEmit(SnackbarRequest(message, actionLabel, long, onAction))
+        val delivered = snackbarQueue.tryOffer(SnackbarQueue.Request(message, actionLabel, long, onAction))
         if (!delivered) {
             Log.w(TAG, "snackbar request dropped (buffer full): $message")
         }
         return delivered
+    }
+
+    /**
+     * Shows a snackbar, retrying once after a short delay when the buffer
+     * was full (audit-200 D6, m-593). Only for failure and action-bearing
+     * requests — see [snackbarQueue]. The retry re-uses the same request;
+     * if the second attempt also drops, [showSnackbar] logs it as usual.
+     */
+    fun showSnackbarWithRetry(
+        scope: CoroutineScope,
+        message: String,
+        actionLabel: String? = null,
+        long: Boolean = false,
+        onAction: (() -> Unit)? = null,
+    ) {
+        if (!showSnackbar(message, actionLabel, long, onAction)) {
+            scope.launch {
+                delay(SNACKBAR_RETRY_DELAY_MS)
+                showSnackbar(message, actionLabel, long, onAction)
+            }
+        }
     }
 
     /**

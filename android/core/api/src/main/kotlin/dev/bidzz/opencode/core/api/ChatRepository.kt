@@ -497,6 +497,19 @@ class ChatRepository(
     }
 
     /**
+     * Clears the repository's last failure (audit-200 D6, m-312).
+     *
+     * The view model calls this when the user dismisses the banner or
+     * asks for the 429 guidance: clearing only the view-model copy left
+     * the repo's `lastFailure` in place, and the next emission planted
+     * it back into the banner (43-F3, direction 2). The `resyncFailed`
+     * flag goes with it — it only means something alongside a failure.
+     */
+    fun clearLastFailure() {
+        _state.value = _state.value.copy(lastFailure = null, resyncFailed = false)
+    }
+
+    /**
      * Grows the transcript window by one page and re-fetches (item 28).
      *
      * Audit-200 C12 (M-169): the window used to grow by one page and the

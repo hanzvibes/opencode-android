@@ -108,8 +108,30 @@ data class ChatUiState(
      * a new selection, or the session changes. A rejected pick reverts
      * the chip to null (engine default) — the same rule `selectModel`
      * already applies for an existing session.
+     *
+     * Audit-200 D6 (m-204/m-317): one slot could not tell a rejected agent
+     * from a rejected model — a new model pick wiped an unrelated agent
+     * failure (27-F12), and two rejections in `createSession` collapsed
+     * to the last one (43-F9). Each kind now has its own slot: a pick
+     * clears only its own kind, and the banner shows both when both are
+     * filled (see `combinedSelectionFailureMessage` in ChatScreen).
+     * [selectionFailure] below stays as the "either" view for the
+     * readers that only need to know whether any selection was rejected.
      */
-    val selectionFailure: ApiResult.Failure? = null,
+    val agentSelectionFailure: ApiResult.Failure? = null,
+    /** A model selection the engine rejected — see [agentSelectionFailure]. */
+    val modelSelectionFailure: ApiResult.Failure? = null,
+    /**
+     * Audit-200 D6 (m-312): the 429 guidance is owned by the view model,
+     * not by the repo's `lastFailure`. Tapping the rate-limit action shows
+     * the guidance (`failureKey = chat_rate_limited_guidance`); a later
+     * resync success used to wipe it because `onRepoState` nulled the
+     * key whenever `lastFailure` was null (43-F3). While this is true the
+     * guidance survives repo emissions — only the user (dismiss), a new
+     * send / session change / engine death, a fresh non-429 failure, or
+     * another banner taking its place clears it.
+     */
+    val rateLimitGuidanceShown: Boolean = false,
     /**
      * What the active model/agent used to be, when it is gone from the
      * fresh lists (audit-200 B4, M-459): e.g. "Model gpt-4" or
@@ -300,7 +322,17 @@ data class ChatUiState(
     val findQuery: String = "",
     val findMatches: List<String> = emptyList(),
     val findIndex: Int = -1,
-)
+) {
+    /**
+     * Either selection failure, agent first (audit-200 D6, m-204/m-317):
+     * the "any selection was rejected" view over the two per-kind slots.
+     * Readers that only need the fact — `onRepoState`'s banner fold, the
+     * retry-kind guard — use this; writers clear or set one kind at a
+     * time so a pick never wipes the other kind's failure.
+     */
+    val selectionFailure: ApiResult.Failure?
+        get() = agentSelectionFailure ?: modelSelectionFailure
+}
 
 /**
  * A shell code block run from the chat (audit-200 C14, M-196): the
@@ -822,6 +854,9 @@ internal fun shouldInterruptSession(
 
 internal data class SelectionRevert(val agent: String?, val model: ModelRef?)
 
+/** Which kind of selection a rejection belongs to (audit-200 D6, m-204/m-317). */
+internal enum class SelectionKind { AGENT, MODEL }
+
 internal fun resolveSelectionAfterSetFailure(
     activeAgent: String?,
     activeModel: ModelRef?,
@@ -1128,6 +1163,18 @@ class ChatViewModel(
      * another lock, so it cannot deadlock.
      */
     private val selectionMutex = Mutex()
+    /**
+     * The agent/model the engine last confirmed (audit-200 D6, m-383):
+     * the revert target when a set POST fails. The old code reverted to
+     * `previous` — the chip's optimistic value, which a newer pick may
+     * already have replaced: tap A (confirmed X) → tap B → both POSTs
+     * fail → the chip showed A, which the engine rejected too. These
+     * fields move only at engine-truth points: a successful set POST,
+     * a session re-read (`syncModelFromSession`), or opening a session
+     * with known meta. A failed set reverts to these, never to `previous`.
+     */
+    private var confirmedAgent: String? = null
+    private var confirmedModel: dev.bidzz.opencode.core.api.dto.ModelRef? = null
     /**
      * Revert prompts the view model sent or queued, by prompt text
      * (audit-200 C2, M-052): when a queued revert is returned to the
@@ -1682,7 +1729,7 @@ class ChatViewModel(
     private fun reportUnreadableParked(sessionID: String): Boolean {
         if (!parkedStore.hasUnreadableEntry(sessionID)) return false
         parkedStore.remove(sessionID)
-        _state.value = _state.value.copy(failureKey = R.string.chat_parked_unreadable)
+        _state.value = _state.value.copy(failureKey = R.string.chat_parked_unreadable, rateLimitGuidanceShown = false)
         return true
     }
 
@@ -2060,6 +2107,11 @@ class ChatViewModel(
                     // Audit-200 B3 (M-080/M-376): the run is gone with
                     // the engine — a stop intent for it is spent.
                     stopIntent = false
+                    // Audit-200 D6 (m-383): the confirmed picks died with
+                    // the engine too — a re-attach opens a fresh session
+                    // whose meta re-installs its own.
+                    confirmedAgent = null
+                    confirmedModel = null
                     // Follow-ups queued while the agent worked are the user's
                     // words: the engine dying must not throw them away
                     // (item 8). They go back into the composer — after
@@ -2119,6 +2171,16 @@ class ChatViewModel(
                             else -> null
                         },
                         lastError = status.lastError,
+                        // Audit-200 D6 (m-319): a rejected selection is
+                        // dead with the engine — its banner must not
+                        // resurrect via onRepoState after the re-attach,
+                        // on a screen that no longer even has a session.
+                        agentSelectionFailure = null,
+                        modelSelectionFailure = null,
+                        // Audit-200 D6 (m-312): the engine is dead —
+                        // the guidance is about a live rate limit, and
+                        // must not resurrect on the next re-attach.
+                        rateLimitGuidanceShown = false,
                     )
                 }
                 // Audit-200 C10 (M-155): the engine is back — the old
@@ -2466,6 +2528,13 @@ class ChatViewModel(
             else -> (repoMessages + optimistic) to true
         }
 
+        // Audit-200 D6 (m-312): capture the repo failure once — ChatState
+        // comes from another module, so the compiler cannot smart-cast
+        // `chat.lastFailure` across two reads.
+        val lastFailure = chat.lastFailure
+        val rateLimitGuidanceKept = previous.rateLimitGuidanceShown &&
+            (lastFailure == null || lastFailure.code == 429)
+
         _state.value = previous.copy(
             sessionID = chat.sessionID,
             messages = finalMessages,
@@ -2483,7 +2552,12 @@ class ChatViewModel(
             // which used to wipe the banner while the chip still showed
             // the rejected pick. The selection failure is the banner until
             // it is dismissed, superseded, or the session changes.
-            failure = previous.selectionFailure ?: chat.lastFailure,
+            // Audit-200 D6 (m-319): a late repo emission must not plant
+            // its failure over the engine-down banner — when the engine
+            // is dead, the banner names the dead engine (C10, M-155)
+            // with a restart action, not "Connection refused" with none.
+            failure = previous.selectionFailure
+                ?: if (isEngineDown()) null else chat.lastFailure,
             // A stale guidance key outlives its failure (item 24): the
             // banner shows while failureKey != null, so the 429 guidance
             // stayed up after a later send succeeded. It clears with the
@@ -2491,10 +2565,22 @@ class ChatViewModel(
             // guidance in place of a failure, not after one.
             failureKey = when {
                 previous.selectionFailure != null -> null
+                // Audit-200 D6 (m-312): the 429 guidance is owned by the
+                // view model — a resync success (lastFailure == null)
+                // must not wipe guidance the user explicitly asked for.
+                // Only a dismiss, a new send, a session change, an engine
+                // death, a fresh non-429 failure, or another banner clears
+                // it (see rateLimitGuidanceShown).
+                previous.rateLimitGuidanceShown -> R.string.chat_rate_limited_guidance
                 chat.lastFailure == null -> null
                 sessionGone(chat.lastFailure) -> R.string.chat_session_gone_guidance
                 else -> previous.failureKey
             },
+            // Audit-200 D6 (m-312): the guidance is only about rate
+            // limiting — a fresh non-429 failure supersedes it, while
+            // a resync success (lastFailure == null) or a new 429
+            // keeps it.
+            rateLimitGuidanceShown = rateLimitGuidanceKept,
             pendingPermission = effectivePending,
             deferredPermission = effectiveDeferred,
             // While a permission prompt is outstanding the prompt is the
@@ -3149,6 +3235,11 @@ class ChatViewModel(
                         activeModel = result.value.model,
                         activeAgent = result.value.agent,
                     )
+                    // Audit-200 D6 (m-383): the GET is engine truth — the
+                    // agent/model it returns are the confirmed values
+                    // a later failed set reverts to.
+                    confirmedAgent = result.value.agent
+                    confirmedModel = result.value.model
                     validateActiveSelection()
                 }
                 result.value.model
@@ -3171,16 +3262,20 @@ class ChatViewModel(
         // waits for createSession; with a session the POST below binds it.
         // A session implies an attached handle, so the check after the
         // update can only fire with no session open.
-        val previous = _state.value.activeAgent
         // A new pick supersedes a rejected one (43-F2): the old selection
         // failure described a pick that is no longer current, so it clears
         // with the pick — but only the selection failure; an unrelated
         // send failure underneath stays visible.
+        // Audit-200 D6 (m-204): only THIS kind clears — a rejected model
+        // is unrelated to a new agent pick, so its banner survives. The
+        // rendered failure becomes the other kind's failure when one
+        // remains, instead of blinking the banner out until the next
+        // repo emission.
         val picked = _state.value
         _state.value = picked.copy(
             activeAgent = agentID,
-            failure = if (picked.selectionFailure != null) null else picked.failure,
-            selectionFailure = null,
+            failure = if (picked.failure == picked.agentSelectionFailure) picked.modelSelectionFailure else picked.failure,
+            agentSelectionFailure = null,
             staleSelectionArg = null,
         )
         val h = handle ?: return
@@ -3199,13 +3294,23 @@ class ChatViewModel(
                         // agent the prompt never runs on. Only revert
                         // when the user is still on this session showing
                         // the rejected agent; a newer pick wins.
+                        // Audit-200 D6 (m-383): the revert target is the
+                        // engine-confirmed agent, not the optimistic
+                        // `previous` — a newer pick may already have
+                        // replaced it, and the engine rejected that one
+                        // too. (m-034) the report uses the same guard:
+                        // a failure for a superseded pick must not
+                        // resurrect its banner over the newer pick.
                         val current = _state.value
                         if (current.sessionID == sessionID && current.activeAgent == agentID) {
-                            _state.value = current.copy(activeAgent = previous)
+                            _state.value = current.copy(activeAgent = confirmedAgent)
+                            reportSelectionFailure(result, SelectionKind.AGENT)
                         }
-                        reportSelectionFailure(result)
                     }
                     is ApiResult.Success -> {
+                        // Audit-200 D6 (m-383): the engine confirmed this
+                        // agent — it is the revert target from now on.
+                        confirmedAgent = agentID
                         // Audit-200 C7 (M-122): re-read the session — the
                         // engine may have applied the agent's own model.
                         // On a failed re-read the chips simply keep the
@@ -3235,13 +3340,16 @@ class ChatViewModel(
         val sessionID = _state.value.sessionID
         // Optimistic update before the handle check — same reason as
         // selectAgent: a pick made before the engine attaches sticks.
-        val previous = _state.value.activeModel
         // A new pick supersedes a rejected one (43-F2) — see selectAgent.
+        // Audit-200 D6 (m-204): only THIS kind clears — a rejected agent
+        // is unrelated to a new model pick, so its banner survives; the
+        // rendered failure becomes the other kind's failure when one
+        // remains.
         val picked = _state.value
         _state.value = picked.copy(
             activeModel = model,
-            failure = if (picked.selectionFailure != null) null else picked.failure,
-            selectionFailure = null,
+            failure = if (picked.failure == picked.modelSelectionFailure) picked.agentSelectionFailure else picked.failure,
+            modelSelectionFailure = null,
             staleSelectionArg = null,
         )
         val h = handle ?: return
@@ -3251,13 +3359,21 @@ class ChatViewModel(
             selectionMutex.withLock {
                 when (val result = h.sessions.setModel(sessionID, model)) {
                     is ApiResult.Failure -> {
+                        // Audit-200 D6 (m-383/m-034): revert to the
+                        // engine-confirmed model, not the optimistic
+                        // `previous`; the report uses the same guard as
+                        // the revert, so a superseded pick's failure
+                        // never resurrects over the newer pick.
                         val current = _state.value
                         if (current.sessionID == sessionID && current.activeModel == model) {
-                            _state.value = current.copy(activeModel = previous)
+                            _state.value = current.copy(activeModel = confirmedModel)
+                            reportSelectionFailure(result, SelectionKind.MODEL)
                         }
-                        reportSelectionFailure(result)
                     }
                     is ApiResult.Success -> {
+                        // Audit-200 D6 (m-383): the engine confirmed this
+                        // model — it is the revert target from now on.
+                        confirmedModel = model
                         // Same triple race as selectAgent, mirrored for
                         // the model: a failed duplicate set in
                         // createSession reverted the chip to null, but
@@ -3692,7 +3808,7 @@ class ChatViewModel(
         skills: List<PromptSkillAttachment>? = null,
     ): Boolean {
         val repo = repository ?: run {
-            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running, rateLimitGuidanceShown = false)
             return false
         }
         _state.value = _state.value.copy(
@@ -4364,6 +4480,21 @@ class ChatViewModel(
         val sessionID = _state.value.sessionID ?: return
         val sessions = handle?.sessions ?: return
         if (_state.value.busy || _state.value.revertBusy) return
+        // Audit-200 D6 (m-154): a second stage while one is already staged
+        // overwrote the first plan silently — the banner showed the new
+        // plan with no trace of the old one. The same message is a safe
+        // no-op (its plan is already staged); a different message is
+        // refused with feedback instead of overwriting it.
+        _state.value.stagedRevert?.let { staged ->
+            if (staged.messageID == messageId) return
+            _state.value = _state.value.copy(
+                failure = null,
+                failureKey = R.string.chat_revert_already_staged,
+                rateLimitGuidanceShown = false,
+                retryKind = RetryKind.NONE,
+            )
+            return
+        }
         _state.value = _state.value.copy(revertBusy = true)
         viewModelScope.launch {
             when (val result = sessions.revertStage(sessionID, messageId, files)) {
@@ -4546,7 +4677,7 @@ class ChatViewModel(
                     true
                 }
                 is ApiResult.Failure -> {
-                    _state.value = _state.value.copy(failureKey = R.string.question_skip_failed)
+                    _state.value = _state.value.copy(failureKey = R.string.question_skip_failed, rateLimitGuidanceShown = false)
                     false
                 }
             }
@@ -4596,7 +4727,7 @@ class ChatViewModel(
      */
     private fun returnAnswerToDraft(displayText: String) {
         onDraftChange(resolveDraftAppend(_state.value.draft, displayText))
-        _state.value = _state.value.copy(failureKey = R.string.question_answer_failed)
+        _state.value = _state.value.copy(failureKey = R.string.question_answer_failed, rateLimitGuidanceShown = false)
     }
 
     /**
@@ -4678,7 +4809,7 @@ class ChatViewModel(
         val text = _state.value.lastSentText?.takeIf { it.isNotBlank() } ?: return
         if (_state.value.busy || sendInFlight) return
         val repo = repository ?: run {
-            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running, rateLimitGuidanceShown = false)
             return
         }
         // Audit-200 B3 (M-215): a failed FLUSHED entry still sits in the
@@ -4706,7 +4837,7 @@ class ChatViewModel(
         // retryLastSend is public, so the gate lives here rather than
         // being assumed.
         val ambiguous = _state.value.failure?.let(::isTransient) == true
-        _state.value = _state.value.copy(failure = null, failureKey = null, selectionFailure = null)
+        _state.value = _state.value.copy(failure = null, failureKey = null, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false)
         sendInFlight = true
         viewModelScope.launch {
             try {
@@ -4759,12 +4890,23 @@ class ChatViewModel(
             RetryKind.RESEND -> retryLastSend()
             RetryKind.RELOAD_SESSION -> reloadSession()
             RetryKind.RESTORE_SESSION -> lastRestoreTargetSessionID?.let { onResume(it) }
-            RetryKind.RATE_LIMITED -> _state.value = _state.value.copy(
-                failure = null,
-                failureKey = R.string.chat_rate_limited_guidance,
-                retryKind = RetryKind.NONE,
-                selectionFailure = null,
-            )
+            RetryKind.RATE_LIMITED -> {
+                // Audit-200 D6 (m-312): the tap shows the guidance instead
+                // of re-sending — and the guidance is now owned by the
+                // view model (rateLimitGuidanceShown), so a resync success
+                // cannot wipe it. The repo's failure is cleared too, so
+                // the next emission cannot resurrect the raw 429 banner
+                // the user just dismissed into guidance.
+                _state.value = _state.value.copy(
+                    failure = null,
+                    failureKey = R.string.chat_rate_limited_guidance,
+                    retryKind = RetryKind.NONE,
+                    agentSelectionFailure = null,
+                    modelSelectionFailure = null,
+                    rateLimitGuidanceShown = true,
+                )
+                repository?.clearLastFailure()
+            }
             RetryKind.RESTART_ENGINE, RetryKind.REAUTH, RetryKind.NONE -> Unit
         }
     }
@@ -4784,7 +4926,7 @@ class ChatViewModel(
         repository?.close()
         val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope, permissionRestoreGate)
         repository = repo
-        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE, selectionFailure = null)
+        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false)
         collectRepo(repo)
         repo.open(id)
         // Audit-200 C7 (M-113): a reload re-opens the SAME session, so
@@ -5041,6 +5183,10 @@ class ChatViewModel(
             _state.value = _state.value.copy(
                 failure = result,
                 failureKey = null,
+                // Audit-200 D6 (m-312): a fresh failure supersedes the
+                // 429 guidance — without this the flag would resurrect
+                // it on the next repo emission.
+                rateLimitGuidanceShown = false,
                 // Audit-200 C15 (M-233): same rule as onRepoState — a send
                 // that fails because the engine died offers a restart, not
                 // a re-send into a dead engine.
@@ -5055,20 +5201,27 @@ class ChatViewModel(
     /**
      * Records a model/agent selection the engine rejected (43-F2).
      *
-     * Unlike [reportFailure] this also stores the failure in
-     * [ChatUiState.selectionFailure], which `onRepoState` preserves: a
-     * plain failure is overwritten by the repo's `lastFailure` on the
-     * next emission, and a successful send clears the repo's failure —
-     * so without this the banner blinked out as soon as the prompt
-     * landed. No Retry is offered: re-sending the prompt would not
-     * re-apply the rejected selection.
+     * Unlike [reportFailure] this also stores the failure in the
+     * per-kind slot ([ChatUiState.agentSelectionFailure] /
+     * [ChatUiState.modelSelectionFailure]), which `onRepoState`
+     * preserves: a plain failure is overwritten by the repo's
+     * `lastFailure` on the next emission, and a successful send clears
+     * the repo's failure — so without this the banner blinked out as
+     * soon as the prompt landed. No Retry is offered: re-sending the
+     * prompt would not re-apply the rejected selection.
+     *
+     * Audit-200 D6 (m-204/m-317): the kind keeps the two rejections
+     * apart — reporting an agent failure never wipes a model failure,
+     * and `createSession` can report both instead of last-wins.
      */
-    private fun reportSelectionFailure(result: ApiResult.Failure) {
+    private fun reportSelectionFailure(result: ApiResult.Failure, kind: SelectionKind) {
         _state.value = _state.value.copy(
             failure = result,
             failureKey = null,
             retryKind = RetryKind.NONE,
-            selectionFailure = result,
+            agentSelectionFailure = if (kind == SelectionKind.AGENT) result else _state.value.agentSelectionFailure,
+            modelSelectionFailure = if (kind == SelectionKind.MODEL) result else _state.value.modelSelectionFailure,
+            rateLimitGuidanceShown = false,
         )
     }
 
@@ -5091,8 +5244,15 @@ class ChatViewModel(
             connecting = true,
             failure = null,
             failureKey = null,
-            selectionFailure = null,
+            agentSelectionFailure = null,
+            modelSelectionFailure = null,
+            rateLimitGuidanceShown = false,
         )
+        // Audit-200 D6 (m-383): this is a brand-new session — the
+        // previous session's confirmed picks are not this session's
+        // engine truth. The set POSTs below re-confirm them.
+        confirmedAgent = null
+        confirmedModel = null
         val result = h.sessions.create(workspace())
         _state.value = _state.value.copy(connecting = false)
         return when (result) {
@@ -5140,6 +5300,11 @@ class ChatViewModel(
                                 agentFailure = setResult
                             }
                             is ApiResult.Success -> {
+                                // Audit-200 D6 (m-383): the POST confirmed
+                                // this agent; the re-read below only refines
+                                // it with the agent's own model when the
+                                // GET succeeds.
+                                confirmedAgent = it
                                 // M-122: re-read before deciding whether
                                 // the picked model still applies. On a
                                 // failed re-read engineModel stays null
@@ -5159,7 +5324,11 @@ class ChatViewModel(
                                     modelFailed = true
                                     modelFailure = setResult
                                 }
-                                is ApiResult.Success -> Unit
+                                is ApiResult.Success -> {
+                                    // Audit-200 D6 (m-383): the POST
+                                    // confirmed this model.
+                                    confirmedModel = it
+                                }
                             }
                         }
                     }
@@ -5171,10 +5340,20 @@ class ChatViewModel(
                     // not ours to touch — and the send is abandoned
                     // either way, so there is nothing to report on.
                     if (repository === repo && repo.state.value.sessionID == createdId) {
-                        // Agent first, then model — the same last-wins
-                        // order as before.
-                        agentFailure?.let { reportSelectionFailure(it) }
-                        modelFailure?.let { reportSelectionFailure(it) }
+                        // Audit-200 D6 (m-317): both rejections are
+                        // reported, each into its own slot — the old
+                        // code reported them in sequence into one slot,
+                        // so only the model failure survived.
+                        agentFailure?.let { reportSelectionFailure(it, SelectionKind.AGENT) }
+                        modelFailure?.let { reportSelectionFailure(it, SelectionKind.MODEL) }
+                        // Audit-200 D6 (m-383): this session is brand
+                        // new — a kind whose POST failed has no confirmed
+                        // value to fall back to, so the confirmed fields
+                        // for the failed kinds go back to the engine
+                        // default instead of leaking the previous
+                        // session's confirmed picks.
+                        if (agentFailed) confirmedAgent = null
+                        if (modelFailed) confirmedModel = null
                         val reverted = resolveSelectionAfterSetFailure(
                             pickedAgent,
                             pickedModel,
@@ -5195,7 +5374,14 @@ class ChatViewModel(
                 result.value.id
             }
             is ApiResult.Failure -> {
-                reportFailure(result)
+                // Audit-200 D6 (m-383, residu): the create failed — but
+                // only report it when this send's repository is still
+                // current and no session attached meanwhile; a switch
+                // mid-flight must not plant its failure on the new
+                // session (same rule as 058-F13 above).
+                if (repository === repo && repo.state.value.sessionID == null) {
+                    reportFailure(result)
+                }
                 null
             }
         }
@@ -5251,7 +5437,9 @@ class ChatViewModel(
                         failure = null,
                         failureKey = R.string.stop_unconfirmed,
                         retryKind = RetryKind.NONE,
-                        selectionFailure = null,
+                        agentSelectionFailure = null,
+                        modelSelectionFailure = null,
+                        rateLimitGuidanceShown = false,
                     )
                 }
                 return@launch
@@ -5455,7 +5643,11 @@ class ChatViewModel(
         // Audit-200 C3 (M-067): the retry target's skills belong to the
         // old session's last send, like the text itself.
         lastSentSkills = null
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
+        // Audit-200 D6 (m-383): the old session's confirmed picks are not
+        // this session's engine truth.
+        confirmedAgent = null
+        confirmedModel = null
         // Text typed before any session exists lives under the unsent key
         // (95-F6): a fresh session is where it belongs, so it comes back
         // as this session's composer instead of starting empty. The edit
@@ -5471,7 +5663,7 @@ class ChatViewModel(
         // that). Only the "a new session exists" announcement is
         // skipped.
         if (handle == null) {
-            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running, rateLimitGuidanceShown = false)
             return
         }
         // The abandoned session must not come back on the next resume:
@@ -5509,7 +5701,11 @@ class ChatViewModel(
         stopIntent = false
         stagedRevertSessionID = null
         lastSentSkills = null
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
+        // Audit-200 D6 (m-383): the old session's confirmed picks are not
+        // this session's engine truth.
+        confirmedAgent = null
+        confirmedModel = null
         restoreParkedComposer(UNSENT_SESSION_KEY, restoreEditState = false)
         onSessionCleared()
     }
@@ -5521,7 +5717,7 @@ class ChatViewModel(
         // header would show the target's model while the old session
         // is still the one on screen.
         if (repository == null) {
-            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running, rateLimitGuidanceShown = false)
             return
         }
         // 56-F2: the list hands us the session's own location for free —
@@ -5587,7 +5783,7 @@ class ChatViewModel(
         // session to open — report it instead of returning silently
         // while the UI still navigates.
         val repo = repository ?: run {
-            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running)
+            _state.value = _state.value.copy(failureKey = R.string.error_engine_not_running, rateLimitGuidanceShown = false)
             return
         }
         if (fetchMeta) {
@@ -5683,6 +5879,7 @@ class ChatViewModel(
     internal fun deferSessionOpen() {
         _state.value = _state.value.copy(
             failureKey = R.string.session_link_verify_failed,
+            rateLimitGuidanceShown = false,
             retryKind = RetryKind.NONE,
         )
     }
@@ -5697,7 +5894,7 @@ class ChatViewModel(
      */
     private fun refuseSessionOpen(@StringRes failureKey: Int, sessionID: String) {
         if (pendingOpenSessionID == sessionID) pendingOpenSessionID = null
-        _state.value = _state.value.copy(failureKey = failureKey, retryKind = RetryKind.NONE)
+        _state.value = _state.value.copy(failureKey = failureKey, retryKind = RetryKind.NONE, rateLimitGuidanceShown = false)
     }
 
     /**
@@ -5742,7 +5939,12 @@ class ChatViewModel(
         stopIntent = false
         stagedRevertSessionID = null
         lastSentSkills = null
-        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, staleSelectionArg = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
+        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false, staleSelectionArg = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
+        // Audit-200 D6 (m-383): the old session's confirmed picks are not
+        // this session's engine truth — the meta branch below re-installs
+        // the new session's own when it has meta.
+        confirmedAgent = null
+        confirmedModel = null
         restoreParkedComposer(sessionID)
         repo.open(sessionID)
         // Guarded by the repository's attached session (item 23), not the
@@ -5763,6 +5965,10 @@ class ChatViewModel(
                 // loaded for this session.
                 sessionTitle = meta.title,
             )
+            // Audit-200 D6 (m-383): the meta is engine truth for this
+            // session — a later failed set reverts to these picks.
+            confirmedAgent = meta.agent
+            confirmedModel = meta.model
             // Audit-200 B4 (M-459): the meta's model/agent may be gone
             // from the fresh lists (its provider was deleted since).
             validateActiveSelection()
@@ -5903,6 +6109,11 @@ class ChatViewModel(
                                 failure = null,
                                 failureKey = null,
                                 retryKind = RetryKind.NONE,
+                                // Audit-200 D6 (m-312): a successful
+                                // restore supersedes the 429 guidance —
+                                // without this the flag would resurrect
+                                // it on the next repo emission.
+                                rateLimitGuidanceShown = false,
                             )
                             repo.open(target)
                         }
@@ -5917,6 +6128,7 @@ class ChatViewModel(
                     if (result.isSessionMissing) {
                         _state.value = _state.value.copy(
                             failureKey = R.string.error_session_missing,
+                            rateLimitGuidanceShown = false,
                             retryKind = RetryKind.NONE,
                         )
                     } else {
@@ -5960,7 +6172,7 @@ class ChatViewModel(
      * find them.
      */
     fun reportWorkspaceUnavailable() {
-        _state.value = _state.value.copy(failureKey = R.string.workspace_unavailable)
+        _state.value = _state.value.copy(failureKey = R.string.workspace_unavailable, rateLimitGuidanceShown = false)
     }
 
     /** Remembers the session id so a relaunch can restore it. */
@@ -5975,7 +6187,12 @@ class ChatViewModel(
      * banner does not come back; the bubble still offers the retry.
      */
     fun dismissError() {
-        _state.value = _state.value.copy(failure = null, failureKey = null, selectionFailure = null)
+        // Audit-200 D6 (m-312): the dismiss reaches the repository too —
+        // the repo's lastFailure is what resurrects a dismissed banner on
+        // the next emission (43-F3), so clearing only the view-model copy
+        // left the banner coming back.
+        repository?.clearLastFailure()
+        _state.value = _state.value.copy(failure = null, failureKey = null, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false)
     }
 
     override fun onCleared() {

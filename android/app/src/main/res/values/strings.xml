@@ -393,6 +393,8 @@
     <string name="compact_dialog_body">The transcript will be replaced by a summary to free context. The original turns cannot be read back afterwards.</string>
     <string name="compact_dialog_confirm">Compact</string>
     <string name="revert_banner_title">Revert staged</string>
+    <!-- Audit-200 D6 (m-154): a second stage while one is already staged is refused instead of overwriting it. -->
+    <string name="chat_revert_already_staged">A revert is already staged for another message. Apply or clear it first.</string>
     <!-- Audit-200 B7 (M-027): the revert choice — messages only, or messages + files. -->
     <string name="revert_dialog_title">Revert to this message?</string>
     <string name="revert_dialog_text">Messages after this point will be removed. Choose whether the files changed after it are restored too.</string>
@@ -1177,6 +1179,8 @@
     <string name="photo_saved">Photo saved to %1$s</string>
     <string name="photo_failed">Could not save photo</string>
     <string name="camera_insert_failed">Could not create a photo in the gallery.</string>
+    <!-- Audit-200 D6 (m-148): the camera itself failed to open — the gallery row was created fine, so camera_insert_failed would lie. -->
+    <string name="camera_open_failed">Could not open the camera.</string>
     <string name="photo_saved_to_gallery">Photo is in the gallery — the app restarted before it could be attached. Attach it again from the gallery.</string>
     <string name="widget_open">Open</string>
     <string name="widget_open_session_hint">Tap Open to continue the session</string>

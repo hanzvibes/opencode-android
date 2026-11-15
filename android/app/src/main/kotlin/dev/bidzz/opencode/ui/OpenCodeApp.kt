@@ -55,6 +55,7 @@ import dev.bidzz.opencode.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -450,6 +451,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // (BottomCenter) below — see the collector in LaunchedEffect(Unit).
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Audit-200 D6 (m-593): the retry helper for action-bearing snackbars
+    // (e.g. workspace too broad) needs a scope at the call site.
+    val scope = rememberCoroutineScope()
+
     // 69-F14: the snackbar showing when the activity is recreated (fold,
     // resize, process death). It was already consumed from the flow, so
     // without this the message — and its action, e.g. Retry — vanished
@@ -742,7 +747,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 inflightSnackbarMessage = null
                 inflightSnackbarActionLabel = null
             }
-            app.snackbarRequests.collect { request ->
+            app.snackbarQueue.requests.collect { request ->
                 inflightSnackbarMessage = request.message
                 inflightSnackbarActionLabel = request.actionLabel
                 inflightSnackbarLong = request.long
@@ -1385,7 +1390,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                     explorerViewModel.invalidateQuickOpenIndex()
                                     screen = Screen.Chat
                                 } else {
-                                    app.showSnackbar(
+                                    app.showSnackbarWithRetry(
+                                        scope,
                                         app.getString(R.string.workspace_too_broad),
                                         long = true,
                                     )
@@ -1673,9 +1679,21 @@ fun OpenCodeApp(app: OpenCodeApplication) {
 
             // #4d: the one snackbar host for the whole app,
             // overlaid at the bottom — default Material3 colors.
+            // Audit-200 D6 (m-439): the host pads for the navigation
+            // bar — without it the snackbar's bottom edge sat on the
+            // gesture bar / behind the 3-button bar.
+            // (m-195, known behavior): the host is the last child of the
+            // root Box, so it draws above the modal drawer too — a
+            // snackbar fired while the drawer is open covers its footer
+            // for ~4s. No trigger fires routinely while the drawer is
+            // open, so this is documented, not re-plumbed; hoisting the
+            // drawer state to delay snackbars is a bigger change for an
+            // unproven-frequency annoyance.
             SnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding(),
             )
         }
     }
@@ -1729,6 +1747,17 @@ private fun ChatDestination(
         sessionsLoading = sessionsState.loading,
         sessionsFailure = sessionsState.failure,
         sessionsFailureKey = sessionsState.failureKey,
+        // Audit-200 D6 (m-477): the drawer shows failed delete/rename
+        // banners from the same view model the sessions screen uses.
+        sessionsDeleteFailure = sessionsState.deleteFailure,
+        sessionsDeleteFailureKey = sessionsState.deleteFailureKey,
+        sessionsDeleteFailedSessionID = sessionsState.deleteFailedSessionID,
+        sessionsRenameFailure = sessionsState.renameFailure,
+        sessionsRenameFailureKey = sessionsState.renameFailureKey,
+        sessionsRenameFailedSessionID = sessionsState.renameFailedSessionID,
+        sessionsRenameFailedTitle = sessionsState.renameFailedTitle,
+        onDismissDeleteFailure = sessionViewModel::clearDeleteFailure,
+        onDismissRenameFailure = sessionViewModel::clearRenameFailure,
         onOpenSession = chatViewModel::openSession,
         // Audit-200 C17 (M-258): the inbox chip above the composer opens
         // the queue for the session on screen; without one there is no

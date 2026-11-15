@@ -171,6 +171,20 @@ class EngineConfigStoreJsoncTest {
     }
 
     @Test
+    fun `a deleted corrupt config clears the stale read problem (D6 m-271)`() {
+        // The corrupt file from the test above is gone — the next read
+        // must not keep naming a file that no longer exists.
+        val (store, ocDir) = storeWith(
+            "opencode.json" to """{"providers": {"probe": {"name": "Probe", "settings": {"baseURL": "https://x""",
+        )
+        assertThrows(IOException::class.java) { store.customProviders() }
+        assertNotNull(store.lastConfigReadProblem)
+        assertTrue(File(ocDir, "opencode.json").delete())
+        assertTrue(store.customProviders().isEmpty())
+        assertNull(store.lastConfigReadProblem)
+    }
+
+    @Test
     fun `writing to a plain json config still works`() {
         val (store, ocDir) = storeWith(
             "opencode.json" to """{"providers": {}}""",

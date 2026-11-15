@@ -792,7 +792,8 @@ fun DiagnosticsScreen(
                                         // the full 30 seconds and then blamed the
                                         // engine with a timeout. Say so at once.
                                         if (!app.restartEngine()) {
-                                            (context.applicationContext as OpenCodeApplication).showSnackbar(
+                                            (context.applicationContext as OpenCodeApplication).showSnackbarWithRetry(
+                                                scope,
                                                 context.getString(R.string.diag_restart_not_sent),
                                                 long = true,
                                             )
@@ -813,7 +814,8 @@ fun DiagnosticsScreen(
                                                     }
                                                 }
                                                 if (settled == null) {
-                                                    (context.applicationContext as OpenCodeApplication).showSnackbar(
+                                                    (context.applicationContext as OpenCodeApplication).showSnackbarWithRetry(
+                                                        scope,
                                                         context.getString(R.string.diag_restart_timeout),
                                                         long = true,
                                                     )

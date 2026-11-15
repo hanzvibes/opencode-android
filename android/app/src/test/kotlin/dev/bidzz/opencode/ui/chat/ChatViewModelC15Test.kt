@@ -385,6 +385,10 @@ class ChatViewModelC15Test {
         vm.onRepoState(ChatState(lastFailure = ApiResult.Failure(code = 0, message = "Connection refused")))
         assertEquals(RetryKind.RESTART_ENGINE, vm.state.value.retryKind)
         assertEquals(R.string.error_engine_not_running, vm.state.value.failureKey)
+        // Audit-200 D6 (m-319): the late repo failure must not be planted
+        // over the engine-down banner — the banner names the dead engine
+        // with a restart action, not "Connection refused" with none.
+        assertNull(vm.state.value.failure)
     }
 
     @Test
