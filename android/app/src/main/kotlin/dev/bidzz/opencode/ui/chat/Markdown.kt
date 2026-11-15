@@ -209,7 +209,12 @@ object Markdown {
             val line = lines[i]
 
             // Fenced code block: consume until the matching fence or EOF.
-            val fenceMatch = fence.find(line)
+            // CommonMark (Audit-200 D1, m-754): a backtick fence's info
+            // string must not contain a backtick — "``` `foo`" is prose,
+            // not a fence. A tilde fence may carry backticks in its info.
+            val fenceMatch = fence.find(line)?.takeIf {
+                !(it.groupValues[1].first() == '`' && '`' in it.groupValues[2])
+            }
             if (fenceMatch != null) {
                 flushParagraph()
                 val marker = fenceMatch.groupValues[1]

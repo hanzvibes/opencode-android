@@ -87,6 +87,11 @@ import dev.bidzz.opencode.ui.rememberWindowSizeClass
  * platform gesture; the copy button on code blocks is an addition, not a
  * replacement for normal selection.
  */
+
+/** Quote-bar colour: Aura blue fill in light, the app accent in dark (D1 m-062). */
+internal fun blockquoteBarColor(isDark: Boolean, accent: Color): Color =
+    if (isDark) accent else AuraPalette.auraBlueFill
+
 @Composable
 fun MarkdownText(
     markdown: String,
@@ -186,8 +191,11 @@ fun MarkdownText(
                                     val strokeWidth = 3.dp.toPx()
                                     drawLine(
                                         // Hatch: the quote bar is an Aura
-                                        // blue fill — decoration, never text.
-                                        color = AuraPalette.auraBlueFill,
+                                        // blue fill in light — decoration,
+                                        // never text. In dark the app's own
+                                        // accent stays (Aura fill would be
+                                        // dark-on-dark there).
+                                        color = blockquoteBarColor(colors.isDark, colors.accent),
                                         start = Offset(strokeWidth / 2f, 0f),
                                         end = Offset(strokeWidth / 2f, size.height),
                                         strokeWidth = strokeWidth,

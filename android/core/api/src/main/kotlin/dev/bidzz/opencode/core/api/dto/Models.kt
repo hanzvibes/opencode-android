@@ -206,10 +206,15 @@ data class FormReplyRequest(
 /**
  * One entry in a session's history.
  *
- * The engine returns three kinds, distinguished by `type`:
+ * The engine returns four kinds, distinguished by `type`:
  * - `user` — what the operator typed (`text`).
  * - `assistant` — model output, as ordered content blocks.
  * - `idle` — a terminator marking the session finished, carrying `outcome`.
+ * - `compaction` — a summary the engine wrote when it compacted the context
+ *   (Audit-200 D1, m-461: the old docstring claimed three kinds). Its
+ *   `tokens` are not counted by the context meter — their meaning is
+ *   unproven (77-F4), so they are neither counted nor treated as the last
+ *   turn; that needs a live-engine payload to settle, not a docstring.
  *
  * Modelled as one class with nullable fields rather than a sealed hierarchy,
  * because the discriminator is a plain string on a wire format that gains new

@@ -100,13 +100,13 @@ private val FEATURED_PROVIDERS = listOf(
     FeaturedProviderDef(
         id = "anthropic",
         name = "Anthropic",
-        subtitle = "Claude 3.5 Sonnet, Opus & Haiku",
+        subtitleRes = R.string.providers_featured_anthropic_subtitle,
         brandColor = Color(0xFFD97757),
     ),
     FeaturedProviderDef(
         id = "openai",
         name = "OpenAI",
-        subtitle = "GPT-4o, o1, o3-mini",
+        subtitleRes = R.string.providers_featured_openai_subtitle,
         brandColor = Color(0xFF10A37F),
     ),
     FeaturedProviderDef(
@@ -125,7 +125,7 @@ private val FEATURED_PROVIDERS = listOf(
     FeaturedProviderDef(
         id = "deepseek",
         name = "DeepSeek",
-        subtitle = "DeepSeek V3, R1 reasoning",
+        subtitleRes = R.string.providers_featured_deepseek_subtitle,
         brandColor = Color(0xFF1E88E5),
     ),
     FeaturedProviderDef(
@@ -776,7 +776,7 @@ fun ProvidersScreen(
                         Text(
                             text = stringResource(
                                 R.string.providers_antigravity_models_note,
-                                "Gemini 3.8 Flash, Gemini 3.1 Pro, and Claude Opus 4.6 Thinking",
+                                stringResource(R.string.providers_antigravity_models_list),
                             ),
                             style = OpenCodeTypography.bodySmall,
                             color = colors.onSurfaceMuted,

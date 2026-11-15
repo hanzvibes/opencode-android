@@ -71,19 +71,27 @@ internal fun statusSearchTerms(status: String?): List<String> = when (status?.lo
     else -> listOf(status)
 }
 
-/** True when [query] matches the title, the transcript preview, the model, the status or the directory. */
+/** True when [query] matches the title, the transcript preview, the model, the status or the directory.
+ *
+ * Audit-200 D1 (m-176): the query is tokenised on whitespace and EVERY token
+ * must match some field (AND) — "fix login" finds "Fix the login crash"
+ * whatever the word order. A single token behaves exactly as before.
+ */
 fun matchesSessionQuery(query: String, row: SessionRow, detail: SessionDetail? = null): Boolean {
     if (query.isBlank()) return true
-    val needle = query.trim()
-    return row.title.contains(needle, ignoreCase = true)
-        || detail?.preview?.contains(needle, ignoreCase = true) == true
+    val tokens = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    if (tokens.isEmpty()) return true
+    val fields = listOfNotNull(
+        row.title,
+        detail?.preview,
         // Audit-200 C5 (M-097): the preview is only the first user
         // message — the capped text of every user message the preview
         // walk passed is what makes a session findable by a later ask.
-        || detail?.searchText?.contains(needle, ignoreCase = true) == true
-        || detail?.model?.contains(needle, ignoreCase = true) == true
-        || statusSearchTerms(detail?.status).any { it.contains(needle, ignoreCase = true) }
-        || row.directory?.contains(needle, ignoreCase = true) == true
+        detail?.searchText,
+        detail?.model,
+        row.directory,
+    ) + statusSearchTerms(detail?.status)
+    return tokens.all { token -> fields.any { it.contains(token, ignoreCase = true) } }
 }
 
 /** Filters rows by [query] across titles and transcript previews (see [matchesSessionQuery]). */

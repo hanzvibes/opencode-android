@@ -166,6 +166,14 @@ class ProcessManager(
         /** The stdout line the engine prints its password on. Shared with [redactEnginePassword]. */
         internal const val PASSWORD_PREFIX = "server password"
 
+        /**
+         * Value-based redaction only applies at or above this length
+         * (Audit-200 D1, m-395): shorter values are too likely to be
+         * ordinary words in the log. The Basic-header and prefix forms
+         * are masked at any length.
+         */
+        internal const val MIN_REDACTED_PASSWORD_LENGTH = 8
+
         /** Covers the gap between fork and the child's exec when looking up its pid. */
         private const val PID_LOOKUP_ATTEMPTS = 20
 
@@ -831,7 +839,14 @@ fun redactEnginePassword(line: String, password: String? = null): String {
         val basic = java.util.Base64.getEncoder()
             .encodeToString("opencode:$password".toByteArray(Charsets.UTF_8))
         masked = masked.replace(basic, "[redacted]")
-        masked = masked.replace(password, "[redacted]")
+        // Audit-200 D1 (m-395): value-based redaction only for passwords
+        // long enough to be distinctive. A short/common value ("art", "er")
+        // would mask ordinary words out of the log ("st[redacted]ing
+        // engine"). The Basic form above stays masked at any length — it
+        // is a token, never a word — and so does the prefix form below.
+        if (password.length >= ProcessManager.MIN_REDACTED_PASSWORD_LENGTH) {
+            masked = masked.replace(password, "[redacted]")
+        }
     }
     val prefix = ProcessManager.PASSWORD_PREFIX
     val idx = masked.indexOf(prefix)

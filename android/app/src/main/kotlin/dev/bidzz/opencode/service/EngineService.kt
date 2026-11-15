@@ -15,6 +15,7 @@ import androidx.annotation.StringRes
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.appLanguageContext
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.EngineClient
 import dev.bidzz.opencode.core.api.EventStream
@@ -106,26 +107,36 @@ class EngineService : Service() {
          * user-visible and dismissible-by-stopping.
          */
         fun buildNotification(context: Context, status: EngineStatus): Notification {
-            ensureChannel(context)
+            // Audit-200 D1 (m-530): resolve the fixed words from a context
+            // wrapped in the CURRENT stored language, not the service's
+            // base context — a language change used to reach this
+            // notification only after the next process start.
+            val strings = appLanguageContext(context)
+            ensureChannel(strings)
 
-            // The baseUrl and lastError are engine data, never translated;
-            // only the fixed words around them come from strings. "Ready"
-            // and "Stop" reuse the existing keys with the same meaning.
+            // The baseUrl is engine data, never translated; only the fixed
+            // words around it come from strings. "Ready" and "Stop" reuse
+            // the existing keys with the same meaning. The lastError is
+            // NOT shown here (Audit-200 D1, m-862): it is raw engine /
+            // exception text, in English and possibly carrying a path, so
+            // a DEGRADED/FAILED notification in Bahasa showed an English
+            // sentence next to an Indonesian one. The error stays in
+            // Diagnostics, where it belongs.
             val (title, text) = when (status.state) {
-                EngineState.STOPPED -> context.getString(R.string.engine_notif_stopped_title) to
-                    context.getString(R.string.engine_notif_stopped_text)
-                EngineState.INITIALIZING -> context.getString(R.string.engine_notif_starting_title) to
-                    context.getString(R.string.engine_notif_preparing_text)
-                EngineState.STARTING -> context.getString(R.string.engine_notif_starting_title) to
-                    context.getString(R.string.engine_notif_waiting_text)
-                EngineState.RUNNING -> context.getString(R.string.engine_notif_running_title) to
-                    (status.credentials?.baseUrl ?: context.getString(R.string.chat_status_ready))
-                EngineState.DEGRADED -> context.getString(R.string.engine_notif_unhealthy_title) to
-                    (status.lastError ?: context.getString(R.string.engine_notif_health_failing_text))
-                EngineState.STOPPING -> context.getString(R.string.engine_notif_stopping_title) to
-                    context.getString(R.string.engine_notif_stopping_text)
-                EngineState.FAILED -> context.getString(R.string.engine_notif_failed_title) to
-                    (status.lastError ?: context.getString(R.string.engine_notif_failed_text))
+                EngineState.STOPPED -> strings.getString(R.string.engine_notif_stopped_title) to
+                    strings.getString(R.string.engine_notif_stopped_text)
+                EngineState.INITIALIZING -> strings.getString(R.string.engine_notif_starting_title) to
+                    strings.getString(R.string.engine_notif_preparing_text)
+                EngineState.STARTING -> strings.getString(R.string.engine_notif_starting_title) to
+                    strings.getString(R.string.engine_notif_waiting_text)
+                EngineState.RUNNING -> strings.getString(R.string.engine_notif_running_title) to
+                    (status.credentials?.baseUrl ?: strings.getString(R.string.chat_status_ready))
+                EngineState.DEGRADED -> strings.getString(R.string.engine_notif_unhealthy_title) to
+                    strings.getString(R.string.engine_notif_health_failing_text)
+                EngineState.STOPPING -> strings.getString(R.string.engine_notif_stopping_title) to
+                    strings.getString(R.string.engine_notif_stopping_text)
+                EngineState.FAILED -> strings.getString(R.string.engine_notif_failed_title) to
+                    strings.getString(R.string.engine_notif_failed_text)
             }
 
             val open = PendingIntent.getActivity(
@@ -160,7 +171,7 @@ class EngineService : Service() {
             builder.addAction(
                 Notification.Action.Builder(
                     null,
-                    context.getString(R.string.composer_stop),
+                    strings.getString(R.string.composer_stop),
                     stopPendingIntent(context),
                 ).build(),
             )
@@ -537,10 +548,13 @@ class EngineService : Service() {
      */
     private fun postFailureNotification(@StringRes textRes: Int) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
+        // Audit-200 D1 (m-530): same explicit wrap as buildNotification —
+        // the stored language, read fresh, not the process-start one.
+        val strings = appLanguageContext(this)
         // 55-F2: the notification dismisses itself when tapped.
         val notification = Notification.Builder(this, FAILED_CHANNEL_ID)
-            .setContentTitle(getString(R.string.engine_notif_failed_title))
-            .setContentText(getString(textRes))
+            .setContentTitle(strings.getString(R.string.engine_notif_failed_title))
+            .setContentText(strings.getString(textRes))
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentIntent(
                 PendingIntent.getActivity(

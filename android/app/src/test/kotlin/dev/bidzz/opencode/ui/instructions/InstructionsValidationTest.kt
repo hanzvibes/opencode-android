@@ -41,4 +41,13 @@ class InstructionsValidationTest {
         assertEquals("""{"tone":"formal"}""", instructionValueText(obj))
         assertEquals("3", instructionValueText(JsonPrimitive(3)))
     }
+
+    @Test
+    fun `only JSON strings are editable (D1 m-468)`() {
+        assertFalse(isNonStringInstructionValue(JsonPrimitive("text")))
+        assertFalse(isNonStringInstructionValue(null))
+        assertTrue(isNonStringInstructionValue(buildJsonObject { put("tone", "formal") }))
+        assertTrue(isNonStringInstructionValue(JsonPrimitive(3)))
+        assertTrue(isNonStringInstructionValue(JsonPrimitive(true)))
+    }
 }

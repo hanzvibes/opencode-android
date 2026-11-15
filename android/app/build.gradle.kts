@@ -93,7 +93,7 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = resolveVersionCode()
-        versionName = "0.1.1+${resolveVersionNameSuffix()}"
+        versionName = "${libs.versions.appVersion.get()}+${resolveVersionNameSuffix()}"
 
         // ABI selection lives in `splits` below: declaring `ndk.abiFilters` as well
         // is a hard configuration error in AGP 8.

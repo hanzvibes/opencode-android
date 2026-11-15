@@ -51,9 +51,10 @@ class OpenCodeApplication : Application() {
      * language the user picked — the service's notifications, the widget,
      * and shortcuts all derive their context from here, so they no longer
      * fall back to the phone's locale while the UI speaks Indonesian. One
-     * limit: this runs once per process, so a language change reaches
-     * those surfaces after the next process start; the Compose tree
-     * re-wraps on change and updates at once.
+     * limit: this runs once per process, so a language change reaches the
+     * widget and shortcuts after the next process start; the Compose tree
+     * re-wraps on change and updates at once, and notifications wrap the
+     * stored language fresh on every post (D1 m-530), so they follow at once.
      */
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(LanguageStore.wrap(base, LanguageStore.get(base)))
@@ -242,8 +243,14 @@ class OpenCodeApplication : Application() {
             Log.w(TAG, "refusing workspace: ${dir.absolutePath}")
             return false
         }
+        // Audit-200 D1 (m-311): compare canonical paths, not raw strings —
+        // an alias spelling of the same directory used to slip past this
+        // guard and trigger a pointless engine restart.
         val previous = workspaceStore.selectedPath
-        if (previous == dir.absolutePath) {
+        val samePath = previous != null && runCatching {
+            File(previous).canonicalPath == dir.canonicalPath
+        }.getOrDefault(previous == dir.absolutePath)
+        if (samePath) {
             Log.i(TAG, "workspace already ${dir.absolutePath}")
             return true
         }

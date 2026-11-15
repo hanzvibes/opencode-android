@@ -427,14 +427,17 @@ jobs:
           retention-days: 1
 
       # The version the APKs actually carry (audit-100 Fase 4, 84-F3): versionCode
-      # is the commit count on main, versionName is 0.1.1+<short SHA>. Gradle
-      # computes the same values from git, so the release body and the APK agree.
+      # is the commit count on main, versionName is <appVersion>+<short SHA>.
+      # The base comes from gradle/libs.versions.toml (Audit-200 D1, m-400) —
+      # the same single source Gradle reads — so the release body and the APK
+      # agree without a second hardcoded literal to drift.
       # Published as job outputs for the publish job below.
       - name: Compute release version
         id: release-version
         run: |
+          app_version=$(sed -n 's/^appVersion = "\(.*\)"/\1/p' android/gradle/libs.versions.toml)
           echo "version-code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
-          echo "version-name=0.1.1+${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+          echo "version-name=$app_version+${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
   publish:
     runs-on: ubuntu-latest

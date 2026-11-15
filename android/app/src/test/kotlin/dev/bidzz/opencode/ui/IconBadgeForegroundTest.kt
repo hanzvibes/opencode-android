@@ -64,6 +64,21 @@ class IconBadgeForegroundTest {
         )
     }
 
+    @Test
+    fun `the aura fills just above the old threshold get white, not black (D1 m-857)`() {
+        // #4673CC (luminance 0.17923) and #1D873B (0.17905) sat just
+        // above the old 0.179 threshold, so the old code picked black at
+        // 4.30:1 / 4.29:1 — under AA — while white is 4.58:1 on both.
+        for (bg in listOf(0xFF4673CC, 0xFF1D873B)) {
+            assertEquals(
+                Color.White.toArgb(),
+                foregroundForBackground(Color(bg)).toArgb(),
+            )
+            assertTrue(contrastRatio(foregroundForBackground(Color(bg)), Color(bg)) >= 4.5)
+            assertTrue(contrastRatio(Color(0xFF0B0B0C), Color(bg)) < 4.5)
+        }
+    }
+
     // ---- WCAG relative luminance, straight from the spec (mirrors WhiteThemeTest) ----
 
     private fun luminance(color: Color): Double {

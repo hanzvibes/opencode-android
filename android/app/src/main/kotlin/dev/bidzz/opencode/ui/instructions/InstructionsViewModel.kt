@@ -26,6 +26,12 @@ data class InstructionsUiState(
     val keyInvalid: Boolean = false,
     /** The last save failed with 413: the value is over the 256 KB max. */
     val tooLarge: Boolean = false,
+    /**
+     * The entry being edited holds a non-string value (D1 m-468): the
+     * editor shows it read-only and Save stays off, so a save can never
+     * silently retype it to a string.
+     */
+    val editingNonString: Boolean = false,
     /** What went wrong, as a value; the screen words it in the app's language. */
     val failure: ApiResult.Failure? = null,
 )
@@ -42,8 +48,7 @@ data class InstructionsUiState(
 internal fun isValidInstructionKey(key: String): Boolean =
     Regex("^[a-z0-9][a-z0-9._-]*$").matches(key)
 
-/**
- * An entry's value as editable text.
+/** An entry's value as editable text.
  *
  * The app sends values as JSON strings, so a string value reads back
  * as its plain text; any other JSON reads back as its compact form.
@@ -56,6 +61,16 @@ internal fun instructionValueText(value: JsonElement?): String = when (value) {
     is JsonPrimitive -> value.contentOrNull ?: ""
     else -> value.toString()
 }
+
+/**
+ * True when the value is not a JSON string (object, array, number, boolean).
+ *
+ * Audit-200 D1 (m-468): editing such a value and saving it silently
+ * changed its type to string. Those entries are read-only in the editor —
+ * view or delete only — so a save can never retype them.
+ */
+internal fun isNonStringInstructionValue(value: JsonElement?): Boolean =
+    value != null && !(value is JsonPrimitive && value.isString)
 
 /**
  * Per-session instruction entries
@@ -115,6 +130,7 @@ class InstructionsViewModel(
             keyInvalid = false,
             tooLarge = false,
             failure = null,
+            editingNonString = isNonStringInstructionValue(entry.value),
         )
     }
 
@@ -124,6 +140,7 @@ class InstructionsViewModel(
             value = "",
             keyInvalid = false,
             tooLarge = false,
+            editingNonString = false,
         )
     }
 
@@ -135,6 +152,10 @@ class InstructionsViewModel(
             _state.value = _state.value.copy(keyInvalid = true)
             return
         }
+        // Audit-200 D1 (m-468): a non-string value must never be saved
+        // back as a string. The UI disables Save for these entries; this
+        // is the backstop for any other caller.
+        if (_state.value.editingNonString) return
         val handle = api.handle() ?: run {
             _state.value = _state.value.copy(failure = engineDownFailure())
             return
@@ -143,7 +164,7 @@ class InstructionsViewModel(
         viewModelScope.launch {
             when (val result = InstructionsApi(handle.client).put(sessionID, key, JsonPrimitive(value))) {
                 is ApiResult.Success -> {
-                    _state.value = _state.value.copy(key = "", value = "", saving = false)
+                    _state.value = _state.value.copy(key = "", value = "", saving = false, editingNonString = false)
                     load(sessionID)
                 }
                 is ApiResult.Failure -> {

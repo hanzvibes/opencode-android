@@ -191,14 +191,29 @@ fun IconBadge(
  * Foreground for an icon on an arbitrary solid [background] (47-F5).
  *
  * White is unreadable on light badge backgrounds (2.2:1 on #34C759 /
- * #FF9500 / #30B0C7), so the foreground follows the background's
- * relative luminance: a near-black glyph on light backgrounds
- * (8.9:1 / 9.0:1 / 7.7:1 on those three), white on dark ones (5.98:1
- * on #005FCC, 5.57:1 on #0066CC). The 0.179 threshold is where black
- * and white text trade places in contrast against the background.
+ * #FF9500 / #30B0C7), so the foreground is whichever of near-black and
+ * white contrasts more against the background. The old 0.179 luminance
+ * threshold picked the WRONG side for colours just above it (D1 m-857):
+ * Aura blue fill #4673CC (luminance 0.17923) and Aura success #1D873B
+ * (0.17905) both got black at 4.30:1 / 4.29:1 — under AA — while white
+ * is 4.58:1 on both. Comparing the two ratios directly has no edge.
  */
-internal fun foregroundForBackground(background: Color): Color =
-    if (background.luminance() > 0.179f) Color(0xFF0B0B0C) else Color.White
+internal fun foregroundForBackground(background: Color): Color {
+    val dark = Color(0xFF0B0B0C)
+    return if (contrastRatio(dark, background) >= contrastRatio(Color.White, background)) {
+        dark
+    } else {
+        Color.White
+    }
+}
+
+/** WCAG contrast ratio between two colours, from their relative luminances. */
+internal fun contrastRatio(foreground: Color, background: Color): Double {
+    val l1 = foreground.luminance().toDouble()
+    val l2 = background.luminance().toDouble()
+    val (lighter, darker) = if (l1 >= l2) l1 to l2 else l2 to l1
+    return (lighter + 0.05) / (darker + 0.05)
+}
 
 /** Hairline between two rows of a card; [inset] lines it up under the text, not the icon. */
 @Composable
