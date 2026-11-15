@@ -257,8 +257,13 @@ fun ProvidersScreen(
                     it.connected,
                     state.customProviders,
                     state.activeAntigravityEmail,
+                    state.antigravityPluginRegistered,
                 )
-            } || state.customProviders.isNotEmpty() || state.activeAntigravityEmail != null
+            } || state.customProviders.isNotEmpty() ||
+                // Audit-200 C15 (M-220): same plugin gate as the badge —
+                // an Antigravity account without its plugin is not a
+                // working connection, so the hero must not count it.
+                (state.activeAntigravityEmail != null && state.antigravityPluginRegistered != false)
             if (!anyConnected) {
                 Row(
                     modifier = Modifier
@@ -428,6 +433,7 @@ fun ProvidersScreen(
                         integration?.connected == true,
                         state.customProviders,
                         state.activeAntigravityEmail,
+                        state.antigravityPluginRegistered,
                     )
                     val status = when {
                         isConnected -> ProviderStatus.CONNECTED
@@ -600,6 +606,7 @@ fun ProvidersScreen(
                         integration.connected,
                         state.customProviders,
                         state.activeAntigravityEmail,
+                        state.antigravityPluginRegistered,
                     )
                     val status = when {
                         isConnected -> ProviderStatus.CONNECTED
@@ -1250,10 +1257,19 @@ internal fun isProviderConnected(
     integrationConnected: Boolean,
     customProviders: List<EngineConfigStore.CustomProvider>,
     activeAntigravityEmail: String?,
+    antigravityPluginRegistered: Boolean? = null,
 ): Boolean {
     if (integrationConnected) return true
     if (isCustomConfiguredFor(customProviders, integrationId)) return true
-    return integrationId.equals("google", ignoreCase = true) && activeAntigravityEmail != null
+    if (!integrationId.equals("google", ignoreCase = true) || activeAntigravityEmail == null) return false
+    // Audit-200 C15 (M-220): the stored Antigravity token has no expiry
+    // and the engine exposes no liveness probe, so the badge cannot prove
+    // the token works — but it must not claim "Connected" when the plugin
+    // that would use the token is not even registered: such a token can
+    // never be used. Unknown (null, not checked yet) keeps the old
+    // reading — only a confirmed absence demotes the badge.
+    if (antigravityPluginRegistered == false) return false
+    return true
 }
 
 /** Resolves an existing IntegrationInfo matching the given featured provider definition. */

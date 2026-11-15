@@ -38,6 +38,37 @@ class ProvidersStatusTest {
     }
 
     @Test
+    fun `M-220 Antigravity without its plugin does not badge Google connected`() {
+        // The account on disk says nothing about whether the engine
+        // loaded opencode-antigravity-auth — a token no plugin can use
+        // must not read CONNECTED. Unknown (null, not checked yet)
+        // keeps the old reading; only a confirmed absence demotes it.
+        assertFalse(
+            isProviderConnected("google", false, emptyList(), "rhn@example.com", antigravityPluginRegistered = false),
+        )
+        assertTrue(
+            isProviderConnected("google", false, emptyList(), "rhn@example.com", antigravityPluginRegistered = true),
+        )
+        assertTrue(
+            isProviderConnected("google", false, emptyList(), "rhn@example.com", antigravityPluginRegistered = null),
+        )
+        // The engine flag and a custom provider still connect on their
+        // own — the plugin gate only applies to the Antigravity path.
+        assertTrue(
+            isProviderConnected("anthropic", true, emptyList(), null, antigravityPluginRegistered = false),
+        )
+        assertTrue(
+            isProviderConnected(
+                "google",
+                false,
+                listOf(custom("google", "Google")),
+                "rhn@example.com",
+                antigravityPluginRegistered = false,
+            ),
+        )
+    }
+
+    @Test
     fun `the engine flag still connects on its own`() {
         assertTrue(isProviderConnected("anthropic", true, emptyList(), null))
         assertFalse(isProviderConnected("anthropic", false, emptyList(), null))

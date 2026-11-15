@@ -129,6 +129,16 @@ data class ChatUiState(
     val attachNoticeKey: Int? = null,
     val attachNoticeArg: String? = null,
     /**
+     * A refused queue addition (audit-200 C15, M-219): the queue is
+     * full, as a string resource id plus the cap to format into it.
+     * Shown as a dismissable row above the composer, like the attach
+     * refusal — the prompt never reached the engine, so the pinned
+     * error banner would be the wrong place. Null when nothing was
+     * refused.
+     */
+    val queueNoticeKey: Int? = null,
+    val queueNoticeArg: String? = null,
+    /**
      * A shell code block the user ran from the chat (audit-200 C14,
      * M-196): the command, its shell id, live status and captured
      * output, shown in the output dialog. Null while nothing is running
@@ -548,6 +558,37 @@ internal fun revertDecisionsForReturnedQueue(
 internal fun shouldClearRevertDecision(isTransientFailure: Boolean, wasFlushed: Boolean): Boolean =
     !isTransientFailure && !wasFlushed
 
+/** True when the queue holds as many follow-ups as it may (audit-200 C15, M-219). */
+internal fun isQueueFull(queue: List<QueuedPrompt>): Boolean =
+    queue.size >= ChatViewModel.MAX_QUEUED_PROMPTS
+
+/**
+ * Whether [candidate] may join the pending attachments (audit-200 C15,
+ * M-219): at most [ChatViewModel.MAX_PENDING_ATTACHMENTS] files, adding
+ * up to at most [ChatViewModel.MAX_PENDING_ATTACHMENT_BYTES] in total.
+ * Pure, so the rule is unit-tested here rather than through the picker.
+ */
+internal fun canAddAttachment(existing: List<AttachedFile>, candidate: AttachedFile): Boolean {
+    if (existing.size >= ChatViewModel.MAX_PENDING_ATTACHMENTS) return false
+    return existing.sumOf { attachmentByteSize(it) } + attachmentByteSize(candidate) <=
+        ChatViewModel.MAX_PENDING_ATTACHMENT_BYTES
+}
+
+/**
+ * Whether the live draft still holds the prompt [sent] (audit-200 C15,
+ * M-229): exactly the sent text, or the typed text the sent text was
+ * built from — typed text, then one fenced block per attachment (see
+ * [buildMessageWithAttachments]). Anything else is newer typing and
+ * must survive the reconciliation. Pure, so the rule is unit-tested
+ * here rather than through a restore.
+ */
+internal fun draftStillHoldsSentPrompt(draft: String, sent: String): Boolean {
+    val typed = draft.trim()
+    if (typed.isEmpty()) return false
+    val full = sent.trim()
+    return full == typed || full.startsWith(typed + "\n\n")
+}
+
 /**
  * What the model/agent chip shows after a `set` call the engine rejected
  * (audit-100 Fase 6b, 43-F2).
@@ -798,6 +839,24 @@ class ChatViewModel(
     private val restoredAttachments: List<AttachedFile> =
         savedStateHandle?.get<ArrayList<AttachedFile>>(ATTACHMENTS_KEY)?.toList().orEmpty()
     private val restoredLastSent: String? = savedStateHandle?.get<String>(LAST_SENT_KEY)
+
+    /**
+     * The last prompt a previous process may have sent (audit-200 C15,
+     * M-229): reconciled once against the first transcript after the
+     * restore (see [reconcileRestoredSend]). Until then it stays the
+     * retry target, like before — the reconciliation only decides
+     * whether the draft still holding that text is an unsent prompt or
+     * a duplicate waiting to happen.
+     */
+    private var pendingSendReconciliation: String? = restoredLastSent
+
+    /**
+     * The session [pendingSendReconciliation] belongs to: the parked
+     * session id when the value came back through
+     * [restoreParkedComposer], null when it came from the handle — then
+     * the restore target ([lastRestoreTargetSessionID]) is the session.
+     */
+    private var pendingSendReconciliationSessionID: String? = null
     private val restoredSentPrompts: List<String> =
         savedStateHandle?.get<ArrayList<String>>(SENT_PROMPTS_KEY)?.toList().orEmpty()
     // Audit-200 C7 (M-118): a model/agent picked before the first message
@@ -1144,6 +1203,41 @@ class ChatViewModel(
     internal fun pendingOpenForTest(): String? = pendingOpenSessionID
 
     /**
+     * The session [onResume] could not restore because no repository or
+     * handle existed yet (audit-200 C15, M-232): the engine was RUNNING
+     * but its credentials had not attached, so the restore exited
+     * silently and — with the effect keyed only on the engine state —
+     * nothing ever retried it. The id waits here until [attachIfNeeded]
+     * consumes it right after attaching, like the pending deep link
+     * above. It clears when a session is open, when the user navigates
+     * elsewhere explicitly ([newSession]), or when the restore runs.
+     * In-memory only, like the pending open.
+     */
+    private var pendingRestoreSessionID: String? = null
+
+    /**
+     * Whether the engine has ever reported RUNNING (audit-200 C15,
+     * M-233): the engine starts STOPPED, and a failure before it ever
+     * ran is a plain failure — only a FAILED/STOPPED after a run is a
+     * dead engine whose banner must offer a restart (see [isEngineDown]).
+     */
+    private var engineWasRunning = false
+
+    /**
+     * True when the engine ran and then died (audit-200 C15, M-233):
+     * FAILED or STOPPED after at least one RUNNING. A view model whose
+     * engine never started reads STOPPED too, but there is no dead
+     * engine to restart there — the failure keeps its own retry kind.
+     */
+    private fun isEngineDown(): Boolean =
+        engineWasRunning &&
+            (_state.value.engineState == EngineState.FAILED ||
+                _state.value.engineState == EngineState.STOPPED)
+
+    /** Test seam for the pending restore (M-232): the id waiting for attach, if any. */
+    internal fun pendingRestoreForTest(): String? = pendingRestoreSessionID
+
+    /**
      * Parks the current composer — draft, pending attachments and queued
      * follow-ups (13-F6) — under the current session's id, or under
      * [UNSENT_SESSION_KEY] when there is no session yet (95-F6), or under
@@ -1236,6 +1330,16 @@ class ChatViewModel(
         if (restored != null) {
             draftBeforeEdit = if (restoreEditState) restored.draftBeforeEdit else null
             attachmentsBeforeEdit = if (restoreEditState) restored.attachmentsBeforeEdit else null
+            // Audit-200 C15 (M-229): a parked retry target is a prompt a
+            // previous process may have sent — the first transcript
+            // after this open decides whether the restored draft is an
+            // unsent prompt or a duplicate waiting to happen. Only when
+            // the live value was empty: a live retry target is newer
+            // than the parked one.
+            if (restored.lastSentText != null && _state.value.lastSentText == null) {
+                pendingSendReconciliation = restored.lastSentText
+                pendingSendReconciliationSessionID = sessionID
+            }
             _state.value = _state.value.copy(
                 draft = restored.draft,
                 pendingAttachments = restored.attachments,
@@ -1417,6 +1521,13 @@ class ChatViewModel(
         if (missingAttachments.isEmpty() && missingQueued.isEmpty() &&
             !fillSentPrompts && !fillLastSentText && !fillDeferred
         ) return null
+        // Audit-200 C15 (M-229): same reconciliation seed as the take
+        // path above — the parked retry target may be a prompt a
+        // previous process sent.
+        if (fillLastSentText) {
+            pendingSendReconciliation = parked.lastSentText
+            pendingSendReconciliationSessionID = sessionID
+        }
         _state.value = live.copy(
             pendingAttachments = live.pendingAttachments + missingAttachments,
             queuedPrompts = live.queuedPrompts + missingQueued,
@@ -1501,6 +1612,19 @@ class ChatViewModel(
     private var flushingEntry: QueuedPrompt? = null
 
     /**
+     * One delayed retry after a failed flush send (audit-200 C15,
+     * M-216): a flush that fails gets no automatic re-trigger — the
+     * drain only runs after a non-flush send, and the run-end flush
+     * only fires on a busy→idle edge — so the queue stuck until the
+     * next run. The budget starts available and is spent when a retry
+     * actually goes out; a flush success or a newly queued entry
+     * refills it, and a session change refills it too. Only one retry
+     * may be pending at a time.
+     */
+    private var flushRetryAvailable = true
+    private var flushRetryPending = false
+
+    /**
      * The skill picked from the palette for the message being typed
      * (audit-200 C3, M-067): the draft holds its name as plain text,
      * and this holds the id the prompt sends as a structured
@@ -1580,11 +1704,68 @@ class ChatViewModel(
      */
     private fun settleFlushedEntry(sessionID: String?, sent: Boolean) {
         val entry = takeFlushingEntry() ?: return
-        if (!sent) return
+        if (!sent) {
+            // Audit-200 C15 (M-216): a failed flush send gets exactly
+            // one delayed retry — the drain and the run-end flush never
+            // re-trigger it on their own, so the queue stuck until the
+            // next run. The entry stays queued either way.
+            scheduleFlushRetry(sessionID)
+            return
+        }
+        // A flush went out: the retry budget refills for the next failure.
+        flushRetryAvailable = true
         _state.value = _state.value.copy(
             queuedPrompts = resolveFlushDrop(_state.value.queuedPrompts, entry),
         )
         if (sessionID != null) parkedStore.removeQueued(sessionID, entry)
+    }
+
+    /** One scheduled retry of a failed flush send (audit-200 C15, M-216). */
+    internal data class FlushRetry(val sessionID: String?, val entryId: String)
+
+    /**
+     * Records a failed flush for one delayed retry. Returns the retry
+     * when one was scheduled, else null: no budget left, one already
+     * pending, or nothing queued. Pure state, so the rule is
+     * unit-tested here rather than through a delayed job.
+     */
+    internal fun planFlushRetry(sessionID: String?): FlushRetry? {
+        if (!flushRetryAvailable || flushRetryPending) return null
+        val head = _state.value.queuedPrompts.firstOrNull() ?: return null
+        flushRetryPending = true
+        return FlushRetry(sessionID, head.id)
+    }
+
+    /**
+     * The delayed retry's fire step: spends the budget only when the
+     * retry actually goes out. The session must still be the one the
+     * flush failed in, the agent idle, no send in flight, and the head
+     * entry unchanged — a manual Send, a new run, or a session switch
+     * in the meantime means someone else already handled it. Returns
+     * true when the caller should send now.
+     */
+    internal fun consumeFlushRetry(retry: FlushRetry): Boolean {
+        flushRetryPending = false
+        if (_state.value.sessionID != retry.sessionID) return false
+        if (_state.value.busy || sendInFlight) return false
+        val head = _state.value.queuedPrompts.firstOrNull() ?: return false
+        if (head.id != retry.entryId) return false
+        flushRetryAvailable = false
+        return true
+    }
+
+    /**
+     * Schedules the one delayed retry of a failed flush send: 2s, long
+     * enough for a transient engine hiccup to pass, short enough that
+     * the follow-up does not feel lost. A retry that fails gets no
+     * further automatic retry — manual Send and the banner Retry remain.
+     */
+    private fun scheduleFlushRetry(sessionID: String?) {
+        val retry = planFlushRetry(sessionID) ?: return
+        viewModelScope.launch {
+            delay(FLUSH_RETRY_DELAY_MS)
+            if (consumeFlushRetry(retry)) flushQueueNow()
+        }
     }
 
     /**
@@ -1657,6 +1838,53 @@ class ChatViewModel(
     }
 
     /**
+     * Reconciles the last prompt a previous process may have sent
+     * (audit-200 C15, M-229): a process death mid-send leaves the draft
+     * holding the prompt with no record of whether the POST landed, so
+     * re-sending it blind duplicates the turn on the engine.
+     *
+     * Runs once, on the first transcript of the session the restore
+     * targeted ([lastRestoreTargetSessionID]): a different session's
+     * transcript says nothing about this prompt, and the moment passed
+     * with the switch (the draft was parked there). An empty transcript
+     * decides nothing — the history has not arrived yet — so the check
+     * waits for the next emission.
+     *
+     * - The prompt landed (the transcript's last user message is it):
+     *   the draft still holding that text is a duplicate waiting to
+     *   happen — clear it, and the retry target naming the same prompt.
+     *   Newer typing survives (see [draftStillHoldsSentPrompt]).
+     * - It did not land: the draft keeps the unsent prompt, visible in
+     *   the composer and sendable — never silently dropped, and no
+     *   banner for text already sitting in front of the user.
+     */
+    private fun reconcileRestoredSend(sessionID: String?, messages: List<ChatMessage>) {
+        val sent = pendingSendReconciliation ?: return
+        // The session this prompt belongs to: the parked session when
+        // the value came back through restoreParkedComposer, else the
+        // session the restore targeted. A different session's transcript
+        // says nothing about it, and the moment passed with the switch
+        // (the draft was parked there).
+        val target = pendingSendReconciliationSessionID ?: lastRestoreTargetSessionID
+        if (sessionID == null || sessionID != target) {
+            if (sessionID != null) {
+                pendingSendReconciliation = null
+                pendingSendReconciliationSessionID = null
+            }
+            return
+        }
+        val lastUser = messages.lastOrNull { it.role == Role.USER } ?: return
+        pendingSendReconciliation = null
+        pendingSendReconciliationSessionID = null
+        if (lastUser.text == sent) {
+            _state.value = _state.value.copy(
+                draft = if (draftStillHoldsSentPrompt(_state.value.draft, sent)) "" else _state.value.draft,
+                lastSentText = null,
+            )
+        }
+    }
+
+    /**
      * Sends the queued follow-ups now (audit-200 C3, M-069): a flush
      * that failed left the queue stuck — no run edge comes to flush it
      * again, and the banner's Retry never re-sends a queued entry — so
@@ -1686,9 +1914,54 @@ class ChatViewModel(
      */
     fun cancelQueued(): Boolean = returnQueueToDraft()
 
+    /**
+     * Removes one queued follow-up by id (audit-200 C15, M-217): the
+     * whole-queue Cancel existed, but dropping a single entry meant
+     * cancelling everything. Its text returns to the draft (typed text,
+     * else the full text — an attachment-only entry returns its chips)
+     * and its revert decision is invalidated like a returned queue (C2,
+     * M-052), so the step stops claiming "Revert requested" and offers
+     * Reject again. The entry the flush is sending cannot be removed —
+     * its POST may still land. Returns false when the id is not queued
+     * or is the in-flight entry.
+     */
+    fun removeQueuedEntry(id: String): Boolean {
+        val entry = _state.value.queuedPrompts.firstOrNull { it.id == id } ?: return false
+        if (flushingEntry?.id == id) return false
+        val resetCalls = revertDecisionsForReturnedQueue(listOf(entry), revertPromptCalls)
+        if (resetCalls.isNotEmpty()) {
+            revertPromptCalls.entries.removeAll { it.value in resetCalls }
+        }
+        val returnedText = when {
+            entry.typedText.isNotBlank() -> entry.typedText
+            entry.attachments.isEmpty() -> entry.fullText
+            else -> ""
+        }
+        val draft = _state.value.draft
+        val restoredDraft = when {
+            returnedText.isBlank() -> draft
+            draft.isBlank() -> returnedText
+            else -> draft.trimEnd() + "\n" + returnedText
+        }
+        _state.value = _state.value.copy(
+            queuedPrompts = _state.value.queuedPrompts.filter { it.id != id },
+            draft = restoredDraft,
+            pendingAttachments = (entry.attachments + _state.value.pendingAttachments).distinctBy { it.id },
+            diffDecisions = _state.value.diffDecisions - resetCalls,
+        )
+        val sessionID = _state.value.sessionID
+        if (sessionID != null) parkedStore.removeQueued(sessionID, entry)
+        return true
+    }
+
     /** Called by the screen whenever engine status changes. */
     fun onEngineStatus(status: EngineStatus) {
         val previous = _state.value.engineState
+        // Audit-200 C15 (M-233): the engine starts STOPPED and only
+        // counts as "down" once it has actually run — a failure on a
+        // view model whose engine never started is a plain failure, not
+        // a dead engine (see isEngineDown).
+        if (status.state == EngineState.RUNNING) engineWasRunning = true
         _state.value = _state.value.copy(
             engineState = status.state,
             workspaceReady = status.credentials != null,
@@ -1802,6 +2075,19 @@ class ChatViewModel(
         collectRepo(repo)
         loadControls()
         consumePendingOpen()
+        consumePendingRestore()
+    }
+
+    /**
+     * Restores the session [onResume] could not reach because the
+     * repository did not exist yet (audit-200 C15, M-232). A pending
+     * deep link wins: onResume returns early while one waits, and the
+     * pending restore stays recorded for the next attach.
+     */
+    private fun consumePendingRestore() {
+        val pending = pendingRestoreSessionID ?: return
+        if (pendingOpenSessionID != null) return
+        onResume(pending)
     }
 
     /**
@@ -2108,7 +2394,16 @@ class ChatViewModel(
             } else if (effectivePending != null || sessionGone(chat.lastFailure)) {
                 RetryKind.NONE
             } else {
-                retryKindFor(chat.lastFailure, chat.resyncFailed)
+                // Audit-200 C15 (M-233): the engine is down, so the repo's
+                // failure must not overwrite the restart action onEngineStatus
+                // set (C10, M-155) — a dead engine cannot reload or resend,
+                // and the banner would otherwise show "engine not running"
+                // with no button at all.
+                retryKindFor(
+                    chat.lastFailure,
+                    chat.resyncFailed,
+                    engineDown = isEngineDown(),
+                )
             },
             stopping = if (!chat.busy) false else previous.stopping,
             // Audit-200 C2 (M-053): decisions belong to a session's calls —
@@ -2187,6 +2482,12 @@ class ChatViewModel(
             restoredQueuePending = false
             if (!chat.busy) returnQueueToDraft()
         }
+
+        // Audit-200 C15 (M-229): reconcile a prompt the previous
+        // process may have sent, against the first transcript after the
+        // restore — before the user can re-send the draft and duplicate
+        // the turn.
+        reconcileRestoredSend(chat.sessionID, finalMessages)
 
         // Context meter (Tier 2): a new session starts unknown and refreshes
         // on open. A failure clears the value (23-F2): keeping the old
@@ -2381,8 +2682,17 @@ class ChatViewModel(
      * `provider.free-limit` is NOT covered here: it surfaces as a Role.ERROR
      * bubble, not a banner failure, so the banner never sees it.
      */
-    private fun retryKindFor(failure: ApiResult.Failure?, resyncFailed: Boolean = false): RetryKind {
+    private fun retryKindFor(
+        failure: ApiResult.Failure?,
+        resyncFailed: Boolean = false,
+        engineDown: Boolean = false,
+    ): RetryKind {
         if (failure == null) return RetryKind.NONE
+        // Audit-200 C15 (M-233): a dead engine cannot reload or resend —
+        // the only action that helps is restarting it. Checked before the
+        // other branches: a lost connection while the engine is down is a
+        // dead engine, not a session to re-open.
+        if (engineDown) return RetryKind.RESTART_ENGINE
         // A failed resync (03-F2) is not a failed send: the prompt already
         // ran to completion, so RESEND would run it a second time. Re-open
         // the session instead — it re-fetches the finished answer. This
@@ -2971,9 +3281,27 @@ class ChatViewModel(
     ): Boolean {
         val current = _state.value.queuedPrompts
         if (isQueueDuplicate(fullText, _state.value.lastSentText, current.lastOrNull()?.fullText, allowResend)) return false
+        // Audit-200 C15 (M-219): the queue is bounded — an unbounded
+        // queue (and its attachments) rides the saved-state handle and
+        // the parked store, and a dozen 64 KB attachments already push
+        // the handle toward the ~1 MB binder limit. A refused addition
+        // keeps the draft and says so, instead of silently dropping it.
+        if (isQueueFull(current)) {
+            _state.value = _state.value.copy(
+                queueNoticeKey = R.string.queue_full,
+                queueNoticeArg = MAX_QUEUED_PROMPTS.toString(),
+            )
+            return false
+        }
         _state.value = _state.value.copy(
             queuedPrompts = current + QueuedPrompt(fullText, typedText, attachments, skill = skill),
+            queueNoticeKey = null,
+            queueNoticeArg = null,
         )
+        // Audit-200 C15 (M-216): a newly queued entry refills the flush
+        // retry budget — the queue is moving again, so the next failed
+        // flush earns its one retry.
+        flushRetryAvailable = true
         return true
     }
 
@@ -3153,6 +3481,18 @@ class ChatViewModel(
     fun addAttachment(file: AttachedFile) {
         val current = _state.value.pendingAttachments
         if (isDuplicateAttachment(current, file)) return
+        // Audit-200 C15 (M-219): the pending attachments are bounded
+        // for the same reason as the queue (see queuePrompt) — count
+        // and total size, with the same refusal row instead of a
+        // silent drop. The message names which cap refused it.
+        if (!canAddAttachment(current, file)) {
+            if (current.size >= MAX_PENDING_ATTACHMENTS) {
+                reportAttachRefusal(R.string.attach_too_many, MAX_PENDING_ATTACHMENTS.toString())
+            } else {
+                reportAttachRefusal(R.string.attach_total_too_large, formatAttachmentSize(MAX_PENDING_ATTACHMENT_BYTES))
+            }
+            return
+        }
         _state.value = _state.value.copy(
             pendingAttachments = current + file,
             attachNoticeKey = null,
@@ -3328,6 +3668,11 @@ class ChatViewModel(
     /** Dismisses the attachment refusal row above the composer. */
     fun dismissAttachNotice() {
         _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null)
+    }
+
+    /** Dismisses the queue-full refusal row (audit-200 C15, M-219). */
+    fun dismissQueueNotice() {
+        _state.value = _state.value.copy(queueNoticeKey = null, queueNoticeArg = null)
     }
 
     /**
@@ -4387,7 +4732,13 @@ class ChatViewModel(
             _state.value = _state.value.copy(
                 failure = result,
                 failureKey = null,
-                retryKind = retryKind ?: retryKindFor(result),
+                // Audit-200 C15 (M-233): same rule as onRepoState — a send
+                // that fails because the engine died offers a restart, not
+                // a re-send into a dead engine.
+                retryKind = retryKind ?: retryKindFor(
+                    result,
+                    engineDown = isEngineDown(),
+                ),
             )
         }
     }
@@ -4739,6 +5090,9 @@ class ChatViewModel(
         // for attach (56-F1) must not yank the user back to it once the
         // engine comes up.
         pendingOpenSessionID = null
+        // Audit-200 C15 (M-232): same for a restore waiting for attach —
+        // the user chose a fresh chat, not the remembered session.
+        pendingRestoreSessionID = null
         sessionReloadAttempts = 0
         // Audit-200 C5 (M-092): leaving a busy session interrupts its
         // run — a fresh session must not leave the old run editing files
@@ -4782,7 +5136,7 @@ class ChatViewModel(
         // Audit-200 C3 (M-067): the retry target's skills belong to the
         // old session's last send, like the text itself.
         lastSentSkills = null
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
         // Text typed before any session exists lives under the unsent key
         // (95-F6): a fresh session is where it belongs, so it comes back
         // as this session's composer instead of starting empty. The edit
@@ -4833,7 +5187,7 @@ class ChatViewModel(
         stopIntent = false
         stagedRevertSessionID = null
         lastSentSkills = null
-        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
+        _state.value = _state.value.copy(sessionID = null, messages = emptyList(), failure = null, failureKey = null, selectionFailure = null, staleSelectionArg = null, draft = "", pendingAttachments = emptyList(), attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), queuedPrompts = emptyList(), editingMessageId = null, pendingPermission = null, deferredPermission = null, stopping = false, retryKind = RetryKind.NONE, stagedRevert = null, forking = false, compacting = false, revertBusy = false, activeModel = null, activeAgent = null, sessionTitle = null)
         restoreParkedComposer(UNSENT_SESSION_KEY, restoreEditState = false)
         onSessionCleared()
     }
@@ -4927,9 +5281,11 @@ class ChatViewModel(
             // extra request.
             val h = handle
             if (h == null) {
-                // No handle yet: cannot verify. Fall through to the old
-                // path — the resync banner still reports a gone session.
-                openSessionUnchecked(sessionID, repo, meta = null)
+                // Audit-200 C15 (M-227): no handle yet — the session
+                // cannot be verified, so it is not opened unchecked.
+                // The pending deep-link id is kept: the next attach
+                // re-verifies it (see deferSessionOpen).
+                deferSessionOpen()
                 return
             }
             val attachedAtRequest = repo.state.value.sessionID
@@ -4960,11 +5316,16 @@ class ChatViewModel(
                         if (refusal != null) {
                             refuseSessionOpen(refusal, sessionID)
                         } else {
-                            // A transient failure (engine mid-restart, a
-                            // dropped connection) must not block a deep
-                            // link: open unchecked and let the resync
-                            // banner report the session if it is really gone.
-                            openSessionUnchecked(sessionID, repo, meta = null)
+                            // Audit-200 C15 (M-227): a transient failure
+                            // (engine mid-restart, a dropped connection)
+                            // must not open the session unchecked — the
+                            // link may point at another workspace's
+                            // session, and the next prompt would run in
+                            // the wrong project. Defer instead: the
+                            // banner says why, nothing is parked, and the
+                            // pending deep-link id is kept so the next
+                            // attach re-verifies it.
+                            deferSessionOpen()
                         }
                     }
                 }
@@ -4984,6 +5345,25 @@ class ChatViewModel(
      */
     private fun stillOn(attachedAtRequest: String?, repo: ChatRepository): Boolean =
         repository === repo && repo.state.value.sessionID == attachedAtRequest
+
+    /**
+     * Defers an open the client could not verify (audit-200 C15,
+     * M-227): the handle is missing, or the pre-check GET failed
+     * transiently. The session is NOT opened unchecked — a deep link
+     * to another workspace's session could otherwise land under the
+     * wrong workspace header, and the next prompt would run in the
+     * wrong project. Like [refuseSessionOpen], nothing is parked and
+     * lastSessionID is untouched — but unlike a refusal, the pending
+     * deep-link id is KEPT, so the next engine attach re-verifies it
+     * ([consumePendingOpen]). An explicit session open supersedes it,
+     * and a verified refusal clears it.
+     */
+    internal fun deferSessionOpen() {
+        _state.value = _state.value.copy(
+            failureKey = R.string.session_link_verify_failed,
+            retryKind = RetryKind.NONE,
+        )
+    }
 
     /**
      * Refuses a deep-link / list open without touching the current session
@@ -5008,6 +5388,9 @@ class ChatViewModel(
      */
     private fun openSessionUnchecked(sessionID: String, repo: ChatRepository, meta: SessionInfo?) {
         sessionReloadAttempts = 0
+        // Audit-200 C15 (M-216): a new session gets a fresh flush-retry
+        // budget — the old session's spent budget must not starve it.
+        flushRetryAvailable = true
         // Audit-200 C5 (M-092): leaving a busy session interrupts its
         // run — otherwise it keeps editing files invisibly while the
         // user works in the new session, with no transcript on screen
@@ -5037,7 +5420,7 @@ class ChatViewModel(
         stopIntent = false
         stagedRevertSessionID = null
         lastSentSkills = null
-        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, staleSelectionArg = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
+        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, selectionFailure = null, staleSelectionArg = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
         restoreParkedComposer(sessionID)
         repo.open(sessionID)
         // Guarded by the repository's attached session (item 23), not the
@@ -5097,14 +5480,32 @@ class ChatViewModel(
         // session: resuming the old session here would open it first and
         // the pending open would have to fight it afterwards.
         if (pendingOpenSessionID != null) return
-        val repo = repository ?: return
-        val target = lastSessionID ?: return
+        val target = lastSessionID ?: run {
+            // Nothing remembered — a pending restore for an older id is stale.
+            pendingRestoreSessionID = null
+            return
+        }
         // Audit-200 B5 (M-190/M-231): the guard is "a session is already
         // open", not "messages are non-empty". The transcript is kept
         // when the engine dies, so a non-empty transcript must not block
         // the restore — only an actually open session may.
-        if (_state.value.sessionID != null) return
-        val h = handle ?: return
+        if (_state.value.sessionID != null) {
+            pendingRestoreSessionID = null
+            return
+        }
+        // Audit-200 C15 (M-232): no repository or handle yet — the
+        // engine is up but not attached. Record the target instead of
+        // returning silently: attachIfNeeded consumes it right after
+        // attaching, so the restore still happens instead of never.
+        val repo = repository ?: run {
+            pendingRestoreSessionID = target
+            return
+        }
+        val h = handle ?: run {
+            pendingRestoreSessionID = target
+            return
+        }
+        pendingRestoreSessionID = null
         lastRestoreTargetSessionID = target
         viewModelScope.launch {
             when (val result = h.sessions.get(target)) {
@@ -5264,6 +5665,14 @@ class ChatViewModel(
         // assert on what a restore wrote (audit-200 A9-8, DL-019) — the
         // same reason FileViewViewModel's draft keys are visible.
         internal const val DRAFT_KEY = "chat_draft"
+        /** Delay before the one automatic retry of a failed flush send (audit-200 C15, M-216). */
+        internal const val FLUSH_RETRY_DELAY_MS = 2_000L
+        /** Most follow-ups that may wait in the queue (audit-200 C15, M-219). */
+        internal const val MAX_QUEUED_PROMPTS = 10
+        /** Most files that may wait as pending attachments (audit-200 C15, M-219). */
+        internal const val MAX_PENDING_ATTACHMENTS = 8
+        /** Most bytes the pending attachments may add up to (audit-200 C15, M-219). */
+        internal const val MAX_PENDING_ATTACHMENT_BYTES = 256 * 1024
         /** Queued follow-ups, so they survive process death (audit-70 69-F2). */
         internal const val QUEUE_KEY = "chat_queue"
         /** Pending attachment chips, same reason as [QUEUE_KEY]. */

@@ -276,6 +276,7 @@
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="session_link_gone">Sesi itu sudah tidak ada di engine — link-nya menunjuk ke sesi yang sudah hilang.</string>
     <string name="session_link_wrong_workspace">Sesi itu milik proyek lain — ganti workspace untuk membukanya.</string>
+    <string name="session_link_verify_failed">Sesi ini tidak bisa diverifikasi — engine tidak menjawab. Coba lagi saat engine kembali.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="chat_parked_unreadable">Draft tersimpan tidak bisa dibaca.</string>
     <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
@@ -498,9 +499,16 @@
          konvensi "Thought for 12s" / turn-footer di chat. -->
     <string name="composer_working_progress">%1$s · %2$ds</string>
     <string name="composer_hint">Tanyakan apa saja tentang proyek ini</string>
+    <string name="composer_hint_queued">Ketik tindak lanjut — terkirim saat run selesai</string>
+    <string name="composer_queue">Antre</string>
+    <string name="queue_full">Antrean penuh (%1$s tindak lanjut). Kirim atau hapus satu dulu sebelum menambah lagi.</string>
+    <string name="attach_too_many">Terlalu banyak berkas terlampir — maksimal %1$s berkas dapat menunggu di composer.</string>
+    <string name="attach_total_too_large">Berkas-berkas itu totalnya lebih dari %1$s — hapus satu dulu sebelum melampirkan lagi.</string>
     <string name="composer_hint_named">Tanya %1$s…</string>
     <string name="composer_stopping">Menghentikan…</string>
     <string name="composer_queued">Antrean: %1$s</string>
+    <string name="composer_queued_count">Antrean: %1$d tindak lanjut</string>
+    <string name="composer_remove_queued">Hapus dari antrean</string>
     <string name="composer_editing">Mengedit pesan — dikirim akan menggantinya dan menghapus pesan setelahnya</string>
     <string name="composer_send">Kirim</string>
     <string name="model_search_hint">Cari model</string>
@@ -889,6 +897,8 @@
     <string name="diag_password_show">Tampilkan sandi</string>
     <string name="diag_password_hide">Sembunyikan sandi</string>
     <string name="diag_copy_all">Salin Semua</string>
+    <string name="diag_export_logcat">Ekspor logcat</string>
+    <string name="diag_logcat_failed">Log aplikasi tidak bisa dibaca.</string>
     <string name="diag_copy_logs">Salin Log</string>
     <string name="diag_copied_toast">Disalin ke papan klip</string>
     <string name="diag_cpu">CPU</string>

@@ -283,6 +283,9 @@ fun ChatScreen(
      * composer (audit-200 C3, M-069): the "Queued:" row's actions. */
     onFlushQueue: () -> Unit = {},
     onCancelQueue: () -> Unit = {},
+    /** Removes one queued follow-up by id (audit-200 C15, M-217):
+     * the per-entry X. */
+    onRemoveQueuedEntry: (String) -> Unit = {},
     /** Opens a workspace-relative file from a tool step (Fase 1, item 3). */
     onOpenToolFile: (String) -> Unit = {},
     /** Asks the agent to revert a rejected edit (Fase 1, item 2). Receives
@@ -356,6 +359,7 @@ fun ChatScreen(
     /** URIs of photos just taken; copied into the workspace below. */
     cameraPhotoPicked: Flow<Uri> = emptyFlow(),
     onDismissAttachNotice: () -> Unit = {},
+    onDismissQueueNotice: () -> Unit = {},
     onDismissStaleSelection: () -> Unit = {},
     /**
      * Voice input (Composer C): asks MainActivity — via the application
@@ -2196,6 +2200,19 @@ fun ChatScreen(
                         )
                     }
 
+                    // A refused queue addition (audit-200 C15, M-219):
+                    // the queue is full. Same slim dismissable row as
+                    // the attach refusal, above the composer.
+                    state.queueNoticeKey?.let { noticeKey ->
+                        AttachNoticeRow(
+                            message = state.queueNoticeArg?.let { arg ->
+                                stringResource(noticeKey, arg)
+                            } ?: stringResource(noticeKey),
+                            onDismiss = onDismissQueueNotice,
+                            modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
+                        )
+                    }
+
                     // A model/agent that went stale (audit-200 B4, M-459):
                     // the chip cleared to the engine default, and this row
                     // names what vanished — a slim dismissable row above
@@ -2407,18 +2424,17 @@ fun ChatScreen(
                         onVoiceStop = { voiceController.stop() },
                         onVoiceUnavailable = { voiceNoticeRes = R.string.voice_unavailable },
                         promptHistory = state.sentPrompts,
-                        // The queue is a list (item 6): show the first
-                        // follow-up, with a count when more are waiting.
-                        // Audit-200 C3 (M-069): the row is actionable —
-                        // Send flushes the queue now, Cancel returns it
-                        // to the composer — instead of a dead label.
-                        queuedText = when {
-                            state.queuedPrompts.isEmpty() -> null
-                            state.queuedPrompts.size == 1 -> state.queuedPrompts[0].typedText.ifBlank { state.queuedPrompts[0].fullText }
-                            else -> state.queuedPrompts[0].typedText.ifBlank { state.queuedPrompts[0].fullText } + " (+${state.queuedPrompts.size - 1})"
-                        },
+                        // The queue is a list (item 6): one row per
+                        // entry once there is more than one, each with
+                        // its own X (audit-200 C15, M-217); a single
+                        // entry keeps the old one-row layout.
+                        // Audit-200 C3 (M-069): the rows are actionable
+                        // — Send flushes the queue now, Cancel returns
+                        // it to the composer — instead of a dead label.
+                        queuedEntries = state.queuedPrompts,
                         onFlushQueue = onFlushQueue,
                         onCancelQueue = onCancelQueue,
+                        onRemoveQueuedEntry = onRemoveQueuedEntry,
                         queuedFlushEnabled = !state.busy,
                         isEditing = state.editingMessageId != null,
                         onCancelEdit = onCancelEdit,
