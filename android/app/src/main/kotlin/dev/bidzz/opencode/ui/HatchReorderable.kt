@@ -248,7 +248,7 @@ fun <T> ReorderableList(
 ) {
     val state = rememberHatchReorderState(onMove)
     LazyColumn(modifier = modifier) {
-        items(count = items.size, key = { index -> key(items[index]) }) { index ->
+        items(count = items.size, key = { index -> key(items[index]) }, contentType = { _ -> "data_row" }) { index ->
             ReorderableItem(state, index, items.size, horizontal = false) { isDragging ->
                 itemContent(items[index], isDragging)
             }

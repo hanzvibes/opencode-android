@@ -127,6 +127,7 @@ fun PluginsScreen(
                             // plugins can both read "Built-in" (no id, same
                             // source), and duplicate LazyColumn keys crash.
                             key = { index, plugin -> "$index:${plugin.displayName()}" },
+                            contentType = { _, _ -> "data_row" },
                         ) { index, plugin ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             PluginRow(

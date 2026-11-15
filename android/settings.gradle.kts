@@ -23,6 +23,7 @@ dependencyResolutionManagement {
 rootProject.name = "OpenCodeAndroid"
 
 include(":app")
+include(":baselineprofile")
 include(":core:common")
 include(":core:design")
 include(":core:engine")

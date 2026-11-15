@@ -398,7 +398,7 @@ fun AttachFilePicker(
                     .fillMaxWidth()
                     .heightIn(max = 240.dp),
             ) {
-                itemsIndexed(results, key = { _, row -> row.path }) { rowIndex, row ->
+                itemsIndexed(results, key = { _, row -> row.path }, contentType = { _, _ -> "data_row" }) { rowIndex, row ->
                     val fileInfo = remember(row.name) { FileTypes.resolve(row.name) }
                     val isSelected = rowIndex == selectedIndex
                     Row(

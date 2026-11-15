@@ -189,6 +189,7 @@ fun InstructionsScreen(
                         itemsIndexed(
                             state.entries,
                             key = { index, entry -> "$index:${entry.key}" },
+                            contentType = { _, _ -> "data_row" },
                         ) { index, entry ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             EntryRow(

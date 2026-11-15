@@ -9,6 +9,7 @@ plan.md
 android/.gradle/
 android/build/
 android/app/build/
+android/baselineprofile/build/
 android/core/*/build/
 android/local.properties
 # release signing config — the keystore itself lives outside this repository

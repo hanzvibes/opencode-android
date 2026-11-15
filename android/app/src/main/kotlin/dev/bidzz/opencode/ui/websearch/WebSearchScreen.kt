@@ -150,6 +150,7 @@ fun WebSearchScreen(
                         itemsIndexed(
                             response.results,
                             key = { index, result -> webSearchResultKey(index, result.url) },
+                            contentType = { _, _ -> "data_row" },
                         ) { index, result ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             WebSearchRow(

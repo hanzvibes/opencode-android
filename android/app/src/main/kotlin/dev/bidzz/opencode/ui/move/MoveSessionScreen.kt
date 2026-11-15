@@ -149,6 +149,7 @@ fun MoveSessionScreen(
                         itemsIndexed(
                             state.projects,
                             key = { index, project -> "$index:${project.id}" },
+                            contentType = { _, _ -> "data_row" },
                         ) { index, project ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             ProjectRow(

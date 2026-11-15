@@ -23,9 +23,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -122,7 +122,7 @@ fun SettingsScreen(
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
-    val status by app.engineStatus.collectAsState()
+    val status by app.engineStatus.collectAsStateWithLifecycle()
     var pickingLanguage by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     val query = searchQuery

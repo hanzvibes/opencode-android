@@ -18,9 +18,14 @@ import dev.bidzz.opencode.ui.chat.CodeSaveRequest
 import dev.bidzz.opencode.ui.chat.SharedPrefsCodeSaveQueueStore
 import dev.bidzz.opencode.workspace.WorkspaceStore
 import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 /**
  * Owns the process supervisor for the app's lifetime.
@@ -133,6 +138,14 @@ class OpenCodeApplication : Application() {
     val engineStatus: StateFlow<EngineStatus>
         get() = processManager?.status ?: unavailableStatus
 
+    /** Runtime archives are copied on IO, but the service must await them before spawning the engine. */
+    private val runtimeAssetSyncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val runtimeAssetsReady = CompletableDeferred<Unit>()
+
+    suspend fun awaitRuntimeAssetsReady() {
+        runtimeAssetsReady.await()
+    }
+
     override fun onCreate() {
         super.onCreate()
         // Audit-200 C13 (M-179): record uncaught exceptions before any
@@ -158,21 +171,11 @@ class OpenCodeApplication : Application() {
 
         try {
             val binary = EngineBinary.resolve(nativeLibraryDir, filesDir)
-            // Node's npm tree lives in assets/ and must be extracted before
-            // the engine first spawns a child that calls npm. Non-fatal by
-            // design: a build without the staging step still runs the engine
-            // and the node binary, just without npm (NodeAssets logs it).
-            runCatching { NodeAssets.sync(assets, filesDir) }
-                .onFailure { Log.w(TAG, "node assets sync failed: ${it.message}") }
-            // Same pattern for the Python stdlib tree (PYTHONHOME) and the
-            // bundled language servers: extracted before the engine first
-            // spawns a child that calls python3 or an LSP server. Non-fatal
-            // by design, like NodeAssets above.
-            runCatching { PythonAssets.sync(assets, filesDir) }
-                .onFailure { Log.w(TAG, "python assets sync failed: ${it.message}") }
-            runCatching { LspAssets.sync(assets, filesDir) }
-                .onFailure { Log.w(TAG, "lsp assets sync failed: ${it.message}") }
             processManager = ProcessManager(binary, environment)
+            // Asset extraction is disk-heavy on a fresh install. Schedule it
+            // off the main thread so the first activity can draw; EngineService
+            // awaits completion before every engine start/restart.
+            syncRuntimeAssetsInBackground()
             Log.i(TAG, "engine resolved at ${binary.executable.absolutePath}")
             Log.i(TAG, "workspace: ${environment.workspace.absolutePath}")
         } catch (e: Exception) {
@@ -192,6 +195,25 @@ class OpenCodeApplication : Application() {
         // failed to resolve — the file is ready for the next successful start.
         // Non-fatal by design, same as NodeAssets above.
         runCatching { WorkspaceAgentsMd.ensure(assets, workspaceStore.resolve()) }
+    }
+
+    private fun syncRuntimeAssetsInBackground() {
+        runtimeAssetSyncScope.launch {
+            try {
+                // Keep the synchronizers' version-marker behavior unchanged:
+                // full copies happen only on install or runtime-version bumps.
+                runCatching { NodeAssets.sync(assets, filesDir) }
+                    .onFailure { Log.w(TAG, "node assets sync failed: ${it.message}") }
+                runCatching { PythonAssets.sync(assets, filesDir) }
+                    .onFailure { Log.w(TAG, "python assets sync failed: ${it.message}") }
+                runCatching { LspAssets.sync(assets, filesDir) }
+                    .onFailure { Log.w(TAG, "lsp assets sync failed: ${it.message}") }
+            } finally {
+                // Asset sync is non-fatal, as before; allow the engine to
+                // start with whatever bundled runtime files are available.
+                runtimeAssetsReady.complete(Unit)
+            }
+        }
     }
 
     /**

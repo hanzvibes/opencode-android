@@ -643,7 +643,7 @@ fun CommandSuggestions(
                         .fillMaxWidth()
                         .heightIn(max = paletteMaxHeight),
                 ) {
-                    itemsIndexed(matches, key = { _, item -> item.name }) { index, command ->
+                    itemsIndexed(matches, key = { _, item -> item.name }, contentType = { _, _ -> "data_row" }) { index, command ->
                         val isSelected = index == paletteState.selectedIndex
 
                         CommandSuggestionRow(
