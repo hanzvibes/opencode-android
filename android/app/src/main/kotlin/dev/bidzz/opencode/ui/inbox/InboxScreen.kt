@@ -112,6 +112,7 @@ fun InboxScreen(
                         itemsIndexed(
                             state.items,
                             key = { index, item -> "$index:${item.id}" },
+                            contentType = { _, _ -> "data_row" },
                         ) { index, item ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             InboxRow(

@@ -123,7 +123,7 @@ fun JobsScreen(
                             .fillMaxSize()
                             .padding(horizontal = spacing.lg),
                     ) {
-                        itemsIndexed(state.jobs, key = { _, job -> job.id }) { index, job ->
+                        itemsIndexed(state.jobs, key = { _, job -> job.id }, contentType = { _, _ -> "data_row" }) { index, job ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             JobRow(job = job)
                         }

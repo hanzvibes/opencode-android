@@ -148,7 +148,7 @@ fun DiffListScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = spacing.lg, vertical = spacing.sm),
                 ) {
-                    itemsIndexed(filteredList, key = { _, item -> item.file }) { index, entry ->
+                    itemsIndexed(filteredList, key = { _, item -> item.file }, contentType = { _, _ -> "data_row" }) { index, entry ->
                         ChangedFileCardItem(
                             entry = entry,
                             isFirst = index == 0,

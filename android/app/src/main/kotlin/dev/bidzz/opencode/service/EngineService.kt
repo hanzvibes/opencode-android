@@ -276,6 +276,12 @@ class EngineService : Service() {
             stopping.set(false)
             stopEpoch.incrementAndGet()
             scope.launch {
+                val app = application as OpenCodeApplication
+                app.awaitRuntimeAssetsReady()
+                if (stopping.get()) {
+                    Log.i(TAG, "stop arrived while waiting for runtime assets; not restarting")
+                    return@launch
+                }
                 Log.i(TAG, "restarting engine for workspace change")
                 // `restart()` holds the supervisor's lifecycle lock, so a start that
                 // is still in flight finishes or aborts cleanly before this runs.
@@ -309,6 +315,12 @@ class EngineService : Service() {
         // A null intent means the system restarted us after a kill. Treating it as
         // START keeps the engine up without user intervention.
         scope.launch {
+            val app = application as OpenCodeApplication
+            app.awaitRuntimeAssetsReady()
+            if (stopping.get()) {
+                Log.i(TAG, "stop arrived while waiting for runtime assets; not starting")
+                return@launch
+            }
             val state = supervisor.status.value.state
             if (state.isAlive) {
                 Log.i(TAG, "engine already ${state.name.lowercase()}, nothing to do")
@@ -319,7 +331,6 @@ class EngineService : Service() {
             // it. One-shot: the flag is cleared when the new engine is
             // up, so the next start reaps the orphan (by then idle, its
             // run finished and its results in the session store).
-            val app = application as OpenCodeApplication
             val preserveBusyOrphan = app.lastBusySessionID != null
             val result = supervisor.start(preserveBusyOrphan = preserveBusyOrphan)
             result.onSuccess {
@@ -491,6 +502,11 @@ class EngineService : Service() {
                 // just stopped.
                 if (stopping.get()) {
                     Log.i(TAG, "stop arrived while resurrecting; not starting")
+                    return@launch
+                }
+                (application as OpenCodeApplication).awaitRuntimeAssetsReady()
+                if (stopping.get()) {
+                    Log.i(TAG, "stop arrived while waiting for runtime assets; not resurrecting")
                     return@launch
                 }
                 val result = supervisor.start()

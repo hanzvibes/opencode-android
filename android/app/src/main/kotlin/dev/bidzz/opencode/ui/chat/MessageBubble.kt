@@ -27,7 +27,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -147,6 +146,7 @@ internal fun parseThinkingContent(
 fun MessageBubble(
     role: Role,
     markdown: String,
+    messageContentWidth: Dp,
     modifier: Modifier = Modifier,
     streaming: Boolean = false,
     tools: List<ToolCall> = emptyList(),
@@ -256,7 +256,7 @@ fun MessageBubble(
     val context = LocalContext.current
 
     when (role) {
-        Role.USER -> BoxWithConstraints(
+        Role.USER -> Box(
             modifier = modifier.fillMaxWidth(),
             contentAlignment = Alignment.CenterEnd,
         ) {
@@ -272,7 +272,12 @@ fun MessageBubble(
             LaunchedEffect(userPillScrollState.maxValue) {
                 userPillScrollState.scrollTo(userPillScrollState.maxValue)
             }
-            val maxBubbleWidth = (maxWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp)
+            val maxBubbleWidth = minOf(
+                (messageContentWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp),
+                (messageContentWidth - dims.minTouchTarget).coerceAtLeast(0.dp),
+            )
+            val markdownTableMaxWidth =
+                (maxBubbleWidth - spacing.lg - spacing.lg).coerceAtLeast(0.dp)
             val userBubbleShape = RoundedCornerShape(
                 topStart = radius.bubble,
                 topEnd = radius.bubble,
@@ -340,6 +345,7 @@ fun MessageBubble(
                     ) {
                         MarkdownText(
                             markdown = markdown,
+                            tableMaxWidth = markdownTableMaxWidth,
                             textColor = colors.onUserBubble,
                             onSaveCode = onSaveCode,
                             onRunCode = onRunCode,
@@ -628,6 +634,10 @@ fun MessageBubble(
                                         ) {
                                             MarkdownText(
                                                 markdown = part.markdown,
+                                                tableMaxWidth = (
+                                                    messageContentWidth - dims.avatarSize - spacing.sm -
+                                                        spacing.md - spacing.md
+                                                    ).coerceAtLeast(0.dp),
                                                 streaming = streaming && partIndex == lastTextIndex,
                                                 onSaveCode = onSaveCode,
                                                 onRunCode = onRunCode,
@@ -753,11 +763,12 @@ fun MessageBubble(
             }
         }
 
-        Role.ERROR -> BoxWithConstraints(
+        Role.ERROR -> Box(
             modifier = modifier.fillMaxWidth(),
             contentAlignment = Alignment.CenterStart,
         ) {
-            val maxBubbleWidth = (maxWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp)
+            val maxBubbleWidth =
+                (messageContentWidth * dims.userBubbleMaxWidthFraction).coerceAtMost(600.dp)
             val errorShape = RoundedCornerShape(radius.md)
             Box(
                 modifier = Modifier

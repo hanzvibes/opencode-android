@@ -136,7 +136,7 @@ fun ArtifactsScreen(
                             .fillMaxSize()
                             .padding(horizontal = spacing.lg),
                     ) {
-                        itemsIndexed(state.artifacts, key = { _, artifact -> artifact.id }) { index, artifact ->
+                        itemsIndexed(state.artifacts, key = { _, artifact -> artifact.id }, contentType = { _, _ -> "data_row" }) { index, artifact ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             ArtifactRow(
                                 artifact = artifact,

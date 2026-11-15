@@ -80,6 +80,7 @@ fun ConfigScreen(
                             // document without a path), and two directories
                             // cannot — the index keeps keys unique either way.
                             key = { index, entry -> "$index:${entry.type}:${entry.path.orEmpty()}" },
+                            contentType = { _, _ -> "data_row" },
                         ) { index, entry ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             ConfigEntryCard(entry = entry)

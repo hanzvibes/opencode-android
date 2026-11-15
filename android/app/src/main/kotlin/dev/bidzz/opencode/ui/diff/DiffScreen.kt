@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -197,16 +197,21 @@ private fun UnifiedDiffView(state: DiffUiState) {
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = spacing.xxl),
     ) {
-        state.hunks.forEachIndexed { index, hunk ->
-            item(key = "hunk-$index-${hunk.header}") {
+        state.hunks.forEachIndexed { hunkIndex, hunk ->
+            val hunkKey = diffHunkKey(state.hunks, hunkIndex, hunk)
+            item(key = hunkKey, contentType = "header") {
                 HunkHeaderRow(hunk.header)
             }
-            items(hunk.lines) { line ->
+            itemsIndexed(
+                hunk.lines,
+                key = { lineIndex, line -> "$hunkKey:${diffLineKey(hunk, lineIndex, line)}" },
+                contentType = { _, line -> line.kind },
+            ) { _, line ->
                 UnifiedDiffLineRow(line, colors)
             }
         }
         if (state.truncated) {
-            item(key = "truncated") {
+            item(key = "truncated", contentType = "truncation_footer") {
                 Text(
                     text = stringResource(R.string.diff_truncated),
                     style = OpenCodeTypography.label,
@@ -409,19 +414,24 @@ private fun SplitDiffView(state: DiffUiState) {
                 .weight(1f),
             contentPadding = PaddingValues(bottom = spacing.xxl),
         ) {
-            state.hunks.forEachIndexed { index, hunk ->
-                item(key = "hunk-header-$index-${hunk.header}") {
+            state.hunks.forEachIndexed { hunkIndex, hunk ->
+                val hunkKey = diffHunkKey(state.hunks, hunkIndex, hunk)
+                item(key = hunkKey, contentType = "header") {
                     HunkHeaderRow(hunk.header)
                 }
                 val pairedRows = DiffParser.toSideBySide(hunk)
-                items(pairedRows) { pair ->
+                itemsIndexed(
+                    pairedRows,
+                    key = { rowIndex, pair -> "$hunkKey:${diffPairKey(hunk, pairedRows, rowIndex, pair)}" },
+                    contentType = { _, _ -> "side_by_side_row" },
+                ) { _, pair ->
                     SplitDiffRow(pair, colors)
                 }
             }
             // Audit-200 C9 (M-144): the unified view had this footer; the
             // split view silently dropped it, so a cut diff looked complete.
             if (state.truncated) {
-                item(key = "truncated") {
+                item(key = "truncated", contentType = "truncation_footer") {
                     Text(
                         text = stringResource(R.string.diff_truncated),
                         style = OpenCodeTypography.label,
@@ -560,3 +570,45 @@ private fun SplitDiffRow(pair: DiffSideBySideRow, colors: OpenCodeColors) {
 
 private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
+private fun diffHunkKey(hunks: List<DiffHunk>, index: Int, hunk: DiffHunk): String {
+    val duplicateOrdinal = hunks.subList(0, index).count { it.header == hunk.header }
+    return "hunk:${hunk.header}:$duplicateOrdinal"
+}
+
+private fun diffLineKey(hunk: DiffHunk, index: Int, line: DiffLine): String {
+    val identity = line.lazyKeyIdentity()
+    val duplicateOrdinal = if (line.oldLine == null && line.newLine == null) {
+        hunk.lines.subList(0, index).count { it.lazyKeyIdentity() == identity }
+    } else {
+        0
+    }
+    return "line:${hunk.header}:$identity:$duplicateOrdinal"
+}
+
+private fun diffPairKey(
+    hunk: DiffHunk,
+    rows: List<DiffSideBySideRow>,
+    index: Int,
+    row: DiffSideBySideRow,
+): String {
+    val identity = row.lazyKeyIdentity()
+    val hasLineNumber = row.left.hasLineNumber() || row.right.hasLineNumber()
+    val duplicateOrdinal = if (hasLineNumber) {
+        0
+    } else {
+        rows.subList(0, index).count { it.lazyKeyIdentity() == identity }
+    }
+    return "pair:${hunk.header}:$identity:$duplicateOrdinal"
+}
+
+private fun DiffLine.lazyKeyIdentity(): String =
+    if (oldLine != null || newLine != null) {
+        "${kind.name}:${oldLine ?: "_"}:${newLine ?: "_"}"
+    } else {
+        "${kind.name}:$text"
+    }
+
+private fun DiffSideBySideRow.lazyKeyIdentity(): String =
+    "left:${left?.lazyKeyIdentity() ?: "<none>"}|right:${right?.lazyKeyIdentity() ?: "<none>"}"
+
+private fun DiffLine?.hasLineNumber(): Boolean = this?.oldLine != null || this?.newLine != null

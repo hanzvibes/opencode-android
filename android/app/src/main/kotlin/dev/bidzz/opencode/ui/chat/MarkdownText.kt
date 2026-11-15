@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -91,6 +90,7 @@ import dev.bidzz.opencode.ui.rememberWindowSizeClass
 @Composable
 fun MarkdownText(
     markdown: String,
+    tableMaxWidth: Dp,
     modifier: Modifier = Modifier,
     /**
      * True while this is the last text block of a turn that is still
@@ -314,7 +314,7 @@ fun MarkdownText(
                             onRunCode = onRunCode,
                         )
 
-                        is MdBlock.Table -> TableBlock(block, proseColor, onBubble)
+                        is MdBlock.Table -> TableBlock(block, proseColor, onBubble, tableMaxWidth)
                     }
                 }
             }
@@ -758,6 +758,7 @@ private fun TableBlock(
     table: MdBlock.Table,
     proseColor: Color = OpenCodeTheme.colors.onSurface,
     onBubble: Boolean = false,
+    tableMaxWidth: Dp,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -774,8 +775,12 @@ private fun TableBlock(
         TableAlign.LEFT -> TextAlign.Start
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val availableWidth = if (maxWidth != Dp.Infinity && maxWidth > 0.dp) maxWidth else 360.dp
+    Box(modifier = Modifier.fillMaxWidth()) {
+        val availableWidth = if (tableMaxWidth != Dp.Infinity && tableMaxWidth > 0.dp) {
+            tableMaxWidth
+        } else {
+            360.dp
+        }
 
         val colWidths: List<Dp> = when (colCount) {
             1 -> listOf(availableWidth)

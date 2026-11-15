@@ -3,6 +3,7 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.androidx.baselineprofile)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     // Audit-200 C16 (M-238): the content search parses `rg --json` with
@@ -195,6 +196,7 @@ android {
 }
 
 dependencies {
+    baselineProfile(project(":baselineprofile"))
     implementation(project(":core:engine"))
     implementation(project(":core:design"))
     implementation(project(":core:common"))

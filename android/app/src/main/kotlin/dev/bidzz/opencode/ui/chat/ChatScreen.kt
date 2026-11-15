@@ -116,7 +116,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -1615,12 +1615,17 @@ fun ChatScreen(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    Box(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxHeight()
                             .fillMaxWidth()
                             .widthIn(max = dims.contentMaxWidth),
                     ) {
+                        // LazyColumn removes its horizontal content padding
+                        // before measuring items. Measure the item width once
+                        // instead of subcomposing each user/error bubble.
+                        val messageContentWidth =
+                            (maxWidth - spacing.lg - spacing.lg).coerceAtLeast(0.dp)
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
@@ -1638,7 +1643,7 @@ fun ChatScreen(
                             // newest messages load up front, and older ones
                             // arrive one tap at a time.
                             if (state.hasMoreOlder) {
-                                item(key = "load-earlier") {
+                                item(key = "load-earlier", contentType = "load-earlier") {
                                     Box(
                                         modifier = Modifier.fillMaxWidth().animateItem(),
                                         contentAlignment = Alignment.Center,
@@ -1681,7 +1686,11 @@ fun ChatScreen(
                                     }
                                 }
                             }
-                            itemsIndexed(state.messages, key = { _, it -> it.id }) { index, message ->
+                            itemsIndexed(
+                                state.messages,
+                                key = { _, message -> message.id },
+                                contentType = { _, message -> message.role },
+                            ) { index, message ->
                                 val prevMessage = if (index > 0) state.messages[index - 1] else null
                                 val isConsecutiveAssistant = prevMessage?.role == Role.ASSISTANT && message.role == Role.ASSISTANT
                                 val showProvenance = message.role == Role.ASSISTANT && !isConsecutiveAssistant
@@ -1770,6 +1779,7 @@ fun ChatScreen(
                                         MessageBubble(
                                             role = message.role,
                                             markdown = message.text,
+                                            messageContentWidth = messageContentWidth,
                                             // Audit-200 C5 (M-100): the
                                             // current find match gets a
                                             // soft accent wash over the
@@ -1910,7 +1920,7 @@ fun ChatScreen(
                             // new turn re-triggers it. Empty when idle, and
                             // it sits last so targetLastIndex never lands on
                             // it — the follow-scroll math is untouched.
-                            item(key = "turn-tail") {
+                            item(key = "turn-tail", contentType = "turn-tail") {
                                 val tailState = when {
                                     state.busy && state.messages.lastOrNull()?.role == Role.USER -> "working"
                                     else -> state.messages.lastOrNull()?.let { "answer-${it.id}" } ?: "empty"
@@ -2463,7 +2473,7 @@ fun ChatScreen(
                         onFocusChange = { composerFocused = it },
                         modifier = Modifier
                             .navigationBarsPadding()
-                            .onGloballyPositioned { composerBounds.value = it.boundsInRoot() }
+                            .onPlaced { composerBounds.value = it.boundsInRoot() }
                             .then(
                                 if (dragOverComposer) {
                                     Modifier.border(
@@ -4242,7 +4252,7 @@ private fun ChatDrawerContent(
             contentPadding = PaddingValues(vertical = spacing.xxs),
         ) {
             groupedSessions.forEach { (group, rows) ->
-                item(key = "header_${group.name}") {
+                item(key = "header_${group.name}", contentType = "session-header") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -4266,7 +4276,11 @@ private fun ChatDrawerContent(
                     }
                 }
 
-                items(rows, key = { it.id }) { row ->
+                items(
+                    rows,
+                    key = { it.id },
+                    contentType = { _ -> "session-drawer-row" },
+                ) { row ->
                     val selected = row.id == currentSessionID
                     SessionDrawerItem(
                         row = row,

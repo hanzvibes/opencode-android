@@ -88,11 +88,11 @@ fun WorktreesScreen(
                     ) {
                         state.sections.forEachIndexed { sectionIndex, section ->
                             if (sectionIndex > 0) {
-                                item(key = "divider-$sectionIndex") {
+                                item(key = "divider-$sectionIndex", contentType = "divider") {
                                     RowDivider(inset = spacing.md)
                                 }
                             }
-                            item(key = "header-${section.projectPath}") {
+                            item(key = "header-${section.projectPath}", contentType = "header") {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -117,6 +117,7 @@ fun WorktreesScreen(
                             itemsIndexed(
                                 section.worktrees,
                                 key = { index, worktree -> "$sectionIndex-$index:${worktree.directory}" },
+                                contentType = { _, _ -> "data_row" },
                             ) { _, worktree ->
                                 WorktreeRow(worktree = worktree)
                             }

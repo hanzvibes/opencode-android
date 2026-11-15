@@ -431,7 +431,7 @@ private fun ExplorerListContent(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = spacing.lg, vertical = spacing.sm),
         ) {
-            itemsIndexed(filteredRows, key = { _, row -> row.path }) { index, row ->
+            itemsIndexed(filteredRows, key = { _, row -> row.path }, contentType = { _, _ -> "data_row" }) { index, row ->
                 val rel = if (state.currentPath.isEmpty()) {
                     row.path
                 } else {
@@ -686,7 +686,7 @@ private fun QuickOpenPalette(
                         .fillMaxWidth()
                         .heightIn(max = 400.dp),
                 ) {
-                    itemsIndexed(results, key = { _, row -> row.path }) { rowIndex, row ->
+                    itemsIndexed(results, key = { _, row -> row.path }, contentType = { _, _ -> "data_row" }) { rowIndex, row ->
                         val fileInfo = remember(row.name) { FileTypes.resolve(row.name) }
                         val isSelected = rowIndex == selectedIndex
                         // Animation C: shared press feedback on the row.

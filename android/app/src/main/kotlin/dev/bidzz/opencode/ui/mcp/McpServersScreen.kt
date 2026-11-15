@@ -244,6 +244,7 @@ fun McpServersScreen(
                         itemsIndexed(
                             state.servers,
                             key = { index, server -> mcpServerListKey(index, server.name) },
+                            contentType = { _, _ -> "server_row" },
                         ) { index, server ->
                             if (index > 0) RowDivider(inset = spacing.md)
                             McpServerRow(
@@ -263,7 +264,7 @@ fun McpServersScreen(
                         if (catalog != null &&
                             (catalog.resources.isNotEmpty() || catalog.templates.isNotEmpty())
                         ) {
-                            item {
+                            item(key = "resources-header", contentType = "section_header") {
                                 Text(
                                     text = stringResource(R.string.mcp_resources_title),
                                     style = OpenCodeTypography.label,
@@ -279,6 +280,7 @@ fun McpServersScreen(
                                 key = { index, resource ->
                                     mcpResourceListKey(index, resource.server, resource.uri)
                                 },
+                                contentType = { _, _ -> "resource_row" },
                             ) { _, resource ->
                                 McpResourceRow(
                                     name = resource.name,
@@ -293,6 +295,7 @@ fun McpServersScreen(
                                 key = { index, template ->
                                     mcpTemplateListKey(index, template.server, template.uriTemplate)
                                 },
+                                contentType = { _, _ -> "resource_row" },
                             ) { _, template ->
                                 McpResourceRow(
                                     name = template.name,

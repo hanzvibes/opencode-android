@@ -32,6 +32,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -51,7 +52,6 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.LanguageStore
 import dev.bidzz.opencode.R
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -464,7 +464,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // 69-F4: saveable, so a recreate does not close the open file.
     var selectedFilePath by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val engineStatus by app.engineStatus.collectAsState()
+    val engineStatus by app.engineStatus.collectAsStateWithLifecycle()
 
     val chatViewModel: ChatViewModel = viewModel(factory = viewModelFactory { extras ->
         ChatViewModel(
@@ -489,8 +489,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         )
     })
 
-    val chatState by chatViewModel.state.collectAsState()
-    val sessionsState by sessionViewModel.state.collectAsState()
+    val chatState by chatViewModel.state.collectAsStateWithLifecycle()
+    val sessionsState by sessionViewModel.state.collectAsStateWithLifecycle()
 
     /**
      * Deletes a session from every entry point (80-F1/80-F6): the chat
@@ -625,27 +625,27 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         ConfigViewModel(app.engineApi)
     })
 
-    val explorerState by explorerViewModel.state.collectAsState()
-    val fileState by fileViewModel.state.collectAsState()
-    val diffState by diffViewModel.state.collectAsState()
-    val sessionDiffState by sessionDiffViewModel.state.collectAsState()
-    val inboxState by inboxViewModel.state.collectAsState()
-    val moveSessionState by moveSessionViewModel.state.collectAsState()
-    val exportState by exportViewModel.state.collectAsState()
-    val instructionsState by instructionsViewModel.state.collectAsState()
-    val scheduleState by scheduleViewModel.state.collectAsState()
-    val sessionLogState by sessionLogViewModel.state.collectAsState()
-    val statsState by statsViewModel.state.collectAsState()
-    val usageLimitsState by usageLimitsViewModel.state.collectAsState()
-    val providersState by providersViewModel.state.collectAsState()
-    val mcpServersState by mcpServersViewModel.state.collectAsState()
-    val pluginsState by pluginsViewModel.state.collectAsState()
-    val artifactsState by artifactsViewModel.state.collectAsState()
-    val jobsState by jobsViewModel.state.collectAsState()
-    val generateState by generateViewModel.state.collectAsState()
-    val webSearchState by webSearchViewModel.state.collectAsState()
-    val worktreesState by worktreesViewModel.state.collectAsState()
-    val configState by configViewModel.state.collectAsState()
+    val explorerState by explorerViewModel.state.collectAsStateWithLifecycle()
+    val fileState by fileViewModel.state.collectAsStateWithLifecycle()
+    val diffState by diffViewModel.state.collectAsStateWithLifecycle()
+    val sessionDiffState by sessionDiffViewModel.state.collectAsStateWithLifecycle()
+    val inboxState by inboxViewModel.state.collectAsStateWithLifecycle()
+    val moveSessionState by moveSessionViewModel.state.collectAsStateWithLifecycle()
+    val exportState by exportViewModel.state.collectAsStateWithLifecycle()
+    val instructionsState by instructionsViewModel.state.collectAsStateWithLifecycle()
+    val scheduleState by scheduleViewModel.state.collectAsStateWithLifecycle()
+    val sessionLogState by sessionLogViewModel.state.collectAsStateWithLifecycle()
+    val statsState by statsViewModel.state.collectAsStateWithLifecycle()
+    val usageLimitsState by usageLimitsViewModel.state.collectAsStateWithLifecycle()
+    val providersState by providersViewModel.state.collectAsStateWithLifecycle()
+    val mcpServersState by mcpServersViewModel.state.collectAsStateWithLifecycle()
+    val pluginsState by pluginsViewModel.state.collectAsStateWithLifecycle()
+    val artifactsState by artifactsViewModel.state.collectAsStateWithLifecycle()
+    val jobsState by jobsViewModel.state.collectAsStateWithLifecycle()
+    val generateState by generateViewModel.state.collectAsStateWithLifecycle()
+    val webSearchState by webSearchViewModel.state.collectAsStateWithLifecycle()
+    val worktreesState by worktreesViewModel.state.collectAsStateWithLifecycle()
+    val configState by configViewModel.state.collectAsStateWithLifecycle()
 
     // Adaptive layout (Phase 3): at >=840dp the chat drawer becomes a
     // persistent sidebar and the sessions/files screens gain a detail

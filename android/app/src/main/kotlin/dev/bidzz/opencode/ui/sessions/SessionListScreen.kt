@@ -521,7 +521,7 @@ fun SessionListPane(
                     ),
                 ) {
                     grouped.forEach { (group, rows) ->
-                        item(key = "header_${group.name}") {
+                        item(key = "header_${group.name}", contentType = "header") {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -549,7 +549,7 @@ fun SessionListPane(
                             }
                         }
 
-                        itemsIndexed(rows, key = { _, row -> row.id }) { index, row ->
+                        itemsIndexed(rows, key = { _, row -> row.id }, contentType = { _, _ -> "data_row" }) { index, row ->
                             SessionRowItem(
                                 row = row,
                                 modifier = Modifier.animateItem(),
@@ -578,7 +578,7 @@ fun SessionListPane(
                     // bare TextButton / "Loading…" text is the Hatch
                     // pagination footer — Aura ring while the page loads.
                     if (state.hasMoreSessions) {
-                        item(key = "load_more") {
+                        item(key = "load_more", contentType = "pagination_footer") {
                             HatchPaginationIndicator(
                                 hasMore = state.hasMoreSessions,
                                 loadingMore = state.loadingMore,

@@ -36,10 +36,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Text
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -241,7 +241,7 @@ fun DiagnosticsScreen(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
-    val status by app.engineStatus.collectAsState()
+    val status by app.engineStatus.collectAsStateWithLifecycle()
 
     val diagnostics = remember {
         EngineDiagnostics(
@@ -1134,7 +1134,7 @@ fun DiagnosticsScreen(
             }
 
             if (filteredLogs.isEmpty()) {
-                item {
+                item(key = "log-empty-state", contentType = "empty_state") {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1155,7 +1155,7 @@ fun DiagnosticsScreen(
                 }
             } else {
                 val numberWidth = indexedLogs.size.toString().length
-                items(filteredLogs, key = { it.number }) { entry ->
+                items(filteredLogs, key = { it.number }, contentType = { _ -> "data_row" }) { entry ->
                     LogLineRow(
                         number = entry.number,
                         text = entry.text,
@@ -1163,7 +1163,7 @@ fun DiagnosticsScreen(
                         numberWidth = numberWidth,
                     )
                 }
-                item {
+                item(key = "log-footer", contentType = "footer") {
                     // Rounded bottom cap for the log panel.
                     Box(
                         modifier = Modifier
@@ -1175,7 +1175,7 @@ fun DiagnosticsScreen(
                 }
             }
 
-            item {
+            item(key = "log-bottom-spacer", contentType = "spacer") {
                 Spacer(Modifier.height(spacing.xxl))
             }
         }
