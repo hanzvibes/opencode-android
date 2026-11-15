@@ -60,15 +60,17 @@ class EngineCrashStoreTest {
         // Defense in depth: `lastError` and the console lines are already
         // redacted at capture time, but a writer that forgets must not
         // leak the credential into the file.
+        // Fixture is 8 chars: D1 m-395 only masks the bare value when the
+        // password is at least MIN_REDACTED_PASSWORD_LENGTH (8) long.
         val report = EngineCrashStore.buildReport(
             exitCode = 1,
-            error = "auth failed: hunter2",
-            outputLines = listOf("server password: hunter2", "clean line"),
-            password = "hunter2",
+            error = "auth failed: hunter22",
+            outputLines = listOf("server password: hunter22", "clean line"),
+            password = "hunter22",
         )
 
-        assertFalse(report.error!!.contains("hunter2"))
-        assertTrue(report.outputLines.none { it.contains("hunter2") })
+        assertFalse(report.error!!.contains("hunter22"))
+        assertTrue(report.outputLines.none { it.contains("hunter22") })
         assertEquals("clean line", report.outputLines.last())
     }
 
