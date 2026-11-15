@@ -71,10 +71,15 @@ class ThemeD5Test {
         val app = read("src/main/kotlin/dev/bidzz/opencode/ui/OpenCodeApp.kt")
         val change = app.indexOf("onThemeModeChange = { chosen ->")
         assertTrue("onThemeModeChange block is gone", change >= 0)
-        val window = app.substring(change, minOf(change + 900, app.length))
+        // Audit-200 D7 (m-860): the window must reach past the
+        // documenting comments to the re-push call itself.
+        val window = app.substring(change, minOf(change + 1400, app.length))
+        // Audit-200 D7 (m-860): the re-push uses the localized context
+        // now, so the widget shows strings in the chosen language —
+        // the re-push itself is what this guard pins.
         assertTrue(
             "onThemeModeChange must re-push the widget or the widget keeps the old theme",
-            window.contains("updateSessionWidget(hostContext, id, title)"),
+            window.contains("updateSessionWidget(localized, id, title)"),
         )
     }
 

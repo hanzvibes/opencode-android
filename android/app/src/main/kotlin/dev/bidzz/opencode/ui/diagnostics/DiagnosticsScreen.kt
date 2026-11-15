@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -148,7 +149,8 @@ internal enum class LogLevel {
 }
 
 /** One retained log line: its 1-based position in the displayed list, text, and inferred level. */
-private data class IndexedLogLine(val number: Int, val text: String, val level: LogLevel)
+/* Audit-200 D7 (m-1019): internal, not private, so the copy formatter below is unit-testable. */
+internal data class IndexedLogLine(val number: Int, val text: String, val level: LogLevel)
 
 /**
  * Guesses a log line's severity from its text (audit-200 C9, M-133).
@@ -174,6 +176,49 @@ internal fun classifyLogLevel(line: String): LogLevel {
         else -> LogLevel.INFO
     }
 }
+
+/**
+ * Audit-200 D7 (m-1019): one copied log line — its display-sequence
+ * number (not a file line number: the viewer only retains a 256 KB /
+ * 2,000-line window), its inferred level (a heuristic guess from the
+ * text, C9 M-133 — never the engine's own severity), and the text.
+ */
+internal fun formatCopiedLogLine(line: IndexedLogLine): String =
+    "${line.number} [${line.level.name}] ${line.text}"
+
+/**
+ * Audit-200 D7 (m-1019/m-1093): the active filter/search as one honest
+ * description, or null when nothing is filtered. The level is the chip
+ * the user picked; the query is the trimmed search text.
+ */
+internal fun describeLogFilter(query: String, level: LogLevel): String? {
+    val parts = buildList {
+        if (level != LogLevel.ALL) add("level=${level.name}")
+        if (query.isNotEmpty()) add("query=\"$query\"")
+    }
+    return parts.joinToString(", ").takeIf { it.isNotEmpty() }
+}
+
+/**
+ * Audit-200 D7 (m-1019/m-1093): the header line pasted above the copied
+ * lines — the tab it came from, the filter that shaped it, and how many
+ * of the retained lines were copied, so the paste never pretends to be
+ * the whole log.
+ */
+internal fun formatCopiedLogsHeader(tabName: String, filter: String?, copied: Int, total: Int): String =
+    buildString {
+        append("# OpenCode Logs — tab ")
+        append(tabName)
+        if (filter != null) {
+            append(", filter: ")
+            append(filter)
+        }
+        append(" (")
+        append(copied)
+        append(" of ")
+        append(total)
+        append(" lines)")
+    }
 
 /**
  * Whether a restart has settled (audit-200 C9, M-135).
@@ -513,14 +558,35 @@ fun DiagnosticsScreen(
         (context.applicationContext as OpenCodeApplication).showSnackbar(copiedMessage)
     }
 
-    val copyLogs = { lines: List<String> ->
-        val text = lines.joinToString("\n")
-        val copiedMessage = if (copyPlainText(context, "OpenCode Logs", text)) {
-            context.getString(R.string.diag_copied_toast)
+    // Audit-200 D7 (m-1019/m-1093): the copy keeps what the viewer knows
+    // — the display-sequence number and the inferred level of each line,
+    // plus a header naming the tab, the filter, and how many of the
+    // retained lines were copied — so a paste never pretends to be the
+    // whole log, and the label/toast say what was actually copied.
+    val copyLogs = { lines: List<IndexedLogLine> ->
+        if (lines.isEmpty()) {
+            // Defense-in-depth (the button is disabled when empty, D1
+            // m-234): an empty copy must never toast success.
+            (context.applicationContext as OpenCodeApplication).showSnackbar(context.getString(R.string.copy_failed))
         } else {
-            context.getString(R.string.copy_failed)
+            val header = formatCopiedLogsHeader(
+                tabName = selectedLogTab.name,
+                filter = describeLogFilter(trimmedQuery, selectedLevel),
+                copied = lines.size,
+                total = indexedLogs.size,
+            )
+            val text = (listOf(header) + lines.map { formatCopiedLogLine(it) }).joinToString("\n")
+            val copiedMessage = if (copyPlainText(context, "OpenCode Logs", text)) {
+                if (logFilterActive) {
+                    context.resources.getQuantityString(R.plurals.diag_copied_logs_filtered, lines.size, lines.size, indexedLogs.size)
+                } else {
+                    context.getString(R.string.diag_copied_toast)
+                }
+            } else {
+                context.getString(R.string.copy_failed)
+            }
+            (context.applicationContext as OpenCodeApplication).showSnackbar(copiedMessage)
         }
-        (context.applicationContext as OpenCodeApplication).showSnackbar(copiedMessage)
     }
 
     // Exports this app's own logcat (audit-200 C15, M-222): `logcat -d
@@ -1120,6 +1186,9 @@ fun DiagnosticsScreen(
                         // Audit-200 D1 (m-234): disabled when nothing matches —
                         // the old button copied an empty string and still
                         // showed "Copied to clipboard".
+                        // Audit-200 D7 (m-1093): the label says how many
+                        // lines the filter leaves, so the button never
+                        // pretends it copies the whole log.
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(radius.sm))
@@ -1128,7 +1197,7 @@ fun DiagnosticsScreen(
                                 .clickable(
                                     enabled = filteredLogs.isNotEmpty(),
                                     role = Role.Button,
-                                    onClick = { copyLogs(filteredLogs.map { it.text }) },
+                                    onClick = { copyLogs(filteredLogs) },
                                 )
                                 .alpha(if (filteredLogs.isEmpty()) 0.4f else 1f)
                                 .padding(horizontal = spacing.sm, vertical = spacing.xs),
@@ -1137,7 +1206,11 @@ fun DiagnosticsScreen(
                                 GlyphIcon(Glyph.Copy, tint = colors.onSurfaceMuted, size = 14.dp)
                                 Spacer(Modifier.width(spacing.xxs))
                                 Text(
-                                    text = stringResource(R.string.diag_copy_logs),
+                                    text = if (logFilterActive) {
+                                        pluralStringResource(R.plurals.diag_copy_logs_filtered, filteredLogs.size, filteredLogs.size)
+                                    } else {
+                                        stringResource(R.string.diag_copy_logs)
+                                    },
                                     style = OpenCodeTypography.caption.copy(fontWeight = FontWeight.SemiBold),
                                     color = colors.onSurfaceMuted,
                                 )

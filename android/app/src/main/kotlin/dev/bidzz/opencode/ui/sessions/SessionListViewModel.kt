@@ -66,6 +66,12 @@ data class SessionListUiState(
      * banner over the visible list, never a full-screen error.
      */
     val deleteFailure: ApiResult.Failure? = null,
+    /** IDs with a delete in flight (audit-200 D7, m-686) — a second tap
+     * while one is running must not send a second DELETE, which the
+     * engine answers with a failure for a session that is already gone
+     * and the banner then reports as a failed delete.
+     */
+    val deletingIds: Set<String> = emptySet(),
     /** The session the failed delete was for, so the banner can retry it. */
     val deleteFailedSessionID: String? = null,
     /** A message with no failure behind it for a failed delete, e.g. the engine never started (65-F3). */
@@ -454,6 +460,11 @@ class SessionListViewModel(
 
     /** Deletes a session. */
     fun delete(sessionID: String, onDeleted: ((String) -> Unit)? = null) {
+        // Audit-200 D7 (m-686): a delete already in flight for this id
+        // owns the outcome — a second tap (the dialog only vanishes on
+        // the next recomposition, and the Retry banner calls onDelete
+        // directly) must not send a second DELETE.
+        if (sessionID in _state.value.deletingIds) return
         // The engine must be reachable before anything is removed locally:
         // with no handle the delete cannot run, and removing the pin or the
         // row first would lose state for a session that is still there.
@@ -469,13 +480,19 @@ class SessionListViewModel(
         }
         val rows = _state.value.rows
         val index = rows.indexOfFirst { it.id == sessionID }
+        // Audit-200 D7 (m-686): no row, no delete — a Retry for a session
+        // deleted elsewhere would otherwise send a DELETE for a gone
+        // session and report its 404 as a failed delete.
+        if (index == -1) return
         val deleted = rows.getOrNull(index)
         _state.value = _state.value.copy(
-            rows = rows.filter { it.id != sessionID }
+            rows = rows.filter { it.id != sessionID },
+            deletingIds = _state.value.deletingIds + sessionID,
         )
         viewModelScope.launch {
             when (val result = handle.sessions.delete(sessionID)) {
                 is ApiResult.Success -> {
+                    _state.value = _state.value.copy(deletingIds = _state.value.deletingIds - sessionID)
                     // The pin is removed only now that the session is really
                     // gone: removing it first meant a failed delete brought
                     // the session back without its pin (audit-70 19-F3).
@@ -534,7 +551,9 @@ internal fun resolveDeleteFailure(
     if (deleted != null && current.none { it.id == sessionID }) {
         current.add(index.coerceIn(0, current.size), deleted)
     }
-    return state.copy(rows = current, deleteFailure = result, deleteFailedSessionID = sessionID)
+    // Audit-200 D7 (m-686): the in-flight marker is released on failure
+    // too, so a Retry can send a fresh DELETE.
+    return state.copy(rows = current, deleteFailure = result, deleteFailedSessionID = sessionID, deletingIds = state.deletingIds - sessionID)
 }
 
 /**

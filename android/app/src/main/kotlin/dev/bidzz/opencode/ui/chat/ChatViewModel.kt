@@ -2,6 +2,7 @@ package dev.bidzz.opencode.ui.chat
 
 import dev.bidzz.opencode.ui.sessions.matchesAllTokens
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -734,6 +735,77 @@ internal fun sessionOpenRefusal(
     meta == null && isMissing -> R.string.session_link_gone
     meta != null && directoryMatches == false -> R.string.session_link_wrong_workspace
     else -> null
+}
+
+/**
+ * Audit-200 D7 (m-758/m-981): the banner key an [ChatViewModel.onRepoState]
+ * emission leaves behind, as a pure function so the arm order is
+ * unit-testable.
+ *
+ * Two banners are sticky by key, because their writers are the only ones
+ * that ever set those keys and every other failureKey writer overwrites
+ * the key — so a sticky banner can never resurrect once superseded:
+ * - `stop_unconfirmed` (m-758): the stop timed out while the run is still
+ *   going. It survives healthy emissions while [busy], and dies the moment
+ *   the run ends, the session changes, or any other banner takes its place.
+ * - `session_link_gone` / `session_link_verify_failed` (m-981): a
+ *   deep-link open was refused or deferred. The refusal is a permanent
+ *   fact about that id, so it survives healthy emissions until the user
+ *   dismisses it, opens another session, or a new refusal replaces it.
+ *
+ * The `lastFailure == null -> null` arm below them is deliberately kept:
+ * it is what clears an ordinary failure banner after a successful resync
+ * (43-F3) — removing it would preserve every stale banner, the exact bug
+ * D6 m-312 fixed for the 429 guidance.
+ */
+internal fun resolveFailureKey(
+    selection: ApiResult.Failure?,
+    rateLimitGuidanceShown: Boolean,
+    previousFailureKey: Int?,
+    lastFailure: ApiResult.Failure?,
+    sessionGone: Boolean,
+    busy: Boolean,
+    sessionChanged: Boolean,
+): Int? = when {
+    selection != null -> null
+    // Audit-200 D6 (m-312): the 429 guidance is owned by the view model —
+    // a resync success (lastFailure == null) must not wipe guidance the
+    // user explicitly asked for.
+    rateLimitGuidanceShown -> R.string.chat_rate_limited_guidance
+    // Audit-200 D7 (m-758): see the KDoc above.
+    previousFailureKey == R.string.stop_unconfirmed ->
+        if (busy && !sessionChanged) R.string.stop_unconfirmed else null
+    // Audit-200 D7 (m-981): see the KDoc above.
+    previousFailureKey == R.string.session_link_gone ||
+        previousFailureKey == R.string.session_link_verify_failed ->
+        if (sessionChanged) null else previousFailureKey
+    lastFailure == null -> null
+    sessionGone -> R.string.chat_session_gone_guidance
+    else -> previousFailureKey
+}
+
+/**
+ * Audit-200 D7 (m-801): two rejections of the same kind in a row must not
+ * overwrite each other — the first error message would vanish without a
+ * trace. The slot keeps at most two messages, oldest first, joined with a
+ * newline; an identical repeat is not duplicated. The returned failure
+ * keeps the NEWEST code/tag (the freshest rejection) with the combined
+ * message, so the banner renders both lines.
+ */
+internal fun combineSameKindFailure(
+    existing: ApiResult.Failure?,
+    new: ApiResult.Failure,
+): ApiResult.Failure {
+    if (existing == null) return new
+    val oldMessage = existing.message.orEmpty()
+    val newMessage = new.message.orEmpty()
+    if (oldMessage.isEmpty()) return new
+    if (newMessage.isEmpty() || newMessage == oldMessage) return existing
+    // Already combined (two lines)? Keep the newest two: drop the oldest
+    // line, keep the last one plus the new one.
+    val lines = oldMessage.split("\n")
+    val kept = if (lines.size >= 2) lines.takeLast(1) else lines
+    return new.copy(message = (kept + newMessage).joinToString("\n"))
 }
 
 /**
@@ -2112,6 +2184,10 @@ class ChatViewModel(
                     // whose meta re-installs its own.
                     confirmedAgent = null
                     confirmedModel = null
+                    // Audit-200 D7 (m-606): a staged revert dies with the
+                    // engine too — its session id is gone, so the pair is
+                    // cleared together (see newSession / openSessionUnchecked).
+                    stagedRevertSessionID = null
                     // Follow-ups queued while the agent worked are the user's
                     // words: the engine dying must not throw them away
                     // (item 8). They go back into the composer — after
@@ -2181,6 +2257,14 @@ class ChatViewModel(
                         // the guidance is about a live rate limit, and
                         // must not resurrect on the next re-attach.
                         rateLimitGuidanceShown = false,
+                        // Audit-200 D7 (m-606): a staged revert dies with
+                        // the engine — leaving it would show Apply/Discard
+                        // buttons that silently do nothing (the same reason
+                        // pendingPermission is cleared above), and the
+                        // banner would sit over the kept transcript
+                        // looking live. (The engine's own meta.revert is
+                        // still restored when the session re-opens.)
+                        stagedRevert = null,
                     )
                 }
                 // Audit-200 C10 (M-155): the engine is back — the old
@@ -2563,19 +2647,19 @@ class ChatViewModel(
             // stayed up after a later send succeeded. It clears with the
             // failure — except for the session-gone case below, which is
             // guidance in place of a failure, not after one.
-            failureKey = when {
-                previous.selectionFailure != null -> null
-                // Audit-200 D6 (m-312): the 429 guidance is owned by the
-                // view model — a resync success (lastFailure == null)
-                // must not wipe guidance the user explicitly asked for.
-                // Only a dismiss, a new send, a session change, an engine
-                // death, a fresh non-429 failure, or another banner clears
-                // it (see rateLimitGuidanceShown).
-                previous.rateLimitGuidanceShown -> R.string.chat_rate_limited_guidance
-                chat.lastFailure == null -> null
-                sessionGone(chat.lastFailure) -> R.string.chat_session_gone_guidance
-                else -> previous.failureKey
-            },
+            // Audit-200 D7 (m-758/m-981): the arm order lives in
+            // resolveFailureKey so it is unit-testable — the stop-timeout
+            // and session-link-refusal banners are sticky by key and must
+            // survive a healthy repo emission.
+            failureKey = resolveFailureKey(
+                selection = previous.selectionFailure,
+                rateLimitGuidanceShown = previous.rateLimitGuidanceShown,
+                previousFailureKey = previous.failureKey,
+                lastFailure = lastFailure,
+                sessionGone = sessionGone(lastFailure),
+                busy = chat.busy,
+                sessionChanged = sessionChanged,
+            ),
             // Audit-200 D6 (m-312): the guidance is only about rate
             // limiting — a fresh non-429 failure supersedes it, while
             // a resync success (lastFailure == null) or a new 429
@@ -3957,14 +4041,23 @@ class ChatViewModel(
         if (safPicksJob != null) return
         safPicksJob = viewModelScope.launch {
             picks.collect { uri ->
-                // Audit-200 B3 (M-076): the park key is captured before
-                // the read — a session switch mid-read must not re-file
-                // the pick. The landing is the same one drops use, so a
-                // pick for another session parks under that session
-                // instead of attaching to the wrong composer.
-                val pickKey = currentParkKey()
-                val result = withContext(Dispatchers.IO) { readFile(uri) }
-                handleDroppedFileResult(result, pickKey)
+                // Audit-200 D7 (m-594): one bad pick must not kill the
+                // collector — the `safPicksJob != null` guard above would
+                // prevent any re-subscribe, so SAF would stay dead.
+                try {
+                    // Audit-200 B3 (M-076): the park key is captured before
+                    // the read — a session switch mid-read must not re-file
+                    // the pick. The landing is the same one drops use, so a
+                    // pick for another session parks under that session
+                    // instead of attaching to the wrong composer.
+                    val pickKey = currentParkKey()
+                    val result = withContext(Dispatchers.IO) { readFile(uri) }
+                    handleDroppedFileResult(result, pickKey)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("ChatViewModel", "SAF pick failed", e)
+                }
             }
         }
     }
@@ -5215,12 +5308,22 @@ class ChatViewModel(
      * and `createSession` can report both instead of last-wins.
      */
     private fun reportSelectionFailure(result: ApiResult.Failure, kind: SelectionKind) {
+        // Audit-200 D7 (m-801): a second rejection of the same kind
+        // combines with the first instead of overwriting it — the first
+        // error message must not vanish without a trace. The rendered
+        // failure is the combined one too (the banner reads state.failure
+        // when only one kind's slot is filled).
+        val combined = combineSameKindFailure(
+            existing = if (kind == SelectionKind.AGENT) _state.value.agentSelectionFailure
+            else _state.value.modelSelectionFailure,
+            new = result,
+        )
         _state.value = _state.value.copy(
-            failure = result,
+            failure = combined,
             failureKey = null,
             retryKind = RetryKind.NONE,
-            agentSelectionFailure = if (kind == SelectionKind.AGENT) result else _state.value.agentSelectionFailure,
-            modelSelectionFailure = if (kind == SelectionKind.MODEL) result else _state.value.modelSelectionFailure,
+            agentSelectionFailure = if (kind == SelectionKind.AGENT) combined else _state.value.agentSelectionFailure,
+            modelSelectionFailure = if (kind == SelectionKind.MODEL) combined else _state.value.modelSelectionFailure,
             rateLimitGuidanceShown = false,
         )
     }
@@ -5891,8 +5994,10 @@ class ChatViewModel(
      * still looking at. Also clears a pending deep-link open for this id:
      * the pending id is only confirmed by onRepoState when the repository
      * installs it, so a refused id would otherwise stall onResume forever.
+     * Internal, like [deferSessionOpen], so the D7 behaviour test can
+     * drive it without a live engine.
      */
-    private fun refuseSessionOpen(@StringRes failureKey: Int, sessionID: String) {
+    internal fun refuseSessionOpen(@StringRes failureKey: Int, sessionID: String) {
         if (pendingOpenSessionID == sessionID) pendingOpenSessionID = null
         _state.value = _state.value.copy(failureKey = failureKey, retryKind = RetryKind.NONE, rateLimitGuidanceShown = false)
     }
@@ -5939,7 +6044,11 @@ class ChatViewModel(
         stopIntent = false
         stagedRevertSessionID = null
         lastSentSkills = null
-        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false, staleSelectionArg = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null)
+        // Audit-200 D7 (m-1139): the old session's failure banner is reset
+        // explicitly here, like newSession does — the switch used to rely
+        // on the first onRepoState emission after repo.open() to clear
+        // it, an implicit dependency one dispatch away.
+        _state.value = _state.value.copy(attachNoticeKey = null, attachNoticeArg = null, queueNoticeKey = null, queueNoticeArg = null, lastSentText = null, sentPrompts = emptyList(), pendingPermission = null, deferredPermission = null, retryKind = RetryKind.NONE, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false, staleSelectionArg = null, stagedRevert = null, forking = false, compacting = false, revertBusy = false, sessionTitle = null, failure = null, failureKey = null)
         // Audit-200 D6 (m-383): the old session's confirmed picks are not
         // this session's engine truth — the meta branch below re-installs
         // the new session's own when it has meta.

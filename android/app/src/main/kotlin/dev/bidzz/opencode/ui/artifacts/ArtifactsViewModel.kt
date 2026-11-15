@@ -91,7 +91,18 @@ class ArtifactsViewModel(private val api: EngineApi) : ViewModel() {
         _state.value = _state.value.copy(deletingIds = _state.value.deletingIds + id)
         viewModelScope.launch {
             val handle = api.handle()
-            val result = handle?.artifacts?.delete(id)
+            // Audit-200 D7 (m-617): the engine is down — a null handle is
+            // not a success. Report it as an action failure (the screen
+            // shows it once as a snackbar) and do NOT reload: load() with
+            // no handle would replace the list with an error screen.
+            if (handle == null) {
+                _state.value = _state.value.copy(
+                    deletingIds = _state.value.deletingIds - id,
+                    actionFailure = engineDownFailure(),
+                )
+                return@launch
+            }
+            val result = handle.artifacts.delete(id)
             if (result is ApiResult.Failure) {
                 _state.value = _state.value.copy(
                     deletingIds = _state.value.deletingIds - id,

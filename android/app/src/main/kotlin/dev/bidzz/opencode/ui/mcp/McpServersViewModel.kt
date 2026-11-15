@@ -34,6 +34,14 @@ data class McpServersUiState(
      */
     val actionFailure: ApiResult.Failure? = null,
     /**
+     * Audit-200 D7 (m-629): the last action failure per server, kept
+     * until that server's next successful action or a dismiss — a
+     * snackbar vanishes, but the row keeps saying what went wrong.
+     * Without this, a failed Connect/Disconnect/Remove left the row
+     * looking exactly as before the tap once the snackbar was gone.
+     */
+    val failedActions: Map<String, ApiResult.Failure> = emptyMap(),
+    /**
      * What the last action got right (audit-200 B2, M-293): a success
      * used to be silent — the quiet reload often showed the same status,
      * so the tap looked like it did nothing. The screen shows this once
@@ -294,12 +302,18 @@ class McpServersViewModel(
                         adding = false,
                         actionSuccess = McpActionSuccess(McpAction.ADD, name),
                         hasRuntimeChanges = true,
+                        // Audit-200 D7 (m-629): a success clears this
+                        // server's row trace.
+                        failedActions = _state.value.failedActions - name,
                     )
                     load(showLoading = false)
                 }
                 is ApiResult.Failure -> _state.value = _state.value.copy(
                     adding = false,
                     actionFailure = result,
+                    // Audit-200 D7 (m-629): the row keeps the failure
+                    // after the snackbar is gone.
+                    failedActions = _state.value.failedActions + (name to result),
                 )
             }
         }
@@ -334,7 +348,13 @@ class McpServersViewModel(
         // used to swallow the tap silently.
         val handle = api.handle()
         if (handle == null) {
-            _state.value = _state.value.copy(actionFailure = engineDownFailure())
+            // Audit-200 D7 (m-629): the row keeps the engine-down failure
+            // too — the snackbar alone would vanish without a trace.
+            val failure = engineDownFailure()
+            _state.value = _state.value.copy(
+                actionFailure = failure,
+                failedActions = _state.value.failedActions + (name to failure),
+            )
             return
         }
         if (name in _state.value.busyServers) return
@@ -350,12 +370,18 @@ class McpServersViewModel(
                         busyServers = _state.value.busyServers - name,
                         actionSuccess = McpActionSuccess(action, name),
                         hasRuntimeChanges = true,
+                        // Audit-200 D7 (m-629): a success clears this
+                        // server's row trace.
+                        failedActions = _state.value.failedActions - name,
                     )
                     load(showLoading = false)
                 }
                 is ApiResult.Failure -> _state.value = _state.value.copy(
                     busyServers = _state.value.busyServers - name,
                     actionFailure = result,
+                    // Audit-200 D7 (m-629): the row keeps the failure
+                    // after the snackbar is gone.
+                    failedActions = _state.value.failedActions + (name to result),
                 )
             }
         }
@@ -364,6 +390,11 @@ class McpServersViewModel(
     /** The screen calls this after showing [McpServersUiState.actionFailure] once. */
     fun clearActionFailure() {
         _state.value = _state.value.copy(actionFailure = null)
+    }
+
+    /** Dismisses the per-server failure line under a row (audit-200 D7, m-629). */
+    fun clearFailedAction(name: String) {
+        _state.value = _state.value.copy(failedActions = _state.value.failedActions - name)
     }
 
     /** The screen calls this after showing [McpServersUiState.actionSuccess] once. */

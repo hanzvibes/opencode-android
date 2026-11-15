@@ -118,6 +118,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.AnnotatedString
@@ -2260,13 +2261,23 @@ fun ChatScreen(
                     // the other above-composer notices so it is visible
                     // without scrolling, and it cannot be dismissed without
                     // choosing: discarding IS the dismiss.
-                    state.stagedRevert?.let { staged ->
+                    // Audit-200 D7 (m-606): defense-in-depth — a staged
+                    // revert without a session (e.g. the engine died) has
+                    // no Apply target, so the banner must not render.
+                    state.stagedRevert?.takeIf { state.sessionID != null }?.let { staged ->
+                        // Audit-200 D7 (m-602): resolve the anchor message
+                        // so the banner names the message the revert
+                        // returns to instead of saying "this message".
+                        val anchorText = state.messages
+                            .firstOrNull { it.id == staged.messageID }
+                            ?.text?.let { stagedRevertTargetText(it) }
                         StagedRevertBanner(
                             staged = staged,
                             busy = state.revertBusy,
                             onCommit = onCommitRevert,
                             onClear = onClearRevert,
                             modifier = Modifier.padding(horizontal = spacing.md, vertical = spacing.xs),
+                            anchorText = anchorText,
                         )
                     }
 
@@ -2949,9 +2960,32 @@ private fun AttachNoticeRow(
 }
 
 /**
+ * Audit-200 D7 (m-602): the anchor snippet a staged revert returns to —
+ * the first [MAX] characters of the anchor message, with an ellipsis when
+ * cut. A blank or missing message yields null, and the banner falls back
+ * to an honest "an earlier message" line instead of showing a raw id.
+ */
+internal fun stagedRevertTargetText(messageText: String?, max: Int = 80): String? {
+    val trimmed = messageText?.trim().orEmpty()
+    if (trimmed.isEmpty()) return null
+    return if (trimmed.length > max) trimmed.take(max) + "…" else trimmed
+}
+
+/** Audit-200 D7 (m-1104): the file lines a staged-revert banner shows. */
+internal data class RevertBannerFileList(val shown: List<String>, val remaining: Int)
+
+/**
+ * Audit-200 D7 (m-1104): the first [maxShown] paths, plus how many more
+ * are hidden — the banner stays slim by default and expands on demand.
+ */
+internal fun revertBannerFileLines(paths: List<String>, maxShown: Int = 5): RevertBannerFileList =
+    RevertBannerFileList(shown = paths.take(maxShown), remaining = (paths.size - maxShown).coerceAtLeast(0))
+
+/**
  * A staged session revert (mockup group 2): planned, not yet applied.
- * Names how many files the revert would touch (or that it is messages
- * only) and offers Apply / Discard. Same slim above-composer card as
+ * Names the anchor message it returns to and how many files the revert
+ * would touch (or that it is messages only), lists the files on demand,
+ * and offers Apply / Discard. Same slim above-composer card as
  * [AttachNoticeRow], but with two actions instead of a dismiss X —
  * there is no third option: discarding IS the dismiss.
  */
@@ -2962,6 +2996,9 @@ private fun StagedRevertBanner(
     onCommit: () -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
+    // Audit-200 D7 (m-602): the anchor snippet, resolved at the call site
+    // from state.messages — null when the message is gone (compacted).
+    anchorText: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -2994,6 +3031,16 @@ private fun StagedRevertBanner(
             )
         }
         Text(
+            // Audit-200 D7 (m-602): name the anchor — "this message" was
+            // a mystery when the banner could not say which message the
+            // revert returns to.
+            text = anchorText?.let { stringResource(R.string.revert_banner_target, it) }
+                ?: stringResource(R.string.revert_banner_target_unknown),
+            style = OpenCodeTypography.caption,
+            color = colors.onSurfaceMuted,
+            modifier = Modifier.padding(start = spacing.md, top = spacing.xxs),
+        )
+        Text(
             // Audit-200 A9-6 (DL-013): a non-empty files list whose
             // entries name no readable path must never read as "No files
             // change" — the revert may still touch files. It says so.
@@ -3006,6 +3053,42 @@ private fun StagedRevertBanner(
             color = colors.onSurfaceMuted,
             modifier = Modifier.padding(start = spacing.md, top = spacing.xxs),
         )
+        // Audit-200 D7 (m-1104): the file list the banner used to count
+        // but never show — collapsed by default, first 5 + "and N more".
+        if (staged.fileImpact() == RevertFileImpact.KnownFiles && paths.isNotEmpty()) {
+            var filesExpanded by remember { mutableStateOf(false) }
+            TextButton(
+                onClick = { filesExpanded = !filesExpanded },
+                modifier = Modifier.padding(start = spacing.sm),
+            ) {
+                Text(
+                    text = stringResource(
+                        if (filesExpanded) R.string.revert_banner_hide_files
+                        else R.string.revert_banner_show_files,
+                    ),
+                    color = colors.accentText,
+                )
+            }
+            if (filesExpanded) {
+                val fileList = revertBannerFileLines(paths)
+                fileList.shown.forEach { path ->
+                    Text(
+                        text = path,
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier.padding(start = spacing.lg, top = spacing.xxs),
+                    )
+                }
+                if (fileList.remaining > 0) {
+                    Text(
+                        text = pluralStringResource(R.plurals.revert_banner_and_more, fileList.remaining, fileList.remaining),
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceMuted,
+                        modifier = Modifier.padding(start = spacing.lg, top = spacing.xxs),
+                    )
+                }
+            }
+        }
         Row(
             horizontalArrangement = Arrangement.Start,
         ) {

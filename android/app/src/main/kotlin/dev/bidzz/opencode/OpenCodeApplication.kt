@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.engine.EngineBinary
@@ -17,6 +18,7 @@ import dev.bidzz.opencode.ui.cancelAgentDone
 import dev.bidzz.opencode.ui.chat.CodeSaveQueue
 import dev.bidzz.opencode.ui.chat.CodeSaveRequest
 import dev.bidzz.opencode.ui.chat.SharedPrefsCodeSaveQueueStore
+import dev.bidzz.opencode.ui.chat.sanitizeFallbackName
 import dev.bidzz.opencode.workspace.WorkspaceStore
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
@@ -24,9 +26,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -46,6 +51,13 @@ class OpenCodeApplication : Application() {
          * the drain loop room to free a buffer slot.
          */
         private const val SNACKBAR_RETRY_DELAY_MS = 6_000L
+        /**
+         * Pending SAF picks the chat can hold (audit-200 D7, m-1164): the
+         * reader is serial, so a slow provider leaves only the buffer for
+         * the next picks — 8 was too small for a burst, and the 9th pick
+         * vanished. Same size as the snackbar queue (D6 m-593).
+         */
+        internal const val SAF_PICK_BUFFER_CAPACITY = 16
         /** SharedPreferences file the app restores from (also read by the widget). */
         const val PREFS_NAME = "app"
         /** Last opened session id (also read by the widget). */
@@ -58,11 +70,15 @@ class OpenCodeApplication : Application() {
      * The app language (92-F2): the whole process reads resources in the
      * language the user picked — the service's notifications, the widget,
      * and shortcuts all derive their context from here, so they no longer
-     * fall back to the phone's locale while the UI speaks Indonesian. One
-     * limit: this runs once per process, so a language change reaches the
-     * widget and shortcuts after the next process start; the Compose tree
-     * re-wraps on change and updates at once, and notifications wrap the
-     * stored language fresh on every post (D1 m-530), so they follow at once.
+     * fall back to the phone's locale while the UI speaks Indonesian.
+     * The wrap below runs once per process, so it only covers cold starts
+     * and receivers that hold no fresher context. A language change while
+     * the app is open reaches the live surfaces through fresh wraps
+     * instead: the Compose tree re-wraps on change and updates at once,
+     * notifications wrap the stored language fresh on every post (D1
+     * m-530), the widget and shortcut re-push from the wrapped `localized`
+     * context (D7 m-860), and the activity's snackbars read fresh on every
+     * call (D7 m-860) — so nothing waits for the next process start.
      */
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(LanguageStore.wrap(base, LanguageStore.get(base)))
@@ -335,19 +351,61 @@ class OpenCodeApplication : Application() {
     /**
      * Delivers the URI picked in the system file picker.
      *
-     * 14-F5: the picked flow holds 8 pending URIs (the reader is serial,
-     * so a slow provider leaves only the buffer for the next picks), and a
-     * pick that still cannot be queued tells the user instead of vanishing.
+     * Audit-200 D7 (m-1164): the picks now flow through a Channel, not a
+     * SharedFlow with replay 0 — the SharedFlow forgot offers with no
+     * collector while tryEmit still reported success (the same trap D6
+     * m-593 found in the snackbar queue), so a pick could vanish before
+     * the reader subscribed. A pick that still cannot be queued names
+     * the file it lost, and the message itself is retried once — the
+     * generic message used to drop silently too when the snackbar queue
+     * was full.
      */
     fun deliverSafFile(uri: Uri) {
-        if (!safFilePicked.tryEmit(uri)) {
-            showSnackbar(getString(R.string.saf_file_dropped))
+        if (!safFilePickedChannel.trySend(uri).isSuccess) {
+            val name = safDisplayName(uri)
+            showSnackbarWithRetry(
+                applicationScope,
+                getString(R.string.saf_file_dropped_named, name),
+                long = true,
+            )
         }
     }
 
+    /**
+     * The picked file's display name for the drop message: the provider's
+     * DISPLAY_NAME when it answers, else the sanitized last path segment
+     * (the same fallback [readSafFile] uses) — never a raw opaque id.
+     */
+    private fun safDisplayName(uri: Uri): String {
+        val fromProvider: String? = try {
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index < 0) null else cursor.getString(index)?.takeIf { it.isNotBlank() }
+            }
+        } catch (_: Exception) {
+            null
+        }
+        return fromProvider
+            ?: uri.lastPathSegment?.let { sanitizeFallbackName(it) }
+            ?: "file"
+    }
+
+    /** Process-lifetime scope for fire-and-forget work that outlives any screen (audit-200 D7, m-1164). */
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     val safFileRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 8)
+
+    private val safFilePickedChannel = Channel<Uri>(capacity = SAF_PICK_BUFFER_CAPACITY)
+
     /** URIs picked in the system file picker; the chat view model reads them in as text. */
-    val safFilePicked = MutableSharedFlow<Uri>(extraBufferCapacity = 8)
+    val safFilePicked: Flow<Uri> = safFilePickedChannel.receiveAsFlow()
 
     /**
      * Voice input (Composer C): asks MainActivity to request the

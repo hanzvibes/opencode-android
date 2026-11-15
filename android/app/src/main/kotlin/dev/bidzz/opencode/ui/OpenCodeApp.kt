@@ -4,6 +4,7 @@ import android.content.ComponentCallbacks
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
+import android.util.Log
 import android.view.DragEvent
 import android.view.View
 import androidx.activity.compose.BackHandler
@@ -147,6 +148,8 @@ import dev.bidzz.opencode.ui.widget.updateSessionWidget
 import dev.bidzz.opencode.ui.settings.SettingsScreen
 import java.io.File
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.supervisorScope
 
 /**
  * Top-level navigation.
@@ -439,6 +442,22 @@ internal fun Modifier.pressScale(
  */
 internal fun sessionTitleSharedKey(sessionId: String): String = sessionId
 
+/**
+ * Audit-200 D7 (m-594): one root collector dying must not kill the other
+ * three. A collector that throws is logged and ends; the supervisor keeps
+ * the siblings running. Cancellation is never swallowed — it is the
+ * normal disposal path when the composition leaves.
+ */
+private suspend fun collectSafely(tag: String, block: suspend () -> Unit) {
+    try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.e("OpenCodeApp", "$tag collector died", e)
+    }
+}
+
 @Composable
 @OptIn(ExperimentalSharedTransitionApi::class)
 fun OpenCodeApp(app: OpenCodeApplication) {
@@ -706,59 +725,85 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // be re-created for them while the UI is already composed. A share
     // starts a fresh session with the text as the draft (editable before
     // sending); a deep link opens its session.
+    // Audit-200 D7 (m-594): one LaunchedEffect used to hold all four
+    // collectors — an exception in one child cancelled the parent and
+    // the other three with it, silently. Each collector now runs under a
+    // supervisor with its own try/catch, so one dying collector is logged
+    // and the rest keep working.
     LaunchedEffect(Unit) {
         // 15-F4: the SAF collector lives in the view model, not the chat
         // screen — a read started in chat survives leaving the screen.
         chatViewModel.observeSafPicks(app.safFilePicked) { uri ->
             readSafFile(app.contentResolver, uri)
         }
-        launch {
-            app.sharedTextReceived.collect { text ->
-                chatViewModel.newSession()
-                chatViewModel.onDraftChange(text)
-                screen = Screen.Chat
+        supervisorScope {
+            launch {
+                collectSafely("shared-text") {
+                    app.sharedTextReceived.collect { text ->
+                        chatViewModel.newSession()
+                        chatViewModel.onDraftChange(text)
+                        screen = Screen.Chat
+                    }
+                }
             }
-        }
-        launch {
-            app.sessionOpenRequested.collect { sessionID ->
-                chatViewModel.openSession(sessionID)
-                screen = Screen.Chat
+            launch {
+                collectSafely("session-open") {
+                    app.sessionOpenRequested.collect { sessionID ->
+                        chatViewModel.openSession(sessionID)
+                        screen = Screen.Chat
+                    }
+                }
             }
-        }
-        launch {
-            app.newSessionRequested.collect {
-                chatViewModel.newSession()
-                screen = Screen.Chat
+            launch {
+                collectSafely("new-session") {
+                    app.newSessionRequested.collect {
+                        chatViewModel.newSession()
+                        screen = Screen.Chat
+                    }
+                }
             }
-        }
-        // #4d: snackbars, one at a time. showSnackbar suspends until the
-        // snackbar is dismissed, so a burst queues in the flow's buffer
-        // (capacity 16) instead of overlapping on screen.
-        launch {
-            // 69-F14: re-show the snackbar that was on screen when the
-            // activity was recreated — its message survived in saved
-            // state, the action did not (see the note at the declaration).
-            inflightSnackbarMessage?.let { message ->
-                snackbarHostState.showSnackbar(
-                    message = message,
-                    actionLabel = inflightSnackbarActionLabel,
-                    duration = if (inflightSnackbarLong) SnackbarDuration.Long else SnackbarDuration.Short,
-                )
-                inflightSnackbarMessage = null
-                inflightSnackbarActionLabel = null
-            }
-            app.snackbarQueue.requests.collect { request ->
-                inflightSnackbarMessage = request.message
-                inflightSnackbarActionLabel = request.actionLabel
-                inflightSnackbarLong = request.long
-                val result = snackbarHostState.showSnackbar(
-                    message = request.message,
-                    actionLabel = request.actionLabel,
-                    duration = if (request.long) SnackbarDuration.Long else SnackbarDuration.Short,
-                )
-                inflightSnackbarMessage = null
-                inflightSnackbarActionLabel = null
-                if (result == SnackbarResult.ActionPerformed) request.onAction?.invoke()
+            // #4d: snackbars, one at a time. showSnackbar suspends until the
+            // snackbar is dismissed, so a burst queues in the flow's buffer
+            // (capacity 16) instead of overlapping on screen.
+            launch {
+                collectSafely("snackbar") {
+                    // 69-F14: re-show the snackbar that was on screen when the
+                    // activity was recreated — its message survived in saved
+                    // state, the action did not (see the note at the declaration).
+                    inflightSnackbarMessage?.let { message ->
+                        snackbarHostState.showSnackbar(
+                            message = message,
+                            actionLabel = inflightSnackbarActionLabel,
+                            duration = if (inflightSnackbarLong) SnackbarDuration.Long else SnackbarDuration.Short,
+                        )
+                        inflightSnackbarMessage = null
+                        inflightSnackbarActionLabel = null
+                    }
+                    app.snackbarQueue.requests.collect { request ->
+                        inflightSnackbarMessage = request.message
+                        inflightSnackbarActionLabel = request.actionLabel
+                        inflightSnackbarLong = request.long
+                        val result = snackbarHostState.showSnackbar(
+                            message = request.message,
+                            actionLabel = request.actionLabel,
+                            duration = if (request.long) SnackbarDuration.Long else SnackbarDuration.Short,
+                        )
+                        inflightSnackbarMessage = null
+                        inflightSnackbarActionLabel = null
+                        // Audit-200 D7 (m-594): the action is an arbitrary
+                        // call-site lambda — a throw in it must not kill
+                        // the snackbar collector (and the queue with it).
+                        if (result == SnackbarResult.ActionPerformed) {
+                            try {
+                                request.onAction?.invoke()
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Log.e("OpenCodeApp", "Snackbar action failed", e)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -870,11 +915,15 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // The launcher shortcut follows the last opened session (Native C):
     // its label is the session title when the list knows it. Placed
     // after hostContext on purpose — the effect reads it.
-    LaunchedEffect(chatState.sessionID, sessionsState.rows) {
+    // Audit-200 D7 (m-860): the shortcut and widget read their strings
+    // from `localized`, not the raw host context — and `language` is in
+    // the key, so they re-push in the new language at once instead of
+    // waiting for the next session open.
+    LaunchedEffect(chatState.sessionID, sessionsState.rows, language) {
         val id = chatState.sessionID ?: return@LaunchedEffect
         val title = sessionsState.rows.find { it.id == id }?.title
-        updateLastSessionShortcut(hostContext, id, title)
-        updateSessionWidget(hostContext, id, title)
+        updateLastSessionShortcut(localized, id, title)
+        updateSessionWidget(localized, id, title)
     }
 
     // Agent-done notification (Native C): the service watcher is the
@@ -1420,9 +1469,12 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                             // opened or the device reboots (its update
                             // period is 0 by design, and onUpdate only
                             // runs on install / reboot / periodic).
+                            // Audit-200 D7 (m-860): pushed from `localized`,
+                            // so a theme-pin change after a language change
+                            // does not resurrect the old language either.
                             chatState.sessionID?.let { id ->
                                 val title = sessionsState.rows.find { it.id == id }?.title
-                                updateSessionWidget(hostContext, id, title)
+                                updateSessionWidget(localized, id, title)
                             }
                         },
                         onBack = { screen = Screen.Chat },
@@ -1503,6 +1555,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onSubmitReauthCode = mcpServersViewModel::submitReauthCode,
                         onCancelReauth = mcpServersViewModel::cancelReauth,
                         onClearReauthError = mcpServersViewModel::clearReauthError,
+                        // Audit-200 D7 (m-629): dismiss a row's kept failure.
+                        onClearFailedAction = mcpServersViewModel::clearFailedAction,
                     )
 
                     Screen.Plugins -> PluginsScreen(

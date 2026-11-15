@@ -85,8 +85,12 @@ class SelectionFailureD6Test {
     fun `reportSelectionFailure writes only the slot of its kind`() {
         val src = read(vm)
         val body = funBody(src, "private fun reportSelectionFailure(")
-        assertTrue(body.contains("agentSelectionFailure = if (kind == SelectionKind.AGENT) result else _state.value.agentSelectionFailure"))
-        assertTrue(body.contains("modelSelectionFailure = if (kind == SelectionKind.MODEL) result else _state.value.modelSelectionFailure"))
+        // Audit-200 D7 (m-801): the slot keeps the combined failure (first
+        // + second rejection of the same kind), still only its own kind.
+        assertTrue(body.contains("combineSameKindFailure("))
+        assertTrue(body.contains("failure = combined"))
+        assertTrue(body.contains("agentSelectionFailure = if (kind == SelectionKind.AGENT) combined else _state.value.agentSelectionFailure"))
+        assertTrue(body.contains("modelSelectionFailure = if (kind == SelectionKind.MODEL) combined else _state.value.modelSelectionFailure"))
         assertTrue(body.contains("rateLimitGuidanceShown = false"))
     }
 
@@ -137,7 +141,12 @@ class SelectionFailureD6Test {
     @Test
     fun `the 429 guidance survives a resync success but dies on a fresh non-429 failure`() {
         val src = read(vm)
-        assertTrue(src.contains("previous.rateLimitGuidanceShown -> R.string.chat_rate_limited_guidance"))
+        // Audit-200 D7 (m-758/m-981): the guidance arm lives in
+        // resolveFailureKey now — the call site passes the previous
+        // flag, the pure function decides the key.
+        val keyBody = funBody(src, "internal fun resolveFailureKey(")
+        assertTrue(keyBody.contains("rateLimitGuidanceShown -> R.string.chat_rate_limited_guidance"))
+        assertTrue(src.contains("rateLimitGuidanceShown = previous.rateLimitGuidanceShown,"))
         // The flag is computed from a captured local — ChatState comes
         // from another module, so the compiler cannot smart-cast
         // `chat.lastFailure` across two reads.
