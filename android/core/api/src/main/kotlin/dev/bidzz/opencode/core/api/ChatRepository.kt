@@ -1222,13 +1222,15 @@ class ChatRepository(
                 // A backgrounded shell's success carries only the notice
                 // ("Command moved to the background...") — replacing the
                 // live log the reader already watched with it would hide
-                // the output. Keep the log and append the notice instead;
-                // a foreground command's full output still replaces the
-                // partial live text, as before.
+                // the output. Keep the log and append the notice instead,
+                // separated by one blank line; a foreground command's
+                // full output still replaces the partial live text, as
+                // before. The log's own trailing newlines are trimmed
+                // first, so the join never stacks blank lines.
                 val output = if (prev?.output?.isNotBlank() == true &&
                     finalOutput?.startsWith(BACKGROUNDED_SHELL_PREFIX) == true
                 ) {
-                    prev.output + "\n\n" + finalOutput
+                    prev.output.trimEnd('\n') + "\n\n" + finalOutput
                 } else {
                     finalOutput
                 }
