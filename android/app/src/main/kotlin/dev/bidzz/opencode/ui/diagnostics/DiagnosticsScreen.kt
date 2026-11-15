@@ -75,6 +75,7 @@ import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.SecureWindowEffect
+import dev.bidzz.opencode.ui.browser.shareText
 import dev.bidzz.opencode.ui.copyPlainText
 import dev.bidzz.opencode.ui.IconBadge
 import dev.bidzz.opencode.ui.RowDivider
@@ -192,6 +193,32 @@ internal fun isRestartSettled(
         state == EngineState.DEGRADED || state == EngineState.STOPPED
     val newPid = pidBefore != null && pid != null && pid != pidBefore
     return (sawRestart || newPid) && terminal
+}
+
+/** Most characters a logcat export may carry (audit-200 C15, M-222): the same 256 KB convention as the disk log. */
+internal const val LOGCAT_EXPORT_MAX_CHARS = 256 * 1024
+
+/**
+ * The logcat command that reads only this app's own logs (audit-200 C15,
+ * M-222): `logcat -d --pid=<own pid>` needs no READ_LOGS permission —
+ * an app can always read its own lines. Pure, so the rule is
+ * unit-tested here rather than through the export button.
+ */
+internal fun logcatCommand(pid: Int): List<String> = listOf("logcat", "-d", "--pid=$pid")
+
+/** The tail of the logcat output, capped so a share/clipboard export never carries megabytes. */
+internal fun trimLogcatTail(text: String, maxChars: Int = LOGCAT_EXPORT_MAX_CHARS): String =
+    if (text.length <= maxChars) text else text.takeLast(maxChars)
+
+/**
+ * The text the logcat export shares: a header naming the app and pid,
+ * then the capped log. Null when logcat produced nothing usable — the
+ * caller reports the failure instead of sharing an empty file.
+ */
+internal fun logcatExportText(raw: String?, pid: Int): String? {
+    val trimmed = raw?.trim().orEmpty().let { trimLogcatTail(it) }
+    if (trimmed.isEmpty()) return null
+    return "OpenCode logcat (pid $pid)\n\n$trimmed"
 }
 
 /**
@@ -487,6 +514,38 @@ fun DiagnosticsScreen(
         (context.applicationContext as OpenCodeApplication).showSnackbar(copiedMessage)
     }
 
+    // Exports this app's own logcat (audit-200 C15, M-222): `logcat -d
+    // --pid=<own pid>` on IO, capped at 256 KB, then out through the
+    // system share chooser. When the chooser cannot open, the clipboard
+    // is the fallback — and when logcat itself fails, the snackbar says
+    // so instead of sharing an empty file.
+    val exportLogcat = {
+        scope.launch(Dispatchers.IO) {
+            val raw = runCatching {
+                Runtime.getRuntime().exec(logcatCommand(Process.myPid()).toTypedArray())
+                    .inputStream.bufferedReader().use { it.readText() }
+            }.getOrNull()
+            val text = logcatExportText(raw, Process.myPid())
+            withContext(Dispatchers.Main) {
+                when {
+                    text == null -> {
+                        (context.applicationContext as OpenCodeApplication)
+                            .showSnackbar(context.getString(R.string.diag_logcat_failed))
+                    }
+                    shareText(context, text) -> Unit
+                    copyPlainText(context, "OpenCode Logcat", text) -> {
+                        (context.applicationContext as OpenCodeApplication)
+                            .showSnackbar(context.getString(R.string.diag_copied_toast))
+                    }
+                    else -> {
+                        (context.applicationContext as OpenCodeApplication)
+                            .showSnackbar(context.getString(R.string.copy_failed))
+                    }
+                }
+            }
+        }
+    }
+
     val stateColor = when (status.state) {
         EngineState.RUNNING -> colors.success
         EngineState.STARTING, EngineState.INITIALIZING -> colors.warning
@@ -501,6 +560,10 @@ fun DiagnosticsScreen(
             TextAction(
                 label = stringResource(R.string.diag_copy_all),
                 onClick = { copyAllDiagnostics() },
+            )
+            TextAction(
+                label = stringResource(R.string.diag_export_logcat),
+                onClick = { exportLogcat() },
             )
             TextAction(
                 label = stringResource(if (running) R.string.diag_running else R.string.common_refresh),

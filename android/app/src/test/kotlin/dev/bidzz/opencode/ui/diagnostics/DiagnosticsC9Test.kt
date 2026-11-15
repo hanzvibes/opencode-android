@@ -30,6 +30,19 @@ class DiagnosticsC9Test {
     }
 
     @Test
+    fun `M-222 the logcat export reads only this app own logs and caps the text`() {
+        assertEquals(listOf("logcat", "-d", "--pid=1234"), logcatCommand(1234))
+        assertEquals("short", trimLogcatTail("short"))
+        val long = "x".repeat(LOGCAT_EXPORT_MAX_CHARS + 100)
+        assertEquals(LOGCAT_EXPORT_MAX_CHARS, trimLogcatTail(long).length)
+        assertEquals("y".repeat(LOGCAT_EXPORT_MAX_CHARS), trimLogcatTail(long.replace('x', 'y')))
+        assertEquals("OpenCode logcat (pid 1234)\n\nline one", logcatExportText("line one", 1234))
+        assertEquals(null, logcatExportText("", 1234))
+        assertEquals(null, logcatExportText(null, 1234))
+        assertEquals(null, logcatExportText("   \n  ", 1234))
+    }
+
+    @Test
     fun `warn and deprecated classify as warning`() {
         assertEquals(LogLevel.WARNING, classifyLogLevel("warning: low memory"))
         assertEquals(LogLevel.WARNING, classifyLogLevel("deprecated: use --new-flag"))

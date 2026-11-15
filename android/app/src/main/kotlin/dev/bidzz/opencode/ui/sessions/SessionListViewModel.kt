@@ -20,8 +20,15 @@ import kotlinx.coroutines.launch
 /** One page of sessions (19-F3). */
 internal const val SESSION_PAGE_SIZE = 50
 
-/** One page of messages while walking toward a session's first user message (19-F2). */
-internal const val PREVIEW_PAGE_SIZE = 50
+/**
+ * One page of messages while walking toward a session's first user
+ * message (19-F2). Audit-200 C15 (M-214): the engine's messages
+ * endpoint accepts limit 1..200 (SessionMessagesQuery, verified against
+ * the pinned engine source) — 200 is the widest page the server allows,
+ * so a 1,000-message session costs 5 requests instead of 20, with the
+ * same result: the walk still finds the true first user message.
+ */
+internal const val PREVIEW_PAGE_SIZE = 200
 
 /** How long ago something happened, as a unit and a count; the screen words it in the user's language. */
 enum class AgeUnit { NOW, MINUTES, HOURS, DAYS, MONTHS }

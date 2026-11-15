@@ -112,14 +112,19 @@ fun Composer(
     /** Prompts sent in this session, oldest first, for history navigation (C-F).
      * In-memory only, owned by the view model; empty means no history yet. */
     promptHistory: List<String> = emptyList(),
-    /** Follow-up queued while the agent works; sent when the run ends. */
-    queuedText: String? = null,
+    /** Follow-ups queued while the agent works; sent when the run ends. */
+    queuedEntries: List<QueuedPrompt> = emptyList(),
     /** Sends the queued follow-ups now (audit-200 C3, M-069): the
      * "Queued:" row's Send button. */
     onFlushQueue: () -> Unit = {},
     /** Returns the queued follow-ups to the composer (audit-200 C3,
      * M-069): the "Queued:" row's Cancel button. */
     onCancelQueue: () -> Unit = {},
+    /** Removes one queued follow-up by id (audit-200 C15, M-217):
+     * the per-entry X. The entry the flush is sending cannot be
+     * removed — the view model refuses it, so the tap is a no-op
+     * while its POST is in flight. */
+    onRemoveQueuedEntry: (String) -> Unit = {},
     /** False while the agent is busy: the queue can only be flushed
      * when idle. Cancel always works — a stuck queue is exactly what
      * it rescues. */
@@ -173,6 +178,7 @@ fun Composer(
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
     val motion = OpenCodeTheme.tokens.motion
+    val haptic = LocalHapticFeedback.current
 
     var isFocused by remember { mutableStateOf(false) }
 
@@ -304,46 +310,128 @@ fun Composer(
                 }
             }
 
-            // Queued follow-up (Phase 2, finding 10): typed while the agent
-            // works, sent when the run ends. Shown so the queue is never a
-            // silent black box — the text is the user's, verbatim.
+            // Queued follow-ups (Phase 2, finding 10): typed while the
+            // agent works, sent when the run ends. Shown so the queue is
+            // never a silent black box — the text is the user's, verbatim.
             // Audit-200 C3 (M-069): the row is actionable — Send flushes
             // the queue now instead of waiting for a run edge that may
             // never come, Cancel returns it to the composer.
-            if (queuedText != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-                ) {
-                    Text(
-                        text = stringResource(R.string.composer_queued, queuedText),
-                        style = OpenCodeTypography.caption,
-                        color = colors.onSurfaceMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Text(
-                        text = stringResource(R.string.composer_send),
-                        style = OpenCodeTypography.caption,
-                        color = if (queuedFlushEnabled) colors.accentText else colors.onSurfaceFaint,
+            // Audit-200 C15 (M-217): one row per entry once there is more
+            // than one, each with its own X — dropping a single entry
+            // used to mean cancelling the whole queue. A single entry
+            // keeps the old one-row layout: its X would do exactly what
+            // Cancel already does.
+            if (queuedEntries.isNotEmpty()) {
+                if (queuedEntries.size == 1) {
+                    val queuedText = queuedEntries[0].typedText.ifBlank { queuedEntries[0].fullText }
+                    Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(radius.full))
-                            .clickable(enabled = queuedFlushEnabled, role = Role.Button, onClick = onFlushQueue)
-                            .padding(horizontal = spacing.xs, vertical = 2.dp),
-                    )
-                    Text(
-                        text = stringResource(R.string.common_cancel),
-                        style = OpenCodeTypography.caption,
-                        color = colors.onSurfaceMuted,
+                            .fillMaxWidth()
+                            .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.composer_queued, queuedText),
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text(
+                            text = stringResource(R.string.composer_send),
+                            style = OpenCodeTypography.caption,
+                            color = if (queuedFlushEnabled) colors.accentText else colors.onSurfaceFaint,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(radius.full))
+                                .clickable(enabled = queuedFlushEnabled, role = Role.Button, onClick = onFlushQueue)
+                                .padding(horizontal = spacing.xs, vertical = 2.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.common_cancel),
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceMuted,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(radius.full))
+                                .clickable(role = Role.Button, onClick = onCancelQueue)
+                                .padding(horizontal = spacing.xs, vertical = 2.dp),
+                        )
+                    }
+                } else {
+                    Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(radius.full))
-                            .clickable(role = Role.Button, onClick = onCancelQueue)
-                            .padding(horizontal = spacing.xs, vertical = 2.dp),
-                    )
+                            .fillMaxWidth()
+                            .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.composer_queued_count, queuedEntries.size),
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Text(
+                            text = stringResource(R.string.composer_send),
+                            style = OpenCodeTypography.caption,
+                            color = if (queuedFlushEnabled) colors.accentText else colors.onSurfaceFaint,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(radius.full))
+                                .clickable(enabled = queuedFlushEnabled, role = Role.Button, onClick = onFlushQueue)
+                                .padding(horizontal = spacing.xs, vertical = 2.dp),
+                        )
+                        Text(
+                            text = stringResource(R.string.common_cancel),
+                            style = OpenCodeTypography.caption,
+                            color = colors.onSurfaceMuted,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(radius.full))
+                                .clickable(role = Role.Button, onClick = onCancelQueue)
+                                .padding(horizontal = spacing.xs, vertical = 2.dp),
+                        )
+                    }
+                    val removeDescription = stringResource(R.string.composer_remove_queued)
+                    queuedEntries.forEach { entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = spacing.lg, end = spacing.lg, bottom = spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        ) {
+                            Text(
+                                text = entry.typedText.ifBlank { entry.fullText },
+                                style = OpenCodeTypography.caption,
+                                color = colors.onSurfaceMuted,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .clickable(
+                                        role = Role.Button,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onRemoveQueuedEntry(entry.id)
+                                        },
+                                    )
+                                    .semantics { contentDescription = removeDescription },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                GlyphIcon(
+                                    glyph = Glyph.Close,
+                                    tint = colors.onSurfaceMuted,
+                                    size = 10.dp,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -436,19 +524,21 @@ fun Composer(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.TopStart,
                     ) {
-                        if (value.isEmpty() && !busy) {
-                            // No placeholder while busy: WorkingProgressRow
-                            // above already states the live step + clock.
-                            // Rendering composer_busy here duplicated it —
-                            // screenshot showed "Running · 124s" over
-                            // "Agent is working…" — and hid the field the
-                            // user types a queued follow-up into.
+                        if (value.isEmpty()) {
+                            // Audit-200 C15 (M-218): the placeholder is
+                            // NOT hidden while busy anymore — it is the
+                            // hint that a follow-up typed now queues and
+                            // sends when the run ends. The WorkingProgressRow
+                            // above says what the agent is doing; this says
+                            // what the user's typing does — different
+                            // information, not a duplicate.
                             // Crossfade between the not-ready / hint states
                             // so the placeholder swaps instead of popping.
                             // The idle hint names the model (or the agent when
                             // no model is known) so the composer says who will
                             // answer, not just "ask anything".
                             val placeholderText = when {
+                                busy -> stringResource(R.string.composer_hint_queued)
                                 !enabled -> stringResource(R.string.composer_not_ready)
                                 modelLabel != null -> stringResource(R.string.composer_hint_named, modelLabel)
                                 agentLabel != null -> stringResource(R.string.composer_hint_named, agentLabel)
@@ -619,6 +709,28 @@ fun Composer(
                     ) {
                         ClearButton(
                             onClick = { onValueChange("") },
+                        )
+                    }
+
+                    // Audit-200 C15 (M-218): while the agent works, the
+                    // only action button is Stop — and the IME Send is
+                    // easy to miss. A visible Queue button next to Stop
+                    // queues the draft as a follow-up (the same onSend
+                    // the keyboard sends), so the affordance is on
+                    // screen instead of implied.
+                    AnimatedVisibility(
+                        visible = busy && value.isNotBlank() && enabled,
+                        enter = fadeIn(motion.tweenQuick()) + scaleIn(motion.tweenQuick(), initialScale = 0.8f),
+                        exit = fadeOut(motion.tweenQuick()) + scaleOut(motion.tweenQuick(), targetScale = 0.8f),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.composer_queue),
+                            style = OpenCodeTypography.caption,
+                            color = colors.accentText,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(radius.full))
+                                .clickable(role = Role.Button, onClick = onSend)
+                                .padding(horizontal = spacing.sm, vertical = spacing.xs),
                         )
                     }
 
