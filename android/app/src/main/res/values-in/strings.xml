@@ -414,7 +414,6 @@
     <string name="revert_banner_hide_files">Sembunyikan berkas</string>
     <!-- Audit-200 D7 (m-1104): plural — Indonesian has no singular/plural split, both forms identical. -->
     <plurals name="revert_banner_and_more">
-        <item quantity="one">dan %1$d berkas lagi</item>
         <item quantity="other">dan %1$d berkas lagi</item>
     </plurals>
     <string name="revert_commit">Terapkan revert</string>
@@ -1016,14 +1015,12 @@
     <!-- Audit-200 D7 (m-1093): tombol menyebut apa yang akan disalin saat filter/pencarian aktif. -->
     <!-- Audit-200 D7 (m-1093): plural — Indonesian has no singular/plural split, both forms identical. -->
     <plurals name="diag_copy_logs_filtered">
-        <item quantity="one">Salin %1$d baris yang cocok</item>
         <item quantity="other">Salin %1$d baris yang cocok</item>
     </plurals>
     <string name="diag_copied_toast">Disalin ke papan klip</string>
     <!-- Audit-200 D7 (m-1093): toast menyebut berapa dari baris yang ditahan yang disalin. -->
     <!-- Audit-200 D7 (m-1093): plural — Indonesian has no singular/plural split, both forms identical. -->
     <plurals name="diag_copied_logs_filtered">
-        <item quantity="one">Disalin %1$d dari %2$d baris</item>
         <item quantity="other">Disalin %1$d dari %2$d baris</item>
     </plurals>
     <string name="diag_cpu">CPU</string>
