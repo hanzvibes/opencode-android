@@ -75,7 +75,7 @@ class ChatRepositoryC16Test {
                                     )
                                     return@Thread
                                 }
-                                val body = histories.getOrNull(callIndex) ?: """{"data":[]}"""
+                                val body = histories.getOrNull(callIndex) ?: histories.lastOrNull() ?: """{"data":[]}"""
                                 out.write(
                                     ("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
                                         "Content-Length: ${body.length}\r\nConnection: close\r\n\r\n$body")
@@ -237,13 +237,20 @@ class ChatRepositoryC16Test {
     }
 
     @Test
-    fun `M-023 a failed terminal resync keeps the finished answer visible`() {
+    fun `M-023 a failed terminal resync materializes the finished answer into the transcript`() {
         // Open resync: empty history. Every terminal-resync attempt (calls
         // 1-3) fails with HTTP 500. The old code cleared the streaming
         // buffer on failure, so the finished answer vanished and only the
-        // RELOAD_SESSION banner remained; the text must stay until the
-        // next successful resync replaces it.
-        val stub = Stub(histories = listOf("""{"data":[]}"""), errorOnMessageCalls = setOf(1, 2, 3))
+        // RELOAD_SESSION banner remained; keeping the streaming entry
+        // instead would leave its spinner and hide its Copy/footer
+        // forever (item 25). The text is materialized as a completed
+        // transcript row: the answer stays visible with its footer, and
+        // the streaming indicator still drops.
+        val finished = """{"data":[{"id":"m1","type":"assistant","content":[{"type":"text","text":"Done"}],"time":{"created":1,"completed":2}}]}"""
+        val stub = Stub(
+            histories = listOf("""{"data":[]}""", "", "", "", finished),
+            errorOnMessageCalls = setOf(1, 2, 3),
+        )
         val (repo, scope) = repository(stub)
         try {
             repo.open("s1")
@@ -270,7 +277,28 @@ class ChatRepositoryC16Test {
                 }
             }
             assertEquals(true, failed)
-            assertEquals("Hello ", repo.state.value.streaming["m1"])
+            // Item 25: the indicator drops. M-023: the text does not go
+            // with it — it is a completed transcript row now.
+            assertTrue(repo.state.value.streaming.isEmpty())
+            assertEquals(false, repo.state.value.busy)
+            val kept = repo.state.value.messages.singleOrNull { it.id == "m1" }
+            assertNotNull("finished answer was lost by the failed terminal resync", kept)
+            assertEquals("Hello", kept!!.plainText)
+            assertNotNull(kept.time?.completed)
+
+            // The next successful resync replaces the materialized row
+            // with the persisted one — same id, no duplicate.
+            stream!!.close()
+            val newStream = stub.eventOut.poll(20, TimeUnit.SECONDS)
+            assertNotNull("event stream never reconnected", newStream)
+            val replaced = runBlocking {
+                withTimeoutOrNull(20_000) {
+                    while (repo.state.value.messages.none { it.plainText == "Done" }) delay(25)
+                    true
+                }
+            }
+            assertEquals(true, replaced)
+            assertEquals(listOf("m1"), repo.state.value.messages.map { it.id })
         } finally {
             scope.cancel()
             stub.close()

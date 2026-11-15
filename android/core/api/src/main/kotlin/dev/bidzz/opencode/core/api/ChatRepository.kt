@@ -857,9 +857,34 @@ class ChatRepository(
                 // the streaming entry loses the finished answer itself:
                 // the transcript has no history row for it yet (that is
                 // what the resync was fetching), and the buffer is the
-                // only copy. Keep the entry when this resync followed a
-                // terminal event; the banner's RELOAD_SESSION retry
-                // replaces it on the next successful resync.
+                // only copy. The entry still drops (item 25: a streaming
+                // entry would keep the message's spinner and hide its
+                // Copy/footer forever) — but the text does not vanish
+                // with it: the buffered text is materialized as a
+                // completed transcript row, so the finished answer stays
+                // visible with its Copy/footer. The run is over by
+                // definition (the terminal event arrived), so the row is
+                // marked completed at once; the next successful resync
+                // replaces it wholesale with the persisted row of the
+                // same id, and a failed retry leaves it in place (the
+                // failure branch never touches messages).
+                val finishedRows = if (fromTerminal) {
+                    val knownIds = _state.value.messages.map { it.id }.toSet()
+                    _state.value.streaming.keys
+                        .filter { it !in knownIds }
+                        .mapNotNull { id ->
+                            val text = streamedText(id).trim()
+                            if (text.isEmpty()) null
+                            else SessionMessage(
+                                id = id,
+                                type = "assistant",
+                                time = MessageTime(completed = System.currentTimeMillis()),
+                                content = listOf(MessageContent(type = "text", text = text)),
+                            )
+                        }
+                } else {
+                    emptyList()
+                }
                 stopAllLiveShellPolls()
                 _state.value = _state.value.copy(
                     lastFailure = result,
@@ -867,7 +892,8 @@ class ChatRepository(
                     // ran, so Retry must re-open the session instead of
                     // re-sending it. See retryKindFor.
                     resyncFailed = true,
-                    streaming = if (fromTerminal) _state.value.streaming else emptyMap(),
+                    messages = _state.value.messages + finishedRows,
+                    streaming = emptyMap(),
                     liveTools = emptyMap(),
                 )
                 return ResyncOutcome.FAILED
