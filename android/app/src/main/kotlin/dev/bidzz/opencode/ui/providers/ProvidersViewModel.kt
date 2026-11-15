@@ -7,6 +7,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.CredentialEntry
 import dev.bidzz.opencode.core.api.dto.IntegrationInfo
+import dev.bidzz.opencode.core.api.dto.PluginInfo
 import dev.bidzz.opencode.engine.EngineConfigStore
 import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.ui.mcp.McpRuntimeChangesSignal
@@ -20,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 data class ProvidersUiState(
     val integrations: List<IntegrationInfo> = emptyList(),
@@ -49,6 +52,22 @@ data class ProvidersUiState(
     /** Google Antigravity OAuth accounts detected from config storage. */
     val antigravityAccounts: List<EngineConfigStore.AntigravityAccount> = emptyList(),
     val activeAntigravityEmail: String? = null,
+    /**
+     * Whether the `opencode-antigravity-auth` plugin is registered on the
+     * engine (audit-200 C14, M-205): the plugin is what makes Antigravity
+     * OAuth models work, and nothing in the app ever checked that it is
+     * actually loaded. Null while unknown (engine down, or the list
+     * could not be read) — unknown is not "missing".
+     */
+    val antigravityPluginRegistered: Boolean? = null,
+    /**
+     * The last Antigravity connectivity test (audit-200 C14, M-208),
+     * run on demand from the Antigravity sheet. Null until the user
+     * runs it — the screen never implies a test it did not run.
+     */
+    val antigravityTest: AntigravityTestResult? = null,
+    /** True while that test is in flight. */
+    val antigravityTestRunning: Boolean = false,
     /** The accounts file exists but could not be read — not the same as "no accounts" (31-F10). */
     val antigravityAccountsCorrupt: Boolean = false,
     /** The engine config file could not be read at all (30-F3): which file, and why. */
@@ -138,6 +157,46 @@ internal fun isNameTaken(
     id: String,
     editingId: String?,
 ): Boolean = existing.any { it.id == id && it.id != editingId }
+
+/** The npm package that provides Antigravity OAuth models to the engine. */
+const val ANTIGRAVITY_PLUGIN_ID = "opencode-antigravity-auth"
+
+/**
+ * One Antigravity connectivity test (audit-200 C14, M-208): three
+ * per-step results, each nullable — null means that step could not be
+ * checked (its call failed), which is not the same as failing. [failure]
+ * is the first call that failed, so the screen can say why the test
+ * is incomplete instead of presenting a partial result as a verdict.
+ */
+data class AntigravityTestResult(
+    val pluginRegistered: Boolean?,
+    val patchApplied: Boolean?,
+    val modelsPresent: Boolean?,
+    val failure: ApiResult.Failure? = null,
+)
+
+/**
+ * Whether the Antigravity auth plugin is registered on the engine
+ * (audit-200 C14, M-205). A package plugin names its npm target, a
+ * local one names its path, and the engine may also give the plugin an
+ * id — any of the three matching the package name counts, because the
+ * declaration form (`plugin: ["opencode-antigravity-auth"]` in config)
+ * does not say which form the engine will report it as.
+ */
+internal fun isAntigravityPluginRegistered(plugins: List<PluginInfo>): Boolean =
+    plugins.any { plugin ->
+        plugin.id == ANTIGRAVITY_PLUGIN_ID ||
+            (plugin.source["target"] as? JsonPrimitive)?.contentOrNull == ANTIGRAVITY_PLUGIN_ID ||
+            (plugin.source["path"] as? JsonPrimitive)?.contentOrNull?.contains(ANTIGRAVITY_PLUGIN_ID) == true
+    }
+
+/** True when the plugin is registered, from a plugin list that loaded. */
+internal fun antigravityPluginStatus(
+    pluginsResult: ApiResult<List<PluginInfo>>,
+): Boolean? = when (pluginsResult) {
+    is ApiResult.Success -> isAntigravityPluginRegistered(pluginsResult.value)
+    is ApiResult.Failure -> null
+}
 
 /**
  * Lists the engine's providers and stores credentials.
@@ -253,6 +312,55 @@ class ProvidersViewModel(
             val handle = h ?: return@launch
             _state.value = _state.value.copy(loading = true, failure = null, failureKey = null)
             reload(handle)
+            // Audit-200 C14 (M-205): the plugin list is the only source
+            // that says whether opencode-antigravity-auth is actually
+            // loaded on the engine. A failure here is informational —
+            // it must not overwrite reload's failure or the screen's
+            // error banner — so it only sets the flag, or null.
+            _state.value = _state.value.copy(
+                antigravityPluginRegistered = antigravityPluginStatus(handle.plugins.list()),
+            )
+        }
+    }
+
+    /**
+     * Tests the Antigravity connection end to end (audit-200 C14,
+     * M-208): is the auth plugin registered on the engine, is the
+     * plugin patch applied (from the supervisor's report, passed in —
+     * the view model has no copy of it), and does the engine's model
+     * list actually contain `antigravity-*` models. Each step is
+     * measured, never assumed from the others: an account on disk says
+     * nothing about the plugin, and a registered plugin says nothing
+     * about the models.
+     */
+    fun testAntigravityConnection(patchApplied: Boolean?) {
+        val h = api.handle() ?: run {
+            reportEngineDown()
+            return
+        }
+        _state.value = _state.value.copy(antigravityTestRunning = true, antigravityTest = null)
+        viewModelScope.launch {
+            val pluginsResult = h.plugins.list()
+            val modelsResult = h.models.list()
+            val failure = when {
+                pluginsResult is ApiResult.Failure -> pluginsResult
+                modelsResult is ApiResult.Failure -> modelsResult
+                else -> null
+            }
+            _state.value = _state.value.copy(
+                antigravityTestRunning = false,
+                antigravityTest = AntigravityTestResult(
+                    pluginRegistered = (pluginsResult as? ApiResult.Success)?.value
+                        ?.let { isAntigravityPluginRegistered(it) },
+                    patchApplied = patchApplied,
+                    modelsPresent = (modelsResult as? ApiResult.Success)?.value
+                        ?.any { it.id.contains("antigravity", ignoreCase = true) },
+                    failure = failure,
+                ),
+                // The test just measured the plugin list: keep the
+                // sheet's status in sync with it (M-205).
+                antigravityPluginRegistered = antigravityPluginStatus(pluginsResult),
+            )
         }
     }
 

@@ -114,6 +114,12 @@ fun MarkdownText(
      * no-op keeps previews working without a host.
      */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
+    /**
+     * Runs a shell code block (audit-200 C14, M-196): the code verbatim.
+     * The screen shows a confirmation dialog with the exact command
+     * before calling this — the button never executes on its own tap.
+     */
+    onRunCode: (String) -> Unit = {},
 ) {
     val blocks = remember(markdown, streaming) { Markdown.parse(markdown, streaming) }
     val colors = OpenCodeTheme.colors
@@ -304,6 +310,7 @@ fun MarkdownText(
                             code = block.code,
                             streaming = streaming && blockIndex == blocks.lastIndex,
                             onSaveCode = onSaveCode,
+                            onRunCode = onRunCode,
                         )
 
                         is MdBlock.Table -> TableBlock(block, proseColor, onBubble)
@@ -347,6 +354,8 @@ private fun CodeBlock(
     streaming: Boolean = false,
     /** Saves the block through the system picker (Fase 1, item 4). */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
+    /** Runs a shell block, after the screen's confirmation dialog. */
+    onRunCode: (String) -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -512,15 +521,24 @@ private fun CodeBlock(
                         )
                         // Save (Fase 1, item 4): the whole block, verbatim,
                         // through the system picker — the suggested name
-                        // comes from the fence language. No Run button:
-                        // there is no verified, gated execution path for
-                        // arbitrary model-written code (see CodeBlockSave).
+                        // comes from the fence language.
                         BlockAction(
                             label = stringResource(R.string.code_save),
                             glyph = null,
                             done = false,
                             onClick = { onSaveCode(codeBlockFileName(language), code) },
                         )
+                        // Run (audit-200 C14, M-196): shell fences only,
+                        // and only after the screen's confirmation dialog
+                        // — the button itself never executes anything.
+                        if (isRunnableCodeBlock(language)) {
+                            BlockAction(
+                                label = stringResource(R.string.code_run),
+                                glyph = Glyph.Play,
+                                done = false,
+                                onClick = { onRunCode(code) },
+                            )
+                        }
                     }
                 }
             }

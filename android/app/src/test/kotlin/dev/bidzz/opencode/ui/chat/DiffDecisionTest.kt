@@ -34,6 +34,34 @@ class DiffDecisionTest {
     }
 
     @Test
+    fun `M-197 undecided completed edits count as pending review`() {
+        val tools = listOf(
+            ToolCall(id = "e1", name = "edit", status = "completed"),
+            ToolCall(id = "e2", name = "write", status = "completed"),
+            ToolCall(id = "r1", name = "read", status = "completed"),
+            ToolCall(id = "b1", name = "bash", status = "running"),
+        )
+        assertEquals(2, pendingReviewCount(tools, emptyMap()))
+        assertEquals(1, pendingReviewCount(tools, mapOf("e1" to DiffDecision.ACCEPTED)))
+        assertEquals(
+            0,
+            pendingReviewCount(
+                tools,
+                mapOf("e1" to DiffDecision.ACCEPTED, "e2" to DiffDecision.REJECTED),
+            ),
+        )
+    }
+
+    @Test
+    fun `M-197 running or failed edits are never pending`() {
+        val tools = listOf(
+            ToolCall(id = "e1", name = "edit", status = "running"),
+            ToolCall(id = "e2", name = "edit", status = "error"),
+        )
+        assertEquals(0, pendingReviewCount(tools, emptyMap()))
+    }
+
+    @Test
     fun `M-198 a running step starts open, any other finished step starts closed`() {
         assertTrue(toolStepInitialOpen(call("read", "running")))
         assertTrue(toolStepInitialOpen(call("bash", "streaming")))

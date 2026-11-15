@@ -9,13 +9,20 @@ package dev.bidzz.opencode.ui.chat
  * picks where the file lands. The suggested filename is `snippet.<ext>`
  * from the fence language; the code itself is saved verbatim.
  *
- * There is deliberately no Run button here. The doc lists shell endpoints
+ * There is deliberately no Run button here for non-shell code. The doc lists shell endpoints
  * (`POST /api/session/{id}/shell`, `POST /api/shell`), but it gives no
  * request-body schema for either and the client has no shell method, so
  * the request shape would be guessed — and running arbitrary
  * model-written code from a chat bubble, with no sandbox or allowlist,
  * is not a button to add on a guess. Save is the safe half; Run stays
  * unimplemented until a verified, gated execution path exists.
+ *
+ * That path now exists for shell fences (audit-200 C14, M-196): the
+ * request body is verified against the engine fork source at pin
+ * fedc6f20 (`Shell.CreateInput`: `{command, cwd?, timeout?,
+ * metadata?}`), and Run is allowlisted to shell fences only
+ * ([isRunnableCodeBlock]) behind a confirmation dialog that shows the
+ * exact command. Anything else stays Save-only.
  */
 fun codeBlockFileName(language: String?): String {
     val raw = language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()
@@ -51,4 +58,17 @@ fun codeBlockFileName(language: String?): String {
         else -> "txt"
     }
     return "snippet.$ext"
+}
+
+/**
+ * Whether a fenced code block may be run from the chat (audit-200 C14,
+ * M-196): shell fences only. The command runs in the project directory
+ * through the engine's shell API, after a confirmation dialog showing
+ * the exact command — anything else (python, JS, SQL, …) stays
+ * Save-only, because executing it as a shell command would be wrong
+ * and running it through an interpreter is a different feature.
+ */
+fun isRunnableCodeBlock(language: String?): Boolean {
+    val raw = language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase().orEmpty()
+    return raw in setOf("sh", "bash", "zsh", "shell")
 }

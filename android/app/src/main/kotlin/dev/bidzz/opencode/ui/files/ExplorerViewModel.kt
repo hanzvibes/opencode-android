@@ -31,7 +31,26 @@ data class FileRow(
 )
 
 /** Why the listing carries no change markers; the screen words it in the user's language. */
-enum class VcsNote { NOT_A_REPOSITORY, NO_CHANGES }
+enum class VcsNote { NOT_A_REPOSITORY, NO_CHANGES, UNKNOWN }
+
+/**
+ * Which VCS note a listing gets (audit-200 C14, M-210): a failed status
+ * call is UNKNOWN, never NO_CHANGES — reporting "clean" when the status
+ * is unknown hides the agent's changes. The failure itself is NOT put in
+ * [ExplorerUiState.failure]: the screen turns any failure into a
+ * full-screen error state that would hide the file list, while this note
+ * keeps the list visible and the list's Refresh retries the status call.
+ */
+internal fun vcsNoteFor(
+    isRepository: Boolean,
+    changed: Map<String, VcsFileStatus>,
+    statusFailed: Boolean,
+): VcsNote? = when {
+    !isRepository -> VcsNote.NOT_A_REPOSITORY
+    statusFailed -> VcsNote.UNKNOWN
+    changed.isEmpty() -> VcsNote.NO_CHANGES
+    else -> null
+}
 
 data class ExplorerUiState(
     val loading: Boolean = true,
@@ -310,6 +329,9 @@ class ExplorerViewModel(
             val statusResult = vcs.status(directory)
             val changed = when (statusResult) {
                 is ApiResult.Success -> statusResult.value.associateBy { it.file }
+                // Audit-200 C14 (M-210): a failed status is not "no
+                // changes" — the map stays empty (no badges, honestly)
+                // and the note becomes UNKNOWN (see vcsNoteFor).
                 is ApiResult.Failure -> emptyMap()
             }
 
@@ -324,11 +346,11 @@ class ExplorerViewModel(
                 rows = sortEntries(entries, changed),
                 changed = changed,
                 isRepository = isRepo,
-                vcsNote = when {
-                    !isRepo -> VcsNote.NOT_A_REPOSITORY
-                    changed.isEmpty() -> VcsNote.NO_CHANGES
-                    else -> null
-                },
+                vcsNote = vcsNoteFor(
+                    isRepository = isRepo,
+                    changed = changed,
+                    statusFailed = statusResult is ApiResult.Failure,
+                ),
                 failure = null, failureKey = null,
             )
         }

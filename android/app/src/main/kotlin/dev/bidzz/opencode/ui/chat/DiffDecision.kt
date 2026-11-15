@@ -47,6 +47,20 @@ fun isReviewableEdit(call: ToolCall): Boolean =
     }
 
 /**
+ * Edits still awaiting an Accept/Reject decision (audit-200 C14, M-197):
+ * reviewable edits whose decision is still [DiffDecision.NONE]. A trace
+ * with any of these must not auto-collapse — the buttons live inside the
+ * expanded body — and its header must say how many are pending.
+ */
+internal fun pendingReviewCount(
+    tools: List<ToolCall>,
+    diffDecisions: Map<String, DiffDecision>,
+): Int = tools.count { call ->
+    isReviewableEdit(call) &&
+        (diffDecisions[call.id] ?: DiffDecision.NONE) == DiffDecision.NONE
+}
+
+/**
  * Whether a tool step starts expanded (audit-200 B6, M-198): a running step
  * shows its input while it runs (the engine sends no stdout until the tool
  * finishes, so there is no live output to show — audit-200 C2, M-059), and

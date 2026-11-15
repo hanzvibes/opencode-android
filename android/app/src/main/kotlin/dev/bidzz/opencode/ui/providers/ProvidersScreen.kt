@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.providers
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -178,6 +179,14 @@ fun ProvidersScreen(
     onRestartForPatch: () -> Unit = {},
     onSelectAntigravityAccount: (String) -> Unit = {},
     onSetAntigravityAccountEnabled: (String, Boolean) -> Unit = { _, _ -> },
+    /**
+     * Runs the Antigravity connectivity test (audit-200 C14, M-208).
+     * The argument is the patch step's result from the supervisor's
+     * report — true when the plugin patch is applied, false when it is
+     * known not to be, null when there is no report yet — so the test
+     * never re-derives the patch state from the screen.
+     */
+    onTestAntigravity: (Boolean?) -> Unit = {},
     onDeleteJsoncConfig: () -> Unit = {},
     onConfirmRestart: () -> Unit = {},
     onDismissRestart: () -> Unit = {},
@@ -857,6 +866,71 @@ fun ProvidersScreen(
                         onRestartForPatch = onRestartForPatch,
                     )
 
+                    // Plugin registration (audit-200 C14, M-205): the
+                    // account on disk says nothing about whether the
+                    // engine actually loaded opencode-antigravity-auth.
+                    // Registered stays quiet — the green Connected row
+                    // above already says Antigravity works. Missing
+                    // says how to fix it: declare the plugin in config,
+                    // then restart. Nothing is written from here.
+                    if (state.antigravityPluginRegistered == false) {
+                        Text(
+                            text = stringResource(R.string.providers_antigravity_plugin_missing),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.warning,
+                        )
+                        Text(
+                            text = stringResource(R.string.providers_antigravity_plugin_missing_hint),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                        )
+                    }
+
+                    // Connectivity test (audit-200 C14, M-208): three
+                    // steps, each measured live — plugin, patch, models
+                    // — so a failure points at the broken step instead
+                    // of a bare "it doesn't work".
+                    TextButton(
+                        onClick = {
+                            onTestAntigravity(
+                                patchReport?.outcome?.let {
+                                    it == AntigravityPatchOutcome.APPLIED ||
+                                        it == AntigravityPatchOutcome.ALREADY_PATCHED
+                                },
+                            )
+                        },
+                        enabled = !state.antigravityTestRunning,
+                    ) {
+                        Text(
+                            text = stringResource(
+                                if (state.antigravityTestRunning) R.string.providers_antigravity_testing
+                                else R.string.providers_antigravity_test,
+                            ),
+                            color = colors.accentText,
+                        )
+                    }
+                    state.antigravityTest?.let { test ->
+                        AntigravityTestStep(
+                            labelRes = R.string.providers_antigravity_test_plugin,
+                            result = test.pluginRegistered,
+                        )
+                        AntigravityTestStep(
+                            labelRes = R.string.providers_antigravity_test_patch,
+                            result = test.patchApplied,
+                        )
+                        AntigravityTestStep(
+                            labelRes = R.string.providers_antigravity_test_models,
+                            result = test.modelsPresent,
+                        )
+                        test.failure?.let { failure ->
+                            Text(
+                                text = failure.message(),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.danger,
+                            )
+                        }
+                    }
+
                     if (storedKeys.isNotEmpty()) {
                         Text(
                             text = stringResource(
@@ -1061,6 +1135,47 @@ internal fun patchDisplayState(
             PatchDisplay.Message(R.string.providers_patch_not_found)
         }
     AntigravityPatchOutcome.ALREADY_PATCHED -> PatchDisplay.Quiet
+}
+
+/**
+ * One step of the Antigravity connectivity test (audit-200 C14, M-208):
+ * a status dot plus the step's label. Green means the step passed, red
+ * means it failed, grey means it could not be checked — a step that
+ * could not run never reads as a failure.
+ */
+@Composable
+private fun AntigravityTestStep(
+    @StringRes labelRes: Int,
+    result: Boolean?,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(
+                    when (result) {
+                        true -> colors.accent
+                        false -> colors.danger
+                        null -> colors.onSurfaceFaint
+                    },
+                ),
+        )
+        Text(
+            text = stringResource(labelRes),
+            style = OpenCodeTypography.bodySmall,
+            color = when (result) {
+                true -> colors.onSurface
+                false -> colors.danger
+                null -> colors.onSurfaceMuted
+            },
+        )
+    }
 }
 
 /**

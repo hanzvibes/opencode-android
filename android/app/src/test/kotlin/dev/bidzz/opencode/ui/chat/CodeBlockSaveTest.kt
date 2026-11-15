@@ -34,4 +34,19 @@ class CodeBlockSaveTest {
     fun `dockerfile keeps its conventional name`() {
         assertEquals("Dockerfile", codeBlockFileName("dockerfile"))
     }
+
+    @Test
+    fun `only shell fences are runnable`() {
+        assertEquals(true, isRunnableCodeBlock("sh"))
+        assertEquals(true, isRunnableCodeBlock("bash"))
+        assertEquals(true, isRunnableCodeBlock("zsh"))
+        assertEquals(true, isRunnableCodeBlock("shell"))
+        assertEquals(true, isRunnableCodeBlock("Bash"))
+        assertEquals(true, isRunnableCodeBlock("bash:/tmp/run.sh"))
+        assertEquals(false, isRunnableCodeBlock("python"))
+        assertEquals(false, isRunnableCodeBlock("javascript"))
+        assertEquals(false, isRunnableCodeBlock("kotlin"))
+        assertEquals(false, isRunnableCodeBlock(null))
+        assertEquals(false, isRunnableCodeBlock(""))
+    }
 }

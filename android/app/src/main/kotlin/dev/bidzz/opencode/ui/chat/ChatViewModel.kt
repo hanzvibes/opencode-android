@@ -28,9 +28,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
@@ -126,6 +128,13 @@ data class ChatUiState(
      */
     val attachNoticeKey: Int? = null,
     val attachNoticeArg: String? = null,
+    /**
+     * A shell code block the user ran from the chat (audit-200 C14,
+     * M-196): the command, its shell id, live status and captured
+     * output, shown in the output dialog. Null while nothing is running
+     * and no run result is on screen.
+     */
+    val codeRun: CodeRunState? = null,
     /**
      * The last prompt actually sent, kept so a failed send can be retried.
      * It is the text that was sent — not the draft, which the user may
@@ -231,6 +240,22 @@ data class ChatUiState(
     val findQuery: String = "",
     val findMatches: List<String> = emptyList(),
     val findIndex: Int = -1,
+)
+
+/**
+ * A shell code block run from the chat (audit-200 C14, M-196): the
+ * command as written, the engine's shell id, the live status
+ * ("running", "exited", "timeout", "killed", "error"), the exit code
+ * once terminal, the output captured so far, and the failure when the
+ * run could not start or its output could no longer be read.
+ */
+data class CodeRunState(
+    val command: String,
+    val shellID: String,
+    val status: String,
+    val exit: Int? = null,
+    val output: String = "",
+    val failure: ApiResult.Failure? = null,
 )
 
 /** One follow-up waiting for the run to end (see [ChatUiState.queuedPrompts]). */
@@ -1010,6 +1035,9 @@ class ChatViewModel(
     private var lastReportedBusySession: String? = null
     /** In-flight context-usage load, cancelled when a newer one starts. */
     private var contextUsageJob: Job? = null
+
+    /** Poll loop for a code-block shell run (audit-200 C14, M-196). */
+    private var codeRunJob: Job? = null
     /** Last wall-clock refresh of the context meter, for the 30s busy throttle (23-F3). */
     private var lastContextRefreshMillis: Long = 0L
     private var attached: dev.bidzz.opencode.core.engine.EngineCredentials? = null
@@ -2407,7 +2435,19 @@ class ChatViewModel(
     private fun loadControls() {
         val h = handle ?: return
         viewModelScope.launch {
-            h.agents.list().let { r ->
+            // Audit-200 C14 (M-202): the four control lists are
+            // independent — they used to run one after another, so a cold
+            // start paid four round trips in a row before the chips filled
+            // in. Fetch them concurrently and apply the results in the old
+            // order, so the state transitions (and the failure-report
+            // order) are unchanged. The dependent follow-ups (default
+            // agent from the config, default model from the engine) still
+            // run after their own list, as before.
+            val agentsDeferred = async { h.agents.list() }
+            val modelsDeferred = async { h.models.list() }
+            val commandsDeferred = async { h.commands.list() }
+            val skillsDeferred = async { h.skills.list() }
+            agentsDeferred.await().let { r ->
                 when (r) {
                     is ApiResult.Success -> {
                         _state.value = _state.value.copy(
@@ -2444,7 +2484,7 @@ class ChatViewModel(
                     is ApiResult.Failure -> reportFailure(r, RetryKind.NONE)
                 }
             }
-            h.models.list().let { r ->
+            modelsDeferred.await().let { r ->
                 when (r) {
                     is ApiResult.Success -> {
                         _state.value = _state.value.copy(models = r.value)
@@ -2469,13 +2509,13 @@ class ChatViewModel(
                     is ApiResult.Failure -> reportFailure(r, RetryKind.NONE)
                 }
             }
-            h.commands.list().let { r ->
+            commandsDeferred.await().let { r ->
                 when (r) {
                     is ApiResult.Success -> _state.value = _state.value.copy(commands = r.value)
                     is ApiResult.Failure -> Unit // commands are optional; an empty set is normal
                 }
             }
-            h.skills.list().let { r ->
+            skillsDeferred.await().let { r ->
                 when (r) {
                     is ApiResult.Success -> _state.value = _state.value.copy(skills = r.value)
                     is ApiResult.Failure -> Unit // skills are optional; an empty set is normal
@@ -2662,6 +2702,112 @@ class ChatViewModel(
     /** Dismisses the stale-model/agent notice (M-459). */
     fun clearStaleSelection() {
         _state.value = _state.value.copy(staleSelectionArg = null)
+    }
+
+    /**
+     * Runs a shell code block from the chat (audit-200 C14, M-196).
+     *
+     * The screen confirms the exact command first; this only starts
+     * after that confirmation. The shell runs in the project directory
+     * (no cwd is sent — the engine defaults to it), and the output
+     * dialog polls `GET /api/shell/{id}/output` once a second until
+     * the shell reaches a terminal status. Starting a second run
+     * replaces the first: its shell is killed first, so a run the user
+     * walked away from never keeps consuming the engine.
+     */
+    fun runCodeBlock(command: String) {
+        val h = handle
+        if (h == null) {
+            _state.value = _state.value.copy(
+                codeRun = CodeRunState(command = command, shellID = "", status = "error", failure = engineDownFailure()),
+            )
+            return
+        }
+        codeRunJob?.cancel()
+        val previous = _state.value.codeRun
+        codeRunJob = viewModelScope.launch {
+            if (previous != null && previous.status == "running" && previous.shellID.isNotEmpty()) {
+                h.shells.remove(previous.shellID)
+            }
+            when (val created = h.shells.create(command)) {
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    codeRun = CodeRunState(command = command, shellID = "", status = "error", failure = created),
+                )
+                is ApiResult.Success -> {
+                    val info = created.value
+                    _state.value = _state.value.copy(
+                        codeRun = CodeRunState(command = command, shellID = info.id, status = info.status, exit = info.exit),
+                    )
+                    var cursor = 0L
+                    var consecutiveFailures = 0
+                    while (isActive) {
+                        val current = _state.value.codeRun ?: break
+                        if (current.status != "running") break
+                        delay(1000)
+                        when (val page = h.shells.output(info.id, cursor = cursor)) {
+                            is ApiResult.Success -> {
+                                consecutiveFailures = 0
+                                val value = page.value
+                                if (value.output.isNotEmpty()) {
+                                    cursor = value.cursor
+                                    _state.value = _state.value.copy(
+                                        codeRun = current.copy(output = current.output + value.output),
+                                    )
+                                }
+                            }
+                            is ApiResult.Failure -> {
+                                // One failed page is a hiccup (engine
+                                // restart, a dropped request); three in a
+                                // row means the run is gone, so stop
+                                // polling instead of spinning forever.
+                                if (++consecutiveFailures >= 3) {
+                                    _state.value = _state.value.copy(
+                                        codeRun = _state.value.codeRun?.copy(status = "error", failure = page),
+                                    )
+                                    break
+                                }
+                            }
+                        }
+                        when (val status = h.shells.get(info.id)) {
+                            is ApiResult.Success -> {
+                                val s = status.value
+                                _state.value = _state.value.copy(
+                                    codeRun = _state.value.codeRun?.copy(status = s.status, exit = s.exit),
+                                )
+                                if (s.isTerminal) break
+                            }
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Stops a running code-block shell (M-196): DELETE kills the command. */
+    fun stopCodeRun() {
+        val run = _state.value.codeRun ?: return
+        if (run.status != "running" || run.shellID.isEmpty()) return
+        val h = handle ?: return
+        codeRunJob?.cancel()
+        _state.value = _state.value.copy(codeRun = run.copy(status = "killed"))
+        viewModelScope.launch { h.shells.remove(run.shellID) }
+    }
+
+    /**
+     * Closes the code-run output dialog (M-196). A still-running shell
+     * is killed first: the dialog is the only surface that shows the
+     * run, so closing it without killing would orphan an invisible
+     * command running on the engine.
+     */
+    fun dismissCodeRun() {
+        val run = _state.value.codeRun ?: return
+        if (run.status == "running" && run.shellID.isNotEmpty()) {
+            val h = handle
+            if (h != null) viewModelScope.launch { h.shells.remove(run.shellID) }
+        }
+        codeRunJob?.cancel()
+        _state.value = _state.value.copy(codeRun = null)
     }
 
     fun onDraftChange(text: String) {
@@ -5534,27 +5680,43 @@ internal fun turnFooterValues(message: SessionMessage): TurnFooterValues {
 }
 
 /**
- * Context-meter usage (Tier 2): the LAST assistant message in a context
- * listing that reported usage, and the model that produced it.
+ * Context-meter usage (Tier 2): the assistant message that reported the
+ * LATEST turn's usage, and the model that produced it.
  *
  * Each assistant message's `input` is the whole prompt that call sent, so
  * summing over all messages counts the same history once per turn — the
  * meter would hit 100% on a healthy session (audit-100 Fase 6a, 23-F1).
  * The next turn builds on the last call's prompt, so the last reported
- * usage is the honest occupancy. Messages without usage are skipped
- * backwards; `compaction` summaries are not assistant messages and are
- * skipped too (their tokens' meaning is unproven — 77-F4 — so they are
- * neither counted nor treated as the last turn).
+ * usage is the honest occupancy. Messages without usage are skipped;
+ * `compaction` summaries are not assistant messages and are skipped too
+ * (their tokens' meaning is unproven — 77-F4 — so they are neither
+ * counted nor treated as the last turn).
+ *
+ * "Latest" is by `time.created`, not by list position (audit-200 C14,
+ * M-203): `/context` documents no order, while `/message` documents
+ * newest-first — taking the last element assumes oldest-first and would
+ * read the FIRST turn's usage when the server returns newest-first.
+ * Messages without a timestamp sort as the oldest, and ties keep the
+ * later list position, so payloads without timestamps behave exactly as
+ * before (last in list wins).
  */
 internal data class ContextUsage(val tokens: Long?, val model: ModelRef?)
 
 internal fun contextUsage(messages: List<SessionMessage>): ContextUsage {
-    for (message in messages.asReversed()) {
+    var bestTokens: Long? = null
+    var bestModel: ModelRef? = null
+    var bestCreated = Long.MIN_VALUE
+    for (message in messages) {
         if (!message.isAssistant) continue
         val tokens = turnUsageTokens(message.tokens) ?: continue
-        return ContextUsage(tokens, message.model)
+        val created = message.time?.created ?: Long.MIN_VALUE
+        if (bestTokens == null || created >= bestCreated) {
+            bestTokens = tokens
+            bestModel = message.model
+            bestCreated = created
+        }
     }
-    return ContextUsage(null, null)
+    return ContextUsage(bestTokens, bestModel)
 }
 
 /**

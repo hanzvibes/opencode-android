@@ -153,10 +153,22 @@ fun ToolTrace(
     val completed = tools.count { it.status == "completed" }
     val lastCompleted = tools.lastOrNull { it.status == "completed" }
 
+    // Audit-200 C14 (M-197): edits awaiting a review decision. Their
+    // Accept/Reject buttons live inside the expanded body, so a trace
+    // that auto-collapses on a clean run hides them — and a reader who
+    // collapsed the trace by hand still needs to see that reviews are
+    // pending (the header chip below). A decision already made (accept
+    // or reject) is not pending.
+    val pendingReviewCount = pendingReviewCount(tools, diffDecisions)
+
     // Opsi A: the trace defaults to its one-line summary. Open while the
     // run streams (live progress) or when it failed (an error is never
     // hidden behind the summary); a finished clean run starts collapsed.
-    var open by rememberSaveable { mutableStateOf(toolTraceInitialOpen(streaming, failed > 0)) }
+    // Except a finished run with edits awaiting review: its review
+    // buttons are the point of the trace, so it starts open.
+    var open by rememberSaveable {
+        mutableStateOf(toolTraceInitialOpen(streaming, failed > 0) || pendingReviewCount > 0)
+    }
     // True once the reader taps the header open by hand: auto-collapse
     // below must never close a trace the reader opened on purpose.
     var userExpanded by rememberSaveable { mutableStateOf(false) }
@@ -187,13 +199,20 @@ fun ToolTrace(
     // collapse it back to the one-line summary — unless the reader
     // expanded it by hand mid-stream, in which case it stays open.
     // #6f: anchor first, but only when the value actually flips.
+    // Audit-200 C14 (M-197): never auto-collapse while edits await a
+    // review — the buttons live inside the expanded body. Once the
+    // last review is made the trace stays as it is (open): collapsing
+    // under the reader right after they tap Accept would yank the
+    // list they are looking at.
     LaunchedEffect(streaming, failed) {
         if (!streaming && failed > 0) {
             if (!open) {
                 onBeforeHeightChange()
                 open = true
             }
-        } else if (shouldAutoCollapseToolTrace(userExpanded, streaming, failed > 0)) {
+        } else if (shouldAutoCollapseToolTrace(userExpanded, streaming, failed > 0) &&
+            pendingReviewCount == 0
+        ) {
             if (open) {
                 onBeforeHeightChange()
                 open = false
@@ -329,8 +348,20 @@ fun ToolTrace(
                     color = colors.toolError,
                 )
             }
-            if (running.isNotEmpty()) {
+            // Audit-200 C14 (M-197): a collapsed trace hides the review
+            // buttons, so the header says how many edits still await a
+            // decision — otherwise a reader who collapsed it by hand has
+            // no way to know the reviews are there.
+            if (pendingReviewCount > 0) {
                 if (failed > 0) Spacer(Modifier.width(spacing.xs))
+                StatusChip(
+                    text = stringResource(R.string.tool_pending_review, pendingReviewCount)
+                        .removePrefix("· ").trim(),
+                    color = colors.toolWarning,
+                )
+            }
+            if (running.isNotEmpty()) {
+                if (failed > 0 || pendingReviewCount > 0) Spacer(Modifier.width(spacing.xs))
                 // Running reads the single live colour (activity = accent)
                 // everywhere: the step badge already is, but this header
                 // chip used to be orange (toolWarning), the system's
@@ -341,6 +372,7 @@ fun ToolTrace(
                     isPulsing = true,
                 )
             } else if (failed == 0 && tools.isNotEmpty() && !streaming) {
+                if (pendingReviewCount > 0) Spacer(Modifier.width(spacing.xs))
                 StatusChip(
                     text = stringResource(R.string.tool_status_success),
                     color = colors.toolSuccess,
