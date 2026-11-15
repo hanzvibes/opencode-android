@@ -22,6 +22,7 @@ import dev.bidzz.opencode.core.api.WorktreeApi
 import dev.bidzz.opencode.core.api.ProviderApi
 import dev.bidzz.opencode.core.api.SkillApi
 import dev.bidzz.opencode.core.api.SessionApi
+import dev.bidzz.opencode.core.api.ShellApi
 import dev.bidzz.opencode.core.engine.EngineCredentials
 import java.util.concurrent.atomic.AtomicReference
 
@@ -54,6 +55,7 @@ class EngineApi(private val workspaceDirectory: () -> String) {
         val skills: SkillApi,
         val mcp: McpApi,
         val plugins: PluginApi,
+        val shells: ShellApi,
         val artifacts: ArtifactApi,
         val jobs: JobApi,
         val generate: GenerateApi,
@@ -102,6 +104,7 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             skills = SkillApi(client),
             mcp = McpApi(client),
             plugins = PluginApi(client),
+            shells = ShellApi(client),
             artifacts = ArtifactApi(client),
             jobs = JobApi(client),
             generate = GenerateApi(generateClient),
@@ -127,7 +130,7 @@ class EngineApi(private val workspaceDirectory: () -> String) {
     /** Convenience for a chat repository bound to the current handle. */
     fun chatRepository(scope: kotlinx.coroutines.CoroutineScope): ChatRepository? {
         val h = handle() ?: return null
-        return ChatRepository(h.sessions, h.stream, scope)
+        return ChatRepository(h.sessions, h.stream, scope, shells = h.shells)
     }
 
     fun workspace(): String = workspaceDirectory()

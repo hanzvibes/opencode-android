@@ -230,6 +230,8 @@ fun MessageBubble(
     onBeforeToolTraceHeightChange: () -> Unit = {},
     /** Saves a code block through the system picker (Fase 1, item 4). */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
+    /** Runs a shell code block, after the screen's confirmation dialog. */
+    onRunCode: (String) -> Unit = {},
     /** Per-tool start stamps in epoch millis, keyed by tool id (Fase 2,
      * item 5): the same client-side stamps the durations come from, so a
      * still-running step can show a live elapsed time. */
@@ -340,6 +342,7 @@ fun MessageBubble(
                             markdown = markdown,
                             textColor = colors.onUserBubble,
                             onSaveCode = onSaveCode,
+                            onRunCode = onRunCode,
                         )
                     }
                 }
@@ -627,6 +630,7 @@ fun MessageBubble(
                                                 markdown = part.markdown,
                                                 streaming = streaming && partIndex == lastTextIndex,
                                                 onSaveCode = onSaveCode,
+                                                onRunCode = onRunCode,
                                             )
                                         }
                                     }

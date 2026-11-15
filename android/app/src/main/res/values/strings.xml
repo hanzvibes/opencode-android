@@ -469,6 +469,8 @@
 
     <!-- Session instructions -->
     <string name="instructions_title">Session instructions</string>
+    <string name="instructions_delete_title">Delete instruction?</string>
+    <string name="instructions_delete_body">Delete “%1$s”? This can’t be undone.</string>
     <string name="instructions_body">Extra instructions attached to this session. They are announced to the model at the next step boundary.</string>
     <string name="instructions_empty">No instructions attached to this session.</string>
     <string name="instructions_key_hint">Key, for example notes</string>
@@ -586,6 +588,7 @@
     <string name="tool_running_named">Running %1$s… · %2$d/%3$d</string>
     <string name="tool_ran">Ran %1$s</string>
     <string name="tool_failed">· %1$d failed</string>
+    <string name="tool_pending_review">· %1$d to review</string>
     <string name="tool_summary_succeeded">%1$d succeeded</string>
     <string name="tool_working">· working</string>
     <string name="tool_status_running">Running</string>
@@ -620,6 +623,16 @@
     <string name="code_copied">Copied</string>
     <string name="copy_failed">Couldn\'t copy to clipboard.</string>
     <string name="code_save">Save</string>
+    <string name="code_run">Run</string>
+    <string name="code_run_title">Run this command?</string>
+    <string name="code_run_body">Runs in the project directory on the engine. Check it first — it can change files, install things, or delete data.</string>
+    <string name="code_run_confirm">Run</string>
+    <string name="code_run_output_title">Command output</string>
+    <string name="code_run_running">Running…</string>
+    <string name="code_run_exited">Exited %1$d</string>
+    <string name="code_run_failed">Couldn’t run the command: %1$s</string>
+    <string name="code_run_no_output">No output yet.</string>
+    <string name="code_run_stop">Stop</string>
     <string name="code_save_failed">Could not save the file.</string>
     <string name="code_save_picker_failed">Could not open the save dialog.</string>
     <string name="directory_picker_failed">Could not open the folder picker.</string>
@@ -642,6 +655,7 @@
     <string name="files_root">Root</string>
     <string name="files_note_not_repo">Not a git repository. Changes are not tracked.</string>
     <string name="files_note_clean">Git repository with no uncommitted changes.</string>
+    <string name="files_note_status_unknown">Git status couldn’t be read — changes unknown. Refresh to retry.</string>
     <string name="age_now">just now</string>
     <string name="age_minutes">%1$dm ago</string>
     <string name="age_hours">%1$dh ago</string>
@@ -812,6 +826,13 @@
     <string name="providers_antigravity_use_account">Use</string>
     <string name="providers_antigravity_disable">Disable</string>
     <string name="providers_antigravity_enable">Enable</string>
+    <string name="providers_antigravity_plugin_missing">Antigravity plugin is not registered on the engine.</string>
+    <string name="providers_antigravity_plugin_missing_hint">Add “opencode-antigravity-auth” to the plugins list in the engine config, then restart the engine. Antigravity models will not work until the plugin is loaded.</string>
+    <string name="providers_antigravity_test">Test connection</string>
+    <string name="providers_antigravity_testing">Testing…</string>
+    <string name="providers_antigravity_test_plugin">Plugin registered</string>
+    <string name="providers_antigravity_test_patch">Plugin patch applied</string>
+    <string name="providers_antigravity_test_models">Antigravity models listed</string>
     <string name="providers_patch_applied_restart">Antigravity plugin patched — restart the engine to use it.</string>
     <string name="providers_patch_version_mismatch">Antigravity plugin changed — the patch does not apply to this version.</string>
     <string name="providers_patch_failed">Antigravity plugin patch failed — the original plugin files were kept.</string>

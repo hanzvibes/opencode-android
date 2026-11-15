@@ -296,6 +296,16 @@ fun ChatScreen(
     onDiffDecision: (String, DiffDecision) -> Unit = { _, _ -> },
     /** Saves a code block through the system picker (Fase 1, item 4). */
     onSaveCode: (String, String) -> Unit = { _, _ -> },
+    /**
+     * Runs a shell code block (audit-200 C14, M-196), after the
+     * screen's confirmation dialog. The screen never calls this on a
+     * Run tap directly — the tap only stages the command for confirm.
+     */
+    onRunCode: (String) -> Unit = {},
+    /** Stops a running code-block shell. */
+    onStopCodeRun: () -> Unit = {},
+    /** Closes the code-run output dialog (kills a running shell first). */
+    onDismissCodeRun: () -> Unit = {},
     /** Submit / cancel the edit in progress in the composer. */
     onSubmitEdit: () -> Unit = {},
     onCancelEdit: () -> Unit = {},
@@ -530,14 +540,14 @@ fun ChatScreen(
         if (anchor != null && !state.loadingEarlier) {
             if (state.sessionID == anchorSessionId) {
                 val newHeadOffset = if (state.hasMoreOlder) 1 else 0
-                val target = computeRestoredIndex(
-                    anchorIndex = anchor.index,
+                val restored = restoreScrollAnchor(
+                    anchor = anchor,
                     oldMessageCount = anchorBaseSize,
                     newMessageCount = state.messages.size,
                     oldHeadOffset = anchorBaseHeadOffset,
                     newHeadOffset = newHeadOffset,
                 )
-                listState.scrollToItem(target, anchor.offset)
+                listState.scrollToItem(restored.index, restored.offset)
                 // The prepend shifted the watermark's index with it (01-F2):
                 // the id is unchanged, but the in-memory count must follow
                 // the message it points past, or the badge counts the newly
@@ -576,8 +586,29 @@ fun ChatScreen(
         listState.scrollToItem(anchor.index, anchor.offset)
     }
 
+    // Which session the open effect has already scrolled for (below).
+    // Declared here — above the watermark effect — so both the follow
+    // effect and the watermark effect can gate on it: on a fresh load
+    // all three fire on the same size change, and the follow animation
+    // used to run first and the open snap second — a visible swoop then
+    // jump through the shared list mutex (Fase 2, 76-F2). The follow stays
+    // off until the open effect has landed this session.
+    var scrolledSessionID by rememberSaveable { mutableStateOf<String?>(null) }
+
     LaunchedEffect(nearBottom, state.messages.size) {
-        if (nearBottom) {
+        // Audit-200 C14 (M-200): do not write before the session-open
+        // effect has landed this session. On history arrival (size 0→N)
+        // `nearBottom` is still its stale `true` from the empty list (or
+        // from the previous session left at the bottom), and this effect
+        // — declared before the open effect — runs first: it would stamp
+        // the LAST message id ("everything read") under the new session
+        // before the open effect ever reads the store, so the reader
+        // lands at the bottom with no unread badge and the real
+        // watermark is lost permanently. The open effect sets
+        // scrolledSessionID once it has reseeded from the store; until
+        // then, no write. An empty list writes nothing either — there
+        // is no message to mark read.
+        if (nearBottom && state.messages.isNotEmpty() && scrolledSessionID == state.sessionID) {
             lastReadMessageCount = state.messages.size
             lastReadMessageId = state.messages.lastOrNull()?.id
             saveReadPosition()
@@ -877,14 +908,6 @@ fun ChatScreen(
             (totalCount - 1).coerceAtLeast(0)
         }
     }
-
-    // Which session the open effect has already scrolled for (below).
-    // Declared here so the follow effect can gate on it: on a fresh load
-    // both effects fire on the same size change, and the follow animation
-    // used to run first and the open snap second — a visible swoop then
-    // jump through the shared list mutex (Fase 2, 76-F2). The follow stays
-    // off until the open effect has landed this session.
-    var scrolledSessionID by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Follow keys include the last message's tools and parts: a stream
     // that only runs tools (no new text) used to never trigger a follow.
@@ -1220,6 +1243,10 @@ fun ChatScreen(
             // offers Compact; the confirm lives here so it survives the
             // status dialog closing first.
             var showCompactDialog by remember { mutableStateOf(false) }
+            // Audit-200 C14 (M-196): a shell code block the user asked to
+            // run, waiting for confirmation — the command is shown
+            // verbatim, so the user sees exactly what would execute.
+            var pendingRun by remember { mutableStateOf<String?>(null) }
             // Audit-200 B7 (M-027): the message a revert was asked for —
             // the dialog below asks whether the files change too, so the
             // staging only happens once the user picks.
@@ -1400,6 +1427,106 @@ fun ChatScreen(
                     },
                     text = {
                         Text(text = stringResource(R.string.compact_dialog_body))
+                    },
+                )
+            }
+
+            // Audit-200 C14 (M-196): running model-written code executes
+            // on the engine, so it asks first and shows the exact
+            // command — the Run button itself never starts anything.
+            pendingRun?.let { command ->
+                LocalizedAlertDialog(
+                    onDismissRequest = { pendingRun = null },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                pendingRun = null
+                                onRunCode(command)
+                            },
+                        ) {
+                            Text(
+                                text = stringResource(R.string.code_run_confirm),
+                                color = colors.accentText,
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingRun = null }) {
+                            Text(
+                                text = stringResource(R.string.common_cancel),
+                                color = colors.onSurfaceMuted,
+                            )
+                        }
+                    },
+                    title = {
+                        Text(text = stringResource(R.string.code_run_title))
+                    },
+                    text = {
+                        Column {
+                            Text(text = stringResource(R.string.code_run_body))
+                            Text(
+                                text = command,
+                                style = OpenCodeTypography.code,
+                                color = colors.onSurface,
+                                modifier = Modifier.padding(top = spacing.sm),
+                            )
+                        }
+                    },
+                )
+            }
+
+            // The code-run output dialog (M-196): the live output while
+            // the shell runs, then the exit code. Stop kills the command;
+            // closing kills it too — the dialog is the only surface that
+            // shows the run, so a run without it would be invisible.
+            state.codeRun?.let { run ->
+                LocalizedAlertDialog(
+                    onDismissRequest = onDismissCodeRun,
+                    confirmButton = {
+                        if (run.status == "running") {
+                            TextButton(onClick = onStopCodeRun) {
+                                Text(
+                                    text = stringResource(R.string.code_run_stop),
+                                    color = colors.danger,
+                                )
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = onDismissCodeRun) {
+                            Text(
+                                text = stringResource(R.string.common_close),
+                                color = colors.onSurfaceMuted,
+                            )
+                        }
+                    },
+                    title = {
+                        Text(text = stringResource(R.string.code_run_output_title))
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = when {
+                                    run.status == "running" -> stringResource(R.string.code_run_running)
+                                    run.status == "error" -> stringResource(
+                                        R.string.code_run_failed,
+                                        run.failure?.message() ?: "",
+                                    )
+                                    run.exit != null -> stringResource(R.string.code_run_exited, run.exit)
+                                    else -> run.status
+                                },
+                                color = if (run.status == "error") colors.danger else colors.onSurfaceMuted,
+                            )
+                            Text(
+                                text = if (run.output.isEmpty()) stringResource(R.string.code_run_no_output) else run.output,
+                                style = OpenCodeTypography.code,
+                                color = colors.onSurface,
+                                modifier = Modifier
+                                    .padding(top = spacing.sm)
+                                    .heightIn(max = 320.dp)
+                                    .verticalScroll(rememberScrollState()),
+                            )
+                        }
                     },
                 )
             }
@@ -1804,6 +1931,11 @@ fun ChatScreen(
                                             // before a ToolTrace height toggle.
                                             onBeforeToolTraceHeightChange = { captureExpandAnchor() },
                                             onSaveCode = onSaveCode,
+                                            // Run (audit-200 C14, M-196):
+                                            // the tap only stages the
+                                            // command — the confirm dialog
+                                            // below calls onRunCode.
+                                            onRunCode = { pendingRun = it },
                                         )
                                     }
                                 }

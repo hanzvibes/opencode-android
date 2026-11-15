@@ -18,10 +18,13 @@ import dev.bidzz.opencode.core.api.dto.TextEnded
 import dev.bidzz.opencode.core.api.dto.TextStarted
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.serializer
 import kotlinx.serialization.json.contentOrNull
@@ -262,12 +265,29 @@ class ChatRepository(
     private val eventStream: EventStream,
     private val scope: CoroutineScope,
     private val permissionGate: PermissionRestoreGate = PermissionRestoreGate(),
+    /** Shell API for live tool output (audit-200 C14, M-195); null in tests that do not poll. */
+    private val shells: ShellApi? = null,
 ) {
     companion object {
         private const val TAG = "ChatRepository"
 
         /** Minimum gap between streaming emissions; deltas inside the window coalesce (item 28). */
         private const val PUBLISH_THROTTLE_MS = 100L
+
+        /** Gap between live shell-output polls while a tool runs (audit-200 C14, M-195). */
+        private const val LIVE_SHELL_POLL_MS = 1000L
+
+        /** Live shell output kept per tool call; the tail is what the reader watches (M-195). */
+        private const val LIVE_SHELL_MAX_CHARS = 262_144
+
+        /**
+         * A backgrounded shell's success text (audit-200 C14, M-195):
+         * `backgroundResult` in the engine fork's shell tool
+         * (`packages/core/src/tool/plugin/shell.ts` at pin fedc6f20).
+         * When the final output is only this notice, the live log the
+         * reader already watched must not be replaced by it.
+         */
+        private const val BACKGROUNDED_SHELL_PREFIX = "Command moved to the background"
 
         /** First transcript window: newest N messages; older ones load on demand (item 28). */
         private const val INITIAL_MESSAGE_LIMIT = 100
@@ -405,6 +425,7 @@ class ChatRepository(
         streamJob = null
         publishFlushJob?.cancel()
         publishFlushJob = null
+        stopAllLiveShellPolls()
         sessionID = null
         buffers.clear()
     }
@@ -539,7 +560,25 @@ class ChatRepository(
         if (terminalGeneration != null && terminalGeneration != runGeneration) {
             return ResyncOutcome.SKIPPED
         }
-        when (val result = sessionApi.messagesPage(id, limit = messageLimit)) {
+        // Audit-200 C14 (M-202): the transcript page and the permission
+        // list are independent — they used to run one after another, so
+        // every resync paid two round trips in a row. Fetch them
+        // concurrently and reconcile in the old order (transcript first,
+        // permissions second), so the state transitions are unchanged.
+        // `listStartedAtMs` is recorded before either call starts: a
+        // request that arrives via SSE while either call is in flight is
+        // missing from the snapshot through no fault of its own, so it
+        // survives (C3, M-060/M-061). The permission result is dropped
+        // when the transcript fetch fails — the old code never asked for
+        // it then — and the join waits for it, bounded by the HTTP
+        // timeout.
+        val listStartedAtMs = System.currentTimeMillis()
+        val (messagesResult, permissionsResult) = coroutineScope {
+            val permissionsDeferred = async { sessionApi.listPermissions(id) }
+            val messagesResult = sessionApi.messagesPage(id, limit = messageLimit)
+            messagesResult to permissionsDeferred.await()
+        }
+        when (val result = messagesResult) {
             is ApiResult.Success -> {
                 // The session may have changed while the call was in flight:
                 // the terminal-event resync is launched on the repository
@@ -621,6 +660,11 @@ class ChatRepository(
                     null
                 }
                 val keptStreaming = _state.value.streaming.filterKeys { it in liveIds && it !in staleIds }
+                // Audit-200 C14 (M-195): the transcript refill below
+                // clears the live tools, so their output polls stop with
+                // them — a poll for a cleared call would write its output
+                // into a call the state no longer holds.
+                stopAllLiveShellPolls()
                 _state.value = _state.value.copy(
                     messages = chronological,
                     streaming = keptStreaming,
@@ -671,8 +715,9 @@ class ChatRepository(
                 // judged by it: one that arrived via SSE while the call
                 // was in flight is missing from the snapshot through no
                 // fault of its own, so it survives.
-                val listStartedAtMs = System.currentTimeMillis()
-                when (val pending = sessionApi.listPermissions(id)) {
+                // `listStartedAtMs` (above) is the instant before the
+                // permission call started.
+                when (val pending = permissionsResult) {
                     is ApiResult.Success -> {
                         if (sessionID != id) return ResyncOutcome.SUCCEEDED
                         if (terminalGeneration != null && terminalGeneration != runGeneration) {
@@ -750,6 +795,9 @@ class ChatRepository(
                 // text, and the next successful resync refills them from
                 // history (or the stream re-delivers them while the run
                 // is still going).
+                // Audit-200 C14 (M-195): the live tools go with the
+                // failed resync (see the success branch above).
+                stopAllLiveShellPolls()
                 _state.value = _state.value.copy(
                     lastFailure = result,
                     // Marks the failure's origin (03-F2): the prompt already
@@ -986,7 +1034,8 @@ class ChatRepository(
             }
 
             EventTypes.TOOL_INPUT_STARTED, EventTypes.TOOL_CALLED,
-            EventTypes.TOOL_SUCCESS, EventTypes.TOOL_FAILED -> applyToolEvent(event.type, payload)
+            EventTypes.TOOL_SUCCESS, EventTypes.TOOL_FAILED,
+            EventTypes.TOOL_PROGRESS -> applyToolEvent(event.type, payload)
 
             EventTypes.PERMISSION_ASKED -> {
                 val payload = event.data?.jsonObject ?: return
@@ -1086,6 +1135,64 @@ class ChatRepository(
      * end of the run replaces the placeholder with the history row, name
      * included.
      */
+    /**
+     * Live shell-output polls, keyed by tool call id (audit-200 C14,
+     * M-195): one job per running shell tool, started by a
+     * `session.tool.progress` event and stopped by the tool's terminal
+     * event, a resync, or [close]. A second progress event for the same
+     * call does not start a second poll.
+     */
+    private val liveShellPolls = mutableMapOf<String, Job>()
+
+    private fun startLiveShellPoll(callId: String, messageID: String, shellID: String) {
+        val shells = shells ?: return
+        if (liveShellPolls.containsKey(callId)) return
+        val job = scope.launch {
+            var cursor = 0L
+            val text = StringBuilder()
+            while (isActive) {
+                delay(LIVE_SHELL_POLL_MS)
+                when (val page = shells.output(shellID, cursor = cursor)) {
+                    is ApiResult.Success -> {
+                        val value = page.value
+                        if (value.output.isNotEmpty()) {
+                            text.append(value.output)
+                            // The tail is what the reader watches; a build
+                            // log can run to megabytes, and the terminal
+                            // event replaces this with the engine's bounded
+                            // final output anyway.
+                            if (text.length > LIVE_SHELL_MAX_CHARS) {
+                                text.delete(0, text.length - LIVE_SHELL_MAX_CHARS)
+                            }
+                            cursor = value.cursor
+                            val tools = _state.value.liveTools
+                            val prev = tools[callId]?.call ?: break
+                            if (prev.status != "running" && prev.status != "streaming") break
+                            _state.value = _state.value.copy(
+                                liveTools = tools + (callId to LiveTool(messageID, prev.copy(output = text.toString()))),
+                            )
+                        }
+                    }
+                    // The shell vanished (removed) or the engine went down:
+                    // stop quietly — the terminal event still delivers the
+                    // final output, or the resync refills it from history.
+                    is ApiResult.Failure -> break
+                }
+            }
+        }
+        job.invokeOnCompletion { liveShellPolls.remove(callId) }
+        liveShellPolls[callId] = job
+    }
+
+    private fun stopLiveShellPoll(callId: String) {
+        liveShellPolls.remove(callId)?.cancel()
+    }
+
+    private fun stopAllLiveShellPolls() {
+        liveShellPolls.values.forEach { it.cancel() }
+        liveShellPolls.clear()
+    }
+
     private fun applyToolEvent(type: String, p: kotlinx.serialization.json.JsonObject) {
         val id = p["id"]?.jsonPrimitive?.contentOrNull ?: return
         val messageID = p["assistantMessageID"]?.jsonPrimitive?.contentOrNull ?: return
@@ -1096,14 +1203,47 @@ class ChatRepository(
                 ToolCall(id, p["name"]?.jsonPrimitive?.contentOrNull.orEmpty(), "streaming")
             EventTypes.TOOL_CALLED -> prev?.copy(status = "running", input = p["input"])
                 ?: ToolCall(id, "", "running", input = p["input"])
-            EventTypes.TOOL_SUCCESS -> prev?.copy(
-                status = "completed",
-                output = parseToolOutput(p),
-            ) ?: ToolCall(id, "", "completed", output = parseToolOutput(p))
-            else -> prev?.copy(
-                status = "error",
-                error = parseToolError(p),
-            ) ?: ToolCall(id, "", "error", error = parseToolError(p))
+            EventTypes.TOOL_PROGRESS -> {
+                // Audit-200 C14 (M-195): the engine reports the shell
+                // behind a running bash tool here — `{shellID}` in the
+                // event metadata — so the client can page the command's
+                // live output while it runs. Other tools report other
+                // metadata, or none; only a shell id starts a poll.
+                val shellID = p["metadata"]?.jsonObject?.get("shellID")
+                    ?.jsonPrimitive?.contentOrNull
+                val next = prev?.copy(shellID = shellID ?: prev.shellID)
+                    ?: ToolCall(id, "", "running", shellID = shellID)
+                if (shellID != null) startLiveShellPoll(id, messageID, shellID)
+                next
+            }
+            EventTypes.TOOL_SUCCESS -> {
+                stopLiveShellPoll(id)
+                val finalOutput = parseToolOutput(p)
+                // A backgrounded shell's success carries only the notice
+                // ("Command moved to the background...") — replacing the
+                // live log the reader already watched with it would hide
+                // the output. Keep the log and append the notice instead;
+                // a foreground command's full output still replaces the
+                // partial live text, as before.
+                val output = if (prev?.output?.isNotBlank() == true &&
+                    finalOutput?.startsWith(BACKGROUNDED_SHELL_PREFIX) == true
+                ) {
+                    prev.output + "\n\n" + finalOutput
+                } else {
+                    finalOutput
+                }
+                prev?.copy(
+                    status = "completed",
+                    output = output,
+                ) ?: ToolCall(id, "", "completed", output = output)
+            }
+            else -> {
+                stopLiveShellPoll(id)
+                prev?.copy(
+                    status = "error",
+                    error = parseToolError(p),
+                ) ?: ToolCall(id, "", "error", error = parseToolError(p))
+            }
         }
         _state.value = _state.value.copy(liveTools = tools + (id to LiveTool(messageID, next)))
     }

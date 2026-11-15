@@ -462,6 +462,8 @@
 
     <!-- Instruksi sesi -->
     <string name="instructions_title">Instruksi sesi</string>
+    <string name="instructions_delete_title">Hapus instruksi?</string>
+    <string name="instructions_delete_body">Hapus “%1$s”? Tindakan ini tidak bisa dibatalkan.</string>
     <string name="instructions_body">Instruksi tambahan untuk sesi ini. Instruksi diumumkan ke model pada batas langkah berikutnya.</string>
     <string name="instructions_empty">Tidak ada instruksi untuk sesi ini.</string>
     <string name="instructions_key_hint">Kunci, contohnya notes</string>
@@ -579,6 +581,7 @@
     <string name="tool_running_named">Menjalankan %1$s… · %2$d/%3$d</string>
     <string name="tool_ran">%1$s selesai</string>
     <string name="tool_failed">· %1$d gagal</string>
+    <string name="tool_pending_review">· %1$d menunggu review</string>
     <string name="tool_summary_succeeded">%1$d berhasil</string>
     <string name="tool_working">· bekerja</string>
     <string name="tool_status_running">Berjalan</string>
@@ -613,6 +616,16 @@
     <string name="code_copied">Tersalin</string>
     <string name="copy_failed">Gagal menyalin ke clipboard.</string>
     <string name="code_save">Simpan</string>
+    <string name="code_run">Jalankan</string>
+    <string name="code_run_title">Jalankan perintah ini?</string>
+    <string name="code_run_body">Dijalankan di direktori proyek lewat engine. Periksa dulu — perintah ini bisa mengubah file, menginstal sesuatu, atau menghapus data.</string>
+    <string name="code_run_confirm">Jalankan</string>
+    <string name="code_run_output_title">Hasil perintah</string>
+    <string name="code_run_running">Berjalan…</string>
+    <string name="code_run_exited">Selesai (%1$d)</string>
+    <string name="code_run_failed">Perintah tidak bisa dijalankan: %1$s</string>
+    <string name="code_run_no_output">Belum ada output.</string>
+    <string name="code_run_stop">Berhenti</string>
     <string name="code_save_failed">Tidak bisa menyimpan file.</string>
     <string name="code_save_picker_failed">Tidak bisa membuka dialog simpan.</string>
     <string name="directory_picker_failed">Tidak bisa membuka pemilih folder.</string>
@@ -635,6 +648,7 @@
     <string name="files_root">Root</string>
     <string name="files_note_not_repo">Bukan repositori git. Perubahan tidak dilacak.</string>
     <string name="files_note_clean">Repositori git tanpa perubahan yang belum di-commit.</string>
+    <string name="files_note_status_unknown">Status git tidak bisa dibaca — perubahan tidak diketahui. Segarkan untuk mencoba lagi.</string>
     <string name="age_now">baru saja</string>
     <string name="age_minutes">%1$d mnt lalu</string>
     <string name="age_hours">%1$d jam lalu</string>
@@ -805,6 +819,13 @@
     <string name="providers_antigravity_use_account">Pakai</string>
     <string name="providers_antigravity_disable">Nonaktifkan</string>
     <string name="providers_antigravity_enable">Aktifkan</string>
+    <string name="providers_antigravity_plugin_missing">Plugin Antigravity tidak terdaftar di engine.</string>
+    <string name="providers_antigravity_plugin_missing_hint">Tambahkan “opencode-antigravity-auth” ke daftar plugins di konfigurasi engine, lalu restart engine. Model Antigravity tidak akan bekerja sampai plugin dimuat.</string>
+    <string name="providers_antigravity_test">Tes koneksi</string>
+    <string name="providers_antigravity_testing">Mengetes…</string>
+    <string name="providers_antigravity_test_plugin">Plugin terdaftar</string>
+    <string name="providers_antigravity_test_patch">Patch plugin diterapkan</string>
+    <string name="providers_antigravity_test_models">Model Antigravity terdaftar</string>
     <string name="providers_patch_applied_restart">Plugin Antigravity sudah ditambal — restart engine untuk memakainya.</string>
     <string name="providers_patch_version_mismatch">Plugin Antigravity berubah — tambalan tidak cocok dengan versi ini.</string>
     <string name="providers_patch_failed">Tambalan plugin Antigravity gagal — berkas plugin asli tetap dipakai.</string>

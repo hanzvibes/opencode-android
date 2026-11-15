@@ -154,4 +154,13 @@ object EventTypes {
     const val TOOL_CALLED = "session.tool.called"
     const val TOOL_SUCCESS = "session.tool.success"
     const val TOOL_FAILED = "session.tool.failed"
+
+    /**
+     * Live replacement metadata for a running tool (audit-200 C14,
+     * M-195): the shell tool reports `{shellID}` here while its command
+     * runs, so the client can page the command's live output from
+     * `GET /api/shell/{id}/output` — the engine sends no partial-stdout
+     * event of its own.
+     */
+    const val TOOL_PROGRESS = "session.tool.progress"
 }

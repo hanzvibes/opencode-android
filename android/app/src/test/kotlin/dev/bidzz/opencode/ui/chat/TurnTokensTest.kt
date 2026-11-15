@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.chat
 
 import dev.bidzz.opencode.core.api.dto.CacheUsage
+import dev.bidzz.opencode.core.api.dto.MessageTime
 import dev.bidzz.opencode.core.api.dto.SessionMessage
 import dev.bidzz.opencode.core.api.dto.TokenUsage
 import org.junit.Assert.assertEquals
@@ -142,6 +143,49 @@ class TurnTokensTest {
             ),
         )
         assertEquals(0L, contextUsageTokens(messages))
+    }
+
+    @Test
+    fun `context usage takes the newest turn even when the list is newest-first`() {
+        // Audit-200 C14 (M-203): `/context` documents no order, and
+        // `/message` documents newest-first. A newest-first listing must
+        // still meter the newest turn (msg_c, 150), not the first element.
+        val messages = listOf(
+            SessionMessage(
+                id = "msg_c",
+                type = "assistant",
+                time = MessageTime(created = 2100),
+                tokens = TokenUsage(input = 100, output = 50),
+            ),
+            SessionMessage(
+                id = "msg_b",
+                type = "assistant",
+                time = MessageTime(created = 2000),
+                tokens = TokenUsage(input = 4032, output = 9, reasoning = 83),
+            ),
+        )
+        assertEquals(150L, contextUsageTokens(messages))
+    }
+
+    @Test
+    fun `context usage takes the newest by time not by list position`() {
+        // The list is oldest-first here, but msg_b is the newer turn by
+        // creation time — its usage wins over the later list element.
+        val messages = listOf(
+            SessionMessage(
+                id = "msg_c",
+                type = "assistant",
+                time = MessageTime(created = 2000),
+                tokens = TokenUsage(input = 100, output = 50),
+            ),
+            SessionMessage(
+                id = "msg_b",
+                type = "assistant",
+                time = MessageTime(created = 3000),
+                tokens = TokenUsage(input = 4032, output = 9, reasoning = 83),
+            ),
+        )
+        assertEquals(4124L, contextUsageTokens(messages))
     }
 
     @Test

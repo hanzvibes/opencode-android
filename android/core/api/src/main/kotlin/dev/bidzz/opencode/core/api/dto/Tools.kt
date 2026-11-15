@@ -23,6 +23,14 @@ data class ToolCall(
     val input: JsonElement? = null,
     val output: String? = null,
     val error: String? = null,
+    /**
+     * The shell behind a running bash tool (audit-200 C14, M-195):
+     * reported by the engine's `session.tool.progress` event, so the
+     * client can page the command's live output from
+     * `GET /api/shell/{id}/output` while the tool runs. Null for every
+     * other tool and for history rows.
+     */
+    val shellID: String? = null,
 ) {
     val isDone: Boolean get() = status == "completed" || status == "error" || status == "interrupted"
 

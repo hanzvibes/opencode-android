@@ -24,6 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -39,6 +43,7 @@ import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
+import dev.bidzz.opencode.ui.LocalizedAlertDialog
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.message
@@ -68,6 +73,12 @@ fun InstructionsScreen(
     val spacing = OpenCodeTheme.tokens.spacing
 
     LaunchedEffect(sessionID) { onRefresh() }
+
+    // Audit-200 C14 (M-211): deleting used to fire on one tap of the
+    // trash icon — next to the tap-to-edit row — with no confirmation,
+    // no undo and no success feedback. The trash now only stages the
+    // delete; the dialog below asks first.
+    var pendingDelete by remember { mutableStateOf<InstructionEntry?>(null) }
 
     ScreenScaffold(
         title = stringResource(R.string.instructions_title),
@@ -183,13 +194,46 @@ fun InstructionsScreen(
                             EntryRow(
                                 entry = entry,
                                 onEdit = { onEdit(entry) },
-                                onDelete = { onDelete(entry) },
+                                onDelete = { pendingDelete = entry },
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    pendingDelete?.let { entry ->
+        LocalizedAlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        onDelete(entry)
+                    },
+                ) {
+                    Text(
+                        text = stringResource(R.string.common_delete),
+                        color = colors.danger,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(
+                        text = stringResource(R.string.common_cancel),
+                        color = colors.onSurfaceMuted,
+                    )
+                }
+            },
+            title = {
+                Text(text = stringResource(R.string.instructions_delete_title))
+            },
+            text = {
+                Text(text = stringResource(R.string.instructions_delete_body, entry.key))
+            },
+        )
     }
 }
 

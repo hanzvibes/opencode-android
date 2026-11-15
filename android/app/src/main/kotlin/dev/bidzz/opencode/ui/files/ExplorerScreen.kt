@@ -351,6 +351,7 @@ private fun ExplorerListContent(
                 when (note) {
                     VcsNote.NOT_A_REPOSITORY -> R.string.files_note_not_repo
                     VcsNote.NO_CHANGES -> R.string.files_note_clean
+                    VcsNote.UNKNOWN -> R.string.files_note_status_unknown
                 },
             ),
             style = OpenCodeTypography.label,
