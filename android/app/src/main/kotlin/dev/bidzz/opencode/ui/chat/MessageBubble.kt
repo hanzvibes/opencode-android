@@ -194,6 +194,13 @@ fun MessageBubble(
      * behaviour itself lives in the ViewModel, not here. */
     onEdit: (() -> Unit)? = null,
     onResend: (() -> Unit)? = null,
+    /** Retry a failed turn (audit-200 C13, M-191): the banner's retry
+     * used to be the only path, and dismissing the banner destroyed it.
+     * The error bubble (and an assistant turn with an error attached)
+     * offers the same retry in place. Null hides the pill — the screen
+     * only passes it while [ChatUiState.retryKind] is not NONE, so the
+     * pill never fires a no-op. */
+    onRetry: (() -> Unit)? = null,
     /** Fork/revert (mockup group 2): fork the session from this message,
      * and stage a revert to just before it. User messages only, like
      * edit/resend — the fork boundary and the revert point are user
@@ -723,6 +730,22 @@ fun MessageBubble(
                         )
                     }
                 }
+                // Retry in place (audit-200 C13, M-191): a turn that died
+                // after partial content keeps its answer, and the retry
+                // sits under the error line — the same path the error
+                // bubble's pill offers, so dismissing the banner no
+                // longer strands the failed turn.
+                if (!errorText.isNullOrBlank() && onRetry != null) {
+                    Row(
+                        modifier = Modifier.padding(top = spacing.sm),
+                    ) {
+                        TurnActionPill(
+                            label = stringResource(R.string.chat_retry),
+                            glyph = Glyph.Refresh,
+                            onClick = onRetry,
+                        )
+                    }
+                }
             }
         }
 
@@ -802,6 +825,21 @@ fun MessageBubble(
                             stopReason = stopReason,
                             modifier = Modifier.padding(top = spacing.xs),
                         )
+                        // Retry in place (audit-200 C13, M-191): dismissing
+                        // the banner used to destroy the only retry path.
+                        // The pill re-sends the failed prompt through the
+                        // same retry the banner offered.
+                        if (onRetry != null) {
+                            Row(
+                                modifier = Modifier.padding(top = spacing.sm),
+                            ) {
+                                TurnActionPill(
+                                    label = stringResource(R.string.chat_retry),
+                                    glyph = Glyph.Refresh,
+                                    onClick = onRetry,
+                                )
+                            }
+                        }
                     }
                 }
             }

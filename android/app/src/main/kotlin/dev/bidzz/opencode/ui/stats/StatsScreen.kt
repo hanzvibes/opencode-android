@@ -72,9 +72,13 @@ fun StatsScreen(
                 modifier = Modifier.padding(bottom = spacing.sm),
             )
             when {
-                state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
-                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
-                state.stats == null -> EmptyState(stringResource(R.string.stats_empty))
+                // Audit-200 C13 (M-193): this column scrolls, so the states
+                // must not fillMaxSize — a fillMaxSize child of a scrolling
+                // column measures 0dp and never shows (same pattern Generate
+                // already uses, B1/M-192).
+                state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh, fillMaxSize = false)
+                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh, fillMaxSize = false)
+                state.stats == null -> EmptyState(stringResource(R.string.stats_empty), fillMaxSize = false)
                 else -> StatsContent(stats = state.stats)
             }
         }

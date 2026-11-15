@@ -44,4 +44,30 @@ dependencies {
     api(libs.compose.material.icons.core)
     api(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
+
+    // Audit-200 C13 (M-018): this module declares no direct activity /
+    // lifecycle / coroutines dependency, so those versions arrived
+    // transitively from the Compose BOM (2024.12.01) and the lockfile
+    // froze them at 1.8.2 / 2.8.3 / 1.7.3 — while :app, which declares
+    // them directly, resolved to the catalog's 1.9.3 / 2.8.7 / 1.9.0.
+    // Constraints pin this graph to the catalog too; regen the lockfile
+    // after touching them (`--write-locks`), or the bump is silently
+    // ignored by locking. The `testImplementation` /
+    // `androidTestImplementation` lines exist because an `implementation`
+    // constraint does not flow into the test classpaths, which kept
+    // resolving the BOM versions. (kotlin-stdlib-jdk7/8 stay at 1.8.20
+    // here vs 1.9.10 in :app: that is not a catalog version but the max
+    // of :app's graph, and the shipped app already unifies on 1.9.10 —
+    // no constraint to add.)
+    constraints {
+        implementation(libs.activity.compose)
+        implementation(libs.lifecycle.runtime.compose)
+        implementation(libs.kotlinx.coroutines.android)
+        testImplementation(libs.activity.compose)
+        testImplementation(libs.lifecycle.runtime.compose)
+        testImplementation(libs.kotlinx.coroutines.android)
+        androidTestImplementation(libs.activity.compose)
+        androidTestImplementation(libs.lifecycle.runtime.compose)
+        androidTestImplementation(libs.kotlinx.coroutines.android)
+    }
 }

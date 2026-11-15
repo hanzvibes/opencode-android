@@ -11,9 +11,12 @@ import org.junit.Test
  * Turn-footer token totals.
  *
  * The footer must agree with the session list for the same usage: both add
- * input + output + reasoning, and neither adds cache reads (they sit inside
- * input). The footer used to add input + output only, undercounting every
- * turn the model spent thinking.
+ * input + output + reasoning + cache reads + cache writes. The engine's
+ * `input` EXCLUDES both cache buckets (audit-200 C13, M-185; upstream
+ * opencode PR #12924: `adjustedInputTokens = input − cacheRead − cacheWrite`,
+ * and the compaction overflow count adds `input + cache.read + output`),
+ * so adding the cache buckets is not double-counting — the old code that
+ * skipped them undercounted every cached turn.
  */
 class TurnTokensTest {
 
@@ -35,13 +38,25 @@ class TurnTokensTest {
     }
 
     @Test
-    fun `cache is not added on top of input`() {
+    fun `cache reads and writes are added, input excludes them`() {
+        // Audit-200 C13 (M-185): 4032 + 9 + 2393 + 0 = 6434, not 4041 —
+        // the engine's input already excludes the cache buckets.
         val usage = TokenUsage(
             input = 4032,
             output = 9,
             cache = CacheUsage(read = 2393, write = 0),
         )
-        assertEquals(4041L, turnUsageTokens(usage))
+        assertEquals(6434L, turnUsageTokens(usage))
+    }
+
+    @Test
+    fun `cache writes count too`() {
+        val usage = TokenUsage(
+            input = 4032,
+            output = 9,
+            cache = CacheUsage(read = 2393, write = 150),
+        )
+        assertEquals(6584L, turnUsageTokens(usage))
     }
 
     @Test

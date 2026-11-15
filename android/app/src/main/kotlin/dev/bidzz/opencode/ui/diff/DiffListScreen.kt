@@ -69,8 +69,6 @@ fun DiffListScreen(
     val spacing = OpenCodeTheme.tokens.spacing
 
     var filterQuery by remember { mutableStateOf("") }
-    val totalAdditions = remember(changed) { changed.values.sumOf { it.additions } }
-    val totalDeletions = remember(changed) { changed.values.sumOf { it.deletions } }
 
     val filteredList = remember(changed, filterQuery) {
         val query = filterQuery.trim().lowercase()
@@ -78,11 +76,19 @@ fun DiffListScreen(
         if (query.isEmpty()) all else all.filter { it.file.lowercase().contains(query) }
     }
 
+    // Totals of the files actually shown, not of the whole change set:
+    // with a filter active the header used to claim "Changes (N)" plus
+    // the full +/- strip above a "no results" body (audit-200 C13,
+    // M-020). With no filter the filtered list IS the whole set, so the
+    // header is unchanged.
+    val filteredAdditions = remember(filteredList) { filteredList.sumOf { it.additions } }
+    val filteredDeletions = remember(filteredList) { filteredList.sumOf { it.deletions } }
+
     ScreenScaffold(
-        title = stringResource(R.string.difflist_title, changed.size),
+        title = stringResource(R.string.difflist_title, filteredList.size),
         onBack = onBack,
-        subtitle = if (changed.isNotEmpty()) "+$totalAdditions −$totalDeletions" else null,
-        subtitleColor = if (changed.isNotEmpty()) colors.accentText else null,
+        subtitle = if (filteredList.isNotEmpty()) "+$filteredAdditions −$filteredDeletions" else null,
+        subtitleColor = if (filteredList.isNotEmpty()) colors.accentText else null,
     ) {
         if (changed.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -129,11 +135,13 @@ fun DiffListScreen(
                     )
                 }
 
-                // Summary Stats Strip
+                // Summary Stats Strip — same filtered totals as the title
+                // (audit-200 C13, M-020): the strip used to show the whole
+                // change set's +/- above a filtered list.
                 DiffSummaryHeader(
-                    fileCount = changed.size,
-                    additions = totalAdditions,
-                    deletions = totalDeletions,
+                    fileCount = filteredList.size,
+                    additions = filteredAdditions,
+                    deletions = filteredDeletions,
                 )
 
                 LazyColumn(

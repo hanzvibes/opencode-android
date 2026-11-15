@@ -26,9 +26,10 @@ data class StatsUiState(
 
 /**
  * Total tokens for a stats entry, on the same convention as the turn
- * footer and the session list: input + output + reasoning. Cache
- * read/write is not added — it would double-count tokens the model
- * already saw.
+ * footer and the session list: input + output + reasoning + cache.read
+ * + cache.write. Audit-200 C13 (M-185): cache read/write are separate
+ * buckets, NOT subsets of input — opencode's `getUsage` reports `input`
+ * as `inputTokens` − cache.read − cache.write.
  *
  * Null when the engine reported no usage at all; a reported zero stays
  * zero (audit-100 Fase 6a, 67-F5) — the old non-null `Long` forced the
@@ -37,7 +38,8 @@ data class StatsUiState(
  */
 internal fun TokenUsage?.totalTokens(): Long? {
     if (this == null) return null
-    return (input ?: 0L) + (output ?: 0L) + (reasoning ?: 0L)
+    return (input ?: 0L) + (output ?: 0L) + (reasoning ?: 0L) +
+        (cache?.read ?: 0L) + (cache?.write ?: 0L)
 }
 
 /** Cost as a short dollar amount; zero reads as $0.00, not as under a cent. */

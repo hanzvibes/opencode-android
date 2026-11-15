@@ -1741,6 +1741,22 @@ fun ChatScreen(
                                             } else {
                                                 null
                                             },
+                                            // Retry in place (audit-200 C13,
+                                            // M-191): a failed turn — the error
+                                            // bubble, or an assistant turn with
+                                            // an error attached — offers the
+                                            // banner's retry after the banner
+                                            // is dismissed. Only while a retry
+                                            // kind is live, so the pill never
+                                            // fires a no-op.
+                                            onRetry = if (
+                                                (message.role == Role.ERROR || !message.errorText.isNullOrBlank()) &&
+                                                    state.retryKind != RetryKind.NONE
+                                            ) {
+                                                onRetryError
+                                            } else {
+                                                null
+                                            },
                                             // Fork/revert (mockup group 2):
                                             // user bubbles only, like edit
                                             // and resend — the fork boundary

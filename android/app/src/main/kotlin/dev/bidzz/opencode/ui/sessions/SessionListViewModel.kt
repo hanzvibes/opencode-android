@@ -668,16 +668,20 @@ private fun SessionInfo.toRow(isPinned: Boolean = false): SessionRow {
 }
 
 /**
- * Total tokens a session used: input + output + reasoning.
+ * Total tokens a session used: input + output + reasoning + cache.read + cache.write.
  *
- * Cache read/write are subsets of input, not additions — adding them would
- * double-count. Null only when the engine reported no usage at all; a
- * reported zero stays zero (audit-100 Fase 6a, 67-F5) — the list, the turn
- * footer and Stats now share one rule: absence hides, zero shows.
+ * Audit-200 C13 (M-185): cache read/write are separate buckets, NOT
+ * subsets of input — opencode's `getUsage` reports `input` as
+ * `inputTokens` − cache.read − cache.write, so leaving them out
+ * undercounted every cached turn. Null only when the engine reported no
+ * usage at all; a reported zero stays zero (audit-100 Fase 6a, 67-F5) —
+ * the list, the turn footer and Stats now share one rule: absence hides,
+ * zero shows.
  */
 internal fun totalTokens(tokens: TokenUsage?): Long? {
     if (tokens == null) return null
-    return (tokens.input ?: 0) + (tokens.output ?: 0) + (tokens.reasoning ?: 0)
+    return (tokens.input ?: 0) + (tokens.output ?: 0) + (tokens.reasoning ?: 0) +
+        (tokens.cache?.read ?: 0) + (tokens.cache?.write ?: 0)
 }
 
 /** Relative age from an epoch-millis timestamp. Coarse on purpose: exact seconds do not help. */

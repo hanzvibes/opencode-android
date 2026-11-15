@@ -135,6 +135,15 @@ class OpenCodeApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Audit-200 C13 (M-179): record uncaught exceptions before any
+        // other work, so an early crash is captured too. The handler
+        // chains to the previous one — the process still dies normally.
+        @Suppress("DEPRECATION")
+        val version = runCatching {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            "${info.versionName} (${info.longVersionCode})"
+        }.getOrDefault("unknown")
+        CrashLog.install(filesDir, version)
         registerActivityLifecycleCallbacks(ForegroundTracker)
 
         val nativeLibraryDir = File(applicationInfo.nativeLibraryDir)

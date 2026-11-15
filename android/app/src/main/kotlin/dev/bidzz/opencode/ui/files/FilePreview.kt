@@ -166,8 +166,13 @@ private fun ImagePreview(file: File, modifier: Modifier = Modifier) {
     val spacing = OpenCodeTheme.tokens.spacing
     var decoded by remember(file) { mutableStateOf<DecodedImage?>(null) }
     var failed by remember(file) { mutableStateOf(false) }
+    // Audit-200 C13 (M-008): a decode failure is retryable in place — a
+    // file that was still being written, or briefly unreadable, needs no
+    // exit-and-reopen to try again. Bumping the attempt re-runs the decode
+    // effect below.
+    var retryAttempt by remember(file) { mutableStateOf(0) }
 
-    LaunchedEffect(file) {
+    LaunchedEffect(file, retryAttempt) {
         val result = withContext(Dispatchers.IO) {
             previewOrNull { decodeSampledBitmap(file) }
         }
@@ -181,6 +186,11 @@ private fun ImagePreview(file: File, modifier: Modifier = Modifier) {
         when {
             failed -> HatchFilePreviewUnavailableCard(
                 message = stringResource(R.string.preview_load_failed),
+                onRetry = {
+                    failed = false
+                    decoded = null
+                    retryAttempt++
+                },
             )
             decoded == null -> LoadingState(stringResource(R.string.fileview_reading))
             else -> {
@@ -231,8 +241,12 @@ private fun PdfPreview(file: File, modifier: Modifier = Modifier) {
     var pageIndex by remember(file) { mutableStateOf(0) }
     var bitmap by remember(file, pageIndex) { mutableStateOf<Bitmap?>(null) }
     var failed by remember(file) { mutableStateOf(false) }
+    // Audit-200 C13 (M-008): same in-place retry as ImagePreview — a
+    // corrupt-looking open (or a page that failed to render) can be
+    // retried without leaving the file.
+    var retryAttempt by remember(file) { mutableStateOf(0) }
 
-    LaunchedEffect(file) {
+    LaunchedEffect(file, retryAttempt) {
         val opened = withContext(Dispatchers.IO) {
             previewOrNull {
                 val fd = ParcelFileDescriptor.open(
@@ -306,6 +320,14 @@ private fun PdfPreview(file: File, modifier: Modifier = Modifier) {
             when {
                 failed -> HatchFilePreviewUnavailableCard(
                     message = stringResource(R.string.preview_load_failed),
+                    onRetry = {
+                        failed = false
+                        renderer = null
+                        bitmap = null
+                        pageIndex = 0
+                        pageCount = 0
+                        retryAttempt++
+                    },
                 )
                 bitmap == null -> LoadingState(stringResource(R.string.fileview_reading))
                 else -> {
