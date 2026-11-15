@@ -100,9 +100,46 @@ fun MoveSessionScreen(
                         }
                     }
                 }
-                state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
-                state.projects.isEmpty() -> EmptyState(stringResource(R.string.move_empty))
+                state.projects.isEmpty() -> {
+                    // Audit-200 C17 (M-264): a failure with no projects
+                    // yet is still the whole screen; a failure WITH
+                    // projects must not hide them — see the inline note
+                    // in the else branch below.
+                    if (state.failure != null) {
+                        EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
+                    } else {
+                        EmptyState(stringResource(R.string.move_empty))
+                    }
+                }
                 else -> {
+                    // Audit-200 C17 (M-264): a failed move used to replace
+                    // the whole list (and the radio choice) with an error
+                    // screen, so the operator had to re-pick the target
+                    // after every failure. The failure stays an inline
+                    // note above the list now — the list and the selection
+                    // survive, and Retry reloads without losing either.
+                    if (state.failure != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = state.failure.message(),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.danger,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = onRefresh) {
+                                Text(
+                                    text = stringResource(R.string.chat_retry),
+                                    style = OpenCodeTypography.label,
+                                    color = colors.accent,
+                                )
+                            }
+                        }
+                    }
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()

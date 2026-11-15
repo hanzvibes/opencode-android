@@ -25,6 +25,7 @@ import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
+import dev.bidzz.opencode.ui.TextAction
 import dev.bidzz.opencode.ui.message
 
 /**
@@ -49,6 +50,16 @@ fun WorktreesScreen(
         title = stringResource(R.string.worktree_title),
         onBack = onBack,
         contentMaxWidth = 720.dp,
+        actions = {
+            // Audit-200 C17 (M-261): the list used to refresh only on
+            // entry — a worktree added outside the app stayed invisible
+            // until the screen was left and re-entered.
+            TextAction(
+                label = stringResource(R.string.common_refresh),
+                onClick = onRefresh,
+                enabled = !state.loading,
+            )
+        },
     ) {
         Column(
             modifier = Modifier
@@ -68,7 +79,7 @@ fun WorktreesScreen(
             when {
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRefresh)
-                state.sections.isEmpty() -> EmptyState(stringResource(R.string.worktree_empty))
+                state.sections.isEmpty() && state.failedProjects.isEmpty() -> EmptyState(stringResource(R.string.worktree_empty))
                 else -> {
                     LazyColumn(
                         modifier = Modifier
@@ -108,6 +119,45 @@ fun WorktreesScreen(
                                 key = { index, worktree -> "$sectionIndex-$index:${worktree.directory}" },
                             ) { _, worktree ->
                                 WorktreeRow(worktree = worktree)
+                            }
+                        }
+                        // Audit-200 C17 (M-255): a project whose worktree
+                        // list failed to load is shown, not hidden — a
+                        // missing section would read as "no worktrees
+                        // there", which is not what a failed request means.
+                        state.failedProjects.forEachIndexed { failedIndex, failed ->
+                            if (state.sections.isNotEmpty() || failedIndex > 0) {
+                                item(key = "failed-divider-$failedIndex") {
+                                    RowDivider(inset = spacing.md)
+                                }
+                            }
+                            item(key = "failed-${failed.projectPath}") {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = spacing.sm),
+                                ) {
+                                    Text(
+                                        text = failed.projectName,
+                                        style = OpenCodeTypography.body,
+                                        color = colors.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = failed.projectPath,
+                                        style = OpenCodeTypography.bodySmall,
+                                        color = colors.onSurfaceMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = failed.failure.message(),
+                                        style = OpenCodeTypography.bodySmall,
+                                        color = colors.danger,
+                                        modifier = Modifier.padding(top = spacing.xxs),
+                                    )
+                                }
                             }
                         }
                     }

@@ -1,5 +1,7 @@
 package dev.bidzz.opencode.ui.mcp
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +19,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -103,6 +106,14 @@ fun McpServersScreen(
     isRuntimeOnly: (String) -> Boolean = { false },
     onClearActionSuccess: () -> Unit = {},
     onRestartEngine: () -> Unit = {},
+    /** Starts an OAuth re-auth for a NEEDS_AUTH server (audit-200 C17, M-262). */
+    onReauth: (McpServer) -> Unit = {},
+    /** Submits the code pasted back from the browser for the re-auth attempt. */
+    onSubmitReauthCode: (String) -> Unit = {},
+    /** Cancels the in-flight re-auth attempt and closes its dialog. */
+    onCancelReauth: () -> Unit = {},
+    /** The screen calls this after showing the re-auth error once. */
+    onClearReauthError: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -123,9 +134,15 @@ fun McpServersScreen(
                 McpAction.CONNECT -> R.string.mcp_connected
                 McpAction.DISCONNECT -> R.string.mcp_disconnected
                 McpAction.REMOVE -> R.string.mcp_removed
+                McpAction.REAUTH -> R.string.mcp_reauthenticated
             },
             success.name,
         )
+    }
+    // Audit-200 C17 (M-262): the re-auth error is client-side (no OAuth
+    // method on the integration) — same one-shot snackbar channel.
+    val reauthErrorMessage = state.reauthError?.let {
+        stringResource(R.string.mcp_reauth_no_oauth)
     }
     var showAddForm by remember { mutableStateOf(false) }
     var showRestartConfirm by remember { mutableStateOf(false) }
@@ -143,6 +160,11 @@ fun McpServersScreen(
         val message = actionSuccessMessage ?: return@LaunchedEffect
         (context.applicationContext as OpenCodeApplication).showSnackbar(message)
         onClearActionSuccess()
+    }
+    LaunchedEffect(state.reauthError) {
+        val message = reauthErrorMessage ?: return@LaunchedEffect
+        (context.applicationContext as OpenCodeApplication).showSnackbar(message)
+        onClearReauthError()
     }
 
     // An add is in flight until the view model says otherwise (DL-016):
@@ -230,6 +252,7 @@ fun McpServersScreen(
                                 onConnect = { onConnect(server.name) },
                                 onDisconnect = { onDisconnect(server.name) },
                                 onRemove = { removeTarget = server.name },
+                                onReauth = { onReauth(server) },
                             )
                         }
                         // Resources from every connected server, after the
@@ -373,6 +396,19 @@ fun McpServersScreen(
             },
         )
     }
+
+    // Audit-200 C17 (M-262): the OAuth re-auth dialog. It stays open
+    // while the attempt is pending — the poll loop in the view model
+    // closes it (with a success snackbar) when the browser flow
+    // completes, or shows the failure here when it fails or expires.
+    state.reauth?.let { attempt ->
+        ReauthDialog(
+            attempt = attempt,
+            busy = state.reauthBusy,
+            onSubmitCode = onSubmitReauthCode,
+            onCancel = onCancelReauth,
+        )
+    }
 }
 
 @Composable
@@ -382,6 +418,7 @@ private fun McpServerRow(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onRemove: () -> Unit,
+    onReauth: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -480,6 +517,17 @@ private fun McpServerRow(
                     Text(
                         text = stringResource(R.string.mcp_connect),
                         color = colors.accentText,
+                    )
+                }
+            }
+            // Audit-200 C17 (M-262): a NEEDS_AUTH server can re-authorize
+            // here now — Connect only retries the same handshake, so it
+            // can never fix an expired credential.
+            if (kind == McpStatusKind.NEEDS_AUTH) {
+                TextButton(onClick = onReauth, enabled = !busy) {
+                    Text(
+                        text = stringResource(R.string.mcp_reauth),
+                        color = colors.accent,
                     )
                 }
             }
@@ -831,4 +879,125 @@ private fun FormField(
             },
         )
     }
+}
+
+/**
+ * The OAuth re-auth dialog (audit-200 C17, M-262).
+ *
+ * The provider's instructions say what to do in the browser; "Open
+ * browser" opens the authorization URL in the system browser (OAuth
+ * sign-in belongs there — cookies and existing sessions live there, not
+ * in the app's web view). An "auto" attempt usually completes on its
+ * own once the redirect lands on the engine; a "code" attempt — or an
+ * "auto" one with paste — needs the code pasted back and submitted.
+ * The dialog stays open while the attempt is pending and the view model
+ * polls the status; it closes itself on completion.
+ */
+@Composable
+private fun ReauthDialog(
+    attempt: ReauthAttempt,
+    busy: Boolean,
+    onSubmitCode: (String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val colors = OpenCodeTheme.colors
+    val spacing = OpenCodeTheme.tokens.spacing
+    val context = LocalContext.current
+    var code by remember(attempt.attemptID) { mutableStateOf("") }
+    val failed = attempt.status == "failed"
+    val expired = attempt.status == "expired"
+
+    LocalizedAlertDialog(
+        onDismissRequest = onCancel,
+        confirmButton = {
+            if (attempt.needsCode && !failed && !expired) {
+                TextButton(
+                    onClick = { onSubmitCode(code) },
+                    enabled = !busy && code.isNotBlank(),
+                ) {
+                    Text(
+                        text = stringResource(R.string.mcp_reauth_submit_code),
+                        color = colors.accent,
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel, enabled = !busy) {
+                Text(
+                    text = stringResource(R.string.common_cancel),
+                    color = colors.onSurfaceMuted,
+                )
+            }
+        },
+        title = {
+            Text(text = stringResource(R.string.mcp_reauth_title, attempt.serverName))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                if (attempt.instructions.isNotBlank()) {
+                    Text(
+                        text = attempt.instructions,
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurface,
+                    )
+                }
+                TextButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(attempt.url)),
+                            )
+                        }
+                    },
+                    enabled = !busy && !failed && !expired,
+                ) {
+                    Text(
+                        text = stringResource(R.string.mcp_reauth_open_browser),
+                        color = colors.accent,
+                    )
+                }
+                if (attempt.needsCode && !failed && !expired) {
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { code = it },
+                        label = { Text(text = stringResource(R.string.mcp_reauth_code_label)) },
+                        singleLine = true,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                when {
+                    failed -> Text(
+                        text = stringResource(
+                            R.string.mcp_reauth_failed,
+                            attempt.statusMessage ?: "",
+                        ),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.danger,
+                    )
+                    expired -> Text(
+                        text = stringResource(R.string.mcp_reauth_expired),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.danger,
+                    )
+                    else -> Row(
+                        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = colors.accent,
+                        )
+                        Text(
+                            text = stringResource(R.string.mcp_reauth_waiting),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                        )
+                    }
+                }
+            }
+        },
+    )
 }

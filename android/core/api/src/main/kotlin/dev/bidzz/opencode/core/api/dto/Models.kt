@@ -112,21 +112,37 @@ data class PermissionsResponse(
 
 /**
  * One pending form for a session (`Form.Info`, `GET
- * /api/session/{id}/form`). Only the fields the question-answer path
- * needs are modelled; `ignoreUnknownKeys` drops the rest (title,
- * fields, state).
+ * /api/session/{id}/form`). The question-answer path only needs the id
+ * and metadata; generic forms (audit-200 C17, M-263) also need the
+ * title and the fields, decoded leniently — an unrecognised field type
+ * still decodes (its `type` is just a string), so a newer engine never
+ * breaks the list. Verified against the pinned engine source
+ * (`packages/schema/src/form.ts` at fork pin fedc6f20).
  *
  * The question tool creates its form with metadata `{kind: "question",
- * tool: {messageID, id}}` — see [isQuestionFor]. Verified against the
- * pinned engine source (`packages/core/src/tool/plugin/question.ts` at
- * fork pin 92b2ca0).
+ * tool: {messageID, id}}` — see [isQuestionFor]. A form without that
+ * metadata is a generic form: an agent `forms.ask()` call, an MCP
+ * elicitation, or an OAuth prompt waiting on an answer.
  */
 @Serializable
 data class FormInfo(
     val id: String,
     val sessionID: String = "",
+    val title: String = "",
+    val fields: List<FormField> = emptyList(),
     val metadata: Map<String, kotlinx.serialization.json.JsonElement> = emptyMap(),
 ) {
+    /** True when this form's metadata names it a question form. */
+    fun isQuestion(): Boolean =
+        (metadata["kind"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull == "question"
+
+    /**
+     * True when this is a generic form — anything the question tool
+     * didn't create. Those have no card in the transcript, so without
+     * a form card of their own the run waits forever (M-263).
+     */
+    fun isGeneric(): Boolean = !isQuestion()
+
     /**
      * True when this is the pending question form for the tool call
      * [callId]: the form's metadata names the tool call that asked the
@@ -135,16 +151,46 @@ data class FormInfo(
      * (audit-70 10-F3).
      */
     fun isQuestionFor(callId: String): Boolean {
-        val kind = metadata["kind"]?.let {
-            (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
-        } ?: return false
-        if (kind != "question") return false
+        if (!isQuestion()) return false
         val tool = metadata["tool"] as? kotlinx.serialization.json.JsonObject ?: return false
         return tool["id"]?.let {
             (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
         } == callId
     }
 }
+
+/**
+ * One field of a generic form (`Form.Field`).
+ *
+ * Only the fields the card renders are modelled: `key` answers the
+ * field, `type` picks the input (`string` / `integer` / `number` /
+ * `boolean` / `multiselect` / `external`), `options` offers choices,
+ * `default` pre-fills, `required` blocks submit while empty, `hidden`
+ * fields are skipped entirely (the engine uses their default), and
+ * `when` is NOT evaluated in v1 — a conditional field simply shows.
+ * `url` is the link an `external` field opens.
+ */
+@Serializable
+data class FormField(
+    val key: String = "",
+    val type: String = "",
+    val title: String? = null,
+    val description: String? = null,
+    val required: Boolean = false,
+    val hidden: Boolean = false,
+    val placeholder: String? = null,
+    val default: kotlinx.serialization.json.JsonElement? = null,
+    val options: List<FormOption> = emptyList(),
+    val url: String? = null,
+)
+
+/** One choice for a string or multiselect field (`Form.Option`). */
+@Serializable
+data class FormOption(
+    val value: String = "",
+    val label: String = "",
+    val description: String? = null,
+)
 
 @Serializable
 data class FormsResponse(

@@ -8,6 +8,8 @@ import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.McpResourceCatalog
 import dev.bidzz.opencode.core.api.dto.McpServer
 import dev.bidzz.opencode.core.api.dto.McpServerConfig
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,13 +49,49 @@ data class McpServersUiState(
      * anymore.
      */
     val hasRuntimeChanges: Boolean = false,
+    /**
+     * An OAuth re-auth attempt in flight for one NEEDS_AUTH server
+     * (audit-200 C17, M-262); null when no re-auth is running.
+     */
+    val reauth: ReauthAttempt? = null,
+    /** True while a re-auth attempt is being started, completed, or cancelled. */
+    val reauthBusy: Boolean = false,
+    /**
+     * A client-side re-auth problem — the integration has no OAuth method
+     * to repeat. API failures go to [actionFailure] instead. The screen
+     * shows this once as a snackbar, then clears it.
+     */
+    val reauthError: ReauthError? = null,
 )
 
 /** One successful MCP action, for the one-shot success snackbar (M-293). */
-enum class McpAction { ADD, CONNECT, DISCONNECT, REMOVE }
+enum class McpAction { ADD, CONNECT, DISCONNECT, REMOVE, REAUTH }
 
 /** A successful MCP action on [name] (M-293). */
 data class McpActionSuccess(val action: McpAction, val name: String)
+
+/**
+ * An OAuth re-auth attempt in flight for one NEEDS_AUTH server
+ * (audit-200 C17, M-262).
+ *
+ * The user authorizes in the browser, then either the redirect lands on
+ * the engine by itself ("auto") or they paste a code back ([needsCode]).
+ * [status] is the last polled attempt status: "pending" | "complete" |
+ * "failed" | "expired".
+ */
+data class ReauthAttempt(
+    val serverName: String,
+    val integrationID: String,
+    val attemptID: String,
+    val url: String,
+    val instructions: String,
+    val needsCode: Boolean,
+    val status: String = "pending",
+    val statusMessage: String? = null,
+)
+
+/** A re-auth problem the engine call never reached. */
+enum class ReauthError { NO_OAUTH_METHOD }
 
 /** The engine's `Mcp.Status.*` variants, as a word the UI can switch on. */
 enum class McpStatusKind { CONNECTED, DISABLED, FAILED, NEEDS_AUTH, PENDING, UNKNOWN }
@@ -306,7 +344,178 @@ class McpServersViewModel(
     fun clearActionSuccess() {
         _state.value = _state.value.copy(actionSuccess = null)
     }
+
+    /** The screen calls this after showing [McpServersUiState.reauthError] once. */
+    fun clearReauthError() {
+        _state.value = _state.value.copy(reauthError = null)
+    }
+
+    /**
+     * Starts an OAuth re-auth for a NEEDS_AUTH server (audit-200 C17,
+     * M-262): the server's auth expired, and "Connect" only retries the
+     * same handshake — it cannot re-authorize.
+     *
+     * The OAuth method id comes from the integration list (the integration
+     * itself is found by the server's `integrationID`, which the app used
+     * to ignore). The attempt opens in the browser; the screen polls the
+     * status until it completes, fails, or expires.
+     */
+    fun beginReauth(server: McpServer) {
+        if (_state.value.reauth != null || _state.value.reauthBusy) return
+        val integrationID = server.integrationID
+        if (integrationID.isNullOrBlank()) {
+            _state.value = _state.value.copy(reauthError = ReauthError.NO_OAUTH_METHOD)
+            return
+        }
+        val handle = api.handle()
+        if (handle == null) {
+            _state.value = _state.value.copy(actionFailure = engineDownFailure())
+            return
+        }
+        _state.value = _state.value.copy(reauthBusy = true, reauthError = null)
+        viewModelScope.launch {
+            when (val infos = handle.integrations.list()) {
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    reauthBusy = false,
+                    actionFailure = infos,
+                )
+                is ApiResult.Success -> {
+                    val method = infos.value
+                        .firstOrNull { it.id == integrationID }
+                        ?.methods
+                        ?.firstOrNull { it.type == "oauth" }
+                    if (method == null) {
+                        _state.value = _state.value.copy(
+                            reauthBusy = false,
+                            reauthError = ReauthError.NO_OAUTH_METHOD,
+                        )
+                        return@launch
+                    }
+                    when (val attempt = handle.integrations.beginOAuth(integrationID, method.id)) {
+                        is ApiResult.Failure -> _state.value = _state.value.copy(
+                            reauthBusy = false,
+                            actionFailure = attempt,
+                        )
+                        is ApiResult.Success -> {
+                            val value = attempt.value
+                            _state.value = _state.value.copy(
+                                reauthBusy = false,
+                                reauth = ReauthAttempt(
+                                    serverName = server.name,
+                                    integrationID = integrationID,
+                                    attemptID = value.attemptID,
+                                    url = value.url,
+                                    instructions = value.instructions,
+                                    // "code" mode shows a code to paste back;
+                                    // an "auto" attempt with paste accepts the
+                                    // redirect URL pasted from the browser.
+                                    needsCode = value.mode == "code" || value.paste,
+                                ),
+                            )
+                            pollReauth()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Submits the code (or pasted redirect URL) for the in-flight re-auth
+     * attempt. The poll loop picks the result up within seconds; a failed
+     * submit is reported through [McpServersUiState.actionFailure].
+     */
+    fun submitReauthCode(code: String) {
+        val current = _state.value.reauth ?: return
+        if (_state.value.reauthBusy) return
+        val handle = api.handle()
+        if (handle == null) {
+            _state.value = _state.value.copy(actionFailure = engineDownFailure())
+            return
+        }
+        _state.value = _state.value.copy(reauthBusy = true)
+        viewModelScope.launch {
+            when (
+                val result = handle.integrations.completeOAuth(
+                    current.integrationID,
+                    current.attemptID,
+                    code.ifBlank { null },
+                )
+            ) {
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    reauthBusy = false,
+                    actionFailure = result,
+                )
+                is ApiResult.Success -> _state.value = _state.value.copy(reauthBusy = false)
+            }
+        }
+    }
+
+    /**
+     * Cancels the in-flight re-auth attempt (best effort DELETE) and
+     * closes the dialog. A failed cancel leaves the attempt to expire
+     * on its own — nothing to report to the user.
+     */
+    fun cancelReauth() {
+        val current = _state.value.reauth ?: return
+        reauthPollJob?.cancel()
+        reauthPollJob = null
+        _state.value = _state.value.copy(reauth = null, reauthError = null, reauthBusy = false)
+        viewModelScope.launch {
+            api.handle()?.integrations?.cancelOAuth(current.integrationID, current.attemptID)
+        }
+    }
+
+    /** Polls the in-flight attempt's status every 2 s until it settles. */
+    private var reauthPollJob: Job? = null
+
+    private fun pollReauth() {
+        reauthPollJob?.cancel()
+        reauthPollJob = viewModelScope.launch {
+            while (true) {
+                delay(REAUTH_POLL_MS)
+                val current = _state.value.reauth ?: break
+                if (current.status != "pending") break
+                val handle = api.handle() ?: break
+                when (
+                    val status = handle.integrations.getOAuthStatus(
+                        current.integrationID,
+                        current.attemptID,
+                    )
+                ) {
+                    is ApiResult.Success -> {
+                        val settled = status.value.status.lowercase()
+                        _state.value = _state.value.copy(
+                            reauth = current.copy(
+                                status = settled,
+                                statusMessage = status.value.message,
+                            ),
+                        )
+                        if (settled == "complete") {
+                            reauthPollJob?.cancel()
+                            reauthPollJob = null
+                            _state.value = _state.value.copy(
+                                reauth = null,
+                                actionSuccess = McpActionSuccess(
+                                    McpAction.REAUTH,
+                                    current.serverName,
+                                ),
+                            )
+                            load(showLoading = false)
+                        }
+                    }
+                    // A transient poll failure must not kill the dialog —
+                    // the user may still be mid-authorization in the
+                    // browser. Keep polling; the attempt expires on its own.
+                    is ApiResult.Failure -> Unit
+                }
+            }
+        }
+    }
 }
+
+/** Delay between OAuth attempt status polls (M-262). */
+private const val REAUTH_POLL_MS: Long = 2_000
 
 /**
  * Parses `KEY=value` / `KEY: value` lines (one per line) into a map

@@ -94,6 +94,10 @@ import dev.bidzz.opencode.ui.inbox.InboxScreen
 import dev.bidzz.opencode.ui.inbox.InboxViewModel
 import dev.bidzz.opencode.ui.instructions.InstructionsScreen
 import dev.bidzz.opencode.ui.instructions.InstructionsViewModel
+import dev.bidzz.opencode.ui.schedule.ScheduleScreen
+import dev.bidzz.opencode.ui.schedule.ScheduleViewModel
+import dev.bidzz.opencode.ui.sessionlog.SessionLogScreen
+import dev.bidzz.opencode.ui.sessionlog.SessionLogViewModel
 import dev.bidzz.opencode.ui.export.ExportScreen
 import dev.bidzz.opencode.ui.export.ExportViewModel
 import dev.bidzz.opencode.ui.move.MoveSessionScreen
@@ -183,6 +187,10 @@ internal sealed interface Screen {
     data class MoveSession(val sessionID: String) : Screen
     data class SessionExport(val sessionID: String) : Screen
     data class Instructions(val sessionID: String) : Screen
+    /** Scheduled prompts for one session (audit-200 C17, M-259). */
+    data class Schedules(val sessionID: String) : Screen
+    /** The durable event log of one session (audit-200 C17, M-259). */
+    data class SessionLog(val sessionID: String) : Screen
     data object SessionStats : Screen
     data object UsageLimits : Screen
     data object Settings : Screen
@@ -242,6 +250,8 @@ internal sealed interface Screen {
         is MoveSession -> "movesession:$sessionID"
         is SessionExport -> "sessionexport:$sessionID"
         is Instructions -> "instructions:$sessionID"
+        is Schedules -> "schedules:$sessionID"
+        is SessionLog -> "sessionlog:$sessionID"
         SessionStats -> "sessionstats"
         UsageLimits -> "usagelimits"
         Settings -> "settings"
@@ -280,6 +290,8 @@ internal fun screenFromSavedKey(key: String): Screen {
         "movesession" -> payload?.let { Screen.MoveSession(it) } ?: Screen.Chat
         "sessionexport" -> payload?.let { Screen.SessionExport(it) } ?: Screen.Chat
         "instructions" -> payload?.let { Screen.Instructions(it) } ?: Screen.Chat
+        "schedules" -> payload?.let { Screen.Schedules(it) } ?: Screen.Chat
+        "sessionlog" -> payload?.let { Screen.SessionLog(it) } ?: Screen.Chat
         "sessionstats" -> Screen.SessionStats
         "usagelimits" -> Screen.UsageLimits
         "settings" -> Screen.Settings
@@ -354,6 +366,10 @@ internal fun Screen.parent(): Screen = when (this) {
     is Screen.MoveSession -> Screen.Sessions
     is Screen.SessionExport -> Screen.Sessions
     is Screen.Instructions -> Screen.Sessions
+    // Audit-200 C17 (M-259): schedules and the session log open from the
+    // chat status dialog, so Back returns to Chat, not Sessions.
+    is Screen.Schedules -> Screen.Chat
+    is Screen.SessionLog -> Screen.Chat
     Screen.SessionStats -> Screen.Settings
     Screen.UsageLimits -> Screen.Settings
     is Screen.About -> this.returnTo
@@ -382,7 +398,8 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Worktrees,
     Screen.EngineConfig, is Screen.About, is Screen.InAppBrowser,
     is Screen.Inbox, is Screen.MoveSession, is Screen.SessionExport,
-    is Screen.Instructions, Screen.SessionStats, Screen.UsageLimits -> 3
+    is Screen.Instructions, is Screen.Schedules, is Screen.SessionLog,
+    Screen.SessionStats, Screen.UsageLimits -> 3
     is Screen.Diff -> 4
 }
 
@@ -544,6 +561,14 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         InstructionsViewModel(app.engineApi)
     })
 
+    val scheduleViewModel: ScheduleViewModel = viewModel(factory = viewModelFactory { _ ->
+        ScheduleViewModel(app.engineApi)
+    })
+
+    val sessionLogViewModel: SessionLogViewModel = viewModel(factory = viewModelFactory { _ ->
+        SessionLogViewModel(app.engineApi)
+    })
+
     val statsViewModel: StatsViewModel = viewModel(factory = viewModelFactory { _ ->
         StatsViewModel(app.engineApi)
     })
@@ -608,6 +633,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     val moveSessionState by moveSessionViewModel.state.collectAsState()
     val exportState by exportViewModel.state.collectAsState()
     val instructionsState by instructionsViewModel.state.collectAsState()
+    val scheduleState by scheduleViewModel.state.collectAsState()
+    val sessionLogState by sessionLogViewModel.state.collectAsState()
     val statsState by statsViewModel.state.collectAsState()
     val usageLimitsState by usageLimitsViewModel.state.collectAsState()
     val providersState by providersViewModel.state.collectAsState()
@@ -1449,6 +1476,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         isRuntimeOnly = mcpServersViewModel::isRuntimeOnly,
                         onClearActionSuccess = mcpServersViewModel::clearActionSuccess,
                         onRestartEngine = app::restartEngine,
+                        // Audit-200 C17 (M-262): OAuth re-auth for NEEDS_AUTH servers.
+                        onReauth = mcpServersViewModel::beginReauth,
+                        onSubmitReauthCode = mcpServersViewModel::submitReauthCode,
+                        onCancelReauth = mcpServersViewModel::cancelReauth,
+                        onClearReauthError = mcpServersViewModel::clearReauthError,
                     )
 
                     Screen.Plugins -> PluginsScreen(
@@ -1532,6 +1564,13 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         sessionID = target.sessionID,
                         state = inboxState,
                         onBack = { screen = Screen.Sessions },
+                        // Audit-200 C17 (M-258): the list re-reads when an
+                        // inbox event arrives while the screen is open.
+                        inboxUpdatedAtMs = chatState.inboxUpdatedAtMs,
+                        // Audit-200 C17 (M-257): cancel and delivery change.
+                        onCancel = inboxViewModel::cancel,
+                        onSetDelivery = inboxViewModel::setDelivery,
+                        onClearActionFailure = inboxViewModel::clearActionFailure,
                         // Audit-200 B6 (M-594): refresh() is a no-op when
                         // the view model's session id was lost to a process
                         // death, so the screen stuck on its loading spinner
@@ -1576,6 +1615,29 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onSave = instructionsViewModel::save,
                         onEdit = instructionsViewModel::edit,
                         onDelete = instructionsViewModel::delete,
+                    )
+
+                    // Audit-200 C17 (M-259): schedules and the session log
+                    // open from the chat status dialog, so Back returns to
+                    // Chat. Load with the screen's id (M-594), not the view
+                    // model's lost one.
+                    is Screen.Schedules -> ScheduleScreen(
+                        sessionID = target.sessionID,
+                        state = scheduleState,
+                        onBack = { screen = Screen.Chat },
+                        onRefresh = { scheduleViewModel.load(target.sessionID) },
+                        onCreate = scheduleViewModel::create,
+                        onPause = scheduleViewModel::pause,
+                        onResume = scheduleViewModel::resume,
+                        onDelete = scheduleViewModel::delete,
+                        onClearActionFailure = scheduleViewModel::clearActionFailure,
+                    )
+
+                    is Screen.SessionLog -> SessionLogScreen(
+                        sessionID = target.sessionID,
+                        state = sessionLogState,
+                        onBack = { screen = Screen.Chat },
+                        onRefresh = { sessionLogViewModel.load(target.sessionID) },
                     )
 
                     Screen.SessionStats -> StatsScreen(
@@ -1651,6 +1713,21 @@ private fun ChatDestination(
         sessionsFailure = sessionsState.failure,
         sessionsFailureKey = sessionsState.failureKey,
         onOpenSession = chatViewModel::openSession,
+        // Audit-200 C17 (M-258): the inbox chip above the composer opens
+        // the queue for the session on screen; without one there is no
+        // queue to open.
+        onOpenInbox = chatState.sessionID?.let { id -> { onNavigate(Screen.Inbox(id)) } } ?: {},
+        // Audit-200 C17 (M-263): generic-form answers and cancels.
+        onSubmitForm = chatViewModel::submitForm,
+        onCancelForm = chatViewModel::cancelForm,
+        onClearFormFailure = chatViewModel::clearFormFailure,
+        // Audit-200 C17 (M-259): schedules, the session log, and skill
+        // activation live in the status dialog; without a session there
+        // is nothing to open or activate.
+        onOpenSchedules = chatState.sessionID?.let { id -> { onNavigate(Screen.Schedules(id)) } },
+        onOpenSessionLog = chatState.sessionID?.let { id -> { onNavigate(Screen.SessionLog(id)) } },
+        onActivateSkill = chatState.sessionID?.let { chatViewModel::activateSkill },
+        onClearSkillFailure = chatViewModel::clearSkillFailure,
         onDrawerOpen = { sessionViewModel.load(sessionScopeToProject) },
         // Audit-200 C5 (M-089): the drawer reports the rows actually
         // visible, so previews are walked lazily instead of eagerly.

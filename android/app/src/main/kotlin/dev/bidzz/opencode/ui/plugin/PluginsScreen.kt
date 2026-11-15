@@ -77,6 +77,16 @@ fun PluginsScreen(
         onBack = onBack,
         contentMaxWidth = 720.dp,
         actions = {
+            // Audit-200 C17 (M-261): the list used to refresh only on
+            // entry — a plugin installed outside the app stayed invisible
+            // until the screen was left and re-entered. "Check updates"
+            // reloads the inventory as a side effect, but it is not a
+            // plain refresh.
+            TextAction(
+                label = stringResource(R.string.common_refresh),
+                onClick = onRefresh,
+                enabled = !state.loading,
+            )
             TextAction(
                 label = stringResource(
                     if (state.checking) R.string.plugin_checking else R.string.plugin_check_updates,

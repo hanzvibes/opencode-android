@@ -30,6 +30,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -150,6 +151,7 @@ import dev.bidzz.opencode.ui.NoticeKind
 import dev.bidzz.opencode.ui.HatchRowSpinner
 import dev.bidzz.opencode.ui.NoticeRow
 import dev.bidzz.opencode.ui.SearchField
+import dev.bidzz.opencode.ui.SelectorChip
 import dev.bidzz.opencode.ui.setClipboardText
 import dev.bidzz.opencode.ui.files.FileRow
 import dev.bidzz.opencode.ui.files.rankQuickOpen
@@ -219,9 +221,27 @@ fun ChatScreen(
     /** Turn diff (Tier 2): opens the latest turn's file diffs. Null while no
      * session is open — the status dialog then hides the entry. */
     onTurnDiff: (() -> Unit)? = null,
+    /** Opens this session's schedules (audit-200 C17, M-259); null while
+     * no session is open — the status dialog then hides the entry. */
+    onOpenSchedules: (() -> Unit)? = null,
+    /** Opens this session's event log (M-259); null while no session is open. */
+    onOpenSessionLog: (() -> Unit)? = null,
+    /** Activates a skill for this session (M-259); null while no session is open. */
+    onActivateSkill: ((String) -> Unit)? = null,
+    /** The screen calls this after showing the skill failure once. */
+    onClearSkillFailure: () -> Unit = {},
     /** Branch list (Tier 2): loads the workspace's branches for the status dialog. */
     onLoadBranches: () -> Unit = {},
     onOpenSession: (String) -> Unit,
+    /** Opens the session's inbox queue (audit-200 C17, M-258): the chip
+     * above the composer routes here. */
+    onOpenInbox: () -> Unit = {},
+    /** Submits an answer to a pending generic form (audit-200 C17, M-263). */
+    onSubmitForm: (String, Map<String, kotlinx.serialization.json.JsonElement>) -> Unit = { _, _ -> },
+    /** Cancels a pending generic form (M-263). */
+    onCancelForm: (String) -> Unit = {},
+    /** The screen calls this after showing the form failure once. */
+    onClearFormFailure: () -> Unit = {},
     onDrawerOpen: () -> Unit,
     /** The drawer rows currently visible (audit-200 C5, M-089): the
      * view model walks previews lazily, so the drawer reports which
@@ -1225,6 +1245,13 @@ fun ChatScreen(
                 onNewSession = onNewSession,
                 onFindClick = { findActive = true },
                 onTurnDiff = onTurnDiff,
+                // Audit-200 C17 (M-259): schedules, the session log, and
+                // skill activation live in the status dialog beside Turn
+                // diff — they all act on the session on screen.
+                onOpenSchedules = onOpenSchedules,
+                onOpenSessionLog = onOpenSessionLog,
+                skills = state.skills,
+                onActivateSkill = onActivateSkill,
                 // Compact + whole-session fork (mockup group 2): the
                 // status dialog is where the context meter lives, so the
                 // compact action sits beside it. The header only opens
@@ -2303,6 +2330,64 @@ fun ChatScreen(
                         ?.firstOrNull { it.status == "running" || it.status == "streaming" }
                         ?.let { stepLabel(it.name, it.summary, it.status).text() }
 
+                    // Audit-200 C17 (M-263): a failed form submit or cancel
+                    // reports once as a snackbar, then clears — the card
+                    // stays, so the user can retry.
+                    val formFailureMessage = state.formFailure?.message()
+                    LaunchedEffect(state.formFailure) {
+                        val message = formFailureMessage ?: return@LaunchedEffect
+                        (appContext as OpenCodeApplication).showSnackbar(message)
+                        onClearFormFailure()
+                    }
+
+                    // Audit-200 C17 (M-259): a failed skill activation
+                    // reports once as a snackbar, then clears.
+                    val skillFailureMessage = state.skillFailure?.message()
+                    LaunchedEffect(state.skillFailure) {
+                        val message = skillFailureMessage ?: return@LaunchedEffect
+                        (appContext as OpenCodeApplication).showSnackbar(message)
+                        onClearSkillFailure()
+                    }
+
+                    // Audit-200 C17 (M-258): queued prompts used to arrive
+                    // silently — the operator only found them by leaving the
+                    // chat for the session list. A chip above the composer
+                    // names the queue and opens the Inbox.
+                    if (state.inboxCount > 0) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = spacing.lg, vertical = spacing.xs),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_inbox_queued, state.inboxCount),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceMuted,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = onOpenInbox) {
+                                Text(
+                                    text = stringResource(R.string.chat_inbox_view),
+                                    style = OpenCodeTypography.label,
+                                    color = colors.accent,
+                                )
+                            }
+                        }
+                    }
+
+                    // Audit-200 C17 (M-263): pending generic forms — no
+                    // SSE event announces them, so they surface here,
+                    // above the composer, until answered or skipped.
+                    state.pendingForms.forEach { form ->
+                        GenericFormCard(
+                            form = form,
+                            busy = form.id in state.formBusy,
+                            onSubmit = { answer -> onSubmitForm(form.id, answer) },
+                            onCancel = { onCancelForm(form.id) },
+                        )
+                    }
+
                     Composer(
                         value = state.draft,
                         onValueChange = onDraftChange,
@@ -2943,6 +3028,14 @@ fun ChatHeader(
     contextLimit: Long? = null,
     /** Turn diff (Tier 2); null while no session is open. */
     onTurnDiff: (() -> Unit)? = null,
+    /** Opens this session's schedules (audit-200 C17, M-259); null while no session is open. */
+    onOpenSchedules: (() -> Unit)? = null,
+    /** Opens this session's event log (M-259); null while no session is open. */
+    onOpenSessionLog: (() -> Unit)? = null,
+    /** Skills available to activate for this session (M-259). */
+    skills: List<dev.bidzz.opencode.core.api.dto.SkillInfo> = emptyList(),
+    /** Activates a skill for this session (M-259); null while no session is open. */
+    onActivateSkill: ((String) -> Unit)? = null,
     /** Compact (mockup group 2): opens the confirm in the caller; null
      * while no session is open. */
     onCompact: (() -> Unit)? = null,
@@ -3191,6 +3284,12 @@ fun ChatHeader(
             contextUsedTokens = contextUsedTokens,
             contextLimit = contextLimit,
             onTurnDiff = onTurnDiff,
+            // Audit-200 C17 (M-259): schedules, the session log, and skill
+            // activation ride the same dialog.
+            onOpenSchedules = onOpenSchedules,
+            onOpenSessionLog = onOpenSessionLog,
+            skills = skills,
+            onActivateSkill = onActivateSkill,
             onCompact = onCompact,
             compacting = compacting,
             onForkSession = onForkSession,
@@ -3233,6 +3332,14 @@ private fun EngineStatusDialog(
     contextLimit: Long? = null,
     /** Turn diff (Tier 2); null while no session is open, and the entry hides. */
     onTurnDiff: (() -> Unit)? = null,
+    /** Opens this session's schedules (audit-200 C17, M-259); null while no session is open, and the entry hides. */
+    onOpenSchedules: (() -> Unit)? = null,
+    /** Opens this session's event log (M-259); null while no session is open, and the entry hides. */
+    onOpenSessionLog: (() -> Unit)? = null,
+    /** Skills available to activate for this session (M-259). */
+    skills: List<dev.bidzz.opencode.core.api.dto.SkillInfo> = emptyList(),
+    /** Activates a skill for this session (M-259); null while no session is open, and the section hides. */
+    onActivateSkill: ((String) -> Unit)? = null,
     /** Compact (mockup group 2): opens the confirm in the caller; null
      * while no session is open, and the entry hides. */
     onCompact: (() -> Unit)? = null,
@@ -3540,6 +3647,78 @@ private fun EngineStatusDialog(
                                 text = stringResource(R.string.chat_status_dialog_turn_diff),
                                 color = colors.accentText,
                             )
+                        }
+                    }
+                }
+
+                // Audit-200 C17 (M-259): schedules and the session log act
+                // on the session on screen, so they sit beside Turn diff
+                // and close the dialog first, the same way.
+                if (onOpenSchedules != null || onOpenSessionLog != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start,
+                    ) {
+                        if (onOpenSchedules != null) {
+                            TextButton(
+                                onClick = {
+                                    onDismiss()
+                                    onOpenSchedules()
+                                },
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_status_dialog_schedules),
+                                    color = colors.accentText,
+                                )
+                            }
+                        }
+                        if (onOpenSessionLog != null) {
+                            TextButton(
+                                onClick = {
+                                    onDismiss()
+                                    onOpenSessionLog()
+                                },
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_status_dialog_session_log),
+                                    color = colors.accentText,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Audit-200 C17 (M-259): activate a skill for this session
+                // without a prompt — the engine appends a skill message and
+                // resumes execution. Tapping a chip closes the dialog and
+                // activates; the transcript shows the skill message, so no
+                // success report is needed here.
+                if (onActivateSkill != null && skills.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xxs),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.chat_status_dialog_skills),
+                            style = OpenCodeTypography.label,
+                            color = colors.onSurfaceMuted,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        ) {
+                            skills.forEach { skill ->
+                                SelectorChip(
+                                    label = skill.name.ifBlank { skill.id },
+                                    selected = false,
+                                    onClick = {
+                                        onDismiss()
+                                        onActivateSkill(skill.id)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
