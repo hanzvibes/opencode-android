@@ -60,12 +60,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.bidzz.opencode.CrashLog
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.core.engine.AntigravityPatchOutcome
 import dev.bidzz.opencode.core.engine.EngineBinary
+import dev.bidzz.opencode.core.engine.EngineCrashReport
 import dev.bidzz.opencode.core.engine.EngineDiagnostics
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.ui.AppTag
@@ -79,12 +81,14 @@ import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.StatusDot
 import dev.bidzz.opencode.ui.TextAction
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.text.SimpleDateFormat
@@ -224,6 +228,12 @@ fun DiagnosticsScreen(
     // Audit-200 C9 (M-136): the tail carries its own truncation fact —
     // a plain list of lines could not say older lines exist beyond it.
     var logTail by remember { mutableStateOf(EngineDiagnostics.LogTail(emptyList(), wasTruncated = false, fileBytes = 0)) }
+    // Audit-200 C13 (M-179/M-180): the latest crash records, read on
+    // refresh — null when the app / engine never crashed (or the file is
+    // gone). Loaded with the log tail so the section never shows a stale
+    // record next to a fresh log.
+    var lastCrash by remember { mutableStateOf<CrashLog.LastCrash?>(null) }
+    var lastEngineCrash by remember { mutableStateOf<EngineCrashReport?>(null) }
     var running by remember { mutableStateOf(false) }
     var isRestarting by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
@@ -257,7 +267,23 @@ fun DiagnosticsScreen(
             running = true
             tools = diagnostics.tools()
             scope.launch {
-                logTail = diagnostics.engineLogTail(lines = MAX_LOG_LINES)
+                // Audit-200 C13 (M-181): trim the disk log before reading
+                // it — the engine never rotates it. (M-179/M-180): read
+                // the crash records on the same pass.
+                val crashReads = withContext(Dispatchers.IO) {
+                    diagnostics.trimEngineLog()
+                    CrashLog.readLastCrash(app.filesDir) to diagnostics.lastEngineCrash()
+                }
+                lastCrash = crashReads.first
+                lastEngineCrash = crashReads.second
+                // Audit-200 C13 (M-003): the disk log is redacted with the
+                // engine password the supervisor captured, so a password
+                // echoed without its prefix no longer reaches the viewer
+                // or the clipboard verbatim.
+                logTail = diagnostics.engineLogTail(
+                    lines = MAX_LOG_LINES,
+                    password = status.credentials?.password,
+                )
                 // Audit-200 C9 (M-137): probe every tool the Tools card
                 // lists, not just git and rg — the card only proved the
                 // symlink exists, and node is the riskiest binary the
@@ -273,6 +299,21 @@ fun DiagnosticsScreen(
     }
 
     LaunchedEffect(Unit) { refresh() }
+
+    // Audit-200 C13 (M-179/M-180): one-line summaries for the crash
+    // section and the copied report — date plus the first trace line
+    // (app) or the exit code and error (engine).
+    val crashDateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US) }
+    val lastCrashSummary = remember(lastCrash) {
+        lastCrash?.let {
+            "${crashDateFormat.format(Date(it.timestampMs))} · ${it.trace.lineSequence().firstOrNull().orEmpty()}"
+        }
+    }
+    val lastEngineCrashSummary = remember(lastEngineCrash) {
+        lastEngineCrash?.let {
+            "${crashDateFormat.format(Date(it.timestampMs))} · exit ${it.exitCode ?: "?"}${it.error?.let { err -> " · $err" } ?: ""}"
+        }
+    }
 
     // The log viewer keeps only the newest slice in memory: the disk tail is
     // already capped at MAX_LOG_LINES and console output at 200 lines.
@@ -382,6 +423,12 @@ fun DiagnosticsScreen(
             if (app.startupFailure != null) {
                 appendLine("- Startup Failure: ${app.startupFailure}")
             }
+            appendLine()
+            // Audit-200 C13 (M-179/M-180): the crash records travel with
+            // the report, so a pasted bug report carries them.
+            appendLine("## Last Crashes")
+            appendLine("- Last app crash: ${lastCrashSummary ?: "None"}")
+            appendLine("- Last engine crash: ${lastEngineCrashSummary ?: "None"}")
             appendLine()
             appendLine("## Tools")
             tools.forEach { t ->
@@ -722,6 +769,27 @@ fun DiagnosticsScreen(
                     }
                 }
 
+            }
+
+            item {
+                // Audit-200 C13 (M-179/M-180): the latest crash records —
+                // the app's own uncaught exception, and the engine's last
+                // unexpected exit. Both survive a restart; "none" when
+                // there is no record yet.
+                SectionTitle(stringResource(R.string.diag_section_crashes))
+                CardGroup {
+                    DiagnosticRow(
+                        label = stringResource(R.string.diag_last_app_crash),
+                        value = lastCrashSummary ?: stringResource(R.string.diag_none),
+                        isCode = true,
+                    )
+                    RowDivider(inset = spacing.md)
+                    DiagnosticRow(
+                        label = stringResource(R.string.diag_last_engine_crash),
+                        value = lastEngineCrashSummary ?: stringResource(R.string.diag_none),
+                        isCode = true,
+                    )
+                }
             }
 
             item {

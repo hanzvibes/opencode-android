@@ -84,9 +84,11 @@ data class LiveTool(val messageID: String, val call: ToolCall)
  * contiguous chunks into one message — but the merge kept only the last
  * chunk's tokens while summing the cost, so the footer under-reported tokens
  * for every multi-chunk run. A bucket is null only when both sides report
- * nothing for it; cache read/write are subsets of input, summed like the
- * rest, and the caller's total (which adds input + output + reasoning, never
- * cache) still cannot double-count.
+ * nothing for it. Cache read/write are separate buckets, NOT subsets of
+ * input (audit-200 C13, M-185: opencode's `getUsage` reports `input` as
+ * `inputTokens` − cache.read − cache.write) — the merge sums each bucket
+ * on its own, and the caller's total adds all five, so nothing is counted
+ * twice and nothing is lost.
  */
 internal fun mergeTokenUsage(a: TokenUsage?, b: TokenUsage?): TokenUsage? {
     if (a == null) return b

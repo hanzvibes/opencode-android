@@ -351,17 +351,20 @@ class SessionApi(private val client: EngineClient) {
 
     /**
      * A session's complete projected transcript
-     * (`GET /api/experimental/session/{id}/export`).
+     * (`GET /api/experimental/session/{id}/export?sanitize=true`).
      *
      * The raw JSON comes back with the decoded data: the screen shows the
      * summary from [SessionTransferData] and copies the verbatim bytes, so
      * the export the user shares is exactly what the engine sent — no
      * re-encoding round-trip that could drop a field the app does not
      * model. Shape verified against the pinned engine source (see
-     * [SessionTransferData]); `?sanitize=true` is not sent.
+     * [SessionTransferData]); `?sanitize=true` IS sent (audit-200 C13,
+     * M-189): without it a transcript that once held a pasted API key or
+     * `.env` content was copied to the clipboard raw, in one tap, without
+     * the user ever seeing what they shared.
      */
     suspend fun export(sessionID: String): ApiResult<SessionExport> {
-        val request = client.request("/api/experimental/session/${encodePathSegment(sessionID)}/export").get().build()
+        val request = client.request("/api/experimental/session/${encodePathSegment(sessionID)}/export?sanitize=true").get().build()
         return client.execute(request) { raw ->
             SessionExport(
                 data = ApiJson.decodeFromString<SessionTransferResponse>(raw).data,

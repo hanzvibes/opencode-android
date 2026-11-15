@@ -107,4 +107,83 @@ class EngineDiagnosticsTest {
             assertFalse("${tool.name} has no source .so in this tree", tool.sourcePresent)
         }
     }
+
+    @Test
+    fun logTailRedactsTheKnownPasswordWhereverItAppears() = runTest {
+        // Audit-200 C13 (M-003): the old prefix-only redaction only caught
+        // `server password: <value>`; a line like this one — the password
+        // echoed without its prefix — reached the viewer verbatim.
+        val fixture = fixture()
+        fixture.log.writeText(
+            "server started\n" +
+                "auth failed for user opencode: hunter2\n" +
+                "still running\n",
+        )
+
+        val redacted = fixture.diagnostics.engineLogTail(password = "hunter2")
+
+        assertTrue(redacted.lines.none { it.contains("hunter2") })
+        assertTrue(redacted.lines.any { it.contains("[redacted]") })
+        assertEquals("still running", redacted.lines.last())
+    }
+
+    @Test
+    fun logTailWithoutAPasswordLeavesTheLineAlone() = runTest {
+        // The caller owns the secret: no password, no redaction — the
+        // viewer shows what the file holds.
+        val fixture = fixture()
+        fixture.log.writeText("auth failed for user opencode: hunter2\n")
+
+        val tail = fixture.diagnostics.engineLogTail()
+
+        assertEquals(listOf("auth failed for user opencode: hunter2"), tail.lines)
+    }
+
+    @Test
+    fun trimLogFileKeepsOnlyTheNewestBytes() {
+        // Audit-200 C13 (M-181): the engine never rotates its log, so the
+        // trimmer keeps the newest bytes and drops the oldest — including
+        // the partial first line.
+        val fixture = fixture()
+        val lines = (1..20).joinToString("\n") { "line $it" } + "\n"
+        fixture.log.writeText(lines)
+        val before = fixture.log.length()
+
+        val trimmed = EngineDiagnostics.trimLogFile(fixture.log, maxBytes = 60)
+
+        assertTrue(trimmed)
+        val kept = fixture.log.readText()
+        assertTrue(kept.length < before)
+        assertTrue("the newest line survives", kept.contains("line 20"))
+        assertFalse("the oldest line is gone", kept.contains("line 1\n"))
+        assertFalse("no partial first line", kept.startsWith("ine"))
+    }
+
+    @Test
+    fun trimLogFileLeavesASmallFileAlone() {
+        val fixture = fixture()
+        fixture.log.writeText("small\nlog\n")
+
+        val trimmed = EngineDiagnostics.trimLogFile(fixture.log, maxBytes = 60)
+
+        assertFalse(trimmed)
+        assertEquals("small\nlog\n", fixture.log.readText())
+    }
+
+    @Test
+    fun trimLogFileOnAMissingFileIsANoOp() {
+        val fixture = fixture()
+
+        assertFalse(EngineDiagnostics.trimLogFile(fixture.log, maxBytes = 60))
+    }
+
+    @Test
+    fun trimEngineLogUsesTheDiagnosticsLogFile() {
+        val fixture = fixture()
+        fixture.log.writeText((1..20).joinToString("\n") { "line $it" } + "\n")
+
+        // The default cap is 8 MB; a small file is untouched.
+        assertFalse(fixture.diagnostics.trimEngineLog())
+        assertTrue(fixture.log.readText().contains("line 1"))
+    }
 }

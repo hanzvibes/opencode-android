@@ -865,6 +865,9 @@
          value is called in a bug report, and translating them makes the report unsearchable. -->
     <string name="diag_section_engine_control">Engine Supervisor</string>
     <string name="diag_section_health">System Health</string>
+    <string name="diag_section_crashes">Last Crashes</string>
+    <string name="diag_last_app_crash">Last app crash</string>
+    <string name="diag_last_engine_crash">Last engine crash</string>
     <string name="diag_restart_engine">Restart Engine</string>
     <string name="diag_restarting">Restarting…</string>
     <string name="diag_restart_timeout">Restart timed out — the engine did not reach a running state.</string>

@@ -11,14 +11,16 @@ import org.junit.Test
 class StatsLabelTest {
 
     @Test
-    fun `total tokens sum input output and reasoning, not cache`() {
+    fun `total tokens sum input output reasoning and cache`() {
+        // Audit-200 C13 (M-185): 4032 + 9 + 83 + 2393 + 0 = 6517 — the
+        // engine's input excludes both cache buckets, so they belong here.
         val tokens = TokenUsage(
             input = 4032L,
             output = 9L,
             reasoning = 83L,
             cache = dev.bidzz.opencode.core.api.dto.CacheUsage(read = 2393L, write = 0L),
         )
-        assertEquals(4124L, tokens.totalTokens())
+        assertEquals(6517L, tokens.totalTokens())
     }
 
     @Test

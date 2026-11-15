@@ -161,6 +161,8 @@ class ProcessManager(
         private const val DEGRADED_ESCALATION_LIMIT = 5
         private const val SHUTDOWN_GRACE_MS = 5_000L
         private const val MAX_OUTPUT_LINES = 200
+        /** Console lines kept in a persisted crash report (audit-200 C13, M-180): the last 10, not the whole 200-line buffer. */
+        private const val ENGINE_CRASH_OUTPUT_LINES = 10
         /** The stdout line the engine prints its password on. Shared with [redactEnginePassword]. */
         internal const val PASSWORD_PREFIX = "server password"
 
@@ -280,6 +282,11 @@ class ProcessManager(
         // with a ghost for its port or workspace — unless the flag says
         // the orphan may still be working (DL-029, see [start]).
         reapZombies(preserveBusy = preserveBusyOrphan)
+
+        // Audit-200 C13 (M-181): the engine never rotates its own log,
+        // so trim it here — no engine is alive to write it now (orphans
+        // are reaped above, the new one has not spawned yet).
+        runCatching { EngineDiagnostics.trimLogFile(EngineDiagnostics.logFileFor(environment)) }
 
         patchJob?.cancel()
         patchJob = null
@@ -565,7 +572,7 @@ class ProcessManager(
             val code = runCatching { proc.exitValue() }.getOrNull()
             Log.w(TAG, "engine exited unexpectedly, code=$code")
             process.compareAndSet(proc, null)
-            transition(EngineState.FAILED, error = "Engine exited unexpectedly (code $code)")
+            transition(EngineState.FAILED, error = "Engine exited unexpectedly (code $code)", exitCode = code)
         }
     }
 
@@ -684,6 +691,8 @@ class ProcessManager(
         pid: Int? = null,
         port: Int? = null,
         error: String? = null,
+        /** Process exit code, when the transition reports a dead process (audit-200 C13, M-180). */
+        exitCode: Int? = null,
     ): Boolean = synchronized(stateLock) {
         val current = _status.value
         if (current.state == next) return@synchronized false
@@ -692,6 +701,20 @@ class ProcessManager(
             return@synchronized false
         }
         Log.i(TAG, "state ${current.state} -> $next")
+        if (next == EngineState.FAILED) {
+            // Audit-200 C13 (M-180): persist the crash BEFORE the copy
+            // below clears recentOutput — the summary is built from the
+            // outgoing state's lines, not from the emptied one. A failed
+            // persist must never break the transition itself.
+            val report = EngineCrashStore.buildReport(
+                exitCode = exitCode,
+                error = error,
+                outputLines = current.recentOutput.takeLast(ENGINE_CRASH_OUTPUT_LINES),
+                password = capturedPassword.get(),
+            )
+            runCatching { EngineCrashStore.save(environment.root, report) }
+                .onFailure { Log.w(TAG, "could not persist engine crash", it) }
+        }
         _status.value = current.copy(
             state = next,
             credentials = when (next) {

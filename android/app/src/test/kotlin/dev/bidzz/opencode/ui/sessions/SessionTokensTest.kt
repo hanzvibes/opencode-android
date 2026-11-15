@@ -11,8 +11,9 @@ import org.junit.Test
  * Per-session token totals for the history list.
  *
  * The total is what the row shows next to the cost; getting it wrong would
- * either hide usage (a null where the engine did report tokens) or inflate
- * it (counting cache reads, which are already inside input, twice).
+ * either hide usage (a null where the engine did report tokens) or
+ * undercount it (the engine's `input` excludes both cache buckets —
+ * audit-200 C13, M-185 — so the cache reads and writes belong in the sum).
  */
 class SessionTokensTest {
 
@@ -33,13 +34,14 @@ class SessionTokensTest {
     }
 
     @Test
-    fun `cache is not added on top of input`() {
+    fun `cache reads and writes are added, input excludes them`() {
+        // Audit-200 C13 (M-185): 4032 + 9 + 2393 + 0 = 6434, not 4041.
         val usage = TokenUsage(
             input = 4032,
             output = 9,
             cache = CacheUsage(read = 2393, write = 0),
         )
-        assertEquals(4041L, totalTokens(usage))
+        assertEquals(6434L, totalTokens(usage))
     }
 
     @Test

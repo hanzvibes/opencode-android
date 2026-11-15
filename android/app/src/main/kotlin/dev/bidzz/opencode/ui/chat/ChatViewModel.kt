@@ -5080,8 +5080,16 @@ class ChatViewModel(
     /** Remembers the session id so a relaunch can restore it. */
     fun currentSessionID(): String? = _state.value.sessionID
 
+    /**
+     * Dismisses the error banner.
+     *
+     * Audit-200 C13 (M-191): the dismiss keeps [ChatUiState.retryKind] —
+     * clearing it destroyed the only retry path, and the error bubble's
+     * Retry pill dispatches on it. The failure itself is gone, so the
+     * banner does not come back; the bubble still offers the retry.
+     */
     fun dismissError() {
-        _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE, selectionFailure = null)
+        _state.value = _state.value.copy(failure = null, failureKey = null, selectionFailure = null)
     }
 
     override fun onCleared() {
@@ -5450,19 +5458,33 @@ private fun sumOrNull(a: Double?, b: Double?): Double? =
     if (a == null && b == null) null else (a ?: 0.0) + (b ?: 0.0)
 
 /**
- * Turn-footer token total: input + output + reasoning.
+ * Turn-footer token total: input + output + reasoning + cache.read + cache.write.
  *
- * Reasoning is its own bucket in this engine's accounting — a real payload
- * reports reasoning 83 against output 9 — so leaving it out undercounts
- * the turn, the way the footer did before this fix. Cache reads sit inside
- * input and are never added on top. Null when the engine reported no usage
- * at all; a reported zero stays zero, matching the footer's old behaviour
- * for an all-zero turn.
+ * Audit-200 C13 (M-185): the engine's `input` does NOT include the cache
+ * buckets, so leaving them out undercounted every cached turn. Opencode's
+ * `getUsage` reports `input` as `adjustedInputTokens` = `inputTokens`
+ * − cache.read − cache.write (and its overflow check sums
+ * `input + cache.read + output`); Anthropic is the exception that proves
+ * it — its `inputTokens` never included cache, so no subtraction happens
+ * there — and in both cases the reported `input` excludes cache. A
+ * cache-only report still counts: the null guard covers the cache
+ * buckets too. Null when the engine reported no usage at all; a
+ * reported zero stays zero, matching the footer's old behaviour for an
+ * all-zero turn.
  */
 internal fun turnUsageTokens(tokens: TokenUsage?): Long? {
     if (tokens == null) return null
-    return listOfNotNull(tokens.input, tokens.output, tokens.reasoning).sum()
-        .takeIf { tokens.input != null || tokens.output != null || tokens.reasoning != null }
+    return listOfNotNull(
+        tokens.input,
+        tokens.output,
+        tokens.reasoning,
+        tokens.cache?.read,
+        tokens.cache?.write,
+    ).sum()
+        .takeIf {
+            tokens.input != null || tokens.output != null || tokens.reasoning != null ||
+                tokens.cache?.read != null || tokens.cache?.write != null
+        }
 }
 
 /**

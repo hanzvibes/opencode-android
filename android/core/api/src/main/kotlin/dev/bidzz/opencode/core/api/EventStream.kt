@@ -169,8 +169,14 @@ internal class SseParser {
         return runCatching {
             ApiJson.decodeFromString<EngineEvent>(payload)
         }.onFailure {
-            // One malformed event must not kill the stream.
-            Log.w("SseParser", "skipping undecodable event: ${payload.take(120)}")
+            // One malformed event must not kill the stream. Log the failure,
+            // never the payload: the first bytes of an undecodable event are
+            // conversation content (user text, agent output, file contents).
+            // Audit-200 C13 (M-007).
+            Log.w(
+                "SseParser",
+                "skipping undecodable event (${payload.length} bytes): ${it::class.java.simpleName}",
+            )
         }.getOrNull()
     }
 }

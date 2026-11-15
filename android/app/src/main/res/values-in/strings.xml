@@ -858,6 +858,9 @@
          laporan bug, dan menerjemahkannya membuat laporan tidak bisa dicari. -->
     <string name="diag_section_engine_control">Pengawas Mesin</string>
     <string name="diag_section_health">Kesehatan Sistem</string>
+    <string name="diag_section_crashes">Crash Terakhir</string>
+    <string name="diag_last_app_crash">Crash aplikasi terakhir</string>
+    <string name="diag_last_engine_crash">Crash engine terakhir</string>
     <string name="diag_restart_engine">Mulai Ulang Mesin</string>
     <string name="diag_restarting">Memulai ulang…</string>
     <string name="diag_restart_timeout">Restart kehabisan waktu — mesin tidak mencapai status berjalan.</string>

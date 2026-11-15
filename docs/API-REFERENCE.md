@@ -545,7 +545,7 @@ printed to stdout at startup.
 | `Skill.Name` | string |  |
 | `SkillNotFoundErrorEncoded` | object | _tag, skill, message |
 | `Snapshot.ID` | string |  |
-| `TokenUsage.Info` | object | input, output, reasoning, cache |
+| `TokenUsage.Info` | object | input, output, reasoning, cache — `input` EXCLUDES cache.read/write (opencode `getUsage`: `input` = `inputTokens` − cache.read − cache.write; Anthropic `inputTokens` never included cache). Total = input + output + reasoning + cache.read + cache.write |
 | `Tool.Content` | anyOf |  |
 | `Tool.FileContent` | object | type, uri, mime, name |
 | `Tool.TextContent` | object | type, text |
