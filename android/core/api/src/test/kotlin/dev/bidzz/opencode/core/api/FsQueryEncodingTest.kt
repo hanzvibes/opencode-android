@@ -1,5 +1,10 @@
 package dev.bidzz.opencode.core.api
 
+import java.io.IOException
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.util.concurrent.ConcurrentLinkedQueue
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,5 +50,54 @@ class FsQueryEncodingTest {
             "/api/experimental/fs/write?location%5Bdirectory%5D=%2Fdata%2Fx&path=main.py",
             api.writeUrl("/data/x", "main.py"),
         )
+    }
+
+    /** Serves a canned branch list and records every request line. */
+    private class Stub : AutoCloseable {
+        private val socket = ServerSocket(0, 5, InetAddress.getLoopbackAddress())
+        val port: Int get() = socket.localPort
+        val requests = ConcurrentLinkedQueue<String>()
+        private val listener = Thread {
+            while (true) {
+                val connection = try { socket.accept() } catch (e: IOException) { break }
+                Thread {
+                    connection.use {
+                        val requestLine = runCatching { it.getInputStream().bufferedReader().readLine() }.getOrNull().orEmpty()
+                        requests += requestLine
+                        val body = """{"data":["fix login","other"]}""".encodeToByteArray()
+                        val out = it.getOutputStream()
+                        out.write(
+                            ("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
+                                "Content-Length: ${body.size}\r\nConnection: close\r\n\r\n")
+                                .encodeToByteArray(),
+                        )
+                        out.write(body)
+                        out.flush()
+                    }
+                }.apply { isDaemon = true; start() }
+            }
+        }.apply { isDaemon = true; start() }
+
+        override fun close() {
+            runCatching { socket.close() }
+            listener.interrupt()
+        }
+    }
+
+    @Test
+    fun `a branch search with a space reaches the engine as percent-encoding`() {
+        // Audit-200 C12 (M-175): the search used to go out with the space
+        // as `+`, which the engine reads as a literal plus — searching
+        // "fix login" always answered an empty list.
+        Stub().use { stub ->
+            val vcs = VcsApi(EngineClient("http://127.0.0.1:${stub.port}", "Basic dXNlcjp4"))
+            val result = runBlocking { vcs.branches("/data/x", search = "fix login") }
+
+            assertTrue(result is ApiResult.Success)
+            assertEquals(listOf("fix login", "other"), (result as ApiResult.Success).value)
+            val request = stub.requests.single()
+            assertTrue(request, request.contains("search=fix%20login"))
+            assertFalse(request, request.contains("fix+login"))
+        }
     }
 }

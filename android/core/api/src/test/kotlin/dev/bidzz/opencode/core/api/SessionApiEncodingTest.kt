@@ -6,6 +6,7 @@ import java.net.ServerSocket
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,7 +18,7 @@ import org.junit.Test
 class SessionApiEncodingTest {
 
     /** Serves a canned session and records every request line. */
-    private class Stub : AutoCloseable {
+    private class Stub(private val body: String = """{"data":{"id":"a/b"}}""") : AutoCloseable {
         private val socket = ServerSocket(0, 5, InetAddress.getLoopbackAddress())
         val port: Int get() = socket.localPort
         val requests = ConcurrentLinkedQueue<String>()
@@ -28,7 +29,7 @@ class SessionApiEncodingTest {
                     connection.use {
                         val requestLine = runCatching { it.getInputStream().bufferedReader().readLine() }.getOrNull().orEmpty()
                         requests += requestLine
-                        val body = """{"data":{"id":"a/b"}}""".encodeToByteArray()
+                        val body = this.body.encodeToByteArray()
                         val out = it.getOutputStream()
                         out.write(
                             ("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
@@ -74,6 +75,21 @@ class SessionApiEncodingTest {
 
             assertTrue(result is ApiResult.Success)
             assertTrue(stub.requests.single().contains("GET /api/session/a%2Fb "))
+        }
+    }
+
+    @Test
+    fun `listPage with a directory containing a space requests percent-encoding`() {
+        // Audit-200 C12 (M-173): the directory used to go out with the space
+        // as `+`, which the engine reads as a literal plus — a project in
+        // "my app" looked like it had no sessions at all.
+        Stub(body = """{"data":[]}""").use { stub ->
+            val result = runBlocking { api(stub).listPage(directory = "/tmp/my app") }
+
+            assertTrue(result is ApiResult.Success)
+            val request = stub.requests.single()
+            assertTrue(request, request.contains("directory=%2Ftmp%2Fmy%20app"))
+            assertFalse(request, request.contains("my+app"))
         }
     }
 }

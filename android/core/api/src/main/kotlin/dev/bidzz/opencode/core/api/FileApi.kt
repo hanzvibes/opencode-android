@@ -13,7 +13,6 @@ import dev.bidzz.opencode.core.api.dto.VcsInfoResponse
 import dev.bidzz.opencode.core.api.dto.VcsStatusResponse
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
-import java.net.URLEncoder
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.CancellationException
@@ -328,8 +327,7 @@ class FileApi(private val client: EngineClient) {
      * engine: reading `with space.md` through `+` answers
      * `File not found: with+space.md [HTTP 404] [FileNotFoundError]`.
      */
-    private fun enc(value: String): String =
-        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+    private fun enc(value: String): String = encodeQueryValue(value)
 }
 
 /**
@@ -378,7 +376,9 @@ class VcsApi(private val client: EngineClient) {
         val query = buildString {
             append("/api/vcs/branch?").append(FileApi(client).locationParam(directory))
             if (!search.isNullOrBlank()) {
-                append("&search=").append(java.net.URLEncoder.encode(search, "UTF-8"))
+                // Audit-200 C12 (M-175): a space sent as `+` reads as a
+                // literal plus server-side, so "fix login" matched nothing.
+                append("&search=").append(encodeQueryValue(search))
             }
             if (limit != null) append("&limit=").append(limit)
         }
