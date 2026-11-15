@@ -1597,10 +1597,13 @@ private fun badgeColorForKind(kind: ToolKind, colors: OpenCodeColors): Color = w
     // over the assistant bubble, so the blue kinds use the dedicated
     // badge text token — accentText is only 4.27:1 (light) / 3.95:1
     // (dark) there, badgeAccentText is 6.14:1 / 6.77:1.
+    // Audit-200 D5 (m-855): the orange kinds have the same problem —
+    // the plain light warning is only 4.27:1 on its tint — so they use
+    // the dedicated badgeWarningText (5.93:1 light / 7.11:1 dark).
     ToolKind.SHELL -> colors.badgeAccentText
     ToolKind.READ -> colors.success
-    ToolKind.WRITE -> colors.warning
-    ToolKind.EDIT -> colors.warning
+    ToolKind.WRITE -> colors.badgeWarningText
+    ToolKind.EDIT -> colors.badgeWarningText
     ToolKind.SEARCH -> colors.badgeAccentText
     ToolKind.LIST -> colors.syntaxNumber
     ToolKind.FETCH -> colors.badgeAccentText

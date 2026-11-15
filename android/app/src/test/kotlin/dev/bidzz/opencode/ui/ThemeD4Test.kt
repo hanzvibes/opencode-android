@@ -99,12 +99,20 @@ class ThemeD4Test {
     }
 
     @Test
-    fun `the launch-window comments no longer claim the system theme is the app theme`() {
+    fun `both launch-window variants use the same neutral black background`() {
+        // Audit-200 D5 (m-1179), conscious change of the D4 guard: the
+        // SYSTEM preview window is drawn before any app code runs, so it
+        // cannot know the pinned theme — both variants now use the same
+        // neutral black instead of following the system theme, so the
+        // flash is the same colour whatever the pin is.
         val light = read("src/main/res/values/themes.xml")
         val night = read("src/main/res/values-night/themes.xml")
         assertFalse(light.contains("follows the light theme (Putih B)"))
         assertTrue(light.contains("SYSTEM"))
         assertTrue(night.contains("SYSTEM"))
+        assertTrue(light.contains("android:windowBackground\">#000000"))
+        assertTrue(night.contains("android:windowBackground\">#000000"))
+        assertFalse(light.contains("#F9F9FA"))
     }
 
     // ---- Contrast (m-002 / m-015 / m-341) ----

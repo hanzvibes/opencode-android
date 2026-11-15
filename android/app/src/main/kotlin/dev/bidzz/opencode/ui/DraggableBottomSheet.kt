@@ -195,7 +195,16 @@ fun DraggableBottomSheet(
                     onDragStopped = onDragStopped,
                 )
 
-                // Scrim: tap to dismiss (never to confirm).
+                // Scrim: tap to dismiss (never to confirm). Audit-200 D5
+                // (m-1002): 45% black is a deliberate no-op in dark — black
+                // over the black page stays black, so the sheet edge is
+                // carried by the hairline, not the scrim (light: the same
+                // scrim darkens the page to #89898A, 3.49:1 against the
+                // sheet). Neither audit suggestion works in dark: a
+                // stronger black alpha still cannot darken black, and a
+                // white veil inverts the hierarchy (the backdrop ends up
+                // lighter than the sheet). Do not "fix" this by raising
+                // the alpha or adding a white veil.
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

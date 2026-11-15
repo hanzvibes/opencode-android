@@ -1097,6 +1097,11 @@
     <string name="providers_delete_jsonc_body">opencode.jsonc bisa berisi pengaturan yang Anda tulis sendiri — penyedia dan blok MCP yang tidak dikelola aplikasi. Cadangan disimpan dulu sebagai opencode.jsonc.bak, lalu penyedia dikelola di opencode.json.</string>
     <string name="providers_jsonc_deleted_with_json">opencode.jsonc dihapus. Cadangan disimpan sebagai opencode.jsonc.bak. Penyedia sekarang berasal dari opencode.json.</string>
     <string name="providers_jsonc_deleted_fresh">opencode.jsonc dihapus. Cadangan disimpan sebagai opencode.jsonc.bak. Penyedia akan dikelola di opencode.json baru.</string>
+    <string name="providers_merge_jsonc">Gabungkan ke opencode.json</string>
+    <string name="providers_merge_jsonc_title">Gabungkan opencode.jsonc ke opencode.json?</string>
+    <string name="providers_merge_jsonc_body">Penyedia dari opencode.jsonc disalin ke opencode.json. Kalau kedua berkas mendefinisikan penyedia yang sama, versi opencode.jsonc yang menang. Cadangan disimpan dulu sebagai opencode.jsonc.bak, lalu opencode.jsonc dihapus. Pengaturan lain di opencode.jsonc — blok MCP dan apa pun yang tidak dikelola aplikasi — hanya tersisa di cadangan itu.</string>
+    <string name="providers_jsonc_merged">%1$d penyedia dipindah ke opencode.json, %2$d diganti versi opencode.jsonc. Cadangan disimpan sebagai opencode.jsonc.bak.</string>
+    <string name="providers_jsonc_merge_blocked">Tidak bisa menggabungkan opencode.jsonc: %1$s. Tidak ada yang diubah.</string>
     <string name="providers_config_unreadable">Berkas konfigurasi %1$s tidak bisa dibaca: %2$s. Daftar penyedia mungkin tidak lengkap.</string>
     <string name="providers_stale_key">Kunci baru untuk %1$s tersimpan, tetapi kunci lama masih ada.</string>
     <string name="providers_restart_failed">Engine tidak bisa di-restart. Provider sudah tersimpan, tetapi engine belum menerapkannya.</string>

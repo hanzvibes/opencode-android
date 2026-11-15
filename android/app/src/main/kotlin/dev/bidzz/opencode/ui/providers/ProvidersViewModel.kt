@@ -677,6 +677,60 @@ class ProvidersViewModel(
     }
 
     /**
+     * Merges the providers from `opencode.jsonc` into `opencode.json`
+     * (audit-200 D5, m-1239). Offered beside the delete-`.jsonc` button
+     * on the shadowed-providers banner: deleting was the only way out,
+     * and it dropped every provider that lived only in the `.jsonc`.
+     * The merge keeps the `.jsonc` version where both files define the
+     * same id, refuses when an entry is not an object, and writes a
+     * `.jsonc.bak` backup before deleting the `.jsonc` — the notice
+     * names how many providers moved and how many were replaced.
+     * (`refresh()` keeps the notice; it only clears the failure key.)
+     */
+    fun mergeJsoncConfig() {
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) { configStore.mergeJsoncProvidersIntoJson() }
+            when (outcome) {
+                is EngineConfigStore.JsoncMergeResult.Merged -> {
+                    _state.value = _state.value.copy(
+                        failureKey = null,
+                        notice = DeleteNotice(
+                            R.string.providers_jsonc_merged,
+                            listOf(outcome.moved.size + outcome.overwritten.size, outcome.overwritten.size),
+                        ),
+                    )
+                    refresh()
+                }
+                EngineConfigStore.JsoncMergeResult.Missing -> {
+                    // Already gone (deleted elsewhere): the goal state is
+                    // reached, so clear the failure and show what is there.
+                    _state.value = _state.value.copy(failureKey = null)
+                    refresh()
+                }
+                is EngineConfigStore.JsoncMergeResult.Blocked -> {
+                    _state.value = _state.value.copy(
+                        failureKey = R.string.providers_config_write_failed,
+                        connected = null,
+                        notice = DeleteNotice(
+                            R.string.providers_jsonc_merge_blocked,
+                            listOf(outcome.reason),
+                        ),
+                        staleKeyRemains = false,
+                    )
+                }
+                EngineConfigStore.JsoncMergeResult.DeleteFailed -> {
+                    _state.value = _state.value.copy(
+                        failureKey = R.string.providers_config_write_failed,
+                        connected = null,
+                        notice = null,
+                        staleKeyRemains = false,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * State at the start of an action: busy for this target.
      *
      * Audit-200 B4 (M-035): the old version cleared every outcome and set

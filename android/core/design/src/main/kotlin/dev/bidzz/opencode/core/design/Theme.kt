@@ -158,6 +158,15 @@ data class OpenCodeColors(
      */
     val badgeAccentText: Color = accentText,
     /**
+     * Text-safe orange for the tool-kind badge (audit-200 D5, m-855):
+     * the WRITE/EDIT label is 9sp bold mono on a 14% tint of itself
+     * over the assistant bubble. Light #6B4500 is 5.93:1 there (the
+     * plain light warning #8A5A00 is only 4.27:1); dark #FFB340 is
+     * 7.11:1. The default is the light text value — a *Text field must
+     * never default to the raw token (136-F8).
+     */
+    val badgeWarningText: Color = Palette.lightBadgeWarningText,
+    /**
      * Text-safe variants of [toolRunning] / [toolError] for the status
      * pills (47-F4): the pill text sits on a 12% tint of the same colour
      * over the assistant bubble. In light the plain tokens already pass
@@ -432,6 +441,7 @@ private val DarkColors = OpenCodeColors(
     toolPending = Palette.darkToolPending,
     toolPendingBg = Palette.darkToolPendingBg,
     badgeAccentText = Palette.darkBadgeAccentText,
+    badgeWarningText = Palette.darkBadgeWarningText,
     toolRunningText = Palette.darkToolRunningText,
     toolErrorText = Palette.darkToolErrorText,
     diffAdded = Palette.darkDiffAdded,
@@ -508,6 +518,7 @@ private val LightColors = OpenCodeColors(
     toolPending = Palette.lightToolPending,
     toolPendingBg = Palette.lightToolPendingBg,
     badgeAccentText = Palette.lightBadgeAccentText,
+    badgeWarningText = Palette.lightBadgeWarningText,
     toolRunningText = Palette.lightToolRunning,
     toolErrorText = Palette.lightToolError,
     diffAdded = Palette.lightDiffAdded,
@@ -595,6 +606,7 @@ private fun OpenCodeColors.animated(animationSpec: AnimationSpec<Color>): OpenCo
     toolPending = animateColorAsState(toolPending, animationSpec, label = "toolPending").value,
     toolPendingBg = animateColorAsState(toolPendingBg, animationSpec, label = "toolPendingBg").value,
     badgeAccentText = animateColorAsState(badgeAccentText, animationSpec, label = "badgeAccentText").value,
+    badgeWarningText = animateColorAsState(badgeWarningText, animationSpec, label = "badgeWarningText").value,
     toolRunningText = animateColorAsState(toolRunningText, animationSpec, label = "toolRunningText").value,
     toolErrorText = animateColorAsState(toolErrorText, animationSpec, label = "toolErrorText").value,
     diffAdded = animateColorAsState(diffAdded, animationSpec, label = "diffAdded").value,

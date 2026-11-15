@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.AuraPalette
+import dev.bidzz.opencode.core.design.Palette
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 
@@ -48,15 +49,21 @@ enum class HatchPublishState {
 }
 
 /**
- * The status dot for a state. Dots are decoration, never text, so
- * [AuraPalette.auraFaint] is fine for [HatchPublishState.UNPUBLISHED]
- * even though it fails AA as text.
+ * The status dot for a state. Dots are decoration, never text, so the
+ * bar is the 3:1 graphics ratio, not 4.5:1 — but the light fills used
+ * raw in dark were all 3.47–3.71:1 on the dark sheet and, worse, the
+ * muted/faint order inverted there (faint 5.80 brighter than muted
+ * 3.47). Audit-200 D5 (m-675): the dark fills are brighter — blue
+ * #5890FF (5.55), green #30D158 (8.42), danger #FF453A (4.99),
+ * muted #9A9AA0 (6.08), faint #9197A3 (5.80) — so the order survives
+ * and every dot clears 3:1 on the dark sheet #1C1C1E. Pure so it is
+ * unit-testable.
  */
-fun HatchPublishState.dotColor(): Color = when (this) {
-    HatchPublishState.PUBLISH -> AuraPalette.auraBlueFill
-    HatchPublishState.SUCCESS -> AuraPalette.auraSuccess
-    HatchPublishState.FAILED -> AuraPalette.auraDanger
-    HatchPublishState.UP_TO_DATE -> AuraPalette.auraMuted
+fun HatchPublishState.dotColor(isDark: Boolean): Color = when (this) {
+    HatchPublishState.PUBLISH -> if (isDark) AuraPalette.auraBlue else AuraPalette.auraBlueFill
+    HatchPublishState.SUCCESS -> if (isDark) Palette.success else AuraPalette.auraSuccess
+    HatchPublishState.FAILED -> if (isDark) Palette.danger else AuraPalette.auraDanger
+    HatchPublishState.UP_TO_DATE -> if (isDark) Palette.darkOnSurfaceFaint else AuraPalette.auraMuted
     HatchPublishState.UNPUBLISHED -> AuraPalette.auraFaint
 }
 
@@ -124,7 +131,7 @@ fun HatchPublishBottomSheet(
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .background(state.dotColor(), CircleShape),
+                        .background(state.dotColor(colors.isDark), CircleShape),
                 )
                 Text(
                     text = stringResource(hatchPublishStateLabelRes(state)),

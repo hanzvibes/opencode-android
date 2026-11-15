@@ -98,9 +98,13 @@ fun HatchEditFileButton(
             style = OpenCodeTypography.label,
             // Aura blue as text is only AA in its darkened form:
             // auraBlueText (7.89:1 on white). Bright auraBlue (3.07:1)
-            // is dots/fills only, never text.
-            color = if (enabled) AuraPalette.auraBlueText
-            else OpenCodeTheme.colors.onSurfaceFaint,
+            // is dots/fills only, never text. Audit-200 D5 (m-998):
+            // auraBlueText is 2.16:1 on the dark surface, so dark uses
+            // the app accent text instead.
+            color = if (enabled) {
+                if (OpenCodeTheme.colors.isDark) OpenCodeTheme.colors.accentText
+                else AuraPalette.auraBlueText
+            } else OpenCodeTheme.colors.onSurfaceFaint,
         )
     }
 }

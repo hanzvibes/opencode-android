@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- #12, audit-200 D4 (m-014): night twin of values/themes.xml — OLED
-         black launch window, dark bars (light-bar flags off). Like the
-         light twin, this variant is picked from the SYSTEM theme until
-         MainActivity applies the pinned theme in onCreate. The runtime
-         SideEffect in OpenCodeTheme keeps the bars in sync with the app
-         theme. -->
+    <!-- #12, audit-200 D4 (m-014) + D5 (m-1179): night twin of
+         values/themes.xml — identical window background and bar flags.
+         The SYSTEM preview window cannot know the pinned theme, so both
+         variants use the same neutral black (see the light twin). The
+         runtime SideEffect in OpenCodeTheme keeps the bars in sync with
+         the app theme. -->
     <style name="Theme.OpenCode" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

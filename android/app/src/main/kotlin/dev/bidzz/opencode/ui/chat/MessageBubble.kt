@@ -207,6 +207,12 @@ fun MessageBubble(
      * turns. Null hides the pill. */
     onFork: (() -> Unit)? = null,
     onRevert: (() -> Unit)? = null,
+    /** Audit-200 D5 (m-597): whether the fork / revert pills are live.
+     * False while the action is already in flight — the ViewModel
+     * swallows a second tap silently, so a live-looking pill would lie.
+     * The screen passes !state.forking / !state.revertBusy. */
+    forkEnabled: Boolean = true,
+    revertEnabled: Boolean = true,
     /** Per-tool durations in milliseconds, keyed by tool id (Phase 2,
      * finding 20): client-side stamps from the ViewModel. Empty until a
      * tool is seen live; a finished step without one shows no duration. */
@@ -411,6 +417,7 @@ fun MessageBubble(
                                 label = stringResource(R.string.message_fork),
                                 glyph = Glyph.GitBranch,
                                 onClick = onFork,
+                                enabled = forkEnabled,
                             )
                         }
                         if (onRevert != null) {
@@ -418,6 +425,7 @@ fun MessageBubble(
                                 label = stringResource(R.string.message_revert),
                                 glyph = Glyph.History,
                                 onClick = onRevert,
+                                enabled = revertEnabled,
                             )
                         }
                     }

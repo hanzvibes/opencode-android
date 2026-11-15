@@ -240,6 +240,34 @@ class WhiteThemeTest {
         )
     }
 
+    @Test
+    fun `warning badge text passes AA on its light tint`() {
+        // Audit-200 D5 (m-855): the WRITE/EDIT badge label is 9sp bold mono
+        // on a 14% tint of itself over the assistant bubble. The plain light
+        // warning is only 4.27:1 there, so the badge has its own darker
+        // orange (5.93:1).
+        val badgeTint = Palette.lightBadgeWarningText.copy(alpha = 0.14f)
+            .compositeOver(Palette.lightAssistantBubble)
+        assertTrue(
+            "badgeWarningText on its tint is " +
+                "${contrastRatio(Palette.lightBadgeWarningText, badgeTint)}, below AA 4.5:1",
+            contrastRatio(Palette.lightBadgeWarningText, badgeTint) >= 4.5,
+        )
+    }
+
+    @Test
+    fun `the diff deletions chip passes AA on the light screen background`() {
+        // Audit-200 D5 (m-927): the chip sits directly on the screen
+        // background, not on a raised card — pin the real background.
+        val background = Color(0xFFF9F9FA)
+        val tint = Palette.lightDangerText.copy(alpha = 0.14f).compositeOver(background)
+        assertTrue(
+            "light danger chip text on its tint over the background is " +
+                "${contrastRatio(Palette.lightDangerText, tint)}, below AA 4.5:1",
+            contrastRatio(Palette.lightDangerText, tint) >= 4.5,
+        )
+    }
+
     // ---- WCAG relative luminance, straight from the spec ----
 
     private fun luminance(color: Color): Double {

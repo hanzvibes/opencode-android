@@ -16,12 +16,14 @@ import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
+import dev.bidzz.opencode.core.engine.StartupTimings
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -290,6 +292,9 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Audit-200 D5 (m-875): cold-start timing starts here — this is
+        // the first mark, so every later stage is measured against it.
+        StartupTimings.mark("appOnCreate")
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // Audit-200 D4 (m-014/m-342/m-437/m-500): the launch window follows
@@ -318,6 +323,7 @@ class MainActivity : FragmentActivity() {
         // silent anymore — the reason (usually a missing binary) reaches
         // the user instead of leaving them on a dead chat screen.
         val app = application as OpenCodeApplication
+        StartupTimings.mark("engineStartRequested")
         if (!app.startEngine()) {
             app.showSnackbar(app.startupFailure ?: getString(R.string.error_engine_not_running))
         }
@@ -325,6 +331,14 @@ class MainActivity : FragmentActivity() {
         observeCameraPhotoCopied()
 
         setContent {
+            // Audit-200 D5 (m-875): first-frame timing — this effect runs
+            // after the first composition commits, the closest the app
+            // gets to "the UI is drawn". reportFullyDrawn() tells the
+            // platform the same thing, for TTID measurement.
+            LaunchedEffect(Unit) {
+                StartupTimings.mark("firstFrame")
+                this@MainActivity.reportFullyDrawn()
+            }
             // App lock (Batch 7): read once per launch. Enabling the lock
             // in Settings does not lock the running session — it takes
             // effect on the next launch or background return.

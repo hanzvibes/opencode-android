@@ -11,6 +11,7 @@ import dev.bidzz.opencode.core.engine.EngineEnvironment
 import dev.bidzz.opencode.core.engine.EngineStartupException
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
+import dev.bidzz.opencode.core.engine.StartupTimings
 import dev.bidzz.opencode.service.EngineService
 import dev.bidzz.opencode.ui.cancelAgentDone
 import dev.bidzz.opencode.ui.chat.CodeSaveQueue
@@ -200,18 +201,26 @@ class OpenCodeApplication : Application() {
 
     private fun syncRuntimeAssetsInBackground() {
         runtimeAssetSyncScope.launch {
+            // Audit-200 D5 (m-875): cold-start timing for the bundled
+            // runtime staging (Node / Python / LSP), which runs on
+            // Dispatchers.IO while the engine starts.
+            StartupTimings.mark("assetsSyncStart")
             try {
                 // Keep the synchronizers' version-marker behavior unchanged:
                 // full copies happen only on install or runtime-version bumps.
                 runCatching { NodeAssets.sync(assets, filesDir) }
                     .onFailure { Log.w(TAG, "node assets sync failed: ${it.message}") }
+                StartupTimings.mark("nodeAssetsSynced")
                 runCatching { PythonAssets.sync(assets, filesDir) }
                     .onFailure { Log.w(TAG, "python assets sync failed: ${it.message}") }
+                StartupTimings.mark("pythonAssetsSynced")
                 runCatching { LspAssets.sync(assets, filesDir) }
                     .onFailure { Log.w(TAG, "lsp assets sync failed: ${it.message}") }
+                StartupTimings.mark("lspAssetsSynced")
             } finally {
                 // Asset sync is non-fatal, as before; allow the engine to
                 // start with whatever bundled runtime files are available.
+                StartupTimings.mark("assetsSyncDone")
                 runtimeAssetsReady.complete(Unit)
             }
         }

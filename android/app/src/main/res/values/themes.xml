@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- #12, audit-200 D4 (m-014): the launch window follows the SYSTEM
-         light theme until MainActivity applies the pinned theme in
-         onCreate — a Light pin on a Dark system still flashes this light
-         window for one frame before that call. The bars are transparent —
-         edge-to-edge is on (MainActivity) — and the light-bar flags match
-         the light background; the runtime SideEffect in OpenCodeTheme
-         re-asserts them whenever the app theme changes. -->
+    <!-- #12, audit-200 D4 (m-014) + D5 (m-1179): the SYSTEM preview
+         window is drawn before any app code runs, so it cannot know the
+         pinned theme — a Light pin on a Dark system (or the reverse)
+         used to flash the wrong-colour window. Both variants now use
+         the same neutral black background with dark bars, so the flash
+         is the same colour whatever the pin is (black matches the dark
+         page #000000; a Light pin sees a brief black flash instead of
+         a wrong-theme flash). MainActivity applies the pinned theme in
+         onCreate, and the runtime SideEffect in OpenCodeTheme
+         re-asserts the bars whenever the app theme changes. -->
     <style name="Theme.OpenCode" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowBackground">#F9F9FA</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

@@ -377,8 +377,28 @@ private fun Cursor.displayName(): String? =
         ?.let { getString(it) }
         ?.takeIf { it.isNotBlank() }
 
+/**
+ * Cleans a fallback file name taken from a URI segment (audit-200 D5,
+ * m-1157). [Uri.getLastPathSegment] already returns the segment
+ * DECODED, so a second decode would corrupt real `%` names — the
+ * audit's flagship example was wrong (`…%2Fnotes.txt` decodes to
+ * `notes.txt` already). What can still leak through is an opaque id
+ * with no readable name: a `scheme:id` value (`msf:12345`), a leftover
+ * `%XX` escape (double-encoded), or a bare number
+ * (`content://media/…/12345`) — those become the generic "file". A
+ * bare `%` that is not an escape ("100% done.txt") and extension-less
+ * names ("README", "Makefile") are real names and pass through
+ * untouched. Pure so it is unit-testable.
+ */
+internal fun sanitizeFallbackName(segment: String): String {
+    val name = segment.substringAfterLast('/').takeIf { it.isNotBlank() } ?: return "file"
+    if (name.contains(':')) return "file"
+    if (name.all { it.isDigit() }) return "file"
+    if (PERCENT_ESCAPE_REGEX.containsMatchIn(name)) return "file"
+    return name
+}
+
+private val PERCENT_ESCAPE_REGEX = Regex("%[0-9A-Fa-f]{2}")
+
 private fun fallbackName(uri: Uri): String =
-    uri.lastPathSegment
-        ?.substringAfterLast('/')
-        ?.takeIf { it.isNotBlank() }
-        ?: "file"
+    uri.lastPathSegment?.let { sanitizeFallbackName(it) } ?: "file"

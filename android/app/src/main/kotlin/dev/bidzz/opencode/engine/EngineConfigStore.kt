@@ -312,6 +312,95 @@ class EngineConfigStore(configHome: File) {
         }
     }
 
+    /** Result of merging `opencode.jsonc` providers into `opencode.json` (audit-200 D5, m-1239). */
+    sealed interface JsoncMergeResult {
+        /** Providers moved; [moved] are ids new to `.json`, [overwritten] are ids the `.jsonc` version won. */
+        data class Merged(val moved: List<String>, val overwritten: List<String>) : JsoncMergeResult
+
+        /** There was no `opencode.jsonc` — nothing to merge. */
+        data object Missing : JsoncMergeResult
+
+        /** The merge was refused: [blockedIds] are provider entries that are not objects (in either file),
+         * or the `providers` value itself is not an object. Nothing was written or deleted. */
+        data class Blocked(val blockedIds: List<String>, val reason: String) : JsoncMergeResult
+
+        /** The providers were merged and written, but deleting `.jsonc` failed — the merged providers are
+         * still shadowed until the `.jsonc` is gone. */
+        data object DeleteFailed : JsoncMergeResult
+    }
+
+    /**
+     * Merges the providers from `opencode.jsonc` into `opencode.json` (audit-200 D5, m-1239), then deletes
+     * the `.jsonc` (with the `.bak` backup [deleteJsoncConfig] writes first), so the app can manage providers
+     * again without losing the ones only the `.jsonc` knew. Until now the only way out was deleting the
+     * `.jsonc`, which dropped every provider that lived only in it.
+     *
+     * Rules, in order: an id present in both files keeps the **`.jsonc` version** — that is what the engine
+     * has been loading. An id only in `.jsonc` is added. A provider entry that is not an object in either
+     * file blocks the whole merge (the [putOpenAICompatible] rule): nothing is written or deleted, so a
+     * hand-made entry is never silently replaced. Only providers move — other `.jsonc` content (MCP blocks,
+     * settings) stays in the `.jsonc.bak` backup, and the dialog says so.
+     */
+    fun mergeJsoncProvidersIntoJson(): JsoncMergeResult {
+        if (!jsoncFile.isFile) return JsoncMergeResult.Missing
+        val jsoncRoot = runCatching { JSONObject(stripJsonc(jsoncFile.readText())) }.getOrElse {
+            return JsoncMergeResult.Blocked(emptyList(), "opencode.jsonc is not valid JSON: ${it.message}")
+        }
+        val jsoncProviders = when {
+            !jsoncRoot.has("providers") -> JSONObject()
+            jsoncRoot.optJSONObject("providers") != null -> jsoncRoot.optJSONObject("providers")!!
+            else -> return JsoncMergeResult.Blocked(
+                emptyList(),
+                "opencode.jsonc has a non-object 'providers' value",
+            )
+        }
+        val jsonRoot = if (file.isFile) {
+            runCatching { JSONObject(stripJsonc(file.readText())) }.getOrElse {
+                return JsoncMergeResult.Blocked(emptyList(), "opencode.json is not valid JSON: ${it.message}")
+            }
+        } else {
+            JSONObject()
+        }
+        if (jsonRoot.has("providers") && jsonRoot.optJSONObject("providers") == null) {
+            return JsoncMergeResult.Blocked(emptyList(), "opencode.json has a non-object 'providers' value")
+        }
+        val jsonProviders = jsonRoot.optJSONObject("providers")
+            ?: JSONObject().also { jsonRoot.put("providers", it) }
+        val moved = mutableListOf<String>()
+        val overwritten = mutableListOf<String>()
+        val blocked = mutableListOf<String>()
+        for (id in jsoncProviders.keys().asSequence().toList()) {
+            val jsoncEntry = jsoncProviders.optJSONObject(id)
+            if (jsoncEntry == null) {
+                blocked.add(id)
+                continue
+            }
+            if (jsonProviders.has(id) && jsonProviders.optJSONObject(id) == null) {
+                blocked.add(id)
+                continue
+            }
+            if (jsonProviders.has(id)) overwritten.add(id) else moved.add(id)
+            jsonProviders.put(id, jsoncEntry)
+        }
+        if (blocked.isNotEmpty()) {
+            return JsoncMergeResult.Blocked(
+                blocked,
+                "provider entries that are not objects: ${blocked.joinToString(", ")}",
+            )
+        }
+        return try {
+            write(jsonRoot, file)
+            when (deleteJsoncConfig()) {
+                JsoncDeleteResult.Deleted, JsoncDeleteResult.Missing ->
+                    JsoncMergeResult.Merged(moved, overwritten)
+                JsoncDeleteResult.Failed -> JsoncMergeResult.DeleteFailed
+            }
+        } catch (e: IOException) {
+            Log.w(TAG, "merging opencode.jsonc providers failed", e)
+            JsoncMergeResult.Blocked(emptyList(), e.message ?: e.javaClass.simpleName)
+        }
+    }
+
     private fun updateAntigravityFile(mutator: (JSONObject) -> Boolean): Boolean {
         if (!antigravityAccountsFile.isFile) return false
         val root = runCatching { JSONObject(antigravityAccountsFile.readText()) }.getOrNull() ?: return false
