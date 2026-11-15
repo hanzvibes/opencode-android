@@ -162,7 +162,16 @@ class SessionListViewModel(
         previewJob?.cancel()
         previewWantedIds.clear()
         loadJob?.cancel()
-        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, deleteFailure = null, deleteFailedSessionID = null, deleteFailureKey = null, renameFailure = null, renameFailedSessionID = null, renameFailedTitle = null, renameFailureKey = null, hasMoreSessions = false, loadingMore = false, filterDirectory = directory)
+        // Audit-200 D6 (m-481): a load must NOT wipe the operation
+        // failures — they belong to the delete/rename, not to the load,
+        // and the drawer opens by calling load() (so a banner wiped
+        // itself exactly when the user went to look at it, 80-F19).
+        // They clear on Dismiss, or when a new failure of the same kind
+        // supersedes them. Trade-off, accepted: a stale banner can
+        // survive a successful reload — e.g. the session was meanwhile
+        // deleted from another client, so the Retry finds no row and
+        // offers no button; the user dismisses it.
+        _state.value = _state.value.copy(loading = true, failure = null, failureKey = null, hasMoreSessions = false, loadingMore = false, filterDirectory = directory)
 
         loadJob = viewModelScope.launch {
             when (val result = handle.sessions.listPage(directory = directory, limit = SESSION_PAGE_SIZE)) {

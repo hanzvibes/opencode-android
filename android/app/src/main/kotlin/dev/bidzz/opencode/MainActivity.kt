@@ -267,7 +267,16 @@ class MainActivity : FragmentActivity() {
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/OpenCode")
         }
-        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        val uri = runCatching { contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) }
+            .onFailure {
+                // Audit-200 D6 (m-148): an insert that THROWS (a dead
+                // MediaStore) used to escape to the collector and end in
+                // a log line only — the tap died silently.
+                Log.w("MainActivity", "MediaStore insert failed", it)
+                (application as OpenCodeApplication).showSnackbar(getString(R.string.camera_insert_failed))
+                return
+            }
+            .getOrNull()
             ?: run {
                 // The gallery refused the row: say so instead of a dead
                 // camera tap (audit-100 14-F6).
@@ -288,6 +297,11 @@ class MainActivity : FragmentActivity() {
                 pendingPhotoStore.clear()
                 runCatching { contentResolver.delete(uri, null, null) }
                 Log.w("MainActivity", "Camera launch failed", it)
+                // Audit-200 D6 (m-148): the failure used to end here, in
+                // a log line — the user got no word at all. A new string:
+                // the row was created fine, so camera_insert_failed
+                // ("Could not create a photo in the gallery") would lie.
+                (application as OpenCodeApplication).showSnackbar(getString(R.string.camera_open_failed))
             }
     }
 
@@ -514,7 +528,10 @@ class MainActivity : FragmentActivity() {
             app.cameraPhotoRequest.collect {
                 // Best-effort like the SAF launch above: a missing camera
                 // app or a finishing activity must not crash the app; the
-                // composer simply never receives a photo.
+                // composer simply never receives a photo. Log-only here
+                // on purpose (audit-200 D6, m-148): launchCamera() reports
+                // its own failures with a snackbar, so a second one from
+                // this collector would double-report.
                 runCatching { launchCamera() }
                     .onFailure { Log.w("MainActivity", "Camera launch failed", it) }
             }
@@ -543,7 +560,8 @@ class MainActivity : FragmentActivity() {
         if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
             if (!notificationRationaleShown()) {
                 markNotificationRationaleShown()
-                app.showSnackbar(
+                app.showSnackbarWithRetry(
+                    lifecycleScope,
                     getString(R.string.notification_permission_rationale),
                     actionLabel = getString(R.string.notification_permission_allow),
                     long = true,
@@ -555,7 +573,8 @@ class MainActivity : FragmentActivity() {
         if (notificationPermissionAsked()) {
             if (!notificationSettingsHintShown()) {
                 markNotificationSettingsHintShown()
-                app.showSnackbar(
+                app.showSnackbarWithRetry(
+                    lifecycleScope,
                     getString(R.string.notification_permission_settings),
                     actionLabel = getString(R.string.settings_title),
                     long = true,

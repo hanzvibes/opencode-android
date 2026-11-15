@@ -186,6 +186,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
+ * Both selection failures as one banner message (audit-200 D6, m-317):
+ * when the agent AND the model were rejected, the banner shows both
+ * lines instead of only the last one. Null unless both slots are
+ * filled — a single rejection renders through state.failure as before.
+ */
+@Composable
+private fun combinedSelectionFailureMessage(state: ChatUiState): String? {
+    val agentFailure = state.agentSelectionFailure ?: return null
+    val modelFailure = state.modelSelectionFailure ?: return null
+    return agentFailure.message() + "\n" + modelFailure.message()
+}
+
+/**
  * The main screen: a conversation with the agent.
  *
  * Structure is a plain column — header, scrolling transcript, composer — inside a
@@ -204,6 +217,22 @@ fun ChatScreen(
     sessionsLoading: Boolean = false,
     sessionsFailure: ApiResult.Failure? = null,
     sessionsFailureKey: Int? = null,
+    /**
+     * Failed delete/rename in the drawer (audit-200 D6, m-477): the
+     * drawer and the sessions screen share one SessionListViewModel, so
+     * a delete that fails from the drawer must surface here — the old
+     * code only forwarded the load failure, and the row silently came
+     * back with no explanation. Same shape as SessionListScreen.
+     */
+    sessionsDeleteFailure: ApiResult.Failure? = null,
+    sessionsDeleteFailureKey: Int? = null,
+    sessionsDeleteFailedSessionID: String? = null,
+    sessionsRenameFailure: ApiResult.Failure? = null,
+    sessionsRenameFailureKey: Int? = null,
+    sessionsRenameFailedSessionID: String? = null,
+    sessionsRenameFailedTitle: String? = null,
+    onDismissDeleteFailure: () -> Unit = {},
+    onDismissRenameFailure: () -> Unit = {},
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     /** Sends a follow-up chip's text (audit-200 C5, M-087/M-088):
@@ -1569,7 +1598,8 @@ fun ChatScreen(
                         }
                         if (hasError) {
                             NoticeRow(
-                                message = state.failure?.message()
+                                message = combinedSelectionFailureMessage(state)
+                                    ?: state.failure?.message()
                                     ?: stringResource(state.failureKey!!),
                                 kind = NoticeKind.Error,
                                 // Typed retry (Phase 2, finding 18): Retry is
@@ -2577,6 +2607,15 @@ fun ChatScreen(
                         sessionsLoading = sessionsLoading,
                         sessionsFailure = sessionsFailure,
                         sessionsFailureKey = sessionsFailureKey,
+                        sessionsDeleteFailure = sessionsDeleteFailure,
+                        sessionsDeleteFailureKey = sessionsDeleteFailureKey,
+                        sessionsDeleteFailedSessionID = sessionsDeleteFailedSessionID,
+                        sessionsRenameFailure = sessionsRenameFailure,
+                        sessionsRenameFailureKey = sessionsRenameFailureKey,
+                        sessionsRenameFailedSessionID = sessionsRenameFailedSessionID,
+                        sessionsRenameFailedTitle = sessionsRenameFailedTitle,
+                        onDismissDeleteFailure = onDismissDeleteFailure,
+                        onDismissRenameFailure = onDismissRenameFailure,
                         onRetrySessions = onDrawerOpen,
                         sessionDetails = sessionDetails,
                         engineState = engineState,
@@ -2625,6 +2664,15 @@ fun ChatScreen(
                         sessionsLoading = sessionsLoading,
                         sessionsFailure = sessionsFailure,
                         sessionsFailureKey = sessionsFailureKey,
+                        sessionsDeleteFailure = sessionsDeleteFailure,
+                        sessionsDeleteFailureKey = sessionsDeleteFailureKey,
+                        sessionsDeleteFailedSessionID = sessionsDeleteFailedSessionID,
+                        sessionsRenameFailure = sessionsRenameFailure,
+                        sessionsRenameFailureKey = sessionsRenameFailureKey,
+                        sessionsRenameFailedSessionID = sessionsRenameFailedSessionID,
+                        sessionsRenameFailedTitle = sessionsRenameFailedTitle,
+                        onDismissDeleteFailure = onDismissDeleteFailure,
+                        onDismissRenameFailure = onDismissRenameFailure,
                         onRetrySessions = onDrawerOpen,
                         sessionDetails = sessionDetails,
                         engineState = engineState,
@@ -3932,6 +3980,15 @@ private fun ChatDrawer(
     sessionsLoading: Boolean = false,
     sessionsFailure: ApiResult.Failure? = null,
     sessionsFailureKey: Int? = null,
+    sessionsDeleteFailure: ApiResult.Failure? = null,
+    sessionsDeleteFailureKey: Int? = null,
+    sessionsDeleteFailedSessionID: String? = null,
+    sessionsRenameFailure: ApiResult.Failure? = null,
+    sessionsRenameFailureKey: Int? = null,
+    sessionsRenameFailedSessionID: String? = null,
+    sessionsRenameFailedTitle: String? = null,
+    onDismissDeleteFailure: () -> Unit = {},
+    onDismissRenameFailure: () -> Unit = {},
     onRetrySessions: () -> Unit = {},
     sessionDetails: Map<String, SessionDetail>,
     engineState: EngineState,
@@ -3973,6 +4030,15 @@ private fun ChatDrawer(
                 sessionsLoading = sessionsLoading,
                 sessionsFailure = sessionsFailure,
                 sessionsFailureKey = sessionsFailureKey,
+                sessionsDeleteFailure = sessionsDeleteFailure,
+                sessionsDeleteFailureKey = sessionsDeleteFailureKey,
+                sessionsDeleteFailedSessionID = sessionsDeleteFailedSessionID,
+                sessionsRenameFailure = sessionsRenameFailure,
+                sessionsRenameFailureKey = sessionsRenameFailureKey,
+                sessionsRenameFailedSessionID = sessionsRenameFailedSessionID,
+                sessionsRenameFailedTitle = sessionsRenameFailedTitle,
+                onDismissDeleteFailure = onDismissDeleteFailure,
+                onDismissRenameFailure = onDismissRenameFailure,
                 onRetrySessions = onRetrySessions,
                 sessionDetails = sessionDetails,
                 engineState = engineState,
@@ -4023,6 +4089,15 @@ private fun ChatDrawerContent(
     sessionsLoading: Boolean = false,
     sessionsFailure: ApiResult.Failure? = null,
     sessionsFailureKey: Int? = null,
+    sessionsDeleteFailure: ApiResult.Failure? = null,
+    sessionsDeleteFailureKey: Int? = null,
+    sessionsDeleteFailedSessionID: String? = null,
+    sessionsRenameFailure: ApiResult.Failure? = null,
+    sessionsRenameFailureKey: Int? = null,
+    sessionsRenameFailedSessionID: String? = null,
+    sessionsRenameFailedTitle: String? = null,
+    onDismissDeleteFailure: () -> Unit = {},
+    onDismissRenameFailure: () -> Unit = {},
     onRetrySessions: () -> Unit = {},
     sessionDetails: Map<String, SessionDetail>,
     engineState: EngineState,
@@ -4180,6 +4255,43 @@ private fun ChatDrawerContent(
                 .height(0.5.dp)
                 .background(colors.hairline),
         )
+
+    // Audit-200 D6 (m-477): failed delete/rename banners, the same shape
+    // as SessionListScreen — the drawer shares the sessions view model,
+    // so a delete that fails here used to leave the row back with no
+    // word at all. Both banners are independent (m-011): never chain
+    // them with else-if, or one failure hides the other again.
+    if (sessionsDeleteFailure != null || sessionsDeleteFailureKey != null) {
+        val failedRow = sessions.find { it.id == sessionsDeleteFailedSessionID }
+        NoticeRow(
+            message = sessionsDeleteFailure?.message()
+                ?: sessionsDeleteFailureKey?.let { stringResource(it) }.orEmpty(),
+            kind = NoticeKind.Error,
+            onRetry = failedRow?.let { row -> { onDeleteSession(row.id) } },
+            onDismiss = onDismissDeleteFailure,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+        )
+    }
+    if (sessionsRenameFailure != null || sessionsRenameFailureKey != null) {
+        val failedRow = sessions.find { it.id == sessionsRenameFailedSessionID }
+        val failedTitle = sessionsRenameFailedTitle
+        NoticeRow(
+            message = sessionsRenameFailure?.message()
+                ?: sessionsRenameFailureKey?.let { stringResource(it) }.orEmpty(),
+            kind = NoticeKind.Error,
+            onRetry = if (failedRow != null && failedTitle != null) {
+                { onRenameSession(failedRow.id, failedTitle) }
+            } else {
+                null
+            },
+            onDismiss = onDismissRenameFailure,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.sm, vertical = spacing.xs),
+        )
+    }
 
     // Grouped conversation history, searched first and then capped at
     // DRAWER_SESSIONS: the drawer used to render every session the
@@ -4459,6 +4571,15 @@ private fun ChatSidebar(
     sessionsLoading: Boolean = false,
     sessionsFailure: ApiResult.Failure? = null,
     sessionsFailureKey: Int? = null,
+    sessionsDeleteFailure: ApiResult.Failure? = null,
+    sessionsDeleteFailureKey: Int? = null,
+    sessionsDeleteFailedSessionID: String? = null,
+    sessionsRenameFailure: ApiResult.Failure? = null,
+    sessionsRenameFailureKey: Int? = null,
+    sessionsRenameFailedSessionID: String? = null,
+    sessionsRenameFailedTitle: String? = null,
+    onDismissDeleteFailure: () -> Unit = {},
+    onDismissRenameFailure: () -> Unit = {},
     onRetrySessions: () -> Unit = {},
     sessionDetails: Map<String, SessionDetail>,
     engineState: EngineState,
@@ -4498,6 +4619,15 @@ private fun ChatSidebar(
             sessionsLoading = sessionsLoading,
             sessionsFailure = sessionsFailure,
             sessionsFailureKey = sessionsFailureKey,
+            sessionsDeleteFailure = sessionsDeleteFailure,
+            sessionsDeleteFailureKey = sessionsDeleteFailureKey,
+            sessionsDeleteFailedSessionID = sessionsDeleteFailedSessionID,
+            sessionsRenameFailure = sessionsRenameFailure,
+            sessionsRenameFailureKey = sessionsRenameFailureKey,
+            sessionsRenameFailedSessionID = sessionsRenameFailedSessionID,
+            sessionsRenameFailedTitle = sessionsRenameFailedTitle,
+            onDismissDeleteFailure = onDismissDeleteFailure,
+            onDismissRenameFailure = onDismissRenameFailure,
             onRetrySessions = onRetrySessions,
             sessionDetails = sessionDetails,
             engineState = engineState,

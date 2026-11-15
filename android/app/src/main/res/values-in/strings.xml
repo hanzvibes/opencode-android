@@ -395,6 +395,8 @@
     <string name="compact_dialog_body">Riwayat akan diganti dengan ringkasan untuk membebaskan konteks. Turn aslinya tidak bisa dibaca lagi setelah itu.</string>
     <string name="compact_dialog_confirm">Ringkas</string>
     <string name="revert_banner_title">Revert sudah disiapkan</string>
+    <!-- Audit-200 D6 (m-154): stage kedua saat satu sudah disiapkan ditolak, bukan menimpa. -->
+    <string name="chat_revert_already_staged">Sudah ada revert yang disiapkan untuk pesan lain. Terapkan atau batalkan dulu.</string>
     <!-- Audit-200 B7 (M-027): pilihan revert — pesan saja, atau pesan + file. -->
     <string name="revert_dialog_title">Kembalikan ke pesan ini?</string>
     <string name="revert_dialog_text">Pesan setelah titik ini akan dihapus. Pilih apakah berkas yang berubah setelahnya ikut dikembalikan.</string>
@@ -1186,6 +1188,8 @@
     <string name="photo_saved">Foto disimpan ke %1$s</string>
     <string name="photo_failed">Foto gagal disimpan</string>
     <string name="camera_insert_failed">Tidak bisa membuat foto di galeri.</string>
+    <!-- Audit-200 D6 (m-148): kameranya sendiri gagal dibuka — baris galeri berhasil dibuat, jadi camera_insert_failed akan salah. -->
+    <string name="camera_open_failed">Tidak bisa membuka kamera.</string>
     <string name="photo_saved_to_gallery">Foto tersimpan di galeri — app sempat restart sebelum sempat dilampirkan. Lampirkan lagi dari galeri.</string>
     <string name="widget_open">Buka</string>
     <string name="widget_open_session_hint">Ketuk Buka untuk melanjutkan sesi</string>

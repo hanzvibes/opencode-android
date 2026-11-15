@@ -561,9 +561,24 @@ class EngineConfigStore(configHome: File) {
         val target = when {
             jsoncFile.isFile -> jsoncFile
             file.isFile -> file
-            else -> return null to null
+            // Audit-200 D6 (m-271): no file is not a problem — a stale
+            // problem from a deleted corrupt file must clear here, or
+            // the banner keeps naming a file that no longer exists.
+            else -> {
+                lastConfigReadProblem = null
+                return null to null
+            }
         }
-        val text = target.readText()
+        // Audit-200 D6 (m-271): the file can vanish between the isFile
+        // check and the read — an I/O failure is recorded like a malformed
+        // file instead of escaping with the old problem still standing.
+        val text = try {
+            target.readText()
+        } catch (e: IOException) {
+            Log.e(TAG, "config unreadable, refusing to merge into it", e)
+            lastConfigReadProblem = ConfigReadProblem(target.name, e.message ?: e.javaClass.simpleName)
+            throw e
+        }
         if (text.isBlank()) {
             lastConfigReadProblem = null
             return JSONObject() to target
