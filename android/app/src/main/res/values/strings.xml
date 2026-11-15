@@ -311,6 +311,7 @@
     <string name="a11y_run_failed">Run failed</string>
     <string name="a11y_permission_arrived">Permission requested</string>
     <string name="chat_reconnecting">Reconnecting…</string>
+    <string name="chat_restoring_session">Restoring session…</string>
     <string name="chat_question_waiting_one">1 question waiting</string>
     <string name="chat_question_waiting_other">%1$d questions waiting</string>
     <string name="chat_status_working">Working</string>

@@ -1529,7 +1529,7 @@ fun ChatScreen(
             // LazyColumn scrolls away exactly when it is needed most.
             // Both are capped at the content width like the transcript.
             val hasError = state.failure != null || state.failureKey != null
-            if (hasError || state.connecting) {
+            if (hasError || state.connecting || state.restoringSession) {
                 Box(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.TopCenter,
@@ -1543,6 +1543,15 @@ fun ChatScreen(
                         if (state.connecting) {
                             ReconnectingIndicator(
                                 modifier = Modifier.padding(top = spacing.sm),
+                            )
+                        }
+                        // Audit-200 C18 (M-449): the restore in flight
+                        // gets its own row, so the disabled composer
+                        // reads as "wait a moment", not "broken".
+                        if (state.restoringSession) {
+                            ReconnectingIndicator(
+                                modifier = Modifier.padding(top = spacing.sm),
+                                text = stringResource(R.string.chat_restoring_session),
                             )
                         }
                         if (hasError) {
@@ -2412,7 +2421,12 @@ fun ChatScreen(
                         stopping = state.stopping,
                         busyStepText = busyStepText,
                         busyElapsedSeconds = busyElapsedSeconds,
-                        enabled = state.workspaceReady,
+                        // Audit-200 C18 (M-449): while the remembered
+                        // session is being restored the draft belongs to
+                        // it — the composer stays disabled until the
+                        // restore lands, so a tap cannot mint a new
+                        // session for the draft.
+                        enabled = state.workspaceReady && !state.restoringSession,
                         // Composer C: suggestion chips fill the draft for
                         // review, never send; the mic is wired to the
                         // platform recognizer (see the voice block above).
@@ -2946,6 +2960,10 @@ private fun StagedRevertBanner(
 @Composable
 private fun ReconnectingIndicator(
     modifier: Modifier = Modifier,
+    // Audit-200 C18 (M-449): the restoring-session row reuses this
+    // pulsing indicator with its own text; null keeps the original
+    // "Reconnecting…" label.
+    text: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -2974,7 +2992,7 @@ private fun ReconnectingIndicator(
                 .background(colors.accent, CircleShape),
         )
         Text(
-            text = stringResource(R.string.chat_reconnecting),
+            text = text ?: stringResource(R.string.chat_reconnecting),
             style = OpenCodeTypography.bodySmall,
             color = colors.onSurfaceMuted,
         )

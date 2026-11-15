@@ -304,6 +304,7 @@
     <string name="a11y_run_failed">Proses gagal</string>
     <string name="a11y_permission_arrived">Izin diminta</string>
     <string name="chat_reconnecting">Menghubungkan ulang…</string>
+    <string name="chat_restoring_session">Memulihkan sesi…</string>
     <string name="chat_question_waiting_one">1 pertanyaan menunggu</string>
     <string name="chat_question_waiting_other">%1$d pertanyaan menunggu</string>
     <string name="chat_status_working">Bekerja</string>

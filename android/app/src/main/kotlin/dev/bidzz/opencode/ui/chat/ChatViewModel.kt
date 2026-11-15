@@ -76,6 +76,15 @@ data class ChatUiState(
      */
     val sending: Boolean = false,
     val connecting: Boolean = false,
+    /**
+     * True while [ChatViewModel.onResume] is restoring the remembered
+     * session (audit-200 C18, M-449): the GET that verifies the session
+     * is still in flight. Sending in this window used to mint a brand-new
+     * session for the draft instead of waiting for the restore — the
+     * draft landed in an empty session and the remembered one was
+     * abandoned. While true the composer is disabled and sends are held.
+     */
+    val restoringSession: Boolean = false,
     /** What went wrong, as a value; the screen words it in the app’s language. */
     val failure: ApiResult.Failure? = null,
     /** A message with no failure behind it, e.g. the engine never started. */
@@ -1262,6 +1271,18 @@ class ChatViewModel(
     private var pendingRestoreSessionID: String? = null
 
     /**
+     * The session [onResume] is restoring right now (audit-200 C18,
+     * M-449): set when its verifying GET starts, cleared when the GET
+     * resolves — success, refusal or failure. While set, no send may mint
+     * a new session: the draft belongs to the session being restored, and
+     * creating one now would strand it in an empty session while the
+     * restore is refused afterwards (shouldOpenAfterResume). Unlike
+     * [pendingRestoreSessionID], which only covers "no repository yet",
+     * this covers the window after attach while the GET is in flight.
+     */
+    private var restoringSessionID: String? = null
+
+    /**
      * Whether the engine has ever reported RUNNING (audit-200 C15,
      * M-233): the engine starts STOPPED, and a failure before it ever
      * ran is a plain failure — only a FAILED/STOPPED after a run is a
@@ -1282,6 +1303,22 @@ class ChatViewModel(
 
     /** Test seam for the pending restore (M-232): the id waiting for attach, if any. */
     internal fun pendingRestoreForTest(): String? = pendingRestoreSessionID
+
+    /** Test seam for the in-flight restore (M-449): the id whose GET is running, if any. */
+    internal fun restoringSessionForTest(): String? = restoringSessionID
+
+    /**
+     * Drops the in-flight restore marker (M-449): the user explicitly
+     * chose a fresh chat, so the restore is abandoned and the send gate
+     * lifts. The GET's own `finally` still runs, but it only clears its
+     * own target — the flag is already null by then.
+     */
+    private fun clearRestoringSession() {
+        restoringSessionID = null
+        if (_state.value.restoringSession) {
+            _state.value = _state.value.copy(restoringSession = false)
+        }
+    }
 
     /**
      * Parks the current composer — draft, pending attachments and queued
@@ -3440,6 +3477,12 @@ class ChatViewModel(
         val attachments = _state.value.pendingAttachments
         val full = buildMessageWithAttachments(typed, attachments)
         if (full.isBlank()) return
+        // Audit-200 C18 (M-449): a restore is in flight for the session
+        // this draft belongs to — hold the send instead of minting a new
+        // session for it. The draft stays in the composer and the user
+        // re-sends once the restore lands; the composer is disabled while
+        // restoring, so this only catches keyboard sends.
+        if (_state.value.sessionID == null && restoringSessionID != null) return
         // While the agent works the composer stays typable, and sending queues
         // the follow-up instead of dropping it: the queue flushes one entry
         // at a time when each run ends (see onRepoState). The draft is
@@ -3483,7 +3526,9 @@ class ChatViewModel(
     fun sendFollowUp(text: String): Boolean {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return false
-        if (_state.value.busy || sendInFlight) return false
+        // Audit-200 C18 (M-449): same hold as send() — a chip tap must not
+        // mint a new session while a restore is in flight.
+        if (_state.value.busy || sendInFlight || restoringSessionID != null) return false
         val attachments = _state.value.pendingAttachments
         val full = buildMessageWithAttachments(trimmed, attachments)
         return sendText(full, trimmed, attachments)
@@ -3747,6 +3792,14 @@ class ChatViewModel(
             attachNoticeKey = null,
             attachNoticeArg = null,
         )
+        // Audit-200 C18 (M-447): the parked copy is a snapshot — a file
+        // added here must not be missing from it. The debounced park
+        // (DL-010) rewrites it within 750 ms, but a process death inside
+        // that window leaves the on-disk copy stale, and the restore merge
+        // trusts it for anything missing from the live composer. Park
+        // synchronously: an add is a discrete tap, not a keystroke, so
+        // there is no typing jank to protect.
+        parkComposer()
     }
 
     /** Removes one pending attachment by id; its chip and its fenced block go with it. */
@@ -3754,6 +3807,12 @@ class ChatViewModel(
         _state.value = _state.value.copy(
             pendingAttachments = withoutAttachment(_state.value.pendingAttachments, id),
         )
+        // Audit-200 C18 (M-447): same as addAttachment above — the parked
+        // copy must forget the file at once, not 750 ms later. Otherwise
+        // a death in that window resurrects the deleted file from the
+        // stale snapshot when the session is restored (mergeParkedGaps
+        // re-adds parked attachments missing from the live composer).
+        parkComposer()
     }
 
     /** Shows a refusal for a file the picker returned but we would not attach. */
@@ -5017,6 +5076,12 @@ class ChatViewModel(
         // the state just had not flowed into the UI yet. Reuse it instead
         // of creating a duplicate empty session (item 15).
         repo.state.value.sessionID?.let { return it }
+        // Audit-200 C18 (M-449): a restore is in flight for the draft's
+        // session — do not mint a new one for it. The send is abandoned
+        // and the draft stays; the user re-sends once the restore lands.
+        // (An attached session above still wins: the user may have opened
+        // another session while the restore ran, and that choice stands.)
+        if (restoringSessionID != null) return null
         // The repository was replaced (a new session) while this send was
         // queued: do not create anything on the abandoned one.
         if (repository !== repo) return null
@@ -5342,6 +5407,10 @@ class ChatViewModel(
         // Audit-200 C15 (M-232): same for a restore waiting for attach —
         // the user chose a fresh chat, not the remembered session.
         pendingRestoreSessionID = null
+        // Audit-200 C18 (M-449): same for a restore already in flight —
+        // the fresh chat wins, so the send gate lifts at once instead of
+        // waiting for the GET to resolve and refuse itself.
+        clearRestoringSession()
         sessionReloadAttempts = 0
         // Audit-200 C5 (M-092): leaving a busy session interrupts its
         // run — a fresh session must not leave the old run editing files
@@ -5423,6 +5492,9 @@ class ChatViewModel(
      */
     fun newSessionAfterRestart() {
         pendingOpenSessionID = null
+        // Audit-200 C18 (M-449): same as newSession — an in-flight restore
+        // is abandoned for the fresh chat after the restart.
+        clearRestoringSession()
         sessionReloadAttempts = 0
         repository?.close()
         repository = null
@@ -5756,6 +5828,11 @@ class ChatViewModel(
         }
         pendingRestoreSessionID = null
         lastRestoreTargetSessionID = target
+        // Audit-200 C18 (M-449): the restore is in flight from here until
+        // the GET resolves. Mark it so no send mints a new session for
+        // this draft in the meantime (see [restoringSessionID]).
+        restoringSessionID = target
+        _state.value = _state.value.copy(restoringSession = true)
         viewModelScope.launch {
             when (val result = h.sessions.get(target)) {
                 is ApiResult.Success -> {
@@ -5848,6 +5925,18 @@ class ChatViewModel(
                         )
                     }
                 }
+            }
+            // Audit-200 C18 (M-449): the restore is decided — opened,
+            // refused or failed. Sending is allowed again; a failed
+            // restore leaves the draft to be sent into a fresh session
+            // by the user's next tap. Only clear our own target: a
+            // newer restore (or an explicit fresh chat) may already
+            // own the flag. (sessions.get only throws on cancellation,
+            // which clears the view model with it, so no finally is
+            // needed here.)
+            if (restoringSessionID == target) {
+                restoringSessionID = null
+                _state.value = _state.value.copy(restoringSession = false)
             }
         }
     }
