@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Home-screen widget background, dark (audit-200 D4, m-228): the dark
+  twin of widget_background.xml. RemoteViews cannot resolve theme
+  attributes, so pushWidget picks this drawable explicitly when the
+  pinned theme is dark. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#1C1C1E" />
+    <corners android:radius="16dp" />
+</shape>

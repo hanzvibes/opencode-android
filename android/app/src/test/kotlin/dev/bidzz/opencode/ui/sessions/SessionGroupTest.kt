@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.sessions
 
+import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -210,5 +211,67 @@ class SessionGroupTest {
         assertEquals(listOf(sYest), groups[SessionDateGroup.YESTERDAY])
         assertEquals(listOf(s7Days), groups[SessionDateGroup.PREVIOUS_7_DAYS])
         assertEquals(listOf(sOld), groups[SessionDateGroup.OLDER])
+    }
+
+    // Audit-200 D4 (m-172): the match snippet. ---------------------------
+
+    private fun detail(preview: String?, searchText: String?) =
+        SessionDetail(preview = preview, searchText = searchText, previewKnown = true)
+
+    @Test
+    fun `m-172 no snippet when the match is already visible in the preview`() {
+        val d = detail("Fix the login crash", "Fix the login crash\nsecond ask")
+        assertNull(sessionMatchSnippet("login", d))
+    }
+
+    @Test
+    fun `m-172 a snippet centres on a match outside the preview`() {
+        val preview = "First ask about the onboarding flow"
+        val searchText = preview + "\n" + "x".repeat(300) +
+            "\nThe fifth message mentions the zebra migration"
+        val snippet = sessionMatchSnippet("zebra", detail(preview, searchText))
+        assertTrue("expected a snippet, got null", snippet != null)
+        assertTrue(snippet!!.contains("zebra"))
+        assertTrue("cut text must start with an ellipsis", snippet.startsWith("…"))
+    }
+
+    @Test
+    fun `m-172 a token visible in the preview needs no snippet even when it also matches later`() {
+        val preview = "Fix the login crash"
+        val searchText = "$preview\nlater the login screen broke again"
+        assertNull(sessionMatchSnippet("login", detail(preview, searchText)))
+    }
+
+    @Test
+    fun `m-172 a match past the visible head of a long preview still gets a snippet`() {
+        val preview = "x".repeat(250) + " zebra"
+        val snippet = sessionMatchSnippet("zebra", detail(preview, preview))
+        assertTrue("expected a snippet, got null", snippet != null)
+        assertTrue(snippet!!.contains("zebra"))
+    }
+
+    @Test
+    fun `m-172 no snippet without a query, without searchable text, or without a match`() {
+        val d = detail("First ask", "First ask\nsecond ask")
+        assertNull(sessionMatchSnippet("", d))
+        assertNull(sessionMatchSnippet("   ", d))
+        assertNull(sessionMatchSnippet("zebra", detail("First ask", null)))
+        assertNull(sessionMatchSnippet("zebra", d))
+    }
+
+    @Test
+    fun `m-172 searchTokens drops filler words`() {
+        assertEquals(listOf("fix", "login", "crash"), searchTokens("please fix the login crash"))
+        assertEquals(emptyList<String>(), searchTokens("please the"))
+    }
+
+    @Test
+    fun `m-172 highlightMatches marks every occurrence`() {
+        val annotated = highlightMatches("zebra and Zebra", listOf("zebra"), Color(0xFF000000))
+        assertEquals(2, annotated.spanStyles.size)
+        assertEquals(0, annotated.spanStyles[0].start)
+        assertEquals(5, annotated.spanStyles[0].end)
+        assertEquals(10, annotated.spanStyles[1].start)
+        assertEquals(15, annotated.spanStyles[1].end)
     }
 }

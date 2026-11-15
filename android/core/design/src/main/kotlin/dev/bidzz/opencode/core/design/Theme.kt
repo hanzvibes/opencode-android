@@ -320,6 +320,70 @@ object ThemeStore {
     }
 }
 
+/** Whether the SYSTEM theme is dark — the qualifier the resource system uses for `values-night`. */
+fun isSystemNightMode(context: Context): Boolean =
+    context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+        Configuration.UI_MODE_NIGHT_YES
+
+/** Whether the app renders dark for [themeMode] — the single place the pin is resolved, shared by Compose ([OpenCodeTheme]) and the pre-Compose launch window below. */
+fun isDarkTheme(themeMode: ThemeMode, systemDark: Boolean): Boolean = when (themeMode) {
+    ThemeMode.System -> systemDark
+    ThemeMode.Dark -> true
+    ThemeMode.Light -> false
+}
+
+/**
+ * The launch window's colours for a pinned theme (audit-200 D4, m-014/m-342/m-437/m-500).
+ *
+ * Pure, so it is unit-tested here rather than through an activity: the
+ * window background is the page background of the resolved theme, and
+ * `lightBars` says whether the status/navigation icons must be dark.
+ */
+data class LaunchWindowStyle(val backgroundArgb: Int, val lightBars: Boolean)
+
+fun resolveLaunchWindow(themeMode: ThemeMode, systemDark: Boolean): LaunchWindowStyle {
+    val dark = isDarkTheme(themeMode, systemDark)
+    return LaunchWindowStyle(
+        backgroundArgb = if (dark) 0xFF000000.toInt() else 0xFFF9F9FA.toInt(),
+        lightBars = !dark,
+    )
+}
+
+/**
+ * Applies the pinned theme to the launch window BEFORE the first Compose
+ * frame (audit-200 D4, m-014/m-342/m-437/m-500).
+ *
+ * The `values` / `values-night` theme variants are picked from the SYSTEM
+ * `uiMode`, and the pin is only read inside composition — so a pin opposite
+ * the system flashed the wrong launch colour and the wrong bar icons until
+ * the first frame. Reading [ThemeStore] here and setting the window
+ * background + bar appearance from the same [resolveLaunchWindow] closes
+ * both flashes at once. The runtime `SideEffect` in [OpenCodeTheme]
+ * re-asserts the same values on the first frame, so this only covers the
+ * window before composition starts.
+ */
+fun applyLaunchWindowTheme(activity: Activity) {
+    val style = resolveLaunchWindow(ThemeStore.get(activity), isSystemNightMode(activity))
+    activity.window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(style.backgroundArgb))
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val controller = activity.window.insetsController ?: return
+        val appearance = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+            WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        controller.setSystemBarsAppearance(if (style.lightBars) appearance else 0, appearance)
+    } else {
+        @Suppress("DEPRECATION")
+        val flags = activity.window.decorView.systemUiVisibility
+        @Suppress("DEPRECATION")
+        activity.window.decorView.systemUiVisibility = if (style.lightBars) {
+            flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        } else {
+            flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv() and
+                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        }
+    }
+}
+
 private val DarkColors = OpenCodeColors(
     isDark = true,
     background = Palette.darkBackground,
@@ -592,8 +656,6 @@ fun materialColorScheme(colors: OpenCodeColors, darkTheme: Boolean): ColorScheme
     // The container scale runs lightest -> darkest in light (Lowest is
     // the raised white, Highest the pressed step) and darkest -> lightest
     // in dark (Lowest is the black background, Highest the variant step).
-    // NOTE: the top dark step only reads above pressed once PR #39's
-    // variant (#26262A) lands; until then Highest == surface.
     val surfaceContainerLowest = if (darkTheme) colors.background else colors.surfaceRaised
     val surfaceContainerLow = if (darkTheme) colors.surfaceSunken else colors.background
     val surfaceContainer = if (darkTheme) colors.surface else colors.surfaceSunken
@@ -720,11 +782,7 @@ fun OpenCodeTheme(
     systemDark: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val darkTheme = when (themeMode) {
-        ThemeMode.System -> systemDark
-        ThemeMode.Dark -> true
-        ThemeMode.Light -> false
-    }
+    val darkTheme = isDarkTheme(themeMode, systemDark)
     val tokens = OpenCodeTokens()
     val targetColors = if (darkTheme) DarkColors else LightColors
     val colors = targetColors.animated(

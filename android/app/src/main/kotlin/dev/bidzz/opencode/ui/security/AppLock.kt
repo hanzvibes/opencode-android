@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui.security
 import android.content.Context
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.fragment.app.FragmentActivity
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.core.design.ThemeStore
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.PrimaryButton
@@ -166,7 +168,9 @@ fun authenticateWithBiometrics(
  * Full-screen lock. Prompts automatically once when it appears; the Unlock
  * button re-prompts after a failure or a back-out. Renders inside its own
  * [OpenCodeTheme] because it replaces the whole app content (and therefore
- * the theme OpenCodeApp would otherwise provide).
+ * the theme OpenCodeApp would otherwise provide). The pinned theme is read
+ * from ThemeStore here (audit-200 D4, m-345), so the lock screen renders
+ * in the app theme, not the system one.
  */
 @Composable
 fun LockScreen(onUnlocked: () -> Unit) {
@@ -177,6 +181,15 @@ fun LockScreen(onUnlocked: () -> Unit) {
     val unavailableMessage = stringResource(R.string.lock_unavailable_generic)
     var error by remember { mutableStateOf<String?>(null) }
     var prompted by remember { mutableStateOf(false) }
+
+    // Audit-200 D4 (m-345): the lock screen replaces the whole app
+    // content, so it must read the pinned theme itself — the System
+    // default made it follow the system theme and the whole app flip on
+    // unlock. Read once per launch; the pin cannot change while locked.
+    // (LocalContext.current must be read in the @Composable body, not
+    // inside the remember lambda.)
+    val context = LocalContext.current
+    val themeMode = remember { ThemeStore.get(context) }
 
     fun prompt() {
         // Audit-200 A4 (C-004): a missing activity used to make the
@@ -197,12 +210,13 @@ fun LockScreen(onUnlocked: () -> Unit) {
         }
     }
 
-    OpenCodeTheme {
+    OpenCodeTheme(themeMode = themeMode) {
         val colors = OpenCodeTheme.colors
         val spacing = OpenCodeTheme.tokens.spacing
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(colors.background)
                 .padding(spacing.xxl),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,

@@ -3,6 +3,7 @@
   only allows a small view set — LinearLayout, TextView, Button — so the
   layout stays flat on purpose. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"

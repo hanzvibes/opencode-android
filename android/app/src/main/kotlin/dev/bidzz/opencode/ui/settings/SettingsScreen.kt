@@ -1130,8 +1130,11 @@ private fun SavedPermissionRow(
 
     // The action is what was allowed ("bash", "edit", ...); the resource
     // narrows it (a command, a path). The project id is a hash the operator
-    // cannot read, so it stays out of the row.
-    val title = saved.action.ifBlank { saved.resource.orEmpty() }.ifBlank { saved.id }
+    // cannot read, so it stays out of the row — and so does the saved id:
+    // an entry with neither action nor resource shows the generic label,
+    // never a raw hash/UUID as its title (audit-200 D4, m-210).
+    val title = saved.action.ifBlank { saved.resource.orEmpty() }
+        .ifBlank { stringResource(R.string.settings_saved_permissions) }
     val subtitle = saved.resource?.takeIf { it.isNotBlank() && it != title }.orEmpty()
     Row(
         modifier = Modifier

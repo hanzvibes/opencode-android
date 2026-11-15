@@ -27,11 +27,13 @@ package dev.bidzz.opencode.ui.chat
 fun codeBlockFileName(language: String?): String {
     val raw = language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()
         .orEmpty()
-    if (raw == "dockerfile") return "Dockerfile"
+    // Audit-200 D4 (m-076): "docker" is a Dockerfile by convention, like
+    // "dockerfile" above — it used to fall through to snippet.txt.
+    if (raw == "dockerfile" || raw == "docker") return "Dockerfile"
     val ext = when (raw) {
-        "kt", "kotlin" -> "kt"
+        "kt", "kts", "kotlin" -> "kt"
         "py", "python" -> "py"
-        "js", "javascript" -> "js"
+        "js", "javascript", "mjs" -> "js"
         "ts", "typescript" -> "ts"
         "tsx" -> "tsx"
         "jsx" -> "jsx"
@@ -39,8 +41,12 @@ fun codeBlockFileName(language: String?): String {
         "go", "golang" -> "go"
         "java" -> "java"
         "c" -> "c"
-        "cpp", "cc", "cxx" -> "cpp"
-        "cs", "csharp" -> "cs"
+        "h" -> "h"
+        "cpp", "cc", "cxx", "c++" -> "cpp"
+        "hpp" -> "hpp"
+        "cs", "csharp", "c#" -> "cs"
+        "dart" -> "dart"
+        "scala" -> "scala"
         "swift" -> "swift"
         "rb", "ruby" -> "rb"
         "php" -> "php"
@@ -52,7 +58,10 @@ fun codeBlockFileName(language: String?): String {
         "toml" -> "toml"
         "xml" -> "xml"
         "sql" -> "sql"
-        "sh", "bash", "zsh", "shell" -> "sh"
+        // Audit-200 D4 (m-068/m-076): console/terminal are shell fences —
+        // they save as .sh, like sh/bash/zsh. They stay Save-only:
+        // isRunnableCodeBlock below deliberately does NOT gain them.
+        "sh", "bash", "zsh", "shell", "console", "terminal" -> "sh"
         "md", "markdown" -> "md"
         "diff" -> "diff"
         else -> "txt"

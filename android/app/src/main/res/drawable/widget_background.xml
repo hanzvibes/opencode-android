@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Home-screen widget background (Native C): white card, 16dp corners.
-  RemoteViews cannot resolve theme attributes, so the colours are fixed. -->
+  RemoteViews cannot resolve theme attributes, so the colours are fixed
+  here — pushWidget picks this drawable or its dark twin
+  (widget_background_dark) explicitly from the pinned theme. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="#FFFFFF" />

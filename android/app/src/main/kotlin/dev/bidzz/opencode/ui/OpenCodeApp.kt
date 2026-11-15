@@ -770,9 +770,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // A session created or opened in chat is not in the loaded rows yet;
     // reload once so the persistent sidebar (expanded) lists it and can
     // highlight it. Guarded on !loading so the entry load above does not
-    // double-fire while it is still in flight; keyed only on the session
-    // and the width class, so a finished load never re-triggers it.
-    LaunchedEffect(chatState.sessionID, isExpanded) {
+    // double-fire while it is still in flight; keyed on the load finishing
+    // too (audit-200 D4, m-329) — without it, a session that first appears
+    // while the entry load is in flight never re-triggers a reload once
+    // that load lands, and the sidebar stays stale until navigation.
+    LaunchedEffect(chatState.sessionID, isExpanded, sessionsState.loading) {
         val id = chatState.sessionID
         if (isExpanded && (screen is Screen.Chat || screen is Screen.Sessions) &&
             id != null && !sessionsState.loading &&
@@ -1073,6 +1075,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         fileIndexLoading = explorerState.quickOpenLoading,
                         fileIndexFailed = explorerState.quickOpenFailed,
                         onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
+                        onInvalidateFileIndex = explorerViewModel::invalidateQuickOpenIndex,
                         composerBounds = dropComposerBounds,
                         dragOverComposer = dragOverComposer,
                     )
@@ -1298,6 +1301,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                     fileIndexLoading = explorerState.quickOpenLoading,
                                     fileIndexFailed = explorerState.quickOpenFailed,
                                     onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
+                                    onInvalidateFileIndex = explorerViewModel::invalidateQuickOpenIndex,
                                     composerBounds = dropComposerBounds,
                                     dragOverComposer = dragOverComposer,
                                 )
@@ -1697,6 +1701,7 @@ private fun ChatDestination(
     fileIndexLoading: Boolean = false,
     fileIndexFailed: Boolean = false,
     onEnsureFileIndex: () -> Unit = {},
+    onInvalidateFileIndex: () -> Unit = {},
     /**
      * Drag & drop state hoisted to [OpenCodeApp] (audit-200 C16, M-237):
      * the drop listener lives on the composition root, but the composer
@@ -1828,6 +1833,7 @@ private fun ChatDestination(
         fileIndexLoading = fileIndexLoading,
         fileIndexFailed = fileIndexFailed,
         onEnsureFileIndex = onEnsureFileIndex,
+        onInvalidateFileIndex = onInvalidateFileIndex,
         // Sidebar rows (Opsi 2): previews come from the details lookup
         // the session view model already runs on load, and the footer
         // status reuses the chat's own engine state.

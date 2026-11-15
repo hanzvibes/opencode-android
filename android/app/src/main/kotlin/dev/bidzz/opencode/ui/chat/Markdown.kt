@@ -590,16 +590,33 @@ object Markdown {
                 }
 
                 // Highlight: ==...== or <mark>...</mark>
+                // Audit-200 D4 (m-067): a bare == only opens a highlight
+                // when it is NOT glued to a word and is followed by a
+                // non-space — "x == 1 and y == 2" and "a==b==c" are
+                // comparisons, not highlights. The closer must be glued to
+                // the content on its left, so the second == of a spaced
+                // comparison (an operator, spaced on both sides) never
+                // closes one. The streaming fallback that swallowed the
+                // rest of the stream after a lone == is gone: an unclosed
+                // == renders plain until its closer streams in.
                 c == '=' && i + 1 < text.length && text[i + 1] == '=' -> {
-                    val end = text.indexOf("==", i + 2)
+                    val opens = (i == 0 || !text[i - 1].isLetterOrDigit()) &&
+                        i + 2 < text.length && !text[i + 2].isWhitespace() && text[i + 2] != '='
+                    var end = -1
+                    if (opens) {
+                        var j = text.indexOf("==", i + 2)
+                        while (j != -1) {
+                            if (j > i + 2 && !text[j - 1].isWhitespace() && text[j - 1] != '=') {
+                                end = j
+                                break
+                            }
+                            j = text.indexOf("==", j + 1)
+                        }
+                    }
                     if (end > i + 2) {
                         flushPlain()
                         spans += MdSpan.Highlight(inline(text.substring(i + 2, end), streaming))
                         i = end + 2
-                    } else if (streaming && i + 2 < text.length && text[i + 2] != ' ' && text[i + 2] != '=') {
-                        flushPlain()
-                        spans += MdSpan.Highlight(inline(text.substring(i + 2), streaming))
-                        i = text.length
                     } else {
                         plain.append(c); i++
                     }
