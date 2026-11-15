@@ -1037,9 +1037,13 @@ class ChatRepository(
         if (result is ApiResult.Success) {
             // A new run starts: late text events are live again (M-558),
             // the terminal retry loop must stand down (M-375), and asks
-            // from the previous run may be restored again (M-081).
+            // from the previous run may be restored again (M-081) — so the
+            // next resync must re-fetch the permission list even if the
+            // stream dropped only briefly (M-254): without the fetch the
+            // revived ask never comes back.
             runEnded = false
             runGeneration++
+            permissionsDirty = true
             if (permissionGate.suppressedSessionID == id) {
                 permissionGate.suppressedSessionID = null
             }

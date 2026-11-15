@@ -2839,6 +2839,12 @@ class ChatViewModel(
      */
     private fun refreshInboxCount() {
         val id = _state.value.sessionID ?: return
+        // No engine attached (a JVM unit test drives onRepoState with a
+        // bare EngineApi): there is nothing to list, and launching would
+        // touch viewModelScope — whose Main dispatcher does not exist
+        // outside the app. The real app only collects repo state once a
+        // handle exists, so this skips no live work.
+        if (api.handle() == null) return
         inboxCountJob?.cancel()
         inboxCountJob = viewModelScope.launch {
             val handle = api.handle() ?: return@launch
@@ -2863,6 +2869,9 @@ class ChatViewModel(
      */
     private fun refreshForms(sessionID: String? = _state.value.sessionID) {
         val id = sessionID ?: return
+        // Same no-engine guard as refreshInboxCount: a bare EngineApi in a
+        // JVM unit test must not make onRepoState touch viewModelScope.
+        if (api.handle() == null) return
         formsJob?.cancel()
         formsJob = viewModelScope.launch {
             val handle = api.handle() ?: return@launch
