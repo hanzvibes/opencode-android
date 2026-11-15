@@ -4,6 +4,8 @@ import android.content.ComponentCallbacks
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
+import android.view.DragEvent
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -34,13 +36,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.LanguageStore
@@ -52,10 +58,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -75,7 +79,10 @@ import dev.bidzz.opencode.ui.cancelAgentDone
 import dev.bidzz.opencode.ui.chat.ChatScreen
 import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
+import dev.bidzz.opencode.ui.chat.MIME_WORKSPACE_PATH
 import dev.bidzz.opencode.ui.chat.SharedPrefsParkedComposerStore
+import dev.bidzz.opencode.ui.chat.acceptsDropMimeTypes
+import dev.bidzz.opencode.ui.chat.droppedContent
 import dev.bidzz.opencode.ui.files.SharedPrefsFileDraftStore
 import dev.bidzz.opencode.ui.chat.readSafFile
 import dev.bidzz.opencode.ui.diagnostics.DiagnosticsScreen
@@ -156,7 +163,19 @@ internal sealed interface Screen {
      * not carried in the saved key, so a restore after process death
      * returns to Files.
      */
-    data class FileView(val path: String, val returnTo: Screen = Screen.Files) : Screen
+    data class FileView(
+        val path: String,
+        val returnTo: Screen = Screen.Files,
+        /**
+         * Content-search hit to land on (audit-200 C16, M-238): the
+         * query is pre-filled in the find bar and the viewer scrolls
+         * to the first match at or after [findLine]. Null means a plain
+         * open. Like [returnTo], not carried in the saved key — a
+         * restore after process death opens the file plainly.
+         */
+        val findQuery: String? = null,
+        val findLine: Int? = null,
+    ) : Screen
     data object DiffList : Screen
     data class Diff(val file: String) : Screen
     data object SessionDiff : Screen
@@ -480,7 +499,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     }
 
     val explorerViewModel: ExplorerViewModel = viewModel(factory = viewModelFactory { _ ->
-        ExplorerViewModel(app.engineApi, { app.workspaceStore.resolve().absolutePath })
+        ExplorerViewModel(
+            app.engineApi,
+            { app.workspaceStore.resolve().absolutePath },
+            // Audit-200 C16 (M-238): the bundled `rg` for content
+            // search — the same binary the agent's grep tool uses,
+            // linked into filesDir/engine/tools/bin at startup.
+            rgBinary = {
+                java.io.File(app.filesDir, "engine/tools/bin/rg").takeIf { it.canExecute() }
+            },
+        )
     })
     val fileViewModel: FileViewViewModel = viewModel(factory = viewModelFactory { extras ->
         FileViewViewModel(
@@ -815,27 +843,19 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         updateSessionWidget(hostContext, id, title)
     }
 
-    // Agent-done notification (Native C): when a run ends while the app
-    // is not in the foreground, say so in the drawer; tapping it opens
-    // the session. A run that ends while the user is watching needs no
-    // notification — the answer is already on screen.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var wasBusy by remember { mutableStateOf(false) }
-    LaunchedEffect(chatState.busy) {
-        val busy = chatState.busy
-        if (wasBusy && !busy) {
-            val id = chatState.sessionID
-            if (id != null) {
-                val resumed = lifecycleOwner.lifecycle.currentState
-                    .isAtLeast(Lifecycle.State.RESUMED)
-                if (!resumed) {
-                    val title = sessionsState.rows.find { it.id == id }?.title
-                    notifyAgentDone(hostContext, id, title)
-                }
-            }
-        }
-        wasBusy = busy
-    }
+    // Agent-done notification (Native C): the service watcher is the
+    // only trigger now (see EngineService.updateAgentDoneWatcher). The
+    // UI trigger that used to live here — a bare `wasBusy && !busy` —
+    // is gone (audit-200 C16, M-236): it fired on any busy→false
+    // transition, including `repo.open(B)` emitting busy=false after a
+    // deep link into a session that never ran anything, and posted a
+    // "finished" notification for that innocent session. The watcher
+    // instead reads the session id from the terminal event itself, so a
+    // switch can never invent a notification — and it covers the
+    // backgrounded-but-alive case the UI trigger was kept for, because
+    // it checks `isAppForeground` rather than composition. The
+    // session-open cancel below stays: opening a session still clears
+    // its (stale) notification, since the user is looking at the answer.
 
     // Links in chat open in the in-app browser (Native C): http/https
     // stay inside the app; only mailto: and a strictly-shaped tel: go
@@ -854,6 +874,90 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 }
             }
         }
+    }
+
+    // Drag & drop into the composer (Batch 7, audit-200 C16 M-237):
+    // files dropped from another app arrive as content:// URIs and are
+    // read with the SAF rules; a workspace file dragged from the
+    // Explorer arrives as a path under the private MIME type and becomes
+    // an @path mention. The listener lives on the composition root view
+    // because Compose 1.7's dragAndDropTarget cannot read the dropped
+    // ClipData (see DropAttachments.kt) — and it lives HERE, in the
+    // always-composed root, not in ChatScreen: the old home disposed it
+    // the moment the user left Chat for Files, so a drag started in the
+    // Explorer had no target at all in normal single-window use (the
+    // only way it could land was a second window). The composer bounds
+    // are hoisted here for the same reason: ChatScreen writes them,
+    // this listener reads them.
+    //
+    // In Chat the composer bounds decide, as before — a drop outside
+    // the composer is ignored. Anywhere else a drop of an accepted type
+    // navigates to Chat first (one finger is holding the drag, so the
+    // user cannot navigate themselves) and then delivers to the view
+    // model, which parks the mention/file under the dropped session
+    // when the user has since moved on (A9-2, DL-017/DL-018).
+    val dropComposerBounds = remember { mutableStateOf<Rect?>(null) }
+    var dragOverComposer by remember { mutableStateOf(false) }
+    val dropRootView = LocalView.current
+    DisposableEffect(dropRootView, screen, chatState.sessionID) {
+        val inChat = screen is Screen.Chat
+        val dropSessionId = chatState.sessionID
+        val listener = View.OnDragListener { _, event ->
+            when (event.action) {
+                DragEvent.ACTION_DRAG_STARTED -> {
+                    val description = event.clipDescription
+                        ?: return@OnDragListener false
+                    val types = (0 until description.mimeTypeCount)
+                        .map { description.getMimeType(it) }
+                        .toSet()
+                    acceptsDropMimeTypes(types)
+                }
+                DragEvent.ACTION_DRAG_ENTERED, DragEvent.ACTION_DRAG_LOCATION -> {
+                    dragOverComposer = inChat && dropComposerBounds.value
+                        ?.contains(Offset(event.x, event.y)) == true
+                    true
+                }
+                DragEvent.ACTION_DRAG_EXITED -> {
+                    dragOverComposer = false
+                    true
+                }
+                DragEvent.ACTION_DROP -> {
+                    dragOverComposer = false
+                    if (inChat) {
+                        val inside = dropComposerBounds.value
+                            ?.contains(Offset(event.x, event.y)) == true
+                        if (!inside) return@OnDragListener false
+                    }
+                    val content = droppedContent(event.clipData)
+                    if (content.uris.isEmpty() && content.texts.isEmpty()) {
+                        return@OnDragListener false
+                    }
+                    // Only a drag carrying the private path MIME type may
+                    // insert mentions: a URI drop from another app can
+                    // carry a text label too, and that label is not a
+                    // workspace path.
+                    val pathDrop = event.clipDescription
+                        ?.hasMimeType(MIME_WORKSPACE_PATH) == true
+                    if (!inChat) screen = Screen.Chat
+                    if (pathDrop) {
+                        chatViewModel.handleDroppedPaths(content.texts, dropSessionId)
+                    }
+                    if (content.uris.isNotEmpty()) {
+                        chatViewModel.handleDroppedFiles(content.uris, dropSessionId) { uri ->
+                            readSafFile(app.contentResolver, uri)
+                        }
+                    }
+                    true
+                }
+                DragEvent.ACTION_DRAG_ENDED -> {
+                    dragOverComposer = false
+                    true
+                }
+                else -> false
+            }
+        }
+        dropRootView.setOnDragListener(listener)
+        onDispose { dropRootView.setOnDragListener(null) }
     }
 
     CompositionLocalProvider(
@@ -942,6 +1046,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         fileIndexLoading = explorerState.quickOpenLoading,
                         fileIndexFailed = explorerState.quickOpenFailed,
                         onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
+                        composerBounds = dropComposerBounds,
+                        dragOverComposer = dragOverComposer,
                     )
 
                     Screen.Files -> ExplorerScreen(
@@ -999,6 +1105,13 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onFileCancelSwitch = fileViewModel::cancelSwitch,
                         onEnsureQuickOpenIndex = explorerViewModel::ensureQuickOpenIndex,
                         onToggleHidden = explorerViewModel::toggleHidden,
+                        onSearchContent = explorerViewModel::searchContent,
+                        // Audit-200 C16 (M-238): a content-search hit
+                        // opens the file with the query in its find bar,
+                        // scrolled to the hit's line.
+                        onOpenContentResult = { path, line, query ->
+                            screen = Screen.FileView(path, findQuery = query, findLine = line)
+                        },
                         // Audit-200 B7 (M-022): the embedded viewer's
                         // image/PDF previews resolve against this root.
                         workspaceRoot = fileViewModel.workspaceRoot(),
@@ -1019,6 +1132,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onDismissConflict = fileViewModel::dismissConflict,
                         onConfirmSwitchDiscard = fileViewModel::confirmSwitchDiscard,
                         onCancelSwitch = fileViewModel::cancelSwitch,
+                        // Audit-200 C16 (M-238): a content-search hit
+                        // lands with its query in the find bar.
+                        initialFindQuery = target.findQuery ?: "",
+                        initialFindLine = target.findLine,
                         // Audit-200 B7 (M-022): image/PDF previews resolve
                         // the relative path against the workspace root.
                         workspaceRoot = fileViewModel.workspaceRoot(),
@@ -1154,6 +1271,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                     fileIndexLoading = explorerState.quickOpenLoading,
                                     fileIndexFailed = explorerState.quickOpenFailed,
                                     onEnsureFileIndex = explorerViewModel::ensureQuickOpenIndex,
+                                    composerBounds = dropComposerBounds,
+                                    dragOverComposer = dragOverComposer,
                                 )
                             }
                         }
@@ -1516,6 +1635,14 @@ private fun ChatDestination(
     fileIndexLoading: Boolean = false,
     fileIndexFailed: Boolean = false,
     onEnsureFileIndex: () -> Unit = {},
+    /**
+     * Drag & drop state hoisted to [OpenCodeApp] (audit-200 C16, M-237):
+     * the drop listener lives on the composition root, but the composer
+     * that draws the hover highlight is here, so the bounds and the
+     * hover flag travel down through this destination.
+     */
+    composerBounds: MutableState<Rect?>,
+    dragOverComposer: Boolean,
 ) {
     ChatScreen(
         state = chatState,
@@ -1585,12 +1712,8 @@ private fun ChatDestination(
         onDeferPermission = chatViewModel::deferPermission,
         onRestoreDeferredPermission = chatViewModel::restoreDeferredPermission,
         onRemoveAttachment = chatViewModel::removeAttachment,
-        onFilesDropped = { uris, sessionId ->
-            chatViewModel.handleDroppedFiles(uris, sessionId) { uri ->
-                readSafFile(app.contentResolver, uri)
-            }
-        },
-        onPathsDropped = chatViewModel::handleDroppedPaths,
+        composerBounds = composerBounds,
+        dragOverComposer = dragOverComposer,
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
         onDismissQueueNotice = chatViewModel::dismissQueueNotice,
         onDismissStaleSelection = chatViewModel::clearStaleSelection,

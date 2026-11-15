@@ -11,6 +11,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.job
 import okhttp3.Request
 
 /**
@@ -47,6 +48,31 @@ class EventStream(private val client: EngineClient) {
         /** Backoff bounds for reconnect attempts. */
         private const val INITIAL_BACKOFF_MS = 500L
         private const val MAX_BACKOFF_MS = 15_000L
+    }
+
+    /**
+     * The SSE call currently blocked in [streamOnce], if any.
+     *
+     * Audit-200 C16 (M-245): the read loop blocks in `readUtf8Line()`,
+     * which coroutine cancellation cannot interrupt — switching
+     * sessions used to leave the old socket open until the 90s read
+     * timeout, stacking dead connections. [close] cancels this call,
+     * which unblocks the read with an IOException at once. Written on
+     * the stream's IO dispatcher and read from [close]; the field is
+     * volatile because the two run on different threads.
+     */
+    @Volatile
+    private var activeCall: okhttp3.Call? = null
+
+    /**
+     * Closes the in-flight SSE connection now, if one is open.
+     *
+     * Called by [ChatRepository.close] before it cancels the stream
+     * job (a session switch), so the old socket does not linger.
+     * Cancelling a call that already finished is a no-op.
+     */
+    fun close() {
+        activeCall?.cancel()
     }
 
     /**
@@ -99,29 +125,48 @@ class EventStream(private val client: EngineClient) {
             .get()
             .build()
 
-        client.streaming().newCall(request).await().use { response ->
-            if (response.code == 401 || response.code == 403) {
-                // A 401 will never fix itself: credentials are fixed per client and change
-                // on every engine restart, so this stream is stale for good.
-                throw EventStreamAuthException(response.code)
-            }
-            if (!response.isSuccessful) {
-                throw IOException("event stream rejected with HTTP ${response.code}")
-            }
-            val source = response.body?.source() ?: throw IOException("event stream had no body")
-            val parser = SseParser()
-            while (true) {
-                val line = source.readUtf8Line() ?: run {
-                    // The server closed the stream mid-block: a trailing
-                    // event without its closing blank line still counts
-                    // (Fase 2, 03-F4). The parser exists for exactly this
-                    // case and previously had no production caller.
-                    parser.flush()?.let { onEvent(it) }
-                    return
+        // Audit-200 C16 (M-245): `await()` cancels the call only while
+        // it is still connecting — once the response arrives, the loop
+        // below blocks in `readUtf8Line()` and coroutine cancellation
+        // cannot interrupt it. The completion hook below closes the
+        // socket the moment the collector job is cancelled (or [close] is
+        // called), so the blocked read fails at once instead of waiting
+        // out the 90s read timeout. The hook is disposed when the
+        // connection ends normally, so reconnects do not accumulate
+        // handlers on the long-lived stream job.
+        val call = client.streaming().newCall(request)
+        activeCall = call
+        val cancellation = currentCoroutineContext().job.invokeOnCompletion {
+            runCatching { call.cancel() }
+        }
+        try {
+            call.await().use { response ->
+                if (response.code == 401 || response.code == 403) {
+                    // A 401 will never fix itself: credentials are fixed per client and change
+                    // on every engine restart, so this stream is stale for good.
+                    throw EventStreamAuthException(response.code)
                 }
-                val event = parser.accept(line) ?: continue
-                onEvent(event)
+                if (!response.isSuccessful) {
+                    throw IOException("event stream rejected with HTTP ${response.code}")
+                }
+                val source = response.body?.source() ?: throw IOException("event stream had no body")
+                val parser = SseParser()
+                while (true) {
+                    val line = source.readUtf8Line() ?: run {
+                        // The server closed the stream mid-block: a trailing
+                        // event without its closing blank line still counts
+                        // (Fase 2, 03-F4). The parser exists for exactly this
+                        // case and previously had no production caller.
+                        parser.flush()?.let { onEvent(it) }
+                        return
+                    }
+                    val event = parser.accept(line) ?: continue
+                    onEvent(event)
+                }
             }
+        } finally {
+            cancellation.dispose()
+            if (activeCall === call) activeCall = null
         }
     }
 }

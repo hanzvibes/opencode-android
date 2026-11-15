@@ -53,7 +53,7 @@ class FsQueryEncodingTest {
     }
 
     /** Serves a canned branch list and records every request line. */
-    private class Stub : AutoCloseable {
+    private class Stub(private val body: String = """{"data":["fix login","other"]}""") : AutoCloseable {
         private val socket = ServerSocket(0, 5, InetAddress.getLoopbackAddress())
         val port: Int get() = socket.localPort
         val requests = ConcurrentLinkedQueue<String>()
@@ -64,14 +64,14 @@ class FsQueryEncodingTest {
                     connection.use {
                         val requestLine = runCatching { it.getInputStream().bufferedReader().readLine() }.getOrNull().orEmpty()
                         requests += requestLine
-                        val body = """{"data":["fix login","other"]}""".encodeToByteArray()
+                        val bodyBytes = body.encodeToByteArray()
                         val out = it.getOutputStream()
                         out.write(
                             ("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n" +
-                                "Content-Length: ${body.size}\r\nConnection: close\r\n\r\n")
+                                "Content-Length: ${bodyBytes.size}\r\nConnection: close\r\n\r\n")
                                 .encodeToByteArray(),
                         )
-                        out.write(body)
+                        out.write(bodyBytes)
                         out.flush()
                     }
                 }.apply { isDaemon = true; start() }
@@ -98,6 +98,22 @@ class FsQueryEncodingTest {
             val request = stub.requests.single()
             assertTrue(request, request.contains("search=fix%20login"))
             assertFalse(request, request.contains("fix+login"))
+        }
+    }
+
+    @Test
+    fun `a worktree list for a project with a space reaches the engine as percent-encoding`() {
+        // Audit-200 C16 (M-024): the project id went out form-encoded, so
+        // a project in "my app" asked for a project literally called
+        // "my+app" and always answered an empty list.
+        Stub(body = """[{"directory":"/tmp/wt1"}]""").use { stub ->
+            val worktrees = WorktreeApi(EngineClient("http://127.0.0.1:${stub.port}", "Basic dXNlcjp4"))
+            val result = runBlocking { worktrees.list("/storage/emulated/0/Projects/my app") }
+
+            assertTrue(result is ApiResult.Success)
+            val request = stub.requests.single()
+            assertTrue(request, request.contains("projectID=%2Fstorage%2Femulated%2F0%2FProjects%2Fmy%20app"))
+            assertFalse(request, request.contains("my+app"))
         }
     }
 }

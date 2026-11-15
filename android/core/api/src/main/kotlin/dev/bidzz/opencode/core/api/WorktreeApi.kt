@@ -19,7 +19,12 @@ import dev.bidzz.opencode.core.api.dto.WorktreeDirectory
 class WorktreeApi(private val client: EngineClient) {
 
     suspend fun list(projectID: String): ApiResult<List<WorktreeDirectory>> {
-        val encoded = java.net.URLEncoder.encode(projectID, "UTF-8")
+        // Audit-200 C16 (M-024): the project id is user-visible data — a
+        // project folder with a space is ordinary — and the engine reads
+        // query values as percent-encoded, so a form-encoded `+` arrives
+        // as a literal plus and the project simply has no worktrees. The
+        // shared encoder turns spaces into %20 (see FileApi.enc).
+        val encoded = encodeQueryValue(projectID)
         val request = client.request("/api/worktree?projectID=$encoded").get().build()
         return client.execute(request) { raw ->
             ApiJson.decodeFromString<List<WorktreeDirectory>>(raw)

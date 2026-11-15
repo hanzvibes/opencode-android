@@ -2483,6 +2483,26 @@ class ChatViewModel(
             if (!chat.busy) returnQueueToDraft()
         }
 
+        // Audit-200 C16 (M-246): the flush used to be purely
+        // edge-triggered — only the busy→false transition in
+        // resolveRunEndAction above sent the queue. An edge that arrived
+        // while a send was in flight returned NONE, and a run that ended
+        // while the repository was gone produced no edge at all, so a
+        // queue could sit in an idle session forever with no run coming
+        // to flush it. Check the level too: any idle emission with a
+        // non-empty queue, no send in flight and no stop pending sends
+        // the head now. The guards mirror the edge's: a stop returns the
+        // queue to the draft instead (handled above), a flush already in
+        // flight or a delayed retry already pending must not double-send,
+        // and a restored queue already went back to the draft in the
+        // block above, so it never reaches this check.
+        if (!chat.busy && !sendInFlight && flushingEntry == null &&
+            _state.value.queuedPrompts.isNotEmpty() && !stopIntent &&
+            repository != null && !flushRetryPending
+        ) {
+            flushQueueNow()
+        }
+
         // Audit-200 C15 (M-229): reconcile a prompt the previous
         // process may have sent, against the first transcript after the
         // restore — before the user can re-send the draft and duplicate

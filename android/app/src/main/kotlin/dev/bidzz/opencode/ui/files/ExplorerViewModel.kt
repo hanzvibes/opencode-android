@@ -94,6 +94,17 @@ data class ExplorerUiState(
      * hold workflows and settings the user edits.
      */
     val showHidden: Boolean = false,
+    /**
+     * Content search (audit-200 C16, M-238): the last query submitted,
+     * its matches, and whether the search is still running, failed, or
+     * stopped on the result cap. Empty until the user searches; the
+     * query stays so a retry re-runs the same search.
+     */
+    val contentSearchQuery: String = "",
+    val contentSearchResults: List<ContentMatch> = emptyList(),
+    val contentSearchLoading: Boolean = false,
+    val contentSearchFailed: Boolean = false,
+    val contentSearchTruncated: Boolean = false,
 ) {
     data class Crumb(val label: String, val path: String)
 }
@@ -141,6 +152,8 @@ internal fun isHiddenDirectory(name: String, isDirectory: Boolean): Boolean =
 class ExplorerViewModel(
     private val api: EngineApi,
     private val workspace: () -> String,
+    /** The bundled `rg` binary, if the install staged it (audit-200 C16, M-238). Null in tests. */
+    private val rgBinary: () -> java.io.File? = { null },
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ExplorerUiState())
@@ -287,6 +300,56 @@ class ExplorerViewModel(
     /** Shows or hides dot-directories in the explorer list (89-F6). */
     fun toggleHidden() {
         _state.value = _state.value.copy(showHidden = !_state.value.showHidden)
+    }
+
+    /** In-flight content search, cancelled when a fresh search starts. */
+    private var contentSearchJob: Job? = null
+
+    /**
+     * Searches file contents across the workspace (audit-200 C16,
+     * M-238): runs the bundled `rg` over the workspace directory and
+     * publishes its matches. A new search cancels the one in flight.
+     * An empty query clears the results instead of searching. A
+     * missing `rg` binary fails the search (with a retry), never
+     * silently: the user asked for a search, not for silence.
+     */
+    fun searchContent(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) {
+            clearContentSearch()
+            return
+        }
+        contentSearchJob?.cancel()
+        _state.value = _state.value.copy(
+            contentSearchQuery = trimmed,
+            contentSearchLoading = true,
+            contentSearchFailed = false,
+        )
+        contentSearchJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val binary = rgBinary()
+            if (binary == null) {
+                _state.value = _state.value.copy(contentSearchLoading = false, contentSearchFailed = true)
+                return@launch
+            }
+            val result = runContentSearch(binary, java.io.File(workspace()), trimmed)
+            _state.value = _state.value.copy(
+                contentSearchLoading = false,
+                contentSearchResults = result.matches,
+                contentSearchTruncated = result.truncated,
+            )
+        }
+    }
+
+    /** Clears the content-search results and query. */
+    fun clearContentSearch() {
+        contentSearchJob?.cancel()
+        _state.value = _state.value.copy(
+            contentSearchQuery = "",
+            contentSearchResults = emptyList(),
+            contentSearchLoading = false,
+            contentSearchFailed = false,
+            contentSearchTruncated = false,
+        )
     }
 
     fun load() {
