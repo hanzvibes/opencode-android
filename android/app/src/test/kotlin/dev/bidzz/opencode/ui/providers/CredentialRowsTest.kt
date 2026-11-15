@@ -29,7 +29,7 @@ class CredentialRowsTest {
             entry("cred_2", "openrouter"),
             entry("cred_3", "302ai"),
         )
-        val ids = rowsFor(entries, "302ai").map { it.id }
+        val ids = rowsFor(entries, "302ai", "Untitled key").map { it.id }
         assertEquals(listOf("cred_1", "cred_3"), ids)
     }
 
@@ -43,7 +43,7 @@ class CredentialRowsTest {
             entry("cred_2", "302ai-plus"),
             entry("cred_3", "ai"),
         )
-        val rows = rowsFor(entries, "302ai")
+        val rows = rowsFor(entries, "302ai", "Untitled key")
         assertEquals(listOf("cred_1"), rows.map { it.id })
         assertEquals(1, rows.size)
     }
@@ -54,7 +54,7 @@ class CredentialRowsTest {
             entry("cred_inactive", "302ai", label = "a-inactive", active = false),
             entry("cred_active", "302ai", label = "z-active", active = true),
         )
-        val rows = rowsFor(entries, "302ai")
+        val rows = rowsFor(entries, "302ai", "Untitled key")
         assertTrue(rows.first().inUse)
         assertEquals("cred_active", rows.first().id)
     }
@@ -62,14 +62,16 @@ class CredentialRowsTest {
     @Test
     fun `an empty label still renders a readable title`() {
         // Every key this app stores is created without a label, so the engine returns
-        // "" and the row would otherwise be blank.
-        val rows = rowsFor(listOf(entry("cred_1", "302ai")), "302ai")
-        assertEquals("API key", rows.single().title)
+        // "" and the row would otherwise be blank. The fallback comes from the
+        // caller as a localised string (audit-200 D2, m-931) — the hardcoded
+        // English "API key" used to leak into the Indonesian UI.
+        val rows = rowsFor(listOf(entry("cred_1", "302ai")), "302ai", "Untitled key")
+        assertEquals("Untitled key", rows.single().title)
     }
 
     @Test
     fun `a label from the engine is shown as given`() {
-        val rows = rowsFor(listOf(entry("cred_1", "302ai", label = "work key")), "302ai")
+        val rows = rowsFor(listOf(entry("cred_1", "302ai", label = "work key")), "302ai", "Untitled key")
         assertEquals("work key", rows.single().title)
     }
 
@@ -110,7 +112,7 @@ class CredentialRowsTest {
         // remaining count comes from the re-read list.
         val entries = listOf(entry("cred_1", "302ai"), entry("cred_2", "302ai"))
         val after = entries.filter { it.id != "cred_1" }
-        assertEquals(1, rowsFor(after, "302ai").size)
-        assertEquals(0, rowsFor(emptyList(), "302ai").size)
+        assertEquals(1, rowsFor(after, "302ai", "Untitled key").size)
+        assertEquals(0, rowsFor(emptyList(), "302ai", "Untitled key").size)
     }
 }

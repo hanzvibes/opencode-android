@@ -101,7 +101,14 @@ data class CredentialsResponse(
  * actually send it.
  */
 @Serializable
-data class KeyValue(val type: String, val key: String)
+data class KeyValue(val type: String, val key: String) {
+    /**
+     * Never prints the secret (audit-200 D2, m-889): the default data-class
+     * `toString()` would put `key=<secret>` into any log line, debugger
+     * view or exception message that prints the object.
+     */
+    override fun toString(): String = "KeyValue(type=$type, key=<redacted>)"
+}
 
 @Serializable
 data class CredentialCreateRequest(
@@ -109,4 +116,12 @@ data class CredentialCreateRequest(
     val value: KeyValue,
     val label: String? = null,
     val activate: Boolean? = null,
-)
+) {
+    /**
+     * Never prints the secret (audit-200 D2, m-889): [value] is a
+     * [KeyValue] whose own `toString()` is redacted, and this override
+     * keeps the request safe even if that changes.
+     */
+    override fun toString(): String =
+        "CredentialCreateRequest(integrationID=$integrationID, value=<redacted>, label=$label, activate=$activate)"
+}

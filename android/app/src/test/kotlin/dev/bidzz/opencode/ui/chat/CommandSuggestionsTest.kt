@@ -5,6 +5,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.NativeKeyEvent
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.dto.CommandInfo
 import dev.bidzz.opencode.core.api.dto.SkillInfo
 import dev.bidzz.opencode.ui.Glyph
@@ -136,7 +137,10 @@ class CommandSuggestionsTest {
         assertEquals(listOf("commit", "review-pr"), skillRows.map { it.name })
         assertEquals("Write a commit message", skillRows[0].description)
         assertEquals(Glyph.Sparkles, skillRows[0].glyph)
-        assertEquals("skill", skillRows[0].parameterHint)
+        // Audit-200 D2 (m-930/m-1212): the "skill" tag chip is a localised
+        // resource now, not a hardcoded English literal.
+        assertEquals(R.string.cmd_skill_tag, skillRows[0].parameterHintRes)
+        assertNull(skillRows[0].parameterHint)
         // Audit-200 C3 (M-067): the row keeps the engine skill's id —
         // the pick used to drop it and keep only the name, so a pick
         // could never send the structured attachment the engine
@@ -182,6 +186,34 @@ class CommandSuggestionsTest {
     fun `resolveSlashCommands without skills is unchanged`() {
         val engineCmds = listOf(CommandInfo(name = "deploy", description = "Deploy the app"))
         assertEquals(resolveSlashCommands(engineCmds), resolveSlashCommands(engineCmds, emptyList()))
+    }
+
+    @Test
+    fun `an engine command without a description gets the localised fallback`() {
+        // Audit-200 D2 (m-930/m-1212): the palette used to show the hardcoded
+        // English "Execute /…" in every locale.
+        val resolved = resolveSlashCommands(
+            listOf(CommandInfo(name = "deploy", description = null)),
+        )
+        val cmd = resolved.first { it.name == "deploy" }
+        assertEquals("Execute /deploy", cmd.description)
+        assertEquals(dev.bidzz.opencode.R.string.cmd_execute_fallback, cmd.descriptionRes)
+        assertEquals("deploy", cmd.descriptionResArg)
+    }
+
+    @Test
+    fun `a skill without a description gets the localised fallback and tag`() {
+        // Audit-200 D2 (m-930/m-1212): "Use the … skill" and the "skill"
+        // chip were both hardcoded English.
+        val resolved = resolveSlashCommands(
+            emptyList(),
+            listOf(SkillInfo(id = "sk_1", name = "commit", description = null)),
+        )
+        val skill = resolved.first { it.isSkill && it.name == "commit" }
+        assertEquals("Use the commit skill", skill.description)
+        assertEquals(dev.bidzz.opencode.R.string.cmd_skill_fallback, skill.descriptionRes)
+        assertEquals("commit", skill.descriptionResArg)
+        assertEquals(dev.bidzz.opencode.R.string.cmd_skill_tag, skill.parameterHintRes)
     }
 
     @Test

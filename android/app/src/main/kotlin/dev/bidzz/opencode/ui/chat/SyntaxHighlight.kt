@@ -62,6 +62,12 @@ fun highlight(language: String?, code: String, streaming: Boolean = false): List
             i = end
             continue
         }
+        if (dialect.dashDash && c == '-' && code.regionMatches(i + 1, "-", 0, 1)) {
+            val end = code.indexOf('\n', i).let { if (it < 0) code.length else it }
+            tokens.add(code.substring(i, end), TokenKind.Comment)
+            i = end
+            continue
+        }
         if (dialect.hash && c == '#') {
             val end = code.indexOf('\n', i).let { if (it < 0) code.length else it }
             tokens.add(code.substring(i, end), TokenKind.Comment)
@@ -80,6 +86,19 @@ fun highlight(language: String?, code: String, streaming: Boolean = false): List
             }
             tokens.add(code.substring(i, end), TokenKind.Comment)
             i = end
+            continue
+        }
+
+        if (c == '`' && dialect.template) {
+            val end = scanTemplate(code, i)
+            tokens.add(code.substring(i, end), TokenKind.String)
+            i = end
+            continue
+        }
+        if (dialect.angle && c == '<' && i + 1 < code.length &&
+            (code[i + 1].isLetter() || code[i + 1] == '/' || code[i + 1] == '!')
+        ) {
+            i = scanTag(code, i, tokens)
             continue
         }
 
@@ -108,8 +127,9 @@ fun highlight(language: String?, code: String, streaming: Boolean = false): List
             var end = i
             while (end < code.length && (code[end].isLetterOrDigit() || code[end] == '_' || code[end] == '$')) end++
             val word = code.substring(i, end)
+            val lookup = if (dialect.caseInsensitiveKeywords) word.lowercase() else word
             val kind = when {
-                word in dialect.keywords -> TokenKind.Keyword
+                lookup in dialect.keywords -> TokenKind.Keyword
                 // A word followed by "(" is a call: `foo()`, `obj.bar()`.
                 // Keywords win above, so `if (` / `fun foo(` stay keywords.
                 isCallStart(code, end) -> TokenKind.Function
@@ -188,6 +208,102 @@ private fun scanString(code: String, start: Int, quote: Char, triple: Boolean): 
     return code.length
 }
 
+/**
+ * End of the template literal starting at [start], exclusive.
+ *
+ * A template may span lines, so — like a triple-quoted string — an
+ * unterminated one runs to the end of the input rather than stopping at
+ * the line break: stopping mid-template would paint the rest of the
+ * block as code. `${…}` interpolation is coloured as one string run for
+ * now, the same limitation as Kotlin `"""` interpolation today.
+ */
+private fun scanTemplate(code: String, start: Int): Int {
+    var j = start + 1
+    while (j < code.length) {
+        val ch = code[j]
+        if (ch == '\\' && j + 1 < code.length) {
+            j += 2
+            continue
+        }
+        if (ch == '`') return j + 1
+        j++
+    }
+    return code.length
+}
+
+/**
+ * Colours one `<tag …>` run (audit-200 D2, m-1148): `<!-- … -->` is a
+ * comment, the tag name is a Type, attribute names are Keywords and
+ * quoted values are Strings. Returns the end index, or [start] + 1 when
+ * no `>` closes the tag before the line ends — a stray `<` in text is
+ * not a tag, and a `>` inside a quoted value does not close it.
+ */
+private fun scanTag(code: String, start: Int, tokens: TokenList): Int {
+    if (code.startsWith("<!--", start)) {
+        val close = code.indexOf("-->", start + 4)
+        val end = if (close < 0) {
+            code.indexOf('\n', start).let { if (it < 0) code.length else it }
+        } else {
+            close + 3
+        }
+        tokens.add(code.substring(start, end), TokenKind.Comment)
+        return end
+    }
+    var j = start + 1
+    var quote: Char? = null
+    var gt = -1
+    while (j < code.length) {
+        val ch = code[j]
+        if (quote != null) {
+            if (ch == quote) quote = null
+        } else if (ch == '"' || ch == '\'') {
+            quote = ch
+        } else if (ch == '>') {
+            gt = j
+            break
+        } else if (ch == '\n') {
+            break
+        }
+        j++
+    }
+    if (gt < 0) return start + 1
+    tokens.add("<", TokenKind.Operator)
+    j = start + 1
+    if (j < gt && code[j] == '/') {
+        tokens.add("/", TokenKind.Operator)
+        j++
+    }
+    val nameStart = j
+    while (j < gt && (code[j].isLetterOrDigit() || code[j] == '-' || code[j] == ':')) j++
+    if (j > nameStart) tokens.add(code.substring(nameStart, j), TokenKind.Type)
+    while (j < gt) {
+        val ch = code[j]
+        when {
+            ch == '"' || ch == '\'' -> {
+                val end = scanString(code, j, ch, false)
+                tokens.add(code.substring(j, end), TokenKind.String)
+                j = end
+            }
+            ch.isLetter() || ch == '_' -> {
+                var e = j
+                while (e < gt && (code[e].isLetterOrDigit() || code[e] == '_' || code[e] == '-' || code[e] == ':')) e++
+                tokens.add(code.substring(j, e), TokenKind.Keyword)
+                j = e
+            }
+            ch in OperatorChars -> {
+                tokens.add(ch.toString(), TokenKind.Operator)
+                j++
+            }
+            else -> {
+                tokens.add(ch.toString(), TokenKind.Plain)
+                j++
+            }
+        }
+    }
+    tokens.add(">", TokenKind.Operator)
+    return gt + 1
+}
+
 private val HexDigits = ('0'..'9') + ('a'..'f') + ('A'..'F')
 
 private fun scanNumber(code: String, start: Int): Int {
@@ -241,6 +357,14 @@ private class Dialect(
     val singleQuote: Boolean = true,
     /** Rust lifetimes (`'a`): a quote followed by an identifier that no closing quote follows. */
     val lifetime: Boolean = false,
+    /** SQL `--` line comments (audit-200 D2, m-1148). */
+    val dashDash: Boolean = false,
+    /** JS/TS template literals: backtick strings that may span lines (audit-200 D2, m-1148). */
+    val template: Boolean = false,
+    /** HTML/XML tags: `<name attr="…">` runs (audit-200 D2, m-1148). */
+    val angle: Boolean = false,
+    /** Keyword lookup ignores case — SQL is case-insensitive (audit-200 D2, m-1148). */
+    val caseInsensitiveKeywords: Boolean = false,
 )
 
 private val ClikeKeywords = setOf(
@@ -295,6 +419,59 @@ private val DialectJson = Dialect(JsonKeywords, singleQuote = false)
 private val DialectJsonc = Dialect(JsonKeywords, lineSlash = true, singleQuote = false)
 private val DialectRuby = Dialect(RubyKeywords, hash = true)
 
+/**
+ * Audit-200 D2 (m-1148): SQL had no dialect, so `SELECT` blocks rendered
+ * plain even though the pill and the Save action both recognised the tag.
+ * Keywords are lowercase-only and looked up case-insensitively — SQL is
+ * case-insensitive, and doubling the set for upper case would be noise.
+ */
+private val SqlKeywords = setOf(
+    "select", "from", "where", "and", "or", "not", "null", "insert", "into",
+    "values", "update", "set", "delete", "create", "table", "join", "on",
+    "group", "by", "order", "limit", "as", "distinct", "left", "right",
+    "inner", "outer", "full", "cross", "union", "all", "having", "exists",
+    "in", "is", "between", "like", "case", "when", "then", "else", "end",
+    "primary", "key", "foreign", "references", "index", "alter", "drop",
+    "add", "column", "constraint", "unique", "check", "default", "if",
+    "begin", "commit", "rollback", "transaction", "grant", "revoke",
+    "truncate", "view", "procedure", "function", "trigger", "database",
+    "schema", "use", "show", "describe", "explain", "with", "recursive",
+    "over", "partition", "count", "sum", "avg", "min", "max",
+)
+private val DialectSql = Dialect(SqlKeywords, dashDash = true, caseInsensitiveKeywords = true)
+
+/**
+ * Audit-200 D2 (m-1148): CSS property words only — selectors stay plain,
+ * which is the honest first pass: a property set this size colours the
+ * declarations that matter without painting prose. Words are single
+ * tokens because the scanner splits on `-` (`background-color` scans as
+ * two words), so multi-word properties are listed as their parts.
+ */
+private val CssKeywords = setOf(
+    "color", "background", "display", "margin", "padding", "border", "font",
+    "size", "family", "weight", "width", "height", "position", "top", "left",
+    "right", "bottom", "flex", "grid", "align", "items", "justify", "content",
+    "gap", "overflow", "index", "opacity", "transition", "transform",
+    "cursor", "text", "line", "letter", "spacing", "box", "sizing", "float",
+    "clear", "visibility", "white", "decoration", "radius", "shadow",
+    "outline", "list", "style", "vertical", "direction", "wrap", "basis",
+    "grow", "shrink", "order", "repeat", "auto", "none", "solid", "block",
+    "inline", "relative", "absolute", "fixed", "sticky", "hidden", "visible",
+    "important",
+)
+private val DialectCss = Dialect(CssKeywords, block = true)
+
+/** Audit-200 D2 (m-1148): HTML/XML — tags only; text content stays plain. */
+private val DialectHtml = Dialect(emptySet(), angle = true)
+
+/**
+ * Audit-200 D2 (m-1148): JS/TS with backtick template literals. Kept
+ * separate from [DialectClike] on purpose — backtick is not valid code in
+ * C/Java, so giving the shared dialect template strings would paint a
+ * stray backtick there as a string opener.
+ */
+private val DialectJs = Dialect(ClikeKeywords, lineSlash = true, block = true, template = true)
+
 private fun dialectOf(language: String?): Dialect? {
     // Strip a fence filename/path suffix first: ```kotlin:Main.kt and
     // ```python /app/main.py name the language, and the suffix used to
@@ -304,9 +481,12 @@ private fun dialectOf(language: String?): Dialect? {
     return when (tag) {
     "kt", "kts", "kotlin", "java", "swift", "scala", "dart" -> DialectClikeTriple
     "rust", "rs" -> DialectRust
-    "js", "jsx", "mjs", "ts", "tsx", "typescript",
-    "javascript", "go", "c", "h", "cpp", "cc", "cxx", "hpp",
+    "js", "jsx", "mjs", "ts", "tsx", "typescript", "javascript" -> DialectJs
+    "go", "c", "h", "cpp", "cc", "cxx", "hpp",
     "c++", "cs", "c#", "csharp", "php" -> DialectClike
+    "sql" -> DialectSql
+    "css", "scss" -> DialectCss
+    "html", "htm", "xml" -> DialectHtml
     "py", "python" -> DialectPython
     "rb", "ruby" -> DialectRuby
     "sh", "bash", "zsh", "shell", "console", "terminal" -> DialectShell

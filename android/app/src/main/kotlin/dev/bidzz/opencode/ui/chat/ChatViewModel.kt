@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.ui.chat
 
+import dev.bidzz.opencode.ui.sessions.matchesAllTokens
 import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
@@ -760,16 +761,16 @@ internal fun shouldQueueForSend(
  * than through the screen.
  */
 internal fun findMessageIds(messages: List<ChatMessage>, query: String): List<String> {
-    val needle = query.trim()
-    if (needle.isEmpty()) return emptyList()
+    if (query.isBlank()) return emptyList()
     return messages.filter { message ->
-        message.text.contains(needle, ignoreCase = true) ||
-            message.reasoning?.contains(needle, ignoreCase = true) == true ||
-            message.tools.any { tool ->
-                tool.inputText?.contains(needle, ignoreCase = true) == true ||
-                    tool.output?.contains(needle, ignoreCase = true) == true ||
-                    tool.error?.contains(needle, ignoreCase = true) == true
-            }
+        // Audit-200 D2 (m-1119): tokenised like the session search — "fix
+        // login" finds "Fix the login crash" in a message, whatever the
+        // word order, and filler words do not veto the query.
+        matchesAllTokens(
+            query,
+            listOf(message.text, message.reasoning) +
+                message.tools.flatMap { listOf(it.inputText, it.output, it.error) },
+        )
     }.map { it.id }
 }
 

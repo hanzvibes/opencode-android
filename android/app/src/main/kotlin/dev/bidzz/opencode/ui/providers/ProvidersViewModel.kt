@@ -419,7 +419,10 @@ class ProvidersViewModel(
                     reload(h)
                     _state.value = _state.value.copy(
                         busyFor = _state.value.busyFor - credentialID,
-                        notice = afterDeleteNotice(rowsFor(_state.value.credentials, integrationID).size, name),
+                        notice = afterDeleteNotice(
+                            _state.value.credentials.count { it.integrationID == integrationID },
+                            name,
+                        ),
                         failure = null,
                         failureKey = null,
                     )

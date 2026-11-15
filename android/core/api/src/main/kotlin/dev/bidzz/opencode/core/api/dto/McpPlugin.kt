@@ -52,7 +52,16 @@ data class McpOAuthConfig(
     @SerialName("callback_port") val callbackPort: Int? = null,
     @SerialName("redirect_uri") val redirectUri: String? = null,
     @SerialName("auth_server_metadata_url") val authServerMetadataUrl: String? = null,
-)
+) {
+    /**
+     * Never prints the secret (audit-200 D2, m-889): the default data-class
+     * `toString()` would put `clientSecret=<secret>` into any log line that
+     * prints the object.
+     */
+    override fun toString(): String =
+        "McpOAuthConfig(clientId=$clientId, clientSecret=<redacted>, scope=$scope, " +
+            "callbackPort=$callbackPort, redirectUri=$redirectUri, authServerMetadataUrl=$authServerMetadataUrl)"
+}
 
 /**
  * One MCP server's configuration, as sent to
@@ -101,6 +110,17 @@ data class McpServerConfig(
      */
     val pool: Boolean? = null,
 ) {
+    /**
+     * Never prints secrets (audit-200 D2, m-889): `environment` and
+     * `headers` can carry tokens, so only their keys are shown; `oauth`
+     * prints through [McpOAuthConfig]'s own redacted `toString()`.
+     */
+    override fun toString(): String =
+        "McpServerConfig(type=$type, command=$command, url=$url, cwd=$cwd, " +
+            "environment=${environment?.keys?.sorted()}, headers=${headers?.keys?.sorted()}, " +
+            "oauth=$oauth, disabled=$disabled, codemode=$codemode, timeout=$timeout, " +
+            "protocol=$protocol, pool=$pool)"
+
     companion object {
         /** A local (stdio) server: `command` is already split into entries. */
         fun local(

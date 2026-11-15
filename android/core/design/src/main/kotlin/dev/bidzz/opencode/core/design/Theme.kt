@@ -197,6 +197,8 @@ data class OpenCodeColors(
     val providerQwen: Color = Color(0xFF8B5CF6),
     /** NVIDIA / Nemotron (Phase 2): brand green #76B900. */
     val providerNvidia: Color = Color(0xFF76B900),
+    /** OpenCode brand indigo (audit-200 D2, m-1175). */
+    val providerOpenCode: Color = Color(0xFF6366F1),
 ) {
     /**
      * Text colour for a status role.
@@ -265,6 +267,7 @@ data class OpenCodeColors(
             p.contains("antigravity") -> providerAntigravity
             p.contains("google") || p.contains("gemini") -> providerGoogle
             p.contains("deepseek") -> providerDeepSeek
+            p.contains("opencode") || p.contains("zen") -> providerOpenCode
             p.contains("mistral") || p.contains("codestral") -> providerMistral
             p.contains("ollama") -> providerOllama
             p.contains("meta") || p.contains("llama") -> providerMeta
@@ -388,6 +391,7 @@ private val DarkColors = OpenCodeColors(
     providerCohere = Palette.darkProviderCohere,
     providerQwen = Palette.darkProviderQwen,
     providerNvidia = Palette.darkProviderNvidia,
+    providerOpenCode = Palette.darkProviderOpenCode,
 )
 
 private val LightColors = OpenCodeColors(
@@ -463,6 +467,7 @@ private val LightColors = OpenCodeColors(
     providerCohere = Palette.lightProviderCohere,
     providerQwen = Palette.lightProviderQwen,
     providerNvidia = Palette.lightProviderNvidia,
+    providerOpenCode = Palette.lightProviderOpenCode,
 )
 
 private val LocalColors = staticCompositionLocalOf { DarkColors }
@@ -549,6 +554,7 @@ private fun OpenCodeColors.animated(animationSpec: AnimationSpec<Color>): OpenCo
     providerCohere = animateColorAsState(providerCohere, animationSpec, label = "providerCohere").value,
     providerQwen = animateColorAsState(providerQwen, animationSpec, label = "providerQwen").value,
     providerNvidia = animateColorAsState(providerNvidia, animationSpec, label = "providerNvidia").value,
+    providerOpenCode = animateColorAsState(providerOpenCode, animationSpec, label = "providerOpenCode").value,
 )
 
 /** Access point for semantic colours: `OpenCodeTheme.colors.accent`. */

@@ -3,7 +3,7 @@
     <!--
         Some strings are intentionally identical in values/ and values-in/ (92-F12):
         proper nouns (GitHub, OpenCode Go, STDOUT), technical terms Indonesian uses
-        as-is (Model, Shell, Branch, Diff, Edit, Root, Menu, Normal, Info, Error,
+        as-is (Model, Shell, Branch, Diff, Root, Menu, Normal, Info, Error,
         Pro), and format-only strings ("%1$s · %2$ds"). They are
         not missing translations. If a value here ever gains a real Indonesian
         translation, it leaves this list — and an English value that reads as
@@ -189,6 +189,7 @@
     <string name="generate_generating">Generating…</string>
     <string name="generate_interrupted">The last generation was interrupted when the app closed. Your prompt is still here — generate again to retry.</string>
     <string name="generate_no_image_models">No image models on this engine. Enable one first, or generate text instead.</string>
+    <string name="generate_pick_image_model">Pick an image model first</string>
     <string name="generate_image_unreadable">This image could not be decoded.</string>
     <string name="generate_cost">Cost $%1$.4f</string>
     <string name="generate_tokens">%1$d in · %2$d out</string>
@@ -222,7 +223,7 @@
     <string name="job_status_all">All</string>
     <string name="job_status_running">Running</string>
     <string name="job_status_completed">Completed</string>
-    <string name="job_status_error">Error</string>
+    <string name="job_status_error">Failed</string>
     <string name="job_status_cancelled">Cancelled</string>
     <string name="job_status_unknown">Unknown</string>
     <string name="job_started">Started %1$s</string>
@@ -301,7 +302,7 @@
     <string name="chat_session_gone_guidance">This session is gone on the engine — start a new session from the drawer.</string>
     <string name="session_link_gone">That session is gone on the engine — the link points to a session that no longer exists.</string>
     <string name="session_link_wrong_workspace">That session belongs to another project — switch workspace to open it.</string>
-    <string name="session_link_verify_failed">Couldn’t verify this session — the engine didn’t answer. Try again when it’s back.</string>
+    <string name="session_link_verify_failed">Could not verify this session — the engine did not answer. Try again when it is back.</string>
     <string name="chat_queued_returned">Engine stopped — queued follow-up returned to the composer.</string>
     <string name="chat_parked_unreadable">Saved draft could not be read.</string>
     <string name="workspace_unavailable">Workspace unavailable — using the internal workspace for now. Re-pick it in Projects.</string>
@@ -328,12 +329,13 @@
     <string name="chat_status_dialog_branch">Branch</string>
     <string name="chat_status_dialog_branches_loading">Loading branches…</string>
     <string name="chat_status_dialog_branches_empty">No branches found.</string>
-    <string name="chat_status_dialog_branches_failed">Couldn’t load branches.</string>
+    <string name="chat_status_dialog_branches_failed">Could not load branches.</string>
     <string name="chat_status_dialog_vcs_current">Current branch</string>
     <string name="chat_status_dialog_vcs_default">Default branch</string>
     <string name="chat_status_dialog_vcs_base">Review base</string>
-    <string name="chat_status_dialog_vcs_failed">Couldn’t load VCS details.</string>
+    <string name="chat_status_dialog_vcs_failed">Could not load VCS details.</string>
     <string name="chat_status_dialog_context">Context</string>
+    <string name="context_window_suffix">ctx</string>
     <string name="chat_status_dialog_state">State</string>
     <string name="chat_status_dialog_diagnostics">Diagnostics</string>
     <string name="chat_status_dialog_error">Error</string>
@@ -529,7 +531,7 @@
     <!-- Session instructions -->
     <string name="instructions_title">Session instructions</string>
     <string name="instructions_delete_title">Delete instruction?</string>
-    <string name="instructions_delete_body">Delete “%1$s”? This can’t be undone.</string>
+    <string name="instructions_delete_body">Delete “%1$s”? This cannot be undone.</string>
     <string name="instructions_body">Extra instructions attached to this session. They are announced to the model at the next step boundary.</string>
     <string name="instructions_empty">No instructions attached to this session.</string>
     <string name="instructions_key_hint">Key, for example notes</string>
@@ -537,7 +539,7 @@
     <string name="instructions_save">Save</string>
     <string name="instructions_key_invalid">Keys start with a lowercase letter or digit, then lowercase letters, digits, dots, underscores, or hyphens.</string>
     <string name="instructions_too_large">That value is too large. The maximum is 256 KB.</string>
-    <string name="instructions_non_string_note">This value isn’t text (object, list, or number), so it can’t be edited here — delete it to replace it.</string>
+    <string name="instructions_non_string_note">This value is not text (object, list, or number), so it cannot be edited here — delete it to replace it.</string>
 
     <!-- Usage limits -->
     <string name="usage_title">Usage limits</string>
@@ -635,7 +637,7 @@
     <string name="question_expired">This question can no longer be answered.</string>
     <string name="question_skip">Skip</string>
     <string name="question_skipped">Skipped</string>
-    <string name="question_skip_failed">Couldn\'t skip the question</string>
+    <string name="question_skip_failed">Could not skip the question</string>
     <string name="question_answer_failed">The answer could not be sent — it is back in the composer so you can retry.</string>
     <string name="bubble_thinking">Thinking…</string>
     <string name="commands_no_match">No command matches “%1$s”</string>
@@ -690,7 +692,7 @@
     <string name="code_saved">Saved</string>
     <string name="code_copy">Copy</string>
     <string name="code_copied">Copied</string>
-    <string name="copy_failed">Couldn\'t copy to clipboard.</string>
+    <string name="copy_failed">Could not copy to clipboard.</string>
     <string name="code_save">Save</string>
     <string name="code_run">Run</string>
     <string name="code_run_title">Run this command?</string>
@@ -699,7 +701,7 @@
     <string name="code_run_output_title">Command output</string>
     <string name="code_run_running">Running…</string>
     <string name="code_run_exited">Exited %1$d</string>
-    <string name="code_run_failed">Couldn’t run the command: %1$s</string>
+    <string name="code_run_failed">Could not run the command: %1$s</string>
     <string name="code_run_no_output">No output yet.</string>
     <string name="code_run_stop">Stop</string>
     <string name="code_save_failed">Could not save the file.</string>
@@ -724,7 +726,7 @@
     <string name="files_root">Root</string>
     <string name="files_note_not_repo">Not a git repository. Changes are not tracked.</string>
     <string name="files_note_clean">Git repository with no uncommitted changes.</string>
-    <string name="files_note_status_unknown">Git status couldn’t be read — changes unknown. Refresh to retry.</string>
+    <string name="files_note_status_unknown">Git status could not be read — changes unknown. Refresh to retry.</string>
     <string name="age_now">just now</string>
     <string name="age_minutes">%1$dm ago</string>
     <string name="age_hours">%1$dh ago</string>
@@ -762,7 +764,7 @@
     <string name="files_quick_open_empty">No files match \"%1$s\"</string>
     <string name="files_quick_open_loading">Indexing workspace files…</string>
     <string name="files_quick_open_results">%1$d of %2$d files</string>
-    <string name="files_quick_open_failed">Some folders couldn’t be indexed — results may be incomplete.</string>
+    <string name="files_quick_open_failed">Some folders could not be indexed — results may be incomplete.</string>
     <string name="files_quick_open_truncated">Only the first 2,000 files are indexed — some files may be missing.</string>
     <string name="files_quick_open_close">Close quick open</string>
     <string name="files_search_content">Search in files</string>
@@ -889,9 +891,9 @@
     <string name="providers_subtitle_free_tier">Built-in free-tier models</string>
     <string name="providers_subtitle_local">Local &amp;amp; OpenAI-compatible models</string>
     <!-- intentionally untranslated: model names are proper nouns -->
-    <string name="providers_featured_anthropic_subtitle">Claude 3.5 Sonnet, Opus &amp; Haiku</string>
-    <string name="providers_featured_openai_subtitle">GPT-4o, o1, o3-mini</string>
-    <string name="providers_featured_deepseek_subtitle">DeepSeek V3, R1 reasoning</string>
+    <string name="providers_featured_anthropic_subtitle">Claude Sonnet, Opus &amp; Haiku</string>
+    <string name="providers_featured_openai_subtitle">GPT-5, GPT-4o &amp; o-series</string>
+    <string name="providers_featured_deepseek_subtitle">DeepSeek V3 &amp; R1</string>
     <string name="providers_antigravity_models_list">Gemini 3.8 Flash, Gemini 3.1 Pro, and Claude Opus 4.6 Thinking</string>
     <string name="providers_antigravity_title">Google (Gemini &amp; Antigravity)</string>
     <string name="providers_antigravity_connected">Antigravity OAuth: Connected</string>
@@ -931,6 +933,7 @@
     <string name="providers_field_name_hint">My provider</string>
     <string name="providers_field_url">Base URL</string>
     <string name="providers_field_key">API key</string>
+    <string name="providers_key_untitled">Untitled key</string>
     <string name="providers_field_key_hint">Paste your key</string>
     <string name="providers_field_models">Models, comma or line separated</string>
     <string name="providers_field_models_hint">model-id = name shown in the picker; use \\, for a comma in a name</string>
@@ -978,7 +981,7 @@
     <string name="diag_password_hide">Hide password</string>
     <string name="diag_copy_all">Copy All</string>
     <string name="diag_export_logcat">Export logcat</string>
-    <string name="diag_logcat_failed">Couldn’t read the app log.</string>
+    <string name="diag_logcat_failed">Could not read the app log.</string>
     <string name="diag_copy_logs">Copy Logs</string>
     <string name="diag_copied_toast">Copied to clipboard</string>
     <string name="diag_cpu">CPU</string>
@@ -986,6 +989,11 @@
     <string name="diag_storage">Storage</string>
     <string name="diag_process_pid">Process PID</string>
     <string name="diag_engine_pid">Engine PID</string>
+    <string name="diag_cores">%1$d cores</string>
+    <string name="diag_free">%1$s free</string>
+    <string name="diag_total">Total: %1$s</string>
+    <string name="diag_engine_label">Engine: %1$s</string>
+    <string name="diag_app_pid">App PID: %1$s</string>
     <string name="diag_tab_all">All Logs</string>
     <string name="diag_tab_engine_log">Disk Log</string>
     <string name="diag_tab_output">Console</string>
@@ -1085,6 +1093,9 @@
     <string name="cmd_help_desc">Show available commands and usage guide</string>
     <string name="cmd_model_desc">Switch active model or provider</string>
     <string name="cmd_agent_desc">Switch active agent personality or mode</string>
+    <string name="cmd_execute_fallback">Execute /%1$s</string>
+    <string name="cmd_skill_fallback">Use the %1$s skill</string>
+    <string name="cmd_skill_tag">skill</string>
     <string name="fileview_lines_one">%1$d line</string>
     <string name="fileview_lines_unsaved_one">%1$d line · unsaved</string>
     <string name="fileview_lines_truncated_one">%1$d of %2$d line</string>
@@ -1131,7 +1142,7 @@
     <string name="browser_forward">Forward</string>
     <string name="browser_reload">Reload</string>
     <string name="browser_share">Share link</string>
-    <string name="browser_share_failed">Couldn\'t open the share sheet.</string>
+    <string name="browser_share_failed">Could not open the share sheet.</string>
     <string name="browser_open_external">Open in browser</string>
     <string name="browser_copied">Link copied</string>
     <string name="browser_copy_url_description">Copy URL: %1$s</string>
@@ -1148,7 +1159,7 @@
     <string name="notification_permission_settings">Notifications are off, so finished runs stay silent. Turn them on in Settings.</string>
     <string name="composer_take_photo">Take photo</string>
     <string name="photo_saved">Photo saved to %1$s</string>
-    <string name="photo_failed">Couldn\'t save photo</string>
+    <string name="photo_failed">Could not save photo</string>
     <string name="camera_insert_failed">Could not create a photo in the gallery.</string>
     <string name="photo_saved_to_gallery">Photo is in the gallery — the app restarted before it could be attached. Attach it again from the gallery.</string>
     <string name="widget_open">Open</string>

@@ -51,6 +51,7 @@ sealed interface ApiResult<out T> {
                 isLostConnection -> FailureReason.LOST_CONNECTION
                 isBinaryFile -> FailureReason.BINARY_FILE
                 isNotUtf8 -> FailureReason.NOT_UTF8
+                isNoImageModel -> FailureReason.NO_IMAGE_MODEL
                 isNoSession -> FailureReason.NO_SESSION
                 isNoPendingPermission -> FailureReason.NO_PENDING_PERMISSION
                 isUnauthorized -> FailureReason.UNAUTHORIZED
@@ -74,6 +75,9 @@ sealed interface ApiResult<out T> {
 
         /** The event stream rejected us mid-session; the socket is gone until it is reopened. */
         val isLostConnection: Boolean get() = tag == "LostConnection"
+
+        /** No image model is selected for an image generation (see NO_IMAGE_MODEL). */
+        val isNoImageModel: Boolean get() = tag == "NoImageModel"
 
         /** Called before a session existed. The caller's bug, but the user sees it. */
         val isNoSession: Boolean get() = tag == "NoSession"
@@ -120,6 +124,13 @@ enum class FailureReason {
     BINARY_FILE,
     /** Text that is not valid UTF-8; editing it would corrupt the file on save. */
     NOT_UTF8,
+    /**
+     * No image model is selected (audit-200 D2, m-1217): the selected id
+     * went stale — restored from disk after the model list changed — so
+     * the generation cannot start. Not an engine outage, so it must not
+     * read as "Cannot reach the engine".
+     */
+    NO_IMAGE_MODEL,
 }
 
 /** Server error body: `{"_tag":"...","message":"..."}`. */

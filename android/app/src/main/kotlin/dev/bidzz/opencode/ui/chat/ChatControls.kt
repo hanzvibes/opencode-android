@@ -73,6 +73,7 @@ import dev.bidzz.opencode.core.design.OpenCodeColors
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.AppTag
+import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 
@@ -1229,7 +1230,7 @@ internal fun ModelSelector(
                                                 .padding(horizontal = 5.dp, vertical = 1.dp),
                                         ) {
                                             Text(
-                                                text = "${presentation.contextWindow} ctx",
+                                                text = "${presentation.contextWindow} ${stringResource(R.string.context_window_suffix)}",
                                                 style = OpenCodeTypography.caption,
                                                 color = colors.onSurfaceMuted,
                                             )
@@ -1493,23 +1494,11 @@ internal fun cleanModelName(rawName: String, rawId: String): String {
     }
 }
 
-/**
- * The context window badge in the model picker, from the engine-reported
- * limit only (audit-100 Fase 6a, 23-F5). There is no name-based fallback:
- * guessing "128k" from a substring was already stale — DeepSeek V4 ships
- * a 1M window — and a guessed badge contradicts the meter on the same
- * screen, which hides rather than guessing when the limit is unknown.
- * Unknown limit means no badge, not a wrong one.
- */
-private fun formatContextWindow(limitContext: Long?): String? {
-    if (limitContext == null || limitContext <= 0) return null
-    return when {
-        limitContext >= 1_000_000L -> "${limitContext / 1_000_000L}M"
-        limitContext >= 1_000L -> "${limitContext / 1_000L}k"
-        else -> "$limitContext"
-    }
-}
-
+// Audit-200 D2 (m-1210): the badge used to truncate the engine-reported
+// limit ("1M" for 1.5M) while the meter on the same screen rounds it
+// ("1.5M") — a phantom 500k-token gap. The badge now reuses the meter's
+// formatter, formatCompactTokens, so both surfaces agree. Unknown limit
+// still means no badge, not a wrong one (audit-100 Fase 6a, 23-F5).
 private fun resolveTierBadge(text: String): Int? {
     val lower = text.lowercase()
     return when {
@@ -1569,7 +1558,7 @@ private fun resolveModelPresentation(model: ModelInfo, colors: OpenCodeColors): 
     val cleanName = cleanModelName(rawName, rawId)
     val combinedText = "$brandName $cleanName $rawName $rawId"
     val tier = resolveTierBadge(combinedText)
-    val context = formatContextWindow(model.limit?.context)
+    val context = model.limit?.context?.takeIf { it > 0 }?.let { formatCompactTokens(it) }
     val description = resolveModelDescription(combinedText, model.family)
 
     return ModelPresentation(

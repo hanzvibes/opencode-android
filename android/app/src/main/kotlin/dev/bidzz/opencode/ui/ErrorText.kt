@@ -37,6 +37,7 @@ fun ApiResult.Failure.message(): String = when (reason) {
     FailureReason.DECODE_FAILED -> stringResource(R.string.error_decode_failed)
     FailureReason.LOST_CONNECTION -> stringResource(R.string.error_lost_connection, code)
     FailureReason.NO_SESSION -> stringResource(R.string.error_no_session)
+    FailureReason.NO_IMAGE_MODEL -> stringResource(R.string.generate_pick_image_model)
     FailureReason.NO_PENDING_PERMISSION -> stringResource(R.string.error_no_pending_permission)
     FailureReason.BINARY_FILE -> stringResource(R.string.error_binary_file, message?.toIntOrNull() ?: 0)
     FailureReason.NOT_UTF8 -> stringResource(R.string.error_not_utf8)

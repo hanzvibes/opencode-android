@@ -71,6 +71,35 @@ internal fun statusSearchTerms(status: String?): List<String> = when (status?.lo
     else -> listOf(status)
 }
 
+/**
+ * Filler words that carry no search meaning (audit-200 D2, m-1119): a
+ * politeness or question word the text does not contain must not veto the
+ * whole query — "please fix login" finds "Fix the login crash" even
+ * though "please" is nowhere in it. The trade-off is that a filler word
+ * can no longer be searched on its own; a one-word query for "the" was
+ * never useful anyway.
+ */
+private val SEARCH_STOP_WORDS = setOf(
+    "the", "a", "an", "please", "how", "to", "do", "i", "is", "in", "on", "of", "for",
+    "yang", "di", "ke", "tolong", "cara",
+)
+
+/**
+ * Tokenised AND matching shared by the search surfaces: the query is split
+ * on whitespace, filler words are dropped, and EVERY remaining token must
+ * match some field (audit-200 D1, m-176, for sessions; D2, m-1119, for
+ * transcript and Settings search). A query of only filler words matches
+ * everything, the same as a blank query.
+ */
+fun matchesAllTokens(query: String, fields: List<String?>): Boolean {
+    if (query.isBlank()) return true
+    val tokens = query.trim().split(Regex("\\s+"))
+        .filter { it.isNotEmpty() && it.lowercase() !in SEARCH_STOP_WORDS }
+    if (tokens.isEmpty()) return true
+    val present = fields.filterNotNull()
+    return tokens.all { token -> present.any { it.contains(token, ignoreCase = true) } }
+}
+
 /** True when [query] matches the title, the transcript preview, the model, the status or the directory.
  *
  * Audit-200 D1 (m-176): the query is tokenised on whitespace and EVERY token
@@ -78,9 +107,6 @@ internal fun statusSearchTerms(status: String?): List<String> = when (status?.lo
  * whatever the word order. A single token behaves exactly as before.
  */
 fun matchesSessionQuery(query: String, row: SessionRow, detail: SessionDetail? = null): Boolean {
-    if (query.isBlank()) return true
-    val tokens = query.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-    if (tokens.isEmpty()) return true
     val fields = listOfNotNull(
         row.title,
         detail?.preview,
@@ -91,7 +117,7 @@ fun matchesSessionQuery(query: String, row: SessionRow, detail: SessionDetail? =
         detail?.model,
         row.directory,
     ) + statusSearchTerms(detail?.status)
-    return tokens.all { token -> fields.any { it.contains(token, ignoreCase = true) } }
+    return matchesAllTokens(query, fields)
 }
 
 /** Filters rows by [query] across titles and transcript previews (see [matchesSessionQuery]). */

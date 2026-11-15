@@ -142,6 +142,22 @@ class SessionGroupTest {
     }
 
     @Test
+    fun `a filler word outside the text does not veto the query`() {
+        // Audit-200 D2 (m-1119): D1 tokenised the query, but a filler word
+        // the text does not contain still vetoed it — "please fix login"
+        // found nothing even though "fix" and "login" both match.
+        val s1 = session("1").copy(title = "Fix the login crash")
+        val s2 = session("2").copy(title = "Refactor parser")
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "please fix login"))
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "how to fix login"))
+        assertEquals(listOf(s1), filterSessionRows(listOf(s1, s2), "fix login crash please"))
+        // A non-filler word that matches nothing still vetoes.
+        assertTrue(filterSessionRows(listOf(s1, s2), "please fix missing").isEmpty())
+        // A query of only filler words behaves like a blank query.
+        assertEquals(listOf(s1, s2), filterSessionRows(listOf(s1, s2), "please"))
+    }
+
+    @Test
     fun `80-F8 an Indonesian status query matches the English engine outcome`() {
         val detail = SessionDetail(preview = null, model = null, status = "failed")
         val row = session("a", timestamp = now)

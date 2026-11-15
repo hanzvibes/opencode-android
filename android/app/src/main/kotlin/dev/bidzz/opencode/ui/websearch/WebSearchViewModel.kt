@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.dto.WebSearchProvider
 import dev.bidzz.opencode.core.api.dto.WebSearchResponse
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,7 +64,7 @@ class WebSearchViewModel(private val api: EngineApi) : ViewModel() {
         if (state.query.isBlank() || state.searching) return
         val handle = api.handle()
         if (handle == null) {
-            _state.value = state.copy(failure = ApiResult.Failure(code = 0, message = "Engine not running"))
+            _state.value = state.copy(failure = engineDownFailure())
             return
         }
         _state.value = state.copy(searching = true, failure = null)

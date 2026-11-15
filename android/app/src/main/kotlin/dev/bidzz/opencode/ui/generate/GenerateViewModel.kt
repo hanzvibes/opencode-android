@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.dto.GenerateImageInput
 import dev.bidzz.opencode.core.api.dto.GenerateImageOutput
 import dev.bidzz.opencode.core.api.dto.ModelInfo
@@ -102,7 +103,7 @@ class GenerateViewModel(
             if (handle == null) {
                 _state.value = _state.value.copy(
                     modelsLoading = false,
-                    modelsFailure = ApiResult.Failure(code = 0, message = "Engine not running"),
+                    modelsFailure = engineDownFailure(),
                 )
                 return@launch
             }
@@ -155,7 +156,7 @@ class GenerateViewModel(
         if (state.prompt.isBlank() || state.generating) return
         val handle = api.handle()
         if (handle == null) {
-            _state.value = state.copy(failure = ApiResult.Failure(code = 0, message = "Engine not running"))
+            _state.value = state.copy(failure = engineDownFailure())
             return
         }
         _state.value = state.copy(generating = true, failure = null, interrupted = false)
@@ -208,7 +209,7 @@ class GenerateViewModel(
                             resultCost = null,
                             resultInputTokens = null,
                             resultOutputTokens = null,
-                            failure = ApiResult.Failure(code = 0, message = "Pick an image model first"),
+                            failure = ApiResult.Failure(code = 0, tag = "NoImageModel"),
                         )
                         persistGeneration(_state.value)
                         return@launch

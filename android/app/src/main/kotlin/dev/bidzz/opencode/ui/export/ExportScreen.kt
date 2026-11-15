@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,10 +46,21 @@ import dev.bidzz.opencode.ui.message
  * copying an uncapped transcript can throw TransactionTooLarge and
  * crash the tap. Over the cap the button says so instead of copying.
  */
-internal const val EXPORT_COPY_MAX_CHARS = 500_000
+/**
+ * The copy cap, in UTF-8 bytes (audit-200 D2, m-1027): the old cap counted
+ * characters (`String.length`), so 500k CJK characters — 1.5 MB of UTF-8,
+ * ~1 MB in the parcel's UTF-16 — sailed past it and could still throw
+ * `TransactionTooLarge`. Both meters are checked because the parcel can
+ * bill either way: the byte cap catches CJK, the unit cap bounds the
+ * UTF-16 parcel (~800 KB at 400k units, ~77% of the ~1 MB Binder buffer,
+ * leaving headroom for other transactions in flight).
+ */
+internal const val EXPORT_COPY_MAX_BYTES = 500_000
+internal const val EXPORT_COPY_MAX_UNITS = 400_000
 
 /** True when the export is too large to cross the clipboard safely. */
-internal fun shouldBlockCopy(length: Int): Boolean = length > EXPORT_COPY_MAX_CHARS
+internal fun shouldBlockCopy(text: String): Boolean =
+    text.length > EXPORT_COPY_MAX_UNITS || text.toByteArray(Charsets.UTF_8).size > EXPORT_COPY_MAX_BYTES
 
 @Composable
 fun ExportScreen(
@@ -129,8 +141,9 @@ fun ExportScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         TextButton(
+                            modifier = Modifier.sizeIn(minHeight = 48.dp),
                             onClick = {
-                                if (shouldBlockCopy(export.rawJson.length)) {
+                                if (shouldBlockCopy(export.rawJson)) {
                                     copyTooLarge = true
                                 } else {
                                     // 65-F4: "Copied" only on a real copy.
