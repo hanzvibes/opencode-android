@@ -598,7 +598,10 @@ private fun CodeBlock(
                     Text(
                         text = lineNumbersText,
                         style = codeStyle.copy(
-                            color = colors.onSurfaceFaint.copy(alpha = 0.45f),
+                            // Audit-200 D4 (m-015): faint at 0.45 alpha is
+                            // only 1.91:1 / 2.29:1 on the sunken background
+                            // — the full token reads 5.48:1 / 6.89:1.
+                            color = colors.onSurfaceFaint,
                         ),
                         softWrap = false,
                         modifier = Modifier.padding(
@@ -673,9 +676,9 @@ private fun formatLanguageName(language: String?): String {
     val raw = language?.trim()?.substringBefore(' ')?.substringBefore(':')?.lowercase()
         ?: return "Code"
     return when (raw) {
-        "kt", "kotlin" -> "Kotlin"
+        "kt", "kts", "kotlin" -> "Kotlin"
         "py", "python" -> "Python"
-        "js", "javascript" -> "JavaScript"
+        "js", "javascript", "mjs" -> "JavaScript"
         "ts", "typescript" -> "TypeScript"
         "tsx" -> "TSX"
         "jsx" -> "JSX"
@@ -683,8 +686,10 @@ private fun formatLanguageName(language: String?): String {
         "go", "golang" -> "Go"
         "java" -> "Java"
         "c" -> "C"
-        "cpp", "cc", "cxx" -> "C++"
-        "cs", "csharp" -> "C#"
+        "h" -> "C Header"
+        "cpp", "cc", "cxx", "c++" -> "C++"
+        "hpp" -> "C++ Header"
+        "cs", "csharp", "c#" -> "C#"
         "swift" -> "Swift"
         "ruby", "rb" -> "Ruby"
         "php" -> "PHP"
@@ -696,7 +701,10 @@ private fun formatLanguageName(language: String?): String {
         "toml" -> "TOML"
         "xml" -> "XML"
         "sql" -> "SQL"
-        "sh", "bash", "zsh", "shell" -> "Bash"
+        // Audit-200 D4 (m-068): console/terminal are shell fences, so they
+        // share the "Bash" label of sh/bash/zsh instead of titlecasing to
+        // "Console"/"Terminal".
+        "sh", "bash", "zsh", "shell", "console", "terminal" -> "Bash"
         "dockerfile", "docker" -> "Dockerfile"
         "md", "markdown" -> "Markdown"
         "diff" -> "Diff"

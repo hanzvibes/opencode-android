@@ -487,7 +487,14 @@ fun AppTag(
 ) {
     val colors = OpenCodeTheme.colors
     val radius = OpenCodeTheme.tokens.radius
-    val fg = color ?: colors.onSurfaceMuted
+    // Audit-200 D4 (m-002): the raw danger token as text is only 4.40:1 on
+    // its own 12% tint in dark — the text-safe variant reads 6.56:1 there
+    // and is identical to danger in light, so the mapping is a no-op
+    // where it already passes. Success/warning already pass; untouched.
+    val fg = when (color) {
+        colors.danger -> colors.toolErrorText
+        else -> color ?: colors.onSurfaceMuted
+    }
     val bg = if (color == null) colors.fill else color.copy(alpha = 0.12f)
     Row(
         modifier = modifier

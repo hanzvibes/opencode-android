@@ -20,10 +20,9 @@ import org.junit.Test
  * assignments and asserts every field reads its own token.
  *
  * The test asserts the MAPPING (which token each field reads), not the
- * ladder values: the dark container top step only reads above pressed
- * once PR #39's variant (#26262A) lands, so no ordering is asserted
- * between High and Highest in dark here — SurfaceLadderTest owns the
- * ladder values. Pure JVM: [materialColorScheme] is a pure function.
+ * ladder values: no ordering is asserted between High and Highest in dark
+ * here — SurfaceLadderTest owns the ladder values. Pure JVM:
+ * [materialColorScheme] is a pure function.
  */
 class MaterialSchemeTest {
 

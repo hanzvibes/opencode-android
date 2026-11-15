@@ -555,6 +555,7 @@ fun SessionListPane(
                                 modifier = Modifier.animateItem(),
                                 selected = row.id == selectedSessionId,
                                 detail = details[row.id],
+                                query = query,
                                 showDirectory = state.filterDirectory == null,
                                 isFirst = index == 0,
                                 isLast = index == rows.lastIndex,
@@ -626,6 +627,10 @@ private fun SessionRowItem(
     onExportClick: (() -> Unit)? = null,
     onInstructionsClick: (() -> Unit)? = null,
     detail: SessionDetail? = null,
+    /** The list search query (audit-200 D4, m-172): when a match lands
+     * outside the rendered preview, the row shows a snippet around it
+     * instead of the preview. Blank renders the preview as before. */
+    query: String = "",
     /** Accent background for the session open in the detail pane beside the list. */
     selected: Boolean = false,
     /** Carries LazyColumn placement animation (animateItem) from the list. */
@@ -653,6 +658,9 @@ private fun SessionRowItem(
     val tokenLabel = row.tokenTotal?.let { stringResource(R.string.turn_footer_tokens, formatCompactTokens(it)) }
     val meta = listOfNotNull(detail?.model, detail?.status, age, directory, row.cost, tokenLabel).joinToString(" · ")
     val preview = detail?.preview?.trim()?.takeIf { it.isNotEmpty() }
+    // Audit-200 D4 (m-172): a match on a later user message never shows in
+    // the two-line preview — show the snippet around it, highlighted.
+    val snippet = sessionMatchSnippet(query, detail)
 
     // Animation C shared-element pilot: this title is the origin side of
     // the flight to the chat header. sharedBounds, not sharedElement —
@@ -762,7 +770,16 @@ private fun SessionRowItem(
                         modifier = Modifier.padding(top = spacing.xxs),
                     )
                 }
-                if (preview != null) {
+                if (snippet != null) {
+                    Text(
+                        text = highlightMatches(snippet, searchTokens(query), colors.accent.copy(alpha = 0.22f)),
+                        style = OpenCodeTypography.bodySmall,
+                        color = colors.onSurfaceMuted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = spacing.xxs),
+                    )
+                } else if (preview != null) {
                     Text(
                         text = preview,
                         style = OpenCodeTypography.bodySmall,

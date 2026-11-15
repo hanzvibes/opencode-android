@@ -490,7 +490,9 @@ private fun dialectOf(language: String?): Dialect? {
     "py", "python" -> DialectPython
     "rb", "ruby" -> DialectRuby
     "sh", "bash", "zsh", "shell", "console", "terminal" -> DialectShell
-    "yaml", "yml", "toml", "dockerfile", "ini", "conf", "properties" -> DialectHashData
+    // Audit-200 D4 (m-076): "docker" is a Dockerfile, like "dockerfile" —
+    // it used to highlight as plain text while its label said Dockerfile.
+    "yaml", "yml", "toml", "dockerfile", "docker", "ini", "conf", "properties" -> DialectHashData
     "json" -> DialectJson
     "jsonc" -> DialectJsonc
     // No tag, or one this does not know: plain text. Deliberate — an unrecognised tag

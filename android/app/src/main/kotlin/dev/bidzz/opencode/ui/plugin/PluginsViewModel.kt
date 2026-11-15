@@ -6,6 +6,7 @@ import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.PluginInfo
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -119,6 +120,16 @@ class PluginsViewModel(
     private val _state = MutableStateFlow(PluginsUiState())
     val state: StateFlow<PluginsUiState> = _state.asStateFlow()
 
+    /**
+     * In-flight list load, cancelled when a fresh refresh starts, and its
+     * generation (audit-200 D4, m-392 — same pattern as
+     * McpServersViewModel): without a guard the last refresh to FINISH
+     * wins, not the last to start, so a stale list can overwrite the fresh
+     * one. checkUpdates() keeps its own in-flight guard and is untouched.
+     */
+    private var loadJob: Job? = null
+    private var loadGeneration = 0
+
     fun refresh() {
         val handle = api.handle()
         if (handle == null) {
@@ -126,16 +137,24 @@ class PluginsViewModel(
             return
         }
         _state.value = _state.value.copy(loading = true, failure = null)
-        viewModelScope.launch {
+        val generation = ++loadGeneration
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             when (val result = handle.plugins.list()) {
-                is ApiResult.Success -> _state.value = _state.value.copy(
-                    plugins = result.value.sortedBy { it.displayName().lowercase() },
-                    loading = false,
-                )
-                is ApiResult.Failure -> _state.value = _state.value.copy(
-                    loading = false,
-                    failure = result,
-                )
+                is ApiResult.Success -> {
+                    if (generation != loadGeneration) return@launch
+                    _state.value = _state.value.copy(
+                        plugins = result.value.sortedBy { it.displayName().lowercase() },
+                        loading = false,
+                    )
+                }
+                is ApiResult.Failure -> {
+                    if (generation != loadGeneration) return@launch
+                    _state.value = _state.value.copy(
+                        loading = false,
+                        failure = result,
+                    )
+                }
             }
         }
     }

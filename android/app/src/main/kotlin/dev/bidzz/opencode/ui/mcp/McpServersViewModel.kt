@@ -172,6 +172,17 @@ class McpServersViewModel(
     private val _state = MutableStateFlow(McpServersUiState())
     val state: StateFlow<McpServersUiState> = _state.asStateFlow()
 
+    /**
+     * In-flight list load, cancelled when a fresh load starts, and its
+     * generation (audit-200 D4, m-392): the same guard SessionListViewModel
+     * uses. Cancellation alone does not cover it — a blocked HTTP call
+     * returns after its job was cancelled, and the code after it still
+     * runs — so a stale load drops its result instead of overwriting the
+     * newer list.
+     */
+    private var loadJob: Job? = null
+    private var loadGeneration = 0
+
     /** Servers this session added at runtime — see [RuntimeAddedServers]. */
     private val runtimeAdded = RuntimeAddedServers()
 
@@ -219,9 +230,17 @@ class McpServersViewModel(
         if (showLoading) {
             _state.value = _state.value.copy(loading = true, failure = null)
         }
-        viewModelScope.launch {
+        // Audit-200 D4 (m-392): refresh() is callable while a load is
+        // in flight (the Retry button stays visible during loading) and
+        // every successful mutation fires load(false) — without a guard
+        // the last load to FINISH wins, not the last to start, so a stale
+        // list or a stale error can overwrite the fresh one.
+        val generation = ++loadGeneration
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             when (val result = handle.mcp.list()) {
                 is ApiResult.Success -> {
+                    if (generation != loadGeneration) return@launch
                     runtimeAdded.retainListed(result.value.map { it.name })
                     // Audit-200 B6 (M-017): a quiet reload after a mutation
                     // (add/connect/remove call load(false)) must clear a
@@ -233,16 +252,23 @@ class McpServersViewModel(
                         failure = null,
                     )
                     when (val catalog = handle.mcp.resourceCatalog()) {
-                        is ApiResult.Success -> _state.value =
-                            _state.value.copy(resources = catalog.value)
-                        is ApiResult.Failure -> _state.value =
-                            _state.value.copy(resources = null)
+                        is ApiResult.Success -> {
+                            if (generation != loadGeneration) return@launch
+                            _state.value = _state.value.copy(resources = catalog.value)
+                        }
+                        is ApiResult.Failure -> {
+                            if (generation != loadGeneration) return@launch
+                            _state.value = _state.value.copy(resources = null)
+                        }
                     }
                 }
-                is ApiResult.Failure -> _state.value = _state.value.copy(
-                    loading = false,
-                    failure = result,
-                )
+                is ApiResult.Failure -> {
+                    if (generation != loadGeneration) return@launch
+                    _state.value = _state.value.copy(
+                        loading = false,
+                        failure = result,
+                    )
+                }
             }
         }
     }

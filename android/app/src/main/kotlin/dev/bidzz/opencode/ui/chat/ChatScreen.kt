@@ -166,6 +166,9 @@ import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
 import dev.bidzz.opencode.ui.sessions.SessionActionMenu
 import dev.bidzz.opencode.ui.sessions.SessionDateGroup
 import dev.bidzz.opencode.ui.sessions.SessionDetail
+import dev.bidzz.opencode.ui.sessions.highlightMatches
+import dev.bidzz.opencode.ui.sessions.searchTokens
+import dev.bidzz.opencode.ui.sessions.sessionMatchSnippet
 import dev.bidzz.opencode.ui.sessions.filterSessionRows
 import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.sessions.groupSessions
@@ -342,6 +345,10 @@ fun ChatScreen(
     fileIndexFailed: Boolean = false,
     /** Builds the index lazily on first picker open; no-op once built. */
     onEnsureFileIndex: () -> Unit = {},
+    /** Drops the cached quick-open index (audit-200 D4, m-144): a photo
+     * the camera just saved is a new file the index has never seen, so
+     * the next @ picker open rebuilds and the photo is mentionable. */
+    onInvalidateFileIndex: () -> Unit = {},
     onRemoveAttachment: (String) -> Unit = {},
     /**
      * The composer's bounds in the root view, owned by OpenCodeApp
@@ -1135,6 +1142,11 @@ fun ChatScreen(
             }
             if (saved != null) {
                 onDraftChange(insertMention(currentDraft, saved))
+                // Audit-200 D4 (m-144): the photo is a new file the
+                // quick-open index has never seen — drop the cached index
+                // so the next @ picker rebuilds and the photo is
+                // mentionable without a manual reload.
+                onInvalidateFileIndex()
                 (photoSnackbarContext.applicationContext as OpenCodeApplication).showSnackbar(
                     photoSnackbarContext.getString(R.string.photo_saved, saved),
                 )
@@ -4287,6 +4299,7 @@ private fun ChatDrawerContent(
                     SessionDrawerItem(
                         row = row,
                         detail = sessionDetails[row.id],
+                        query = sidebarQuery,
                         selected = selected,
                         onClick = { onOpenSession(row.id) },
                         onPinToggle = { onTogglePinSession(row.id) },
@@ -4675,6 +4688,10 @@ private fun SessionDrawerItem(
     modifier: Modifier = Modifier,
     /** Transcript preview from the details lookup; null until it lands, and the row stays title-only. */
     detail: SessionDetail? = null,
+    /** The drawer search query (audit-200 D4, m-172): when a match lands
+     * outside the rendered preview, the row shows a snippet around it
+     * instead of the preview. Blank renders the preview as before. */
+    query: String = "",
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -4688,6 +4705,9 @@ private fun SessionDrawerItem(
     val tokenLabel = row.tokenTotal?.let { stringResource(R.string.turn_footer_tokens, formatCompactTokens(it)) }
     val meta = listOfNotNull(age, row.cost, tokenLabel).joinToString(" · ")
     val preview = detail?.preview?.trim()?.takeIf { it.isNotEmpty() }
+    // Audit-200 D4 (m-172): a match on a later user message never shows in
+    // the one-line preview — show the snippet around it, highlighted.
+    val snippet = sessionMatchSnippet(query, detail)
 
     val rowSelected = selected
 
@@ -4753,7 +4773,19 @@ private fun SessionDrawerItem(
                     modifier = Modifier.weight(1f, fill = false),
                 )
             }
-            if (preview != null) {
+            if (snippet != null) {
+                Text(
+                    text = highlightMatches(snippet, searchTokens(query), colors.accent.copy(alpha = 0.22f)),
+                    style = OpenCodeTypography.bodySmall,
+                    // 47-F6: accentText at 0.75 alpha is only 3.69:1 on
+                    // white — the dimming came from the alpha, not the
+                    // token; full accentText is 5.98:1.
+                    color = if (selected) colors.accentText else colors.onSurfaceMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            } else if (preview != null) {
                 Text(
                     text = preview,
                     style = OpenCodeTypography.bodySmall,

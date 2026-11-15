@@ -1473,7 +1473,10 @@ private fun LogLineRow(
             Text(
                 text = number.toString().padStart(numberWidth, ' '),
                 style = OpenCodeTypography.code.copy(fontSize = 11.sp),
-                color = colors.onSurfaceFaint.copy(alpha = 0.5f),
+                // Audit-200 D4 (m-015): faint at 0.5 alpha is only 2.07:1 /
+                // 2.56:1 on the sunken background — the full token reads
+                // 5.48:1 / 6.89:1.
+                color = colors.onSurfaceFaint,
                 modifier = Modifier.padding(end = spacing.sm),
             )
             Text(

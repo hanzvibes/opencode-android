@@ -35,6 +35,33 @@ class CodeBlockSaveTest {
         assertEquals("Dockerfile", codeBlockFileName("dockerfile"))
     }
 
+    // Audit-200 D4 (m-076): the highlighter knows these tags, so Save must
+    // not fall back to snippet.txt for them anymore.
+    @Test
+    fun `languages the highlighter knows save with their own extension`() {
+        assertEquals("snippet.cpp", codeBlockFileName("c++"))
+        assertEquals("snippet.cs", codeBlockFileName("c#"))
+        assertEquals("snippet.dart", codeBlockFileName("dart"))
+        assertEquals("snippet.scala", codeBlockFileName("scala"))
+        assertEquals("snippet.kt", codeBlockFileName("kts"))
+        assertEquals("snippet.js", codeBlockFileName("mjs"))
+        assertEquals("snippet.h", codeBlockFileName("h"))
+        assertEquals("snippet.hpp", codeBlockFileName("hpp"))
+        assertEquals("snippet.sh", codeBlockFileName("console"))
+        assertEquals("snippet.sh", codeBlockFileName("terminal"))
+    }
+
+    @Test
+    fun `docker saves as Dockerfile`() {
+        assertEquals("Dockerfile", codeBlockFileName("docker"))
+    }
+
+    @Test
+    fun `console and terminal stay Save-only`() {
+        assertEquals(false, isRunnableCodeBlock("console"))
+        assertEquals(false, isRunnableCodeBlock("terminal"))
+    }
+
     @Test
     fun `only shell fences are runnable`() {
         assertEquals(true, isRunnableCodeBlock("sh"))

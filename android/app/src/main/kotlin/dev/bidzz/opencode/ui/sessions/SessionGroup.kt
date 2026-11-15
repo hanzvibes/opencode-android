@@ -1,5 +1,9 @@
 package dev.bidzz.opencode.ui.sessions
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import dev.bidzz.opencode.R
 import java.util.Calendar
 
@@ -85,6 +89,16 @@ private val SEARCH_STOP_WORDS = setOf(
 )
 
 /**
+ * Query tokens that carry search meaning (audit-200 D1, m-176, for
+ * sessions; D2, m-1119, for transcript and Settings search): the query is
+ * split on whitespace and filler words are dropped. A query of only filler
+ * words matches everything, the same as a blank query.
+ */
+fun searchTokens(query: String): List<String> =
+    query.trim().split(Regex("\\s+"))
+        .filter { it.isNotEmpty() && it.lowercase() !in SEARCH_STOP_WORDS }
+
+/**
  * Tokenised AND matching shared by the search surfaces: the query is split
  * on whitespace, filler words are dropped, and EVERY remaining token must
  * match some field (audit-200 D1, m-176, for sessions; D2, m-1119, for
@@ -93,8 +107,7 @@ private val SEARCH_STOP_WORDS = setOf(
  */
 fun matchesAllTokens(query: String, fields: List<String?>): Boolean {
     if (query.isBlank()) return true
-    val tokens = query.trim().split(Regex("\\s+"))
-        .filter { it.isNotEmpty() && it.lowercase() !in SEARCH_STOP_WORDS }
+    val tokens = searchTokens(query)
     if (tokens.isEmpty()) return true
     val present = fields.filterNotNull()
     return tokens.all { token -> present.any { it.contains(token, ignoreCase = true) } }
@@ -128,6 +141,78 @@ fun filterSessionRows(
 ): List<SessionRow> {
     if (query.isBlank()) return rows
     return rows.filter { matchesSessionQuery(query, it, details[it.id]) }
+}
+
+/**
+ * How much of a row preview counts as visible (audit-200 D4, m-172): the
+ * list shows two lines, the drawer one — a match past ~200 characters is
+ * past what either surface renders, so it needs a snippet to explain the
+ * match.
+ */
+private const val VISIBLE_PREVIEW_CHARS = 200
+
+/**
+ * A window of [detail]'s searchable text centred on the first query token
+ * whose match is NOT already visible in the rendered preview (audit-200
+ * D4, m-172).
+ *
+ * The row preview is only the first user message, while [SessionDetail.searchText]
+ * holds every user message the preview walk passed — so a match can land
+ * on a fifth (or twentieth) message the row never shows, and the row looks
+ * like a false positive. Returns null when there is no query, when the
+ * match is already visible in the preview, or when nothing matches
+ * outside it — the caller then renders the preview unchanged. The window
+ * is [windowChars] on each side of the match, with an ellipsis where text
+ * was cut; the caller highlights the tokens inside it with
+ * [highlightMatches].
+ */
+fun sessionMatchSnippet(query: String, detail: SessionDetail?, windowChars: Int = 60): String? {
+    val tokens = searchTokens(query)
+    if (tokens.isEmpty()) return null
+    val text = detail?.searchText ?: return null
+    val preview = detail.preview.orEmpty()
+    for (token in tokens) {
+        var start = 0
+        while (true) {
+            val idx = text.indexOf(token, start, ignoreCase = true)
+            if (idx < 0) break
+            // Visible when the preview itself shows this token within its
+            // rendered head — then the row already explains the match.
+            val visibleInPreview = preview.indexOf(token, ignoreCase = true).let { it >= 0 && it < VISIBLE_PREVIEW_CHARS }
+            if (!visibleInPreview) {
+                val from = maxOf(0, idx - windowChars)
+                val to = minOf(text.length, idx + token.length + windowChars)
+                return buildString {
+                    if (from > 0) append("…")
+                    append(text.substring(from, to))
+                    if (to < text.length) append("…")
+                }
+            }
+            start = idx + token.length
+        }
+    }
+    return null
+}
+
+/**
+ * Marks every occurrence of [tokens] in [text] with a [highlightColor]
+ * background (audit-200 D4, m-172): the snippet's matched words read as
+ * the reason the row matched. Pure — the caller passes the theme colour.
+ */
+fun highlightMatches(text: String, tokens: List<String>, highlightColor: Color): AnnotatedString {
+    if (tokens.isEmpty()) return AnnotatedString(text)
+    return buildAnnotatedString {
+        append(text)
+        for (token in tokens) {
+            var start = 0
+            while (true) {
+                val idx = text.indexOf(token, start, ignoreCase = true)
+                if (idx < 0) break
+                addStyle(SpanStyle(background = highlightColor), idx, idx + token.length)
+                start = idx + token.length
+            }
+        }
+    }
 }
 
 /**

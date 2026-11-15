@@ -142,6 +142,12 @@ private fun JobRow(job: JobInfo) {
         "error" -> colors.danger
         else -> colors.onSurfaceMuted
     }
+    // Audit-200 D4 (m-341): the status word must not reuse the dot colour
+    // — accent as text is only 3.82:1 on the page background in light.
+    // The dot keeps accent; the word uses the text-safe accentText
+    // (5.69:1 light, 5.76:1 dark). Completed/error already use text-safe
+    // tokens as their dot colours, so they keep dotColor as text.
+    val textColor = if (job.status.lowercase() == "running") colors.accentText else dotColor
 
     Row(
         modifier = Modifier
@@ -178,7 +184,7 @@ private fun JobRow(job: JobInfo) {
             Text(
                 text = stringResource(jobStatusLabel(job.status)),
                 style = OpenCodeTypography.label,
-                color = dotColor,
+                color = textColor,
             )
         }
     }

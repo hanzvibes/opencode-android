@@ -11,6 +11,9 @@ import android.widget.RemoteViews
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.core.design.ThemeStore
+import dev.bidzz.opencode.core.design.isDarkTheme
+import dev.bidzz.opencode.core.design.isSystemNightMode
 import dev.bidzz.opencode.ui.ACTION_NEW_SESSION
 import dev.bidzz.opencode.ui.ACTION_OPEN_SESSION
 import dev.bidzz.opencode.ui.EXTRA_OPENCODE_ACTION
@@ -48,7 +51,21 @@ fun pushWidget(context: Context, sessionID: String?, title: String?) {
         ComponentName(context, SessionWidgetProvider::class.java),
     )
     if (ids.isEmpty()) return
+    // Audit-200 D4 (m-228): the widget is RemoteViews rendered by the
+    // launcher, so it cannot read the app theme from XML — resolve the pin
+    // here and set the card + text colours explicitly. The two system
+    // buttons keep the launcher's own style: their background is the
+    // system's, so forcing the pin's text colour onto them would be
+    // unreadable on a pin opposite the system.
+    val dark = isDarkTheme(ThemeStore.get(context), isSystemNightMode(context))
     val views = RemoteViews(context.packageName, R.layout.widget_session).apply {
+        setInt(
+            R.id.widget_root,
+            "setBackgroundResource",
+            if (dark) R.drawable.widget_background_dark else R.drawable.widget_background,
+        )
+        setTextColor(R.id.widget_title, if (dark) 0xFFFFFFFF.toInt() else 0xFF111111.toInt())
+        setTextColor(R.id.widget_subtitle, if (dark) 0xFF9A9AA0.toInt() else 0xFF666666.toInt())
         setTextViewText(
             R.id.widget_title,
             title?.takeIf { it.isNotBlank() } ?: appLabel(context),

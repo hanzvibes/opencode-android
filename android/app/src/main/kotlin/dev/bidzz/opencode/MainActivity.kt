@@ -26,6 +26,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import dev.bidzz.opencode.core.design.applyLaunchWindowTheme
 import dev.bidzz.opencode.ui.ACTION_NEW_SESSION
 import dev.bidzz.opencode.ui.ACTION_OPEN_SESSION
 import dev.bidzz.opencode.ui.EXTRA_OPENCODE_ACTION
@@ -291,6 +292,12 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Audit-200 D4 (m-014/m-342/m-437/m-500): the launch window follows
+        // the SYSTEM theme until the first Compose frame reads ThemeStore —
+        // apply the pin here, before setContent, so the window background
+        // and the bar icons already match the app theme. The runtime
+        // SideEffect in OpenCodeTheme re-asserts the same values.
+        applyLaunchWindowTheme(this)
 
         // A photo the camera was writing when the process died or the
         // screen rotated (15-F6): the TakePicture result is re-delivered
