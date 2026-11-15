@@ -72,6 +72,7 @@ import dev.bidzz.opencode.core.engine.EngineBinary
 import dev.bidzz.opencode.core.engine.EngineCrashReport
 import dev.bidzz.opencode.core.engine.EngineDiagnostics
 import dev.bidzz.opencode.core.engine.EngineState
+import dev.bidzz.opencode.core.engine.StartupTimings
 import dev.bidzz.opencode.ui.AppTag
 import dev.bidzz.opencode.ui.CardGroup
 import dev.bidzz.opencode.ui.Glyph
@@ -455,6 +456,9 @@ fun DiagnosticsScreen(
             if (app.startupFailure != null) {
                 appendLine("- Startup Failure: ${app.startupFailure}")
             }
+            // Audit-200 D5 (m-875): cold-start timings travel with the
+            // report, so a pasted bug report carries the stage breakdown.
+            appendLine("- Startup Timings: ${StartupTimings.report()}")
             appendLine()
             // Audit-200 C13 (M-179/M-180): the crash records travel with
             // the report, so a pasted bug report carries them.
@@ -736,6 +740,15 @@ fun DiagnosticsScreen(
                                     valueColor = colors.danger,
                                 )
                             }
+
+                            // Audit-200 D5 (m-875): cold-start stage timings
+                            // (ms since appOnCreate) beside the failure row.
+                            RowDivider(inset = spacing.md)
+                            DiagnosticRow(
+                                label = "startupTimings",
+                                value = StartupTimings.report(),
+                                isCode = true,
+                            )
                         }
                     }
 

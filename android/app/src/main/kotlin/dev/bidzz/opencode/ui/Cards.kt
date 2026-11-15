@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -667,6 +668,12 @@ fun TurnActionPill(
     background: Color? = null,
     border: Color? = null,
     contentColor: Color? = null,
+    // Audit-200 D5 (m-597): fork / revert pills disable while the action
+    // is already in flight (state.forking / state.revertBusy) — the
+    // ViewModel used to swallow the second tap silently, so the pill
+    // looked live while doing nothing. A disabled pill dims and stops
+    // accepting taps, like the Compact button's compactEnabled.
+    enabled: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -681,11 +688,12 @@ fun TurnActionPill(
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             // A11y (#8b): the pill is a button — the label text inside is
             // its name, so no contentDescription is needed here.
-            .clickable(role = Role.Button) { onClick() },
+            .clickable(role = Role.Button, enabled = enabled) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
+                .alpha(if (enabled) 1f else 0.4f)
                 .clip(pillShape)
                 .background(background ?: colors.surfaceVariant)
                 .border(0.5.dp, border ?: colors.hairline, pillShape)

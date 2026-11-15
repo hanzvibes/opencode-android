@@ -83,11 +83,17 @@ fun HatchDeleteConfirmationDialog(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 // Danger dot: Aura danger as a fill, never as text
-                // (#D93025 is AA on white only, 4.45:1 on the Aura page).
+                // (#D93025 is 4.77:1 on white, 4.54:1 on the app page).
+                // Audit-200 D5 (m-675): in dark the light fill is only
+                // 3.56:1 on the sheet, so the app's own danger #FF453A
+                // (4.99:1) is used there instead.
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .background(AuraPalette.auraDanger, CircleShape),
+                        .background(
+                            if (colors.isDark) colors.danger else AuraPalette.auraDanger,
+                            CircleShape,
+                        ),
                 )
                 Text(
                     text = title,

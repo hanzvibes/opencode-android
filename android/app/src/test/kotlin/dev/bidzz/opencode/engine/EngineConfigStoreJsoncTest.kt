@@ -357,4 +357,91 @@ class EngineConfigStoreJsoncTest {
 
         assertFalse(store.hasJsonConfig())
     }
+
+    // mergeJsoncProvidersIntoJson (m-1239) -----------------------------------
+
+    @Test
+    fun `merge moves jsonc-only providers into json and deletes the jsonc`() {
+        val (store, ocDir) = storeWith(
+            "opencode.jsonc" to """{"providers": {"acme": {"type": "openai", "baseUrl": "https://x"}}}""",
+        )
+        val result = store.mergeJsoncProvidersIntoJson()
+        assertEquals(
+            EngineConfigStore.JsoncMergeResult.Merged(listOf("acme"), emptyList()),
+            result,
+        )
+        val json = org.json.JSONObject(File(ocDir, "opencode.json").readText())
+        assertEquals("https://x", json.getJSONObject("providers").getJSONObject("acme").getString("baseUrl"))
+        assertFalse(File(ocDir, "opencode.jsonc").exists())
+        assertTrue(File(ocDir, "opencode.jsonc.bak").exists())
+    }
+
+    @Test
+    fun `merge lets the jsonc version win an id present in both files`() {
+        val (store, ocDir) = storeWith(
+            "opencode.json" to """{"providers": {"acme": {"type": "openai", "baseUrl": "https://old"}}}""",
+            "opencode.jsonc" to """{"providers": {
+                "acme": {"type": "openai", "baseUrl": "https://new"},
+                "beta": {"type": "openai", "baseUrl": "https://beta"}
+            }}""",
+        )
+        val result = store.mergeJsoncProvidersIntoJson()
+        assertEquals(
+            EngineConfigStore.JsoncMergeResult.Merged(listOf("beta"), listOf("acme")),
+            result,
+        )
+        val json = org.json.JSONObject(File(ocDir, "opencode.json").readText())
+        val providers = json.getJSONObject("providers")
+        assertEquals("https://new", providers.getJSONObject("acme").getString("baseUrl"))
+        assertEquals("https://beta", providers.getJSONObject("beta").getString("baseUrl"))
+    }
+
+    @Test
+    fun `merge refuses a non-object entry in the jsonc and changes nothing`() {
+        val (store, ocDir) = storeWith(
+            "opencode.json" to """{"providers": {"keep": {"type": "openai"}}}""",
+            "opencode.jsonc" to """{"providers": {"acme": "not-an-object"}}""",
+        )
+        val before = File(ocDir, "opencode.json").readText()
+        val result = store.mergeJsoncProvidersIntoJson()
+        assertTrue(result is EngineConfigStore.JsoncMergeResult.Blocked)
+        assertEquals(listOf("acme"), (result as EngineConfigStore.JsoncMergeResult.Blocked).blockedIds)
+        assertEquals(before, File(ocDir, "opencode.json").readText())
+        assertTrue(File(ocDir, "opencode.jsonc").exists())
+    }
+
+    @Test
+    fun `merge refuses a non-object entry in the json for the same id`() {
+        val (store, ocDir) = storeWith(
+            "opencode.json" to """{"providers": {"acme": "junk"}}""",
+            "opencode.jsonc" to """{"providers": {"acme": {"type": "openai"}}}""",
+        )
+        val before = File(ocDir, "opencode.json").readText()
+        val result = store.mergeJsoncProvidersIntoJson()
+        assertTrue(result is EngineConfigStore.JsoncMergeResult.Blocked)
+        assertEquals(listOf("acme"), (result as EngineConfigStore.JsoncMergeResult.Blocked).blockedIds)
+        assertEquals(before, File(ocDir, "opencode.json").readText())
+        assertTrue(File(ocDir, "opencode.jsonc").exists())
+    }
+
+    @Test
+    fun `merge with no jsonc is Missing`() {
+        val (store, _) = storeWith(
+            "opencode.json" to """{"providers": {"keep": {"type": "openai"}}}""",
+        )
+        assertEquals(EngineConfigStore.JsoncMergeResult.Missing, store.mergeJsoncProvidersIntoJson())
+    }
+
+    @Test
+    fun `merge creates the json when only the jsonc exists`() {
+        val (store, ocDir) = storeWith(
+            "opencode.jsonc" to """{"providers": {"acme": {"type": "openai", "baseUrl": "https://x"}}}""",
+        )
+        assertEquals(
+            EngineConfigStore.JsoncMergeResult.Merged(listOf("acme"), emptyList()),
+            store.mergeJsoncProvidersIntoJson(),
+        )
+        val json = org.json.JSONObject(File(ocDir, "opencode.json").readText())
+        assertEquals("https://x", json.getJSONObject("providers").getJSONObject("acme").getString("baseUrl"))
+    }
 }

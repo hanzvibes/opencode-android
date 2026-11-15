@@ -93,6 +93,43 @@ class DarkThemeTest {
         )
     }
 
+    @Test
+    fun `warning badge text passes AA on its dark tint`() {
+        // Audit-200 D5 (m-855): the WRITE/EDIT badge label is 9sp bold mono
+        // on a 14% tint of itself over the assistant bubble. The plain
+        // warning already passed in dark (6.39:1), but the badge needs its
+        // own text token like the blue kinds have.
+        val bubble = Palette.darkAssistantBubble
+        val badgeTint = Palette.darkBadgeWarningText.copy(alpha = 0.14f)
+            .compositeOver(bubble)
+        assertTrue(
+            "dark badgeWarningText on its tint is " +
+                "${contrastRatio(Palette.darkBadgeWarningText, badgeTint)}, below AA 4.5:1",
+            contrastRatio(Palette.darkBadgeWarningText, badgeTint) >= 4.5,
+        )
+    }
+
+    @Test
+    fun `the diff deletions chip passes AA on the screen background, not on raised`() {
+        // Audit-200 D5 (m-927): the audit assumed the chip sat on raised
+        // #1C1C1E (4.27:1, failing) — it actually sits directly on the
+        // screen background, where it passes. Pin the real background, so
+        // a future move onto a card is caught by the companion assertion.
+        val background = Color(0xFF000000)
+        val tint = Palette.danger.copy(alpha = 0.14f).compositeOver(background)
+        assertTrue(
+            "dark danger chip text on its tint over the background is " +
+                "${contrastRatio(Palette.danger, tint)}, below AA 4.5:1",
+            contrastRatio(Palette.danger, tint) >= 4.5,
+        )
+        val raised = Color(0xFF1C1C1E)
+        val raisedTint = Palette.danger.copy(alpha = 0.14f).compositeOver(raised)
+        assertTrue(
+            "the same chip over raised must stay below AA (that is why the background matters)",
+            contrastRatio(Palette.danger, raisedTint) < 4.5,
+        )
+    }
+
     // ---- WCAG relative luminance, straight from the spec (mirrors WhiteThemeTest) ----
 
     private fun luminance(color: Color): Double {

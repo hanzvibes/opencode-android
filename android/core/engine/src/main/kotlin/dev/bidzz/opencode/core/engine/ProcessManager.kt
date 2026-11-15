@@ -317,10 +317,14 @@ class ProcessManager(
     private suspend fun attemptStart(attempt: Int): StartOutcome {
         var started: Process? = null
         try {
+            // Audit-200 D5 (m-875): cold-start timing for the engine
+            // bring-up stages (prepare → fork → password → healthy).
+            StartupTimings.mark("engineStartAttempt")
             transition(EngineState.INITIALIZING)
             environment.prepare()
             environment.lastPatchReport?.let { updatePatchReport(it) }
             environment.clearTmp()
+            StartupTimings.mark("enginePrepared")
 
             val port = portProvider.allocate()
             val command = buildCommand(port)
@@ -337,6 +341,7 @@ class ProcessManager(
             process.set(proc)
             val pid = readPid()
             transition(EngineState.STARTING, pid = pid, port = port)
+            StartupTimings.mark("engineForked")
 
             val credentials = awaitReady(proc, port)
             if (credentials == null) {
@@ -346,12 +351,14 @@ class ProcessManager(
                 terminate(proc)
                 process.compareAndSet(proc, null)
                 transition(EngineState.FAILED, error = "Engine did not become healthy. $reason")
+                StartupTimings.mark("engineStartFailed")
                 return StartOutcome.Failed(
                     cause = EngineStartupException("Engine did not become healthy within ${STARTUP_TIMEOUT_MS}ms"),
                     portConflict = looksLikePortConflict(reason),
                 )
             }
 
+            StartupTimings.mark("engineHealthy")
             transition(EngineState.RUNNING, credentials = credentials, pid = pid, port = port)
             monitorJob = scope.launch { monitor(proc) }
             // Fresh install: prepare() ran before the plugin was downloaded, so its

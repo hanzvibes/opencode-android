@@ -184,6 +184,10 @@ fun ProvidersScreen(
      */
     onTestAntigravity: (Boolean?) -> Unit = {},
     onDeleteJsoncConfig: () -> Unit = {},
+    /** Merges the providers from `opencode.jsonc` into `opencode.json`
+     * (audit-200 D5, m-1239); the `.jsonc` is deleted afterwards, with a
+     * `.bak` backup first. */
+    onMergeJsoncConfig: () -> Unit = {},
     onConfirmRestart: () -> Unit = {},
     onDismissRestart: () -> Unit = {},
 ) {
@@ -198,6 +202,7 @@ fun ProvidersScreen(
     var customFormPrefill by remember { mutableStateOf<CustomFormInitial?>(null) }
     var confirmDeleteCustomId by remember { mutableStateOf<String?>(null) }
     var confirmDeleteJsonc by remember { mutableStateOf(false) }
+    var confirmMergeJsonc by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
 
     // A key save whose dialog is still open (31-F13): the view model sets
@@ -347,11 +352,23 @@ fun ProvidersScreen(
                     style = OpenCodeTypography.bodySmall,
                     color = colors.warning,
                 )
-                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmDeleteJsonc = true }) {
-                    Text(
-                        text = stringResource(R.string.providers_delete_jsonc),
-                        color = colors.accentText,
-                    )
+                // Audit-200 D5 (m-1239): besides deleting the `.jsonc`
+                // (which drops the providers only it knew), offer the
+                // merge — the `.jsonc` providers move into `.json` and
+                // the `.jsonc` is deleted with a `.bak` backup.
+                Row {
+                    TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmMergeJsonc = true }) {
+                        Text(
+                            text = stringResource(R.string.providers_merge_jsonc),
+                            color = colors.accentText,
+                        )
+                    }
+                    TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmDeleteJsonc = true }) {
+                        Text(
+                            text = stringResource(R.string.providers_delete_jsonc),
+                            color = colors.accentText,
+                        )
+                    }
                 }
             }
 
@@ -1064,6 +1081,43 @@ fun ProvidersScreen(
                         confirmDeleteJsonc = false
                     },
                 ) { Text(stringResource(R.string.providers_delete_jsonc), color = colors.danger) }
+            },
+        )
+    }
+
+    // Audit-200 D5 (m-1239): merging opencode.jsonc is confirmed here,
+    // not on the tap that offered it — where both files define the same
+    // provider the `.jsonc` version wins, and anything else in the
+    // `.jsonc` (MCP blocks, settings) stays only in the `.bak` backup.
+    if (confirmMergeJsonc) {
+        LocalizedDraggableBottomSheet(
+            onDismiss = { confirmMergeJsonc = false },
+            initialStop = SheetStop.PEEK,
+            title = {
+                Text(
+                    stringResource(R.string.providers_merge_jsonc_title),
+                    style = OpenCodeTypography.title,
+                    color = colors.onSurface,
+                )
+            },
+            content = {
+                Text(
+                    text = stringResource(R.string.providers_merge_jsonc_body),
+                    style = OpenCodeTypography.bodySmall,
+                    color = colors.onSurfaceMuted,
+                )
+            },
+            actions = {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmMergeJsonc = false }) {
+                    Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
+                }
+                TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
+                    onClick = {
+                        onMergeJsoncConfig()
+                        confirmMergeJsonc = false
+                    },
+                ) { Text(stringResource(R.string.providers_merge_jsonc), color = colors.accentText) }
             },
         )
     }

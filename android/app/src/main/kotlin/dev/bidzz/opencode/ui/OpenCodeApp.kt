@@ -1407,6 +1407,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onThemeModeChange = { chosen ->
                             ThemeStore.set(hostContext, chosen)
                             themeMode = chosen
+                            // Audit-200 D5 (m-1176): the home-screen widget
+                            // reads the pin when it is pushed, so a pin
+                            // change must re-push it — otherwise the widget
+                            // stays in the old theme until a session is
+                            // opened or the device reboots (its update
+                            // period is 0 by design, and onUpdate only
+                            // runs on install / reboot / periodic).
+                            chatState.sessionID?.let { id ->
+                                val title = sessionsState.rows.find { it.id == id }?.title
+                                updateSessionWidget(hostContext, id, title)
+                            }
                         },
                         onBack = { screen = Screen.Chat },
                         onDiagnostics = { screen = Screen.Diagnostics(Screen.Settings) },
@@ -1453,6 +1464,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onSetAntigravityAccountEnabled = providersViewModel::setAntigravityAccountEnabled,
                         onTestAntigravity = providersViewModel::testAntigravityConnection,
                         onDeleteJsoncConfig = providersViewModel::deleteJsoncConfig,
+                        onMergeJsoncConfig = providersViewModel::mergeJsoncConfig,
                         onConfirmRestart = providersViewModel::confirmRestart,
                         onDismissRestart = providersViewModel::dismissRestart,
                         // Audit-200 B7 (M-206): restarts the engine so a

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.AuraPalette
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
+import dev.bidzz.opencode.core.design.Palette
 
 /**
  * Batch 5 (Aura full, Opsi B): tab layout, clean-room re-type of
@@ -93,9 +94,16 @@ fun hatchTabIndicatorGeometry(selectedIndex: Int, tabCount: Int): HatchTabIndica
     )
 }
 
-/** Pure: a tab's label colour — text-safe blue when selected, muted otherwise. */
-fun hatchTabLabelColor(selected: Boolean): Color =
-    if (selected) AuraPalette.auraBlueText else AuraPalette.auraMuted
+/** Pure: a tab's label colour — text-safe blue when selected, muted otherwise.
+ * Audit-200 D5 (m-998): the selected blue was Aura blue text in both
+ * themes, but it is 2.16:1 on the dark surface — dark-on-dark — so dark
+ * uses the app accent instead. */
+fun hatchTabLabelColor(selected: Boolean, isDark: Boolean = false): Color =
+    if (selected) {
+        if (isDark) Palette.darkAccent else AuraPalette.auraBlueText
+    } else {
+        AuraPalette.auraMuted
+    }
 
 /**
  * One fixed tab: label + optional badge, with a 2dp indicator bar at
@@ -122,7 +130,7 @@ fun FixedTab(
             Text(
                 text = tab.label,
                 style = OpenCodeTypography.label,
-                color = hatchTabLabelColor(selected),
+                color = hatchTabLabelColor(selected, OpenCodeTheme.colors.isDark),
             )
             hatchTabBadgeText(tab.badgeCount)?.let { badge ->
                 Box(

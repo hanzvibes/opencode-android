@@ -4,14 +4,12 @@ import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -21,14 +19,17 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import dev.bidzz.opencode.core.design.AuraPalette
+import dev.bidzz.opencode.core.design.OpenCodeTheme
 
 /**
  * Hatch motion — clean-room re-implementation of the Meta Muse app's
- * (`com.facebook.aura` 16.0.0.2.159) `HatchInteractiveMeshGradient`,
- * `HatchHighlightGlow` and `HatchTiltTracker`, from their dex class
- * names in `aura-unpack/ANALYSIS.md`. No Aura code, font, or asset is
- * copied: the gradient stops are our own [AuraPalette] values, the
- * glow is our own radial brush, and the tilt is plain pointer math.
+ * (`com.facebook.aura` 16.0.0.2.159) `HatchInteractiveMeshGradient`
+ * and `HatchTiltTracker`, from their dex class names in
+ * `aura-unpack/ANALYSIS.md`. No Aura code, font, or asset is copied:
+ * the gradient stops are our own [AuraPalette] values, and the tilt
+ * is plain pointer math. The press glow (`HatchHighlightGlow`) was
+ * deleted in audit-200 D5 (m-999): it had no call site, and its only
+ * alpha token went with it.
  *
  * Pointer observation never consumes the event: the components only
  * watch moves/presses, so scrolling and tapping keep working exactly
@@ -38,10 +39,9 @@ import dev.bidzz.opencode.core.design.AuraPalette
  * — the session-list empty state's mesh band ([EmptyState] with
  * `meshGradient = true`), which used to be the static [AuraMeshGradient].
  * The publish sheet's band stays static: at 4dp tall there is nothing
- * for a finger to move across. [HatchHighlightGlow] and [HatchTiltTracker]
- * ship with tested mappings and no call site yet — the same honest
- * pattern as Batch 1's TaskDelete/Publish sheets — ready for a
- * pressable card that wants them.
+ * for a finger to move across. [HatchTiltTracker] ships with tested
+ * mappings and no call site yet — the same honest pattern as Batch 1's
+ * TaskDelete/Publish sheets — ready for a pressable card that wants it.
  */
 
 /**
@@ -63,15 +63,18 @@ internal fun hatchGlowCenterPx(fraction: Offset, size: IntSize): Offset =
 
 /**
  * The interactive mesh gradient ([HatchInteractiveMeshGradient] in
- * Aura): the same blue → purple → light-blue band as [AuraMeshGradient],
- * but the soft white highlight follows the finger (or mouse) instead of
- * sitting at the top-start corner. The highlight eases to the pointer
- * over 150ms so it trails smoothly rather than snapping.
+ * Aura): the same band as [AuraMeshGradient] (see [auraMeshStops] for
+ * the per-theme stops), but the soft white highlight follows the finger
+ * (or mouse) instead of sitting at the top-start corner. The highlight
+ * eases to the pointer over 150ms so it trails smoothly rather than
+ * snapping. The highlight radius follows the box size
+ * ([hatchGlowRadius]) instead of a fixed 600f.
  */
 @Composable
 fun AuraInteractiveMeshGradient(
     modifier: Modifier = Modifier,
 ) {
+    val colors = OpenCodeTheme.colors
     var pointerFraction by remember { mutableStateOf(Offset(0f, 0f)) }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
     val animatedFraction by animateOffsetAsState(
@@ -97,11 +100,7 @@ fun AuraInteractiveMeshGradient(
             }
             .background(
                 Brush.linearGradient(
-                    colors = listOf(
-                        AuraPalette.auraBlue,
-                        AuraPalette.auraPurple,
-                        AuraPalette.auraBlueLight,
-                    ),
+                    colors = auraMeshStops(colors.isDark),
                 ),
             ),
     ) {
@@ -111,11 +110,11 @@ fun AuraInteractiveMeshGradient(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.22f),
+                            Color.White.copy(alpha = auraMeshHighlightAlpha(colors.isDark)),
                             Color.Transparent,
                         ),
                         center = hatchGlowCenterPx(animatedFraction, boxSize),
-                        radius = 600f,
+                        radius = hatchGlowRadius(boxSize),
                     ),
                 ),
         )
@@ -125,62 +124,6 @@ fun AuraInteractiveMeshGradient(
 /** The glow's radius: three quarters of the box's long side. Pure so it is unit-testable. */
 internal fun hatchGlowRadius(size: IntSize): Float =
     maxOf(size.width, size.height) * 0.75f
-
-/**
- * A press glow ([HatchHighlightGlow] in Aura): a soft Aura-blue radial
- * highlight at the press point, drawn behind the content, cleared on
- * release. No call site in Batch 3 — wrap a pressable card in this
- * when one wants the glow.
- */
-@Composable
-fun HatchHighlightGlow(
-    modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit,
-) {
-    var press by remember { mutableStateOf<Offset?>(null) }
-    var boxSize by remember { mutableStateOf(IntSize.Zero) }
-    Box(
-        modifier = modifier
-            .onSizeChanged { boxSize = it }
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val position = event.changes.firstOrNull()?.position ?: continue
-                        when (event.type) {
-                            PointerEventType.Press -> press = position
-                            PointerEventType.Release,
-                            PointerEventType.Exit -> press = null
-                            else -> Unit
-                        }
-                    }
-                }
-            }
-            .drawBehind {
-                val position = press ?: return@drawBehind
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            AuraPalette.auraBlueAlpha20,
-                            Color.Transparent,
-                        ),
-                        center = hatchGlowCenterPx(
-                            hatchPointerFraction(position, boxSize),
-                            boxSize,
-                        ),
-                        radius = hatchGlowRadius(boxSize),
-                    ),
-                    radius = hatchGlowRadius(boxSize),
-                    center = hatchGlowCenterPx(
-                        hatchPointerFraction(position, boxSize),
-                        boxSize,
-                    ),
-                )
-            },
-    ) {
-        content()
-    }
-}
 
 /** A 3D tilt in degrees: positive X tips the top away, positive Y tips the right away. */
 data class HatchTiltAngles(val rotationX: Float, val rotationY: Float)

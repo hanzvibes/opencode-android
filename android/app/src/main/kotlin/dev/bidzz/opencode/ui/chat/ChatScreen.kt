@@ -1270,6 +1270,7 @@ fun ChatScreen(
                 // the confirm; the real action is [onCompact].
                 onCompact = { showCompactDialog = true },
                 compacting = state.compacting,
+                forking = state.forking,
                 onForkSession = onForkSession,
                 branches = state.branches,
                 branchesLoading = state.branchesLoading,
@@ -1880,6 +1881,12 @@ fun ChatScreen(
                                             } else {
                                                 null
                                             },
+                                            // Audit-200 D5 (m-597): the pills
+                                            // dim while the action is in
+                                            // flight — the ViewModel swallows
+                                            // a second tap silently.
+                                            forkEnabled = !state.forking,
+                                            revertEnabled = !state.revertBusy,
                                             // Delivered (C-B): a user message counts
                                             // as answered once any assistant turn
                                             // appears after it — a local read
@@ -3083,6 +3090,8 @@ fun ChatHeader(
     onCompact: (() -> Unit)? = null,
     /** True while a manual compaction is in flight. */
     compacting: Boolean = false,
+    /** True while a session fork is in flight (audit-200 D5, m-597). */
+    forking: Boolean = false,
     /** Fork the whole session (mockup group 2); null while no session is open. */
     onForkSession: (() -> Unit)? = null,
     /** Branch list (Tier 2); null until loaded, and the list hides. */
@@ -3335,6 +3344,7 @@ fun ChatHeader(
             onCompact = onCompact,
             compacting = compacting,
             onForkSession = onForkSession,
+            forking = forking,
             branches = branches,
             branchesLoading = branchesLoading,
             branchesFailed = branchesFailed,
@@ -3390,6 +3400,9 @@ private fun EngineStatusDialog(
     /** Fork the whole session (mockup group 2); null while no session is
      * open, and the entry hides. */
     onForkSession: (() -> Unit)? = null,
+    /** True while a session fork is in flight (audit-200 D5, m-597):
+     * the Fork entry disables, like Compact does while compacting. */
+    forking: Boolean = false,
     /** Branch list (Tier 2); null until loaded, and the list hides. */
     branches: List<String>? = null,
     branchesLoading: Boolean = false,
@@ -3797,6 +3810,10 @@ private fun EngineStatusDialog(
                                     onDismiss()
                                     onForkSession()
                                 },
+                                // Audit-200 D5 (m-597): a session fork in
+                                // flight disables this too, like the
+                                // per-message Fork pill.
+                                enabled = !forking,
                             ) {
                                 Text(
                                     text = stringResource(R.string.fork_session_button),

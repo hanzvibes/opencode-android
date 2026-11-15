@@ -1111,9 +1111,19 @@ private fun AnnotatedString.Builder.appendSpans(
                 withStyle(
                     SpanStyle(
                         // Hatch: links in Aura blue text (7.89:1 on white,
-                        // 7.36:1 on the Aura page) — in the dark theme the
-                        // app's own accent text stays, Aura blue text
-                        // would be dark-on-dark there.
+                        // 7.50:1 on the app page #F9F9FA) — in the dark
+                        // theme the app's own accent text stays, Aura blue
+                        // text would be dark-on-dark there.
+                        // Audit-200 D5 (m-698): a deliberate trade-off,
+                        // kept on purpose — the navy link is AA on the
+                        // bubble (6.87:1) but only 2.49:1 against the
+                        // body text #0B0B0C, so the underline is the only
+                        // thing telling it apart from body text. The old
+                        // accentText link was 5.21:1 on the bubble but
+                        // 3.29:1 against body — worse on the background,
+                        // better against the body. Reverting would undo
+                        // the Hatch restyle (PR #83); the contrast is
+                        // pinned in AuraThemeTest instead.
                         color = if (onBubble) {
                             textColor
                         } else if (colors.isDark) {

@@ -48,23 +48,23 @@ class HatchBatch1Test {
     fun `publish dot colors are the Aura fills for each state`() {
         assertEquals(
             AuraPalette.auraBlueFill.toArgb(),
-            HatchPublishState.PUBLISH.dotColor().toArgb(),
+            HatchPublishState.PUBLISH.dotColor(isDark = false).toArgb(),
         )
         assertEquals(
             AuraPalette.auraSuccess.toArgb(),
-            HatchPublishState.SUCCESS.dotColor().toArgb(),
+            HatchPublishState.SUCCESS.dotColor(isDark = false).toArgb(),
         )
         assertEquals(
             AuraPalette.auraDanger.toArgb(),
-            HatchPublishState.FAILED.dotColor().toArgb(),
+            HatchPublishState.FAILED.dotColor(isDark = false).toArgb(),
         )
         assertEquals(
             AuraPalette.auraMuted.toArgb(),
-            HatchPublishState.UP_TO_DATE.dotColor().toArgb(),
+            HatchPublishState.UP_TO_DATE.dotColor(isDark = false).toArgb(),
         )
         assertEquals(
             AuraPalette.auraFaint.toArgb(),
-            HatchPublishState.UNPUBLISHED.dotColor().toArgb(),
+            HatchPublishState.UNPUBLISHED.dotColor(isDark = false).toArgb(),
         )
     }
 
@@ -101,12 +101,12 @@ class HatchBatch1Test {
     @Test
     fun `failed and success dots differ, unpublished is the faint dot`() {
         assertTrue(
-            HatchPublishState.FAILED.dotColor().toArgb() !=
-                HatchPublishState.SUCCESS.dotColor().toArgb(),
+            HatchPublishState.FAILED.dotColor(isDark = false).toArgb() !=
+                HatchPublishState.SUCCESS.dotColor(isDark = false).toArgb(),
         )
         assertTrue(
-            HatchPublishState.UNPUBLISHED.dotColor().toArgb() !=
-                HatchPublishState.UP_TO_DATE.dotColor().toArgb(),
+            HatchPublishState.UNPUBLISHED.dotColor(isDark = false).toArgb() !=
+                HatchPublishState.UP_TO_DATE.dotColor(isDark = false).toArgb(),
         )
     }
 }

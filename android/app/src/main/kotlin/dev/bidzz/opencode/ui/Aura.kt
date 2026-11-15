@@ -18,6 +18,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,7 +32,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.core.design.AuraPalette
 import dev.bidzz.opencode.core.design.AuraShadow
@@ -156,24 +161,49 @@ fun HatchSection(
 }
 
 /**
+ * The mesh gradient stops per theme (audit-200 D5, m-674): light is the
+ * extracted blue → purple → light-blue band; dark is the navy scale
+ * (navy → slate → navyDeep), so the band stays a faint sheen on black
+ * (1.06–1.44:1) instead of a bright band over a black page. Pure so it
+ * is unit-testable.
+ */
+internal fun auraMeshStops(isDark: Boolean): List<Color> =
+    if (isDark) {
+        listOf(AuraPalette.auraNavy, AuraPalette.auraSlate, AuraPalette.auraNavyDeep)
+    } else {
+        listOf(AuraPalette.auraBlue, AuraPalette.auraPurple, AuraPalette.auraBlueLight)
+    }
+
+/**
+ * The mesh highlight alpha per theme (audit-200 D5, m-674): the white
+ * radial sheen is 0.22 in light and 0.08 in dark, so it does not bloom
+ * into a grey blob over the near-black dark stops. Pure so it is
+ * unit-testable.
+ */
+internal fun auraMeshHighlightAlpha(isDark: Boolean): Float =
+    if (isDark) 0.08f else 0.22f
+
+/**
  * The Aura mesh gradient ([HatchMeshGradient] in Aura): blue → purple →
- * light blue, drawn as a linear gradient with a soft white radial
- * highlight at the top-start corner. Decorative only — never behind
- * text smaller than a section title.
+ * light blue in light, navy → slate → navyDeep in dark (see
+ * [auraMeshStops]), drawn as a linear gradient with a soft white radial
+ * highlight at the top-start corner. The highlight radius follows the
+ * box size ([hatchGlowRadius]) instead of a fixed 600f, so it scales
+ * with the band. Decorative only — never behind text smaller than a
+ * section title.
  */
 @Composable
 fun AuraMeshGradient(
     modifier: Modifier = Modifier,
 ) {
+    val colors = OpenCodeTheme.colors
+    var boxSize by remember { mutableStateOf(IntSize.Zero) }
     Box(
         modifier = modifier
+            .onSizeChanged { boxSize = it }
             .background(
                 Brush.linearGradient(
-                    colors = listOf(
-                        AuraPalette.auraBlue,
-                        AuraPalette.auraPurple,
-                        AuraPalette.auraBlueLight,
-                    ),
+                    colors = auraMeshStops(colors.isDark),
                 ),
             ),
     ) {
@@ -183,11 +213,11 @@ fun AuraMeshGradient(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.22f),
+                            Color.White.copy(alpha = auraMeshHighlightAlpha(colors.isDark)),
                             Color.Transparent,
                         ),
                         center = Offset(0f, 0f),
-                        radius = 600f,
+                        radius = hatchGlowRadius(boxSize),
                     ),
                 ),
         )
@@ -196,8 +226,12 @@ fun AuraMeshGradient(
 
 /**
  * Aura's pull-to-refresh / loading ring ([HatchPullToRefresh] in Aura):
- * a 24dp ring in Aura blue, 2.5dp stroke, drawn on canvas — not the M3
- * spinner. [progress] is 0..1 while pulling (a partial arc); null means
+ * a 24dp ring in Aura blue fill, 2.5dp stroke, drawn on canvas — not the
+ * M3 spinner. Audit-200 D5 (m-1001): the plain Aura blue was 2.91:1 on
+ * the real light page #F9F9FA — under the 3:1 graphics bar — so the ring
+ * uses [AuraPalette.auraBlueFill] (4.35:1 there, 3.71:1 on dark raised,
+ * 4.58:1 on black and white), the same token in both themes.
+ * [progress] is 0..1 while pulling (a partial arc); null means
  * refreshing, and the arc rotates once per [Motion.pulsePeriodMs]
  * (1000ms, the app's one pulse period) until it stops.
  */
@@ -234,7 +268,7 @@ fun AuraPullRefreshIndicator(
     ) {
         Canvas(modifier = Modifier.matchParentSize()) {
             drawArc(
-                color = AuraPalette.auraBlue,
+                color = AuraPalette.auraBlueFill,
                 startAngle = -90f,
                 sweepAngle = sweep,
                 useCenter = false,

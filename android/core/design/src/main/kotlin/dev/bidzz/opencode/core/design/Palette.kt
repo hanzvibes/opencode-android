@@ -96,6 +96,12 @@ object Palette {
     // #5AC8FA over #1C1C1E). Same value as darkSyntaxKeyword — kept
     // explicit so a syntax change cannot silently break badge contrast.
     val darkBadgeAccentText = Color(0xFF5AC8FA)
+    // Audit-200 D5 (m-855): the WRITE/EDIT badge kind label is orange 9sp
+    // bold mono on a 14% tint of itself over the assistant bubble. The
+    // plain warning #FF9F0A is 6.39:1 there — already AA — but the badge
+    // needs its own text token like the blue kinds have, so a warning
+    // change cannot silently break badge contrast: 7.11:1 on #3C3123.
+    val darkBadgeWarningText = Color(0xFFFFB340)
     // Running pill text: 7.88:1 on the pill tint #1A2839 (12% #0A84FF
     // over #1C1C1E).
     val darkToolRunningText = Color(0xFF5AC8FA)
@@ -222,6 +228,11 @@ object Palette {
     // badge tint #CEDBEC (14% accentText over the assistant bubble
     // #EFEFF1), so the badge needs its own darker blue: 6.14:1 there.
     val lightBadgeAccentText = Color(0xFF004A99)
+    // Audit-200 D5 (m-855): the WRITE/EDIT badge kind label. The light
+    // warning text #8A5A00 is only 4.27:1 on its own 14% tint over the
+    // assistant bubble #EFEFF1, so the badge needs its own darker orange:
+    // 5.93:1 on the tint #DDD7CF.
+    val lightBadgeWarningText = Color(0xFF6B4500)
     // Inverse primary (snackbar action) for the light theme: the dark
     // accent fill #0066CC is only 3.06:1 on the inverse surface #1C1C1E,
     // so the snackbar action uses this lighter blue instead: 7.60:1.
@@ -378,18 +389,25 @@ object Palette {
  * Optimistic role) + JetBrains Mono (the Roboto Mono role), already bundled.
  *
  * AA rules, verified by computation (see `AuraThemeTest`):
- * - Text-safe on white AND on [auraSurface] #F6F7F8: [auraBlueText]
- *   (7.89 / 7.36), [auraMuted] (4.90 / 4.57), [auraPurple] (6.44),
- *   [auraSuccessText] (7.37 / 6.87).
- * - [auraBlueFill] and [auraDanger] are AA on white only (4.58 / 4.77)
- *   and fall just under AA on [auraSurface] (4.27 / 4.45): as text on
- *   the Aura page, use [lightDangerText] / [auraBlueText] instead.
- *   As a FILL under white text they are AA on any surface.
+ * - Text-safe on white AND on the app page #F9F9FA: [auraBlueText]
+ *   (7.89 / 7.50), [auraMuted] (4.90 / 4.66), [auraPurple] (6.44 /
+ *   6.12). The Aura page surface #F6F7F8 itself is gone (audit-200
+ *   D5, m-673/m-999): no production call site ever used it — the app
+ *   page is #F9F9FA — so the ratios are pinned against the real page.
+ * - [auraBlueFill] is AA on white only (4.58) and falls just under AA
+ *   on the app page (4.35): as text on the page, use [auraBlueText]
+ *   instead. [auraDanger] is AA on white (4.77) and, barely, on the
+ *   app page (4.54). As FILLS under white text both are AA on any
+ *   surface.
  * - [auraBlue] (3.07 on white) and [auraFaint] (2.93) are NEVER text:
  *   blue is dots / fills / gradient stops only, faint is decoration only.
- * - [auraSuccess] #1D873B is the extracted brand green (fill / dot);
- *   [auraSuccessText] is the same hue darkened for AA text, the same
- *   move Palette already makes for [lightSuccessText].
+ * - [auraSuccess] #1D873B is the extracted brand green (fill / dot).
+ * - Dark theme (audit-200 D5, m-674): the mesh gradient uses the navy
+ *   scale ([auraNavy] → [auraSlate] → [auraNavyDeep]) instead of the
+ *   light stops, so the band stays a faint sheen on black (1.06–1.44:1)
+ *   rather than a bright band. The rest of the navy scale, the alpha
+ *   steps and [auraSuccessText] were deleted in the same batch — no
+ *   production call site used them.
  */
 object AuraPalette {
     // ---- Facebook blue (extracted scale, alpha steps from resources.arsc) ----
@@ -401,42 +419,32 @@ object AuraPalette {
     val auraBlueText = Color(0xFF355089)
     /** Light blue: gradient stop + text on navy (9.31:1 on #141823). */
     val auraBlueLight = Color(0xFF9BBCFF)
-    /** Alpha steps of [auraBlue] for tints (10 / 20 / 40 / 60 / 80%). */
-    val auraBlueAlpha10 = Color(0x1A5890FF)
-    val auraBlueAlpha20 = Color(0x335890FF)
-    val auraBlueAlpha40 = Color(0x665890FF)
-    val auraBlueAlpha60 = Color(0x995890FF)
-    val auraBlueAlpha80 = Color(0xCC5890FF)
 
     // ---- Material 3 purple (extracted baseline) ----
     val auraPurple = Color(0xFF6750A4)
     val auraPurpleContainer = Color(0xFFEADDFF)
-    val auraPurpleLight = Color(0xFFD0BCFF)
 
     // ---- Aura neutrals ----
-    /** Aura page surface (vs Muse B #F9F9FA). */
-    val auraSurface = Color(0xFFF6F7F8)
     /** Aura card border (vs Muse B #EBEBEB). */
     val auraBorder = Color(0xFFE9EAED)
-    /** Muted text, AA on white and on [auraSurface]. */
+    /** Muted text, AA on white and on the app page #F9F9FA. */
     val auraMuted = Color(0xFF6A7180)
     /** Decoration only, never text (2.93:1 on white). */
     val auraFaint = Color(0xFF9197A3)
-    /** Near-black text on Aura surfaces (15.97:1 on #F6F7F8). */
-    val auraOnSurface = Color(0xFF1C1B1F)
 
     // ---- Aura dark navy (dark-theme surfaces, extracted) ----
+    // Audit-200 D5 (m-674): the dark mesh gradient lives on these three
+    // stops (navy → slate → navyDeep). The rest of the scale
+    // (auraSlateLight, auraSlateBorder) had no production call site and
+    // was deleted in the same batch, as were the alpha steps, auraSurface,
+    // auraOnSurface, auraPurpleLight and auraSuccessText (m-673/m-999).
     val auraNavy = Color(0xFF141823)
     val auraNavyDeep = Color(0xFF080A10)
     val auraSlate = Color(0xFF232937)
-    val auraSlateLight = Color(0xFF373E4D)
-    val auraSlateBorder = Color(0xFF3A465C)
 
     // ---- Aura semantics ----
     /** Brand green: fill / dot (white on it 4.58:1). */
     val auraSuccess = Color(0xFF1D873B)
-    /** Darkened green for AA text (7.37:1 white, 6.87:1 #F6F7F8). */
-    val auraSuccessText = Color(0xFF14632B)
     /** Google red: AA as text on white only (4.77:1; 4.45:1 on #F6F7F8). */
     val auraDanger = Color(0xFFD93025)
 }

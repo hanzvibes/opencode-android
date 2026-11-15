@@ -75,6 +75,9 @@ class EngineBinary private constructor(
         )
 
         fun resolve(nativeLibraryDir: File, filesDir: File): EngineBinary {
+            // Audit-200 D5 (m-875): cold-start timing for the binary
+            // resolution (existence + executable checks + tool links).
+            StartupTimings.mark("engineResolveStart")
             val engine = File(nativeLibraryDir, LIBRARY_NAME)
             if (!engine.exists()) {
                 throw EngineStartupException(
@@ -95,6 +98,7 @@ class EngineBinary private constructor(
             val toolBin = File(filesDir, "engine/tools/bin")
             linkTools(nativeLibraryDir, toolBin)
 
+            StartupTimings.mark("engineResolved")
             return EngineBinary(engine, toolBin, nativeLibraryDir)
         }
 

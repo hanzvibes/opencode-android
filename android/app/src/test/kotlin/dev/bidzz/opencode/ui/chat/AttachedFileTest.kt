@@ -131,4 +131,27 @@ class AttachedFileTest {
         assertEquals("1.5 KB", formatAttachmentSize(1536))
         assertEquals("64 KB", formatAttachmentSize(65_536))
     }
+
+    // ---- Audit-200 D5 (m-1157): the fallback-name matrix ----
+
+    @Test
+    fun `fallback names survive decoded segments and reject opaque ids`() {
+        // The audit's flagship example was wrong: getLastPathSegment()
+        // already decodes, so "%2Fnotes.txt" arrives as "notes.txt".
+        // What is still untrustworthy is a segment that is not a name
+        // at all — an opaque provider id, a bare number, or a leftover
+        // escape — and those fall back to "file".
+        assertEquals("notes.txt", sanitizeFallbackName("notes.txt"))
+        assertEquals("notes.txt", sanitizeFallbackName("primary:Downloads/notes.txt"))
+        assertEquals("file", sanitizeFallbackName("msf:12345"))
+        assertEquals("file", sanitizeFallbackName("image:12345"))
+        assertEquals("file", sanitizeFallbackName("12345"))
+        assertEquals("100% done.txt", sanitizeFallbackName("100% done.txt"))
+        assertEquals("file", sanitizeFallbackName("100%2Fdone.txt"))
+        assertEquals("README", sanitizeFallbackName("README"))
+        assertEquals("Makefile", sanitizeFallbackName("Makefile"))
+        assertEquals("file", sanitizeFallbackName(""))
+        assertEquals("file", sanitizeFallbackName("   "))
+        assertEquals("c.txt", sanitizeFallbackName("a/b/c.txt"))
+    }
 }

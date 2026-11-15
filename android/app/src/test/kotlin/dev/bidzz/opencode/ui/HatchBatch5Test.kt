@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui
 
 import dev.bidzz.opencode.core.design.AuraPalette
+import dev.bidzz.opencode.core.design.Palette
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -90,5 +91,16 @@ class HatchBatch5Test {
     fun `tab label colour is text-safe blue selected and muted otherwise`() {
         assertEquals(AuraPalette.auraBlueText, hatchTabLabelColor(true))
         assertEquals(AuraPalette.auraMuted, hatchTabLabelColor(false))
+    }
+
+    @Test
+    fun `selected tab label uses the accent in dark, not the navy blue`() {
+        // Audit-200 D5 (m-998): auraBlueText is 2.16:1 on the dark surface,
+        // so dark uses Palette.darkAccent (4.66:1 on raised). The unselected
+        // muted label (3.47:1) is deliberately left — a tab label is not
+        // required to be AA, and brightening it would flatten the selected /
+        // unselected distinction.
+        assertEquals(Palette.darkAccent, hatchTabLabelColor(true, isDark = true))
+        assertEquals(AuraPalette.auraMuted, hatchTabLabelColor(false, isDark = true))
     }
 }
