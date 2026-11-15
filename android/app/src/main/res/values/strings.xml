@@ -123,6 +123,8 @@
     <string name="mcp_add_name">Name</string>
     <string name="mcp_add_name_hint">my-server</string>
     <string name="mcp_add_name_invalid">Letters, digits, - and _ only.</string>
+    <!-- Audit-200 D7 (m-631): a remote server needs a real URL, not just non-blank text. -->
+    <string name="mcp_add_url_invalid">A remote server needs an http(s) URL with a host, e.g. https://example.com:8080/mcp.</string>
     <string name="mcp_add_command">Command</string>
     <string name="mcp_add_command_hint">npx -y @scope/server /tmp</string>
     <string name="mcp_add_cwd">Working directory (optional)</string>
@@ -403,6 +405,12 @@
     <string name="revert_banner_files">%1$d files will be restored to how they were before this message.</string>
     <string name="revert_banner_files_unknown">Files may change, but the list could not be read.</string>
     <string name="revert_banner_messages_only">Messages after this point will be removed. No files change.</string>
+    <!-- Audit-200 D7 (m-602/m-1104): name the anchor message and list the files the revert would touch. -->
+    <string name="revert_banner_target">Revert to just before: "%1$s"</string>
+    <string name="revert_banner_target_unknown">Revert to just before an earlier message.</string>
+    <string name="revert_banner_show_files">Show files</string>
+    <string name="revert_banner_hide_files">Hide files</string>
+    <string name="revert_banner_and_more">and %1$d more</string>
     <string name="revert_commit">Apply revert</string>
     <string name="revert_discard">Discard</string>
     <string name="chat_status_desc_ready">Engine is online and ready for prompts.</string>
@@ -719,6 +727,8 @@
     <string name="directory_picker_failed">Could not open the folder picker.</string>
     <string name="saf_picker_failed">Could not open the file picker.</string>
     <string name="saf_file_dropped">Could not attach that file — try picking it again.</string>
+    <!-- Audit-200 D7 (m-1164): the dropped pick is named, so the user knows which file vanished. -->
+    <string name="saf_file_dropped_named">"Could not attach '%1$s' — try picking it again."</string>
     <string name="code_highlight_off">Highlight off (large file)</string>
 
     <!-- Project -->
@@ -996,7 +1006,11 @@
     <string name="diag_export_logcat">Export logcat</string>
     <string name="diag_logcat_failed">Could not read the app log.</string>
     <string name="diag_copy_logs">Copy Logs</string>
+    <!-- Audit-200 D7 (m-1093): the button says what it will copy when a filter/search is active. -->
+    <string name="diag_copy_logs_filtered">Copy %1$d matching lines</string>
     <string name="diag_copied_toast">Copied to clipboard</string>
+    <!-- Audit-200 D7 (m-1093): the toast says how many of the retained lines were copied. -->
+    <string name="diag_copied_logs_filtered">Copied %1$d of %2$d lines</string>
     <string name="diag_cpu">CPU</string>
     <string name="diag_ram">RAM</string>
     <string name="diag_storage">Storage</string>

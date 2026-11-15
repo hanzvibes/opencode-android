@@ -120,6 +120,8 @@
     <string name="mcp_add_name">Nama</string>
     <string name="mcp_add_name_hint">server-saya</string>
     <string name="mcp_add_name_invalid">Huruf, angka, - dan _ saja.</string>
+    <!-- Audit-200 D7 (m-631): server remote butuh URL yang benar, bukan sekadar teks tak kosong. -->
+    <string name="mcp_add_url_invalid">Server remote butuh URL http(s) dengan host, contoh: https://example.com:8080/mcp.</string>
     <string name="mcp_add_command">Perintah</string>
     <string name="mcp_add_command_hint">npx -y @scope/server /tmp</string>
     <string name="mcp_add_cwd">Direktori kerja (opsional)</string>
@@ -405,6 +407,12 @@
     <string name="revert_banner_files">%1$d berkas akan dikembalikan seperti sebelum pesan ini.</string>
     <string name="revert_banner_files_unknown">Berkas mungkin berubah, tapi daftarnya tidak bisa dibaca.</string>
     <string name="revert_banner_messages_only">Pesan setelah titik ini akan dihapus. Tidak ada berkas yang berubah.</string>
+    <!-- Audit-200 D7 (m-602/m-1104): sebutkan pesan jangkar dan daftar berkas yang akan disentuh revert. -->
+    <string name="revert_banner_target">Kembali ke sebelum: "%1$s"</string>
+    <string name="revert_banner_target_unknown">Kembali ke sebelum sebuah pesan lama.</string>
+    <string name="revert_banner_show_files">Tampilkan berkas</string>
+    <string name="revert_banner_hide_files">Sembunyikan berkas</string>
+    <string name="revert_banner_and_more">dan %1$d lagi</string>
     <string name="revert_commit">Terapkan revert</string>
     <string name="revert_discard">Batalkan</string>
     <string name="chat_status_desc_ready">Engine online dan siap menerima perintah.</string>
@@ -724,6 +732,8 @@
     <string name="directory_picker_failed">Tidak bisa membuka pemilih folder.</string>
     <string name="saf_picker_failed">Tidak bisa membuka pemilih berkas.</string>
     <string name="saf_file_dropped">Tidak bisa melampirkan berkas itu — coba pilih lagi.</string>
+    <!-- Audit-200 D7 (m-1164): pick yang hilang disebutkan namanya, supaya pengguna tahu berkas mana yang lenyap. -->
+    <string name="saf_file_dropped_named">"Tidak bisa melampirkan '%1$s' — coba pilih lagi."</string>
     <string name="code_highlight_off">Highlight mati (berkas besar)</string>
 
     <!-- Project -->
@@ -1001,7 +1011,11 @@
     <string name="diag_export_logcat">Ekspor logcat</string>
     <string name="diag_logcat_failed">Log aplikasi tidak bisa dibaca.</string>
     <string name="diag_copy_logs">Salin Log</string>
+    <!-- Audit-200 D7 (m-1093): tombol menyebut apa yang akan disalin saat filter/pencarian aktif. -->
+    <string name="diag_copy_logs_filtered">Salin %1$d baris yang cocok</string>
     <string name="diag_copied_toast">Disalin ke papan klip</string>
+    <!-- Audit-200 D7 (m-1093): toast menyebut berapa dari baris yang ditahan yang disalin. -->
+    <string name="diag_copied_logs_filtered">Disalin %1$d dari %2$d baris</string>
     <string name="diag_cpu">CPU</string>
     <string name="diag_ram">RAM</string>
     <string name="diag_storage">Penyimpanan</string>

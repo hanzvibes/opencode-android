@@ -16,6 +16,7 @@ import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,14 +54,24 @@ import kotlinx.coroutines.withContext
 class MainActivity : FragmentActivity() {
 
     /**
-     * The app language (92-F2): the activity's own resources — every
-     * `getString` here, the snackbars included — read in the language the
-     * user picked, not the phone's. The Compose tree wraps its context
-     * separately (see `OpenCodeApp`); this covers everything outside it.
+     * The app language (92-F2): the activity's own resources read in the
+     * language the user picked, not the phone's — but only as wrapped at
+     * creation time. The activity is never recreated on a language change
+     * (the manifest holds `locale` in `configChanges`), so a plain
+     * `getString` below would keep speaking the old language until the
+     * next process start. [localizedString] re-wraps fresh on every call
+     * (audit-200 D7, m-860) — the same helper the service notifications
+     * use (D1 m-530) — so the snackbars follow a language change at once.
+     * The Compose tree wraps its context separately (see `OpenCodeApp`);
+     * this covers everything outside it.
      */
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(LanguageStore.wrap(base, LanguageStore.get(base)))
     }
+
+    /** A string in the language currently stored, not the activity's creation-time locale. */
+    private fun localizedString(@StringRes resId: Int): String =
+        appLanguageContext(this).getString(resId)
 
     /**
      * App lock (Batch 7): whether the lock screen has been passed since
@@ -112,7 +123,7 @@ class MainActivity : FragmentActivity() {
                 // below it must say why that is not a project.
                 if (!(application as OpenCodeApplication).switchWorkspace(path)) {
                     (application as OpenCodeApplication).showSnackbar(
-                        getString(R.string.workspace_too_broad),
+                        localizedString(R.string.workspace_too_broad),
                         long = true,
                     )
                 }
@@ -125,7 +136,7 @@ class MainActivity : FragmentActivity() {
                 // an unmapped folder is told.
                 Log.w("MainActivity", "Workspace folder not usable: ${uri}")
                 (application as OpenCodeApplication).showSnackbar(
-                    getString(R.string.workspace_folder_unsupported),
+                    localizedString(R.string.workspace_folder_unsupported),
                     long = true,
                 )
             }
@@ -193,8 +204,8 @@ class MainActivity : FragmentActivity() {
                         app.requeueFailedCodeSave(pending.filename, pending.text, codeSavePickerOpen)
                     }
                     app.showSnackbar(
-                        getString(if (saved) R.string.code_saved else R.string.code_save_failed),
-                        actionLabel = if (saved) null else getString(R.string.chat_retry),
+                        localizedString(if (saved) R.string.code_saved else R.string.code_save_failed),
+                        actionLabel = if (saved) null else localizedString(R.string.chat_retry),
                         onAction = if (saved) null else {
                             { app.emitCodeSaveRequestIfPending() }
                         },
@@ -243,7 +254,7 @@ class MainActivity : FragmentActivity() {
                     // gallery, and the photo itself is not lost.
                     pendingPhotoStore.clear()
                     (application as OpenCodeApplication).showSnackbar(
-                        getString(R.string.photo_saved_to_gallery),
+                        localizedString(R.string.photo_saved_to_gallery),
                     )
                 }
                 uri != null -> {
@@ -273,7 +284,7 @@ class MainActivity : FragmentActivity() {
                 // MediaStore) used to escape to the collector and end in
                 // a log line only — the tap died silently.
                 Log.w("MainActivity", "MediaStore insert failed", it)
-                (application as OpenCodeApplication).showSnackbar(getString(R.string.camera_insert_failed))
+                (application as OpenCodeApplication).showSnackbar(localizedString(R.string.camera_insert_failed))
                 return
             }
             .getOrNull()
@@ -281,7 +292,7 @@ class MainActivity : FragmentActivity() {
                 // The gallery refused the row: say so instead of a dead
                 // camera tap (audit-100 14-F6).
                 Log.w("MainActivity", "MediaStore insert returned null")
-                (application as OpenCodeApplication).showSnackbar(getString(R.string.camera_insert_failed))
+                (application as OpenCodeApplication).showSnackbar(localizedString(R.string.camera_insert_failed))
                 return
             }
         pendingPhotoUri = uri
@@ -301,7 +312,7 @@ class MainActivity : FragmentActivity() {
                 // a log line — the user got no word at all. A new string:
                 // the row was created fine, so camera_insert_failed
                 // ("Could not create a photo in the gallery") would lie.
-                (application as OpenCodeApplication).showSnackbar(getString(R.string.camera_open_failed))
+                (application as OpenCodeApplication).showSnackbar(localizedString(R.string.camera_open_failed))
             }
     }
 
@@ -339,7 +350,7 @@ class MainActivity : FragmentActivity() {
         val app = application as OpenCodeApplication
         StartupTimings.mark("engineStartRequested")
         if (!app.startEngine()) {
-            app.showSnackbar(app.startupFailure ?: getString(R.string.error_engine_not_running))
+            app.showSnackbar(app.startupFailure ?: localizedString(R.string.error_engine_not_running))
         }
         observeDialogRequests()
         observeCameraPhotoCopied()
@@ -474,7 +485,7 @@ class MainActivity : FragmentActivity() {
                     runCatching { pickDirectory.launch(null) }
                         .onFailure {
                             Log.w("MainActivity", "Directory picker launch failed", it)
-                            app.showSnackbar(getString(R.string.directory_picker_failed))
+                            app.showSnackbar(localizedString(R.string.directory_picker_failed))
                         }
                 }
             }
@@ -493,7 +504,7 @@ class MainActivity : FragmentActivity() {
                 runCatching { pickSafFile.launch(arrayOf("*/*")) }
                     .onFailure {
                         Log.w("MainActivity", "SAF picker launch failed", it)
-                        app.showSnackbar(getString(R.string.saf_picker_failed))
+                        app.showSnackbar(localizedString(R.string.saf_picker_failed))
                     }
             }
         }
@@ -520,7 +531,7 @@ class MainActivity : FragmentActivity() {
                     .onFailure {
                         codeSavePickerOpen = false
                         Log.w("MainActivity", "Code save picker launch failed", it)
-                        app.showSnackbar(getString(R.string.code_save_picker_failed))
+                        app.showSnackbar(localizedString(R.string.code_save_picker_failed))
                     }
             }
         }
@@ -562,8 +573,8 @@ class MainActivity : FragmentActivity() {
                 markNotificationRationaleShown()
                 app.showSnackbarWithRetry(
                     lifecycleScope,
-                    getString(R.string.notification_permission_rationale),
-                    actionLabel = getString(R.string.notification_permission_allow),
+                    localizedString(R.string.notification_permission_rationale),
+                    actionLabel = localizedString(R.string.notification_permission_allow),
                     long = true,
                     onAction = { requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) },
                 )
@@ -575,8 +586,8 @@ class MainActivity : FragmentActivity() {
                 markNotificationSettingsHintShown()
                 app.showSnackbarWithRetry(
                     lifecycleScope,
-                    getString(R.string.notification_permission_settings),
-                    actionLabel = getString(R.string.settings_title),
+                    localizedString(R.string.notification_permission_settings),
+                    actionLabel = localizedString(R.string.settings_title),
                     long = true,
                     onAction = { openAppNotificationSettings() },
                 )

@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.McpServer
 import dev.bidzz.opencode.core.api.dto.McpServerConfig
 import dev.bidzz.opencode.core.design.OpenCodeTheme
@@ -52,6 +53,8 @@ import dev.bidzz.opencode.ui.HatchBannerKind
 import dev.bidzz.opencode.ui.HatchInlineBanner
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
+import dev.bidzz.opencode.ui.NoticeKind
+import dev.bidzz.opencode.ui.NoticeRow
 import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.SelectorChip
@@ -117,6 +120,8 @@ fun McpServersScreen(
     onCancelReauth: () -> Unit = {},
     /** The screen calls this after showing the re-auth error once. */
     onClearReauthError: () -> Unit = {},
+    /** Dismisses the per-server failure line under a row (audit-200 D7, m-629). */
+    onClearFailedAction: (String) -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -257,6 +262,10 @@ fun McpServersScreen(
                                 onDisconnect = { onDisconnect(server.name) },
                                 onRemove = { removeTarget = server.name },
                                 onReauth = { onReauth(server) },
+                                // Audit-200 D7 (m-629): the row keeps its
+                                // last action failure after the snackbar.
+                                actionFailure = state.failedActions[server.name],
+                                onDismissActionFailure = { onClearFailedAction(server.name) },
                             )
                         }
                         // Resources from every connected server, after the
@@ -427,6 +436,10 @@ private fun McpServerRow(
     onDisconnect: () -> Unit,
     onRemove: () -> Unit,
     onReauth: () -> Unit,
+    // Audit-200 D7 (m-629): the last action failure for this server, kept
+    // until its next success or a dismiss.
+    actionFailure: ApiResult.Failure? = null,
+    onDismissActionFailure: () -> Unit = {},
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -546,6 +559,17 @@ private fun McpServerRow(
                 )
             }
         }
+        // Audit-200 D7 (m-629): the last action failure for this server —
+        // a snackbar vanishes, this line does not. It clears on the
+        // server's next success or on dismiss.
+        actionFailure?.let { failure ->
+            NoticeRow(
+                message = failure.message(),
+                kind = NoticeKind.Error,
+                onDismiss = onDismissActionFailure,
+                modifier = Modifier.padding(top = spacing.xs),
+            )
+        }
     }
 }
 
@@ -628,7 +652,29 @@ private fun mcpStatusWord(kind: McpStatusKind): String = stringResource(
  * (audit-200 B2, M-291: they need structured editors, not text lines);
  * the engine defaults apply, and the form's note says the server is
  * runtime-only.
+ * Audit-200 D7 (m-631): "non-blank" is not enough for a URL — a remote
+ * server needs a real http(s) URL with a host ([isValidMcpRemoteUrl]).
  */
+
+/**
+ * Audit-200 D7 (m-631): a remote MCP server needs a real URL — an http(s)
+ * scheme with a non-blank host, no whitespace anywhere. "notaurl",
+ * "example.com" (no scheme), "http://" (no host) and a URL with a space
+ * are all rejected before Add, not after a round-trip to the engine.
+ * java.net.URI on purpose, not android.net.Uri: the pure function is
+ * unit-tested on the JVM, where the framework Uri is a stub.
+ */
+internal fun isValidMcpRemoteUrl(url: String): Boolean {
+    val trimmed = url.trim()
+    if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return false
+    val parsed = try {
+        java.net.URI(trimmed)
+    } catch (_: Exception) {
+        return false
+    }
+    return (parsed.scheme == "http" || parsed.scheme == "https") && !parsed.host.isNullOrBlank()
+}
+
 @Composable
 private fun AddMcpServerDialog(
     adding: Boolean,
@@ -657,7 +703,10 @@ private fun AddMcpServerDialog(
     var disabled by rememberSaveable { mutableStateOf(false) }
 
     val nameValid = name.matches(Regex("^[A-Za-z0-9_-]+$"))
-    val detailValid = if (isLocal) command.isNotBlank() else url.isNotBlank()
+    // Audit-200 D7 (m-631): a remote URL is not "valid" just because it is
+    // non-blank — "notaurl" and "http://" used to enable Add and only fail
+    // after a round-trip to the engine.
+    val detailValid = if (isLocal) command.isNotBlank() else isValidMcpRemoteUrl(url)
     val valid = nameValid && detailValid
     val existing = if (nameValid) existingServer(name.trim()) else null
 
@@ -775,6 +824,16 @@ private fun AddMcpServerDialog(
                         onValueChange = { url = it },
                         placeholder = stringResource(R.string.mcp_add_url_hint),
                     )
+                    // Audit-200 D7 (m-631): the inline error, like the name
+                    // validation above — the failure is named before Add,
+                    // not after a round-trip to the engine.
+                    if (url.isNotEmpty() && !isValidMcpRemoteUrl(url)) {
+                        Text(
+                            text = stringResource(R.string.mcp_add_url_invalid),
+                            style = OpenCodeTypography.caption,
+                            color = colors.danger,
+                        )
+                    }
                     FormField(
                         label = stringResource(R.string.mcp_add_headers),
                         value = headers,
