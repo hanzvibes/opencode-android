@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui.files
 
 import android.content.ClipData
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.draganddrop.dragAndDropSource
@@ -139,6 +140,10 @@ fun ExplorerScreen(
     onEnsureQuickOpenIndex: () -> Unit = {},
     /** Shows or hides dot-directories in the list (89-F6). */
     onToggleHidden: () -> Unit = {},
+    /** Runs a content search over the workspace (audit-200 C16, M-238). */
+    onSearchContent: (String) -> Unit = {},
+    /** Opens a content-search hit in the viewer, scrolled to its line. */
+    onOpenContentResult: (path: String, line: Int, query: String) -> Unit = { _, _, _ -> },
     /**
      * Workspace root file paths are relative to (audit-200 B7, M-022):
      * passed to the embedded viewer so image/PDF previews resolve it.
@@ -156,6 +161,28 @@ fun ExplorerScreen(
     // search bar in sight (folders with five or fewer rows hide the bar).
     LaunchedEffect(state.currentPath) { searchFilter = "" }
     var quickOpenOpen by remember { mutableStateOf(false) }
+    // Audit-200 C16 (M-238): content search mode — searching file
+    // contents, not names. Closing it returns to the list; the last
+    // search stays in the view-model state, so reopening it shows the
+    // previous results until a new search runs.
+    var contentSearchOpen by remember { mutableStateOf(false) }
+
+    // Audit-200 C16 (M-239): the arrow in the top bar already climbs one
+    // level (`if (atRoot) onBack() else onUp()`), but system Back fell
+    // through to the global handler and left Files for Chat — losing the
+    // directory the user was browsing. Mirror the arrow here; at the
+    // root this handler is disabled, so the global one still takes the
+    // user to Chat.
+    BackHandler(enabled = !atRoot) { onUp() }
+    // Audit-200 C16 (M-021): the same Back that should cancel the
+    // quick-open palette left Files instead — the palette is the topmost
+    // thing on screen, so it closes first; a second Back then climbs or
+    // leaves, as above. Registered after the climb handler so it wins
+    // while the palette is open (later handlers take priority).
+    BackHandler(enabled = quickOpenOpen) { quickOpenOpen = false }
+    // Audit-200 C16 (M-238): the content search is an overlay over the
+    // list like the palette, so Back closes it first too.
+    BackHandler(enabled = contentSearchOpen) { contentSearchOpen = false }
 
     val filteredRows = remember(state.rows, searchFilter, state.showHidden) {
         val visible = if (state.showHidden) {
@@ -197,6 +224,14 @@ fun ExplorerScreen(
                     onClick = {
                         onEnsureQuickOpenIndex()
                         quickOpenOpen = true
+                        contentSearchOpen = false
+                    },
+                )
+                TextAction(
+                    label = stringResource(R.string.files_search_content),
+                    onClick = {
+                        contentSearchOpen = true
+                        quickOpenOpen = false
                     },
                 )
                 if (state.changed.isNotEmpty()) {
@@ -217,6 +252,16 @@ fun ExplorerScreen(
                     failed = state.quickOpenFailed,
                     truncated = state.quickOpenTruncated,
                     onRetry = onEnsureQuickOpenIndex,
+                )
+
+                contentSearchOpen -> ContentSearchContent(
+                    state = state,
+                    onSearch = onSearchContent,
+                    onOpenResult = { path, line, query ->
+                        contentSearchOpen = false
+                        onOpenContentResult(path, line, query)
+                    },
+                    onClose = { contentSearchOpen = false },
                 )
 
                 detailActive -> Row(modifier = Modifier.fillMaxSize()) {

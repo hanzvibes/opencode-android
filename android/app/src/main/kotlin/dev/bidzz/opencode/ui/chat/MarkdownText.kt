@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +44,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -74,6 +74,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.copyPlainText
+import dev.bidzz.opencode.ui.rememberWindowSizeClass
 
 /**
  * Renders assistant output — the Hatch markdown treatment (Aura full,
@@ -556,7 +557,14 @@ private fun CodeBlock(
         // Long blocks are capped in height (360dp, 420dp on wide/tablet
         // screens) and scroll vertically instead of pushing the rest of the
         // answer off-screen.
-        val isWide = LocalConfiguration.current.screenWidthDp >= 600
+        // Audit-200 C16 (M-234): the width used to come from
+        // `LocalConfiguration.screenWidthDp` — a frozen copy the app
+        // shadows with the language-wrapped configuration (see
+        // OpenCodeApp), so rotating the tablet across 600dp never moved
+        // the cap until a restart. The window size class reads the real
+        // window metrics instead; Medium starts at 600dp, the same
+        // threshold this cap always meant.
+        val isWide = rememberWindowSizeClass().widthSizeClass >= WindowWidthSizeClass.Medium
         Box(
             modifier = Modifier
                 .fillMaxWidth()

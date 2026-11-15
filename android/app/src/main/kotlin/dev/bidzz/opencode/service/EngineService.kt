@@ -428,11 +428,15 @@ class EngineService : Service() {
      * whenever the credentials rotate (every engine restart prints a
      * new password). It notifies only while the app is not in the
      * foreground — a run that ends while the user watches needs no
-     * notification, and the UI trigger still covers the
-     * backgrounded-but-alive case. Posting twice for the same run is
-     * harmless: both paths use the same notification id, so the second
-     * post replaces the first. A title fetch that fails falls back to
-     * the generic body text.
+     * notification. This is the ONLY agent-done trigger (audit-200
+     * C16, M-236): the old UI trigger in OpenCodeApp fired on any
+     * busy→false transition, including `repo.open(B)` after a deep
+     * link, and posted a "finished" notification for a session that
+     * never ran anything. The watcher takes the session id from the
+     * terminal event itself, so a switch can never invent one — and
+     * it covers the backgrounded-but-alive case, because it checks
+     * `isAppForeground` rather than composition. A title fetch that
+     * fails falls back to the generic body text.
      */
     private fun updateAgentDoneWatcher(status: EngineStatus) {
         val credentials = if (status.state == EngineState.RUNNING) status.credentials else null

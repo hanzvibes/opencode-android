@@ -172,6 +172,13 @@ fun FileViewScreen(
      * and must resolve it here, not against the process working directory.
      */
     workspaceRoot: String = "",
+    /**
+     * Content-search hit to land on (audit-200 C16, M-238): the query
+     * is pre-filled in the find bar and the viewer scrolls to the first
+     * match at or after [initialFindLine]. Empty means a plain open.
+     */
+    initialFindQuery: String = "",
+    initialFindLine: Int? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -192,13 +199,28 @@ fun FileViewScreen(
     // Find-in-file: plain-text, case-insensitive, over the text actually loaded.
     // Editing disables it — the draft is a moving target and the viewer (with its
     // highlights and scroll-to-match) is what find is built on.
-    var findOpen by remember { mutableStateOf(false) }
-    var findQuery by remember { mutableStateOf("") }
+    var findOpen by remember { mutableStateOf(initialFindQuery.isNotEmpty()) }
+    var findQuery by remember { mutableStateOf(initialFindQuery) }
     var selectedMatch by remember { mutableStateOf(0) }
+    // Audit-200 C16 (M-238): the line a content-search hit asked for.
+    // Consumed once, when the first matches land — the file loads
+    // asynchronously, so the target cannot be applied at composition.
+    var pendingInitialLine by remember { mutableStateOf(initialFindLine) }
     val findMatches = remember(shownText, findQuery, state.editing) {
         if (state.editing || findQuery.isEmpty()) emptyList() else findMatches(shownText, findQuery)
     }
-    LaunchedEffect(findMatches) { selectedMatch = 0 }
+    LaunchedEffect(findMatches) {
+        val targetLine = pendingInitialLine
+        if (targetLine != null && findMatches.isNotEmpty()) {
+            pendingInitialLine = null
+            val index = findMatches.indexOfFirst { range ->
+                shownText.substring(0, range.first).count { it == '\n' } + 1 >= targetLine
+            }
+            selectedMatch = if (index >= 0) index else findMatches.size - 1
+        } else {
+            selectedMatch = 0
+        }
+    }
     val findCountText = when {
         findQuery.isEmpty() -> null
         findMatches.isEmpty() -> stringResource(R.string.fileview_find_none)

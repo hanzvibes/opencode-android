@@ -5,6 +5,12 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    // Audit-200 C16 (M-238): the content search parses `rg --json` with
+    // kotlinx.serialization — the first serialization use in this module.
+    // Without the plugin the @Serializable classes compile but their
+    // serializers are never generated, so every decode fails at runtime
+    // ("Serializer ... is not found") while the build stays green.
+    alias(libs.plugins.kotlin.serialization)
 }
 
 /**
@@ -214,6 +220,10 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose)
 
     testImplementation(libs.junit)
+    // Audit-200 C16 (M-246): the view-model test drives a real repository
+    // through `viewModelScope`, which runs on Dispatchers.Main — absent
+    // on the JVM, so the test installs a Main dispatcher itself.
+    testImplementation(libs.kotlinx.coroutines.test)
     // The API DTOs are @Serializable; decoding them in a test needs the runtime on
     // the test classpath, which `implementation` in :core:api does not expose.
     testImplementation(libs.kotlinx.serialization.json)

@@ -1,8 +1,6 @@
 package dev.bidzz.opencode.ui.chat
 
 import android.net.Uri
-import android.view.DragEvent
-import android.view.View
 import dev.bidzz.opencode.OpenCodeApplication
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -77,6 +75,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -115,11 +114,9 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.AnnotatedString
@@ -327,19 +324,15 @@ fun ChatScreen(
     onEnsureFileIndex: () -> Unit = {},
     onRemoveAttachment: (String) -> Unit = {},
     /**
-     * Files dropped into the composer (audit-200 A9-2, DL-017/DL-018):
-     * the view model reads them in its own scope with the session
-     * captured at drop time, so the read survives leaving the screen
-     * and the file lands in the session it was dropped into.
+     * The composer's bounds in the root view, owned by OpenCodeApp
+     * (audit-200 C16, M-237): the drop listener lives there so a drag
+     * started in Files can land while Chat is not composed, and it
+     * needs these bounds to tell a drop on the composer from a drop
+     * anywhere else in chat. Written here, read there.
      */
-    onFilesDropped: (List<Uri>, String?) -> Unit = { _, _ -> },
-    /**
-     * Workspace paths dropped from the Explorer (audit-200 A9-2,
-     * DL-018): the view model inserts them as `@path` mentions into
-     * the dropped session's draft — live, or parked when the user has
-     * since moved on.
-     */
-    onPathsDropped: (List<String>, String?) -> Unit = { _, _ -> },
+    composerBounds: MutableState<Rect?>,
+    /** True while a drag hovers the composer: the composer draws its drop border. */
+    dragOverComposer: Boolean,
     /**
      * Opens the system file picker for a file outside the workspace (SAF).
      * The launcher lives in MainActivity: a Compose launcher here crashed
@@ -1103,80 +1096,6 @@ fun ChatScreen(
     // check happens after the pick (see readSafFile), so a .py/.md/.json
     // the provider does not call text/* is still pickable and a binary is
     // refused with a message, not by being unpickable.
-
-    // Drag & drop into the composer (Batch 7): files dropped from another
-    // app arrive as content:// URIs and are read with the SAF rules above;
-    // a workspace file dragged from the Explorer arrives as a path under
-    // the private MIME type and becomes an @path mention. The listener
-    // lives on the composition root view because Compose 1.7's
-    // dragAndDropTarget cannot read the dropped ClipData (see
-    // DropAttachments.kt). The composer bounds decide whether the drop
-    // landed on it; anything dropped elsewhere in the chat is ignored.
-    val composerBounds = remember { mutableStateOf<Rect?>(null) }
-    var dragOverComposer by remember { mutableStateOf(false) }
-    val dropRootView = LocalView.current
-    DisposableEffect(dropRootView) {
-        val listener = View.OnDragListener { _, event ->
-            when (event.action) {
-                DragEvent.ACTION_DRAG_STARTED -> {
-                    val description = event.clipDescription
-                        ?: return@OnDragListener false
-                    val types = (0 until description.mimeTypeCount)
-                        .map { description.getMimeType(it) }
-                        .toSet()
-                    acceptsDropMimeTypes(types)
-                }
-                DragEvent.ACTION_DRAG_ENTERED, DragEvent.ACTION_DRAG_LOCATION -> {
-                    dragOverComposer = composerBounds.value
-                        ?.contains(Offset(event.x, event.y)) == true
-                    true
-                }
-                DragEvent.ACTION_DRAG_EXITED -> {
-                    dragOverComposer = false
-                    true
-                }
-                DragEvent.ACTION_DROP -> {
-                    dragOverComposer = false
-                    val inside = composerBounds.value
-                        ?.contains(Offset(event.x, event.y)) == true
-                    if (!inside) return@OnDragListener false
-                    val content = droppedContent(event.clipData)
-                    if (content.uris.isEmpty() && content.texts.isEmpty()) {
-                        return@OnDragListener false
-                    }
-                    // Only a drag carrying the private path MIME type may
-                    // insert mentions: a URI drop from another app can
-                    // carry a text label too, and that label is not a
-                    // workspace path.
-                    val pathDrop = event.clipDescription
-                        ?.hasMimeType(MIME_WORKSPACE_PATH) == true
-                    // Audit-200 A9-2 (DL-017, DL-018): the read used to
-                    // run in this composition's scope with the session
-                    // resolved when it finished, so leaving the screen
-                    // cancelled it and a switch misfiled it. Both now
-                    // go to the view model with the session captured
-                    // here (currentSessionId) — the read survives
-                    // leaving chat, and the file/mention lands in the
-                    // session it was dropped into. Paths land at once;
-                    // files follow as their reads finish.
-                    if (pathDrop) {
-                        onPathsDropped(content.texts, currentSessionId)
-                    }
-                    if (content.uris.isNotEmpty()) {
-                        onFilesDropped(content.uris, currentSessionId)
-                    }
-                    true
-                }
-                DragEvent.ACTION_DRAG_ENDED -> {
-                    dragOverComposer = false
-                    true
-                }
-                else -> false
-            }
-        }
-        dropRootView.setOnDragListener(listener)
-        onDispose { dropRootView.setOnDragListener(null) }
-    }
 
     // Camera photo (Native C): same bridge shape as the SAF picker —
     // the launcher lives in MainActivity, the URI arrives here. The

@@ -351,6 +351,19 @@ class ChatRepository(
     private var runGeneration = 0
 
     /**
+     * Counts the resyncs this repository has started (audit-200 C16,
+     * M-241): two resyncs can overlap — an `open()` resync, a reconnect
+     * resync, a `loadEarlier()` resync — and the older one's success
+     * used to overwrite the newer one's snapshot (last-wins), losing
+     * the newer transcript and flipping `busy` back. The run
+     * generation above only guards terminal resyncs against new runs;
+     * this one guards every resync against every newer resync in the
+     * same session. Bumped at the start of [resync]; a resync whose
+     * generation is stale when its fetch returns drops its result.
+     */
+    private var resyncGeneration = 0
+
+    /**
      * True after a terminal run event until the next run starts
      * (audit-200 B3, M-558): any text event after this point is stale —
      * the finished answer already arrived through the terminal resync,
@@ -421,6 +434,11 @@ class ChatRepository(
     }
 
     fun close() {
+        // Audit-200 C16 (M-245): cancel the socket first — the
+        // stream job's cancellation alone cannot interrupt the
+        // blocked `readUtf8Line()` in streamOnce, so without this
+        // the old connection lingered up to the 90s read timeout.
+        eventStream.close()
         streamJob?.cancel()
         streamJob = null
         publishFlushJob?.cancel()
@@ -560,6 +578,11 @@ class ChatRepository(
         if (terminalGeneration != null && terminalGeneration != runGeneration) {
             return ResyncOutcome.SKIPPED
         }
+        // Audit-200 C16 (M-241): a newer resync started since this one
+        // began owns the snapshot now. Captured after the cheap
+        // session/run guards above, so a resync that returns SKIPPED
+        // without fetching does not invalidate one already in flight.
+        val generation = ++resyncGeneration
         // Audit-200 C14 (M-202): the transcript page and the permission
         // list are independent — they used to run one after another, so
         // every resync paid two round trips in a row. Fetch them
@@ -589,6 +612,10 @@ class ChatRepository(
                 if (terminalGeneration != null && terminalGeneration != runGeneration) {
                     return ResyncOutcome.SKIPPED
                 }
+                // Audit-200 C16 (M-241): a newer resync started while
+                // this one's fetch was in flight — its snapshot is
+                // newer, so this one must not write over it.
+                if (generation != resyncGeneration) return ResyncOutcome.SKIPPED
                 // Audit-200 C12 (M-169): the page's cursor walks toward
                 // older messages — [loadEarlier] starts its next page here.
                 messagesCursor = result.value.cursor?.next
@@ -660,6 +687,25 @@ class ChatRepository(
                     null
                 }
                 val keptStreaming = _state.value.streaming.filterKeys { it in liveIds && it !in staleIds }
+                // Audit-200 C16 (M-023): the success path used to clear
+                // every live tool, so a tool that started while the
+                // transcript was in flight vanished from the trace until
+                // its next event — the history this fetch just returned
+                // cannot hold it yet. Keep the tools the fetched history
+                // does not already finish: a tool absent from history
+                // started during the fetch, and a tool history still
+                // marks running/streaming is still live. A tool history
+                // marks completed or error is done — the transcript
+                // shows its final state. (The shell polls are still
+                // stopped above; a kept tool's next progress event
+                // restarts its poll — see applyToolEvent.)
+                val historyToolStatus = rawChronological
+                    .flatMap { it.content }
+                    .filter { it.type == "tool" && it.id != null }
+                    .associate { it.id!! to (it.state?.status ?: "running") }
+                val keptLiveTools = _state.value.liveTools.filterValues { live ->
+                    historyToolStatus[live.call.id] !in setOf("completed", "error")
+                }
                 // Audit-200 C14 (M-195): the transcript refill below
                 // clears the live tools, so their output polls stop with
                 // them — a poll for a cleared call would write its output
@@ -668,7 +714,7 @@ class ChatRepository(
                 _state.value = _state.value.copy(
                     messages = chronological,
                     streaming = keptStreaming,
-                    liveTools = emptyMap(),
+                    liveTools = keptLiveTools,
                     // A run is over when the newest entry is `idle`, or when the
                     // newest assistant message is finished. The second case matters:
                     // a rejected permission aborts the run without ever writing an
@@ -723,6 +769,10 @@ class ChatRepository(
                         if (terminalGeneration != null && terminalGeneration != runGeneration) {
                             return ResyncOutcome.SUCCEEDED
                         }
+                        // Audit-200 C16 (M-241): same staleness guard as
+                        // the transcript above — a newer resync owns the
+                        // pending set now.
+                        if (generation != resyncGeneration) return ResyncOutcome.SUCCEEDED
                         // Audit-200 B3 (M-081): asks from a run that ended
                         // stay unrestored until this session sends again —
                         // the engine still lists them, but the run is over
@@ -779,6 +829,9 @@ class ChatRepository(
                 if (terminalGeneration != null && terminalGeneration != runGeneration) {
                     return ResyncOutcome.SKIPPED
                 }
+                // Audit-200 C16 (M-241): a stale failure must not
+                // overwrite the newer snapshot's state either.
+                if (generation != resyncGeneration) return ResyncOutcome.SKIPPED
                 Log.w(TAG, "resync failed: ${result.message}")
                 // A failed resync must not leave the streaming entry behind:
                 // the run is over, no more deltas are coming, and the entry
@@ -797,6 +850,16 @@ class ChatRepository(
                 // is still going).
                 // Audit-200 C14 (M-195): the live tools go with the
                 // failed resync (see the success branch above).
+                //
+                // Audit-200 C16 (M-023): the rule above is for a
+                // mid-run reconnect failure — but a TERMINAL resync
+                // failure has no more deltas coming at all, so dropping
+                // the streaming entry loses the finished answer itself:
+                // the transcript has no history row for it yet (that is
+                // what the resync was fetching), and the buffer is the
+                // only copy. Keep the entry when this resync followed a
+                // terminal event; the banner's RELOAD_SESSION retry
+                // replaces it on the next successful resync.
                 stopAllLiveShellPolls()
                 _state.value = _state.value.copy(
                     lastFailure = result,
@@ -804,7 +867,7 @@ class ChatRepository(
                     // ran, so Retry must re-open the session instead of
                     // re-sending it. See retryKindFor.
                     resyncFailed = true,
-                    streaming = emptyMap(),
+                    streaming = if (fromTerminal) _state.value.streaming else emptyMap(),
                     liveTools = emptyMap(),
                 )
                 return ResyncOutcome.FAILED
@@ -1101,7 +1164,16 @@ class ChatRepository(
                 // replaces them atomically on success and drops them on
                 // failure, and drops the live tools the same way (06-T1),
                 // so no indicator can stick either way.
-                buffers.clear()
+                // Audit-200 C16 (M-023): the buffers stay too. They used
+                // to be cleared here, before the terminal resync ran — so
+                // when all three retries failed, the finished answer's
+                // only copy (its streaming entry, fed from these buffers)
+                // was already gone and the failure path had nothing to
+                // keep. The resync success path clears them itself
+                // (retainAll drops every non-live buffer, and after a
+                // run ends nothing is live), so nothing leaks by
+                // waiting — and a failed terminal resync can now keep
+                // the answer on screen until the reload retry lands.
                 publishFlushJob?.cancel()
                 publishFlushJob = null
                 // Pull the finished message from REST so tool calls and token counts
