@@ -32,7 +32,14 @@ internal fun UsageMeter.fraction(): Float =
 internal fun UsageBudget.spentFraction(): Float =
     if (limit > 0) (spent / limit).toFloat().coerceIn(0f, 1f) else 0f
 
-/** A reset instant as a local calendar date (2026-12-01); null hides the row. */
+/**
+ * A reset instant as a local calendar date (2026-12-01); null hides the row.
+ *
+ * Audit-200 D2 (m-1208): the ISO shape is deliberate, not a missed locale
+ * like the Artifacts/Jobs dates D1 fixed (AppTime) — ISO has no month name
+ * to localise, and it matches the Stats range ("2026-11-01 – 2026-11-13"),
+ * so a reset date reads the same on both screens.
+ */
 internal fun formatResetDate(millis: Long?): String? {
     if (millis == null) return null
     return runCatching {

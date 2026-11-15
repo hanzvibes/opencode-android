@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Glosarium i18n (Batch 3, #7): pakai padanan ini secara konsisten.
-         session -> sesi | file -> file | workspace -> ruang kerja |
+    <!-- Glosarium i18n (Batch 3, #7; diperbarui Audit-200 D2): pakai padanan ini
+         secara konsisten.
+         session -> sesi | workspace -> ruang kerja | project -> proyek |
          composer -> kolom ketik | edit/change -> Ubah | permission -> izin |
          engine -> engine (istilah teknis, tidak diterjemahkan) |
+         file -> berkas dalam kalimat, "File" hanya sebagai label/judul pendek |
+         agent -> agen | status gagal -> Gagal (level log "Error" tetap "Error") |
+         register -> Anda (bukan -mu/kamu) |
          model/brand (OpenCode, Claude, GPT-4o, Gemini) -> apa adanya. -->
     <!-- Common -->
     <string name="common_back">Kembali</string>
@@ -73,10 +77,10 @@
     <string name="settings_section_provider">Penyedia</string>
     <string name="settings_provider_title">Hubungkan penyedia</string>
     <string name="settings_provider_body">Tambahkan kunci API. Tanpa kunci, agen hanya bisa memakai paket gratis opencode.</string>
-    <string name="settings_section_engine">Mesin</string>
+    <string name="settings_section_engine">Engine</string>
     <string name="settings_diag_title">Diagnostik</string>
-    <string name="settings_diag_body">Mesin %1$s. Log, kredensial, jalur runtime.</string>
-    <string name="settings_engine_port">Port mesin</string>
+    <string name="settings_diag_body">Engine %1$s. Log, kredensial, jalur runtime.</string>
+    <string name="settings_engine_port">Port engine</string>
     <string name="settings_engine_port_desc">Port loopback server lokal</string>
     <string name="settings_engine_inactive">Tidak aktif</string>
     <string name="settings_section_about">Tentang</string>
@@ -131,8 +135,8 @@
     <string name="mcp_disconnected">%1$s diputus</string>
     <string name="mcp_removed">%1$s dihapus</string>
     <string name="mcp_runtime_changes">Perubahan di sini hanya berlaku selama engine berjalan — hilang saat engine di-restart.</string>
-    <string name="mcp_restart">Restart engine</string>
-    <string name="mcp_restart_title">Restart engine?</string>
+    <string name="mcp_restart">Mulai ulang engine</string>
+    <string name="mcp_restart_title">Mulai ulang engine?</string>
     <string name="mcp_restart_body">Sesi yang sedang berjalan berhenti, dan perubahan MCP runtime hilang: server yang ditambahkan lenyap, yang dihapus kembali, dan server yang dihubungkan atau diputus kembali ke keadaan konfigurasinya.</string>
     <string name="mcp_needs_auth_note">Butuh autentikasi — ketuk Autentikasi ulang untuk masuk lagi di browser.</string>
     <string name="mcp_reauth">Autentikasi ulang</string>
@@ -152,7 +156,7 @@
     <string name="mcp_add_disabled">Mulai nonaktif</string>
     <string name="mcp_resources_title">Resource</string>
     <string name="mcp_resource_line">%1$s · %2$s</string>
-    <string name="mcp_resource_template_line">%1$s · %2$s (template)</string>
+    <string name="mcp_resource_template_line">%1$s · %2$s (templat)</string>
     <string name="mcp_status_connected">Terhubung</string>
     <string name="mcp_status_disabled">Nonaktif</string>
     <string name="mcp_status_failed">Gagal</string>
@@ -171,7 +175,7 @@
     <string name="plugin_status_failed">Gagal</string>
     <string name="plugin_status_unknown">Tidak diketahui</string>
     <string name="generate_title">Hasilkan</string>
-    <string name="generate_body">Generate teks dan gambar sekali jalan dari engine, tanpa memulai sesi. Teks memakai model bawaan kecuali dipilih; gambar butuh model gambar.</string>
+    <string name="generate_body">Hasilkan teks dan gambar sekali jalan dari engine, tanpa memulai sesi. Teks memakai model bawaan kecuali dipilih; gambar butuh model gambar.</string>
     <string name="generate_action">Hasilkan</string>
     <string name="generate_mode_text">Teks</string>
     <string name="generate_mode_image">Gambar</string>
@@ -180,8 +184,9 @@
     <string name="generate_prompt_hint_image">Jelaskan gambarnya…</string>
     <string name="generate_resolution_default">Ukuran bawaan</string>
     <string name="generate_generating">Menghasilkan…</string>
-    <string name="generate_interrupted">Generate terakhir terputus saat aplikasi tertutup. Prompt kamu masih ada — generate lagi untuk mengulang.</string>
-    <string name="generate_no_image_models">Tidak ada model gambar di engine ini. Aktifkan dulu, atau generate teks saja.</string>
+    <string name="generate_interrupted">Hasil pembuatan terakhir terputus saat aplikasi tertutup. Prompt Anda masih ada — hasilkan lagi untuk mengulang.</string>
+    <string name="generate_no_image_models">Tidak ada model gambar di engine ini. Aktifkan dulu, atau hasilkan teks saja.</string>
+    <string name="generate_pick_image_model">Pilih model gambar dulu</string>
     <string name="generate_image_unreadable">Gambar ini tidak bisa dibaca.</string>
     <string name="generate_cost">Biaya $%1$.4f</string>
     <string name="generate_tokens">%1$d masuk · %2$d keluar</string>
@@ -195,18 +200,18 @@
     <string name="websearch_provider_default">Provider bawaan</string>
     <string name="websearch_provider_line">Dari %1$s</string>
     <string name="artifact_title">Artifact</string>
-    <string name="artifact_body">Artifact yang dipublikasi engine — halaman, pratinjau, dan file yang dibuat agent. Buka satu untuk melihatnya di browser.</string>
-    <string name="artifact_empty">Belum ada artifact. Minta agent membuat satu — halaman, pratinjau, atau laporan.</string>
+    <string name="artifact_body">Artifact yang dipublikasi engine — halaman, pratinjau, dan berkas yang dibuat agen. Buka satu untuk melihatnya di browser.</string>
+    <string name="artifact_empty">Belum ada artifact. Minta agen membuat satu — halaman, pratinjau, atau laporan.</string>
     <string name="artifact_disabled">Artifact belum diaktifkan di engine ini. Tambahkan \"experimental\": { \"artifacts\": true } ke opencode.json lalu restart engine.</string>
     <string name="artifact_providers">Provider: %1$s</string>
     <string name="artifact_provider_default">bawaan</string>
     <string name="artifact_row_meta">%1$s · Diperbarui %2$s</string>
     <string name="artifact_delete">Hapus</string>
     <string name="artifact_remove_title">Hapus artifact ini?</string>
-    <string name="artifact_remove_body">Artifact beserta file tersimpannya dihapus. Ini tidak bisa dibatalkan.</string>
+    <string name="artifact_remove_body">Artifact beserta berkas tersimpannya dihapus. Ini tidak bisa dibatalkan.</string>
     <string name="artifact_remove_confirm">Hapus</string>
     <string name="job_title">Job</string>
-    <string name="job_body">Job latar belakang di engine — perintah shell, subagent, dan generate gambar yang berjalan di balik sesi.</string>
+    <string name="job_body">Job latar belakang di engine — perintah shell, subagent, dan pembuatan gambar yang berjalan di balik sesi.</string>
     <string name="job_empty">Tidak ada job yang cocok dengan filter ini.</string>
     <string name="job_kind_all">Semua</string>
     <!-- intentionally untranslated: "Shell" is a standard developer loanword in Indonesian UI -->
@@ -216,12 +221,12 @@
     <string name="job_status_all">Semua</string>
     <string name="job_status_running">Berjalan</string>
     <string name="job_status_completed">Selesai</string>
-    <string name="job_status_error">Galat</string>
+    <string name="job_status_error">Gagal</string>
     <string name="job_status_cancelled">Dibatalkan</string>
     <string name="job_status_unknown">Tidak diketahui</string>
     <string name="job_started">Dimulai %1$s</string>
     <string name="worktree_title">Worktree</string>
-    <string name="worktree_body">Worktree yang tersimpan di engine, dikelompokkan per project. Membuat, menghapus dan refresh worktree belum tersedia.</string>
+    <string name="worktree_body">Worktree yang tersimpan di engine, dikelompokkan per proyek. Membuat, menghapus dan refresh worktree belum tersedia.</string>
     <string name="worktree_empty">Tidak ada worktree yang tersimpan di engine.</string>
     <string name="config_title">Konfigurasi engine</string>
     <string name="config_body">Dokumen konfigurasi yang dibaca engine, dari prioritas terendah ke tertinggi. Mengubah konfigurasi dari aplikasi belum tersedia.</string>
@@ -239,7 +244,7 @@
     <string name="onboarding_skip">Lewati</string>
     <string name="onboarding_step_of">Langkah %1$d dari %2$d</string>
     <string name="onboarding_project_title">Pilih proyek</string>
-    <string name="onboarding_project_body">Agen bekerja di dalam satu folder proyek. Mulai dengan workspace bawaan, pilih folder sendiri, atau buat proyek contoh kecil untuk mencoba.</string>
+    <string name="onboarding_project_body">Agen bekerja di dalam satu folder proyek. Mulai dengan ruang kerja bawaan, pilih folder sendiri, atau buat proyek contoh kecil untuk mencoba.</string>
     <string name="onboarding_create_sample">Buat proyek contoh</string>
     <string name="onboarding_sample_created">Proyek contoh dibuat di %1$s</string>
     <string name="onboarding_sample_failed">Tidak bisa membuat proyek contoh: %1$s</string>
@@ -250,7 +255,7 @@
     <string name="onboarding_provider_body">Tanpa kunci API, agen berjalan di paket gratis opencode yang cepat mencapai batas laju. Tambahkan kunci untuk memakai model sendiri — atau lanjut dulu dan tambahkan nanti dari Pengaturan.</string>
     <string name="onboarding_open_providers">Tambah kunci penyedia</string>
     <string name="onboarding_permissions_title">Beri agen akses ke file Anda</string>
-    <string name="onboarding_permissions_body">Akses semua file memungkinkan Anda membuka folder mana pun di perangkat sebagai proyek. Tanpa akses ini, hanya workspace bawaan yang tersedia.</string>
+    <string name="onboarding_permissions_body">Akses semua file memungkinkan Anda membuka folder mana pun di perangkat sebagai proyek. Tanpa akses ini, hanya ruang kerja bawaan yang tersedia.</string>
     <string name="onboarding_grant_access">Beri akses semua file</string>
     <string name="onboarding_access_granted">Akses semua file sudah diberikan.</string>
     <string name="onboarding_finish">Mulai mengobrol</string>
@@ -296,13 +301,13 @@
     <string name="stop_unconfirmed">Stop belum terkonfirmasi — ketuk Stop untuk mencoba lagi.</string>
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="session_link_gone">Sesi itu sudah tidak ada di engine — link-nya menunjuk ke sesi yang sudah hilang.</string>
-    <string name="session_link_wrong_workspace">Sesi itu milik proyek lain — ganti workspace untuk membukanya.</string>
+    <string name="session_link_wrong_workspace">Sesi itu milik proyek lain — ganti ruang kerja untuk membukanya.</string>
     <string name="session_link_verify_failed">Sesi ini tidak bisa diverifikasi — engine tidak menjawab. Coba lagi saat engine kembali.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="chat_parked_unreadable">Draft tersimpan tidak bisa dibaca.</string>
-    <string name="workspace_unavailable">Workspace tidak tersedia — memakai workspace internal untuk sementara. Pilih ulang di Projects.</string>
+    <string name="workspace_unavailable">Ruang kerja tidak tersedia — memakai ruang kerja internal untuk sementara. Pilih ulang di Proyek.</string>
     <string name="workspace_too_broad">Folder itu adalah seluruh storage — pilih folder proyek saja.</string>
-    <string name="workspace_folder_unsupported">Folder ini tidak bisa dipakai sebagai workspace — pilih folder dari penyimpanan perangkat.</string>
+    <string name="workspace_folder_unsupported">Folder ini tidak bisa dipakai sebagai ruang kerja — pilih folder dari penyimpanan perangkat.</string>
     <string name="a11y_run_finished">Proses selesai</string>
     <string name="a11y_run_failed">Proses gagal</string>
     <string name="a11y_permission_arrived">Izin diminta</string>
@@ -319,7 +324,7 @@
     <string name="chat_status_stopping">Menghentikan</string>
     <string name="chat_status_failed">Gagal</string>
     <string name="chat_status_stopped">Berhenti</string>
-    <string name="chat_status_dialog_title">Status Mesin</string>
+    <string name="chat_status_dialog_title">Status Engine</string>
     <string name="chat_status_dialog_workspace">Ruang Kerja</string>
     <string name="chat_status_dialog_branch">Branch</string>
     <string name="chat_status_dialog_branches_loading">Memuat daftar branch…</string>
@@ -327,9 +332,10 @@
     <string name="chat_status_dialog_branches_failed">Gagal memuat daftar branch.</string>
     <string name="chat_status_dialog_vcs_current">Branch saat ini</string>
     <string name="chat_status_dialog_vcs_default">Branch default</string>
-    <string name="chat_status_dialog_vcs_base">Review base</string>
+    <string name="chat_status_dialog_vcs_base">Basis review</string>
     <string name="chat_status_dialog_vcs_failed">Gagal memuat detail VCS.</string>
     <string name="chat_status_dialog_context">Konteks</string>
+    <string name="context_window_suffix">konteks</string>
     <string name="chat_status_dialog_state">Status</string>
     <string name="chat_status_dialog_diagnostics">Diagnostik</string>
     <string name="chat_status_dialog_error">Kesalahan</string>
@@ -347,11 +353,13 @@
     <string name="schedule_create_title">Jadwal baru</string>
     <string name="schedule_name_label">Nama (opsional)</string>
     <string name="schedule_prompt_label">Prompt</string>
+    <!-- intentionally untranslated: "Prompt" is a standard developer loanword in Indonesian UI -->
     <string name="schedule_when_label">Kapan</string>
     <string name="schedule_when_in">Dalam</string>
     <string name="schedule_when_at">Pada</string>
     <string name="schedule_when_every">Setiap</string>
     <string name="schedule_when_cron">Cron</string>
+    <!-- intentionally untranslated: "Cron" is a standard technical term in Indonesian UI -->
     <string name="schedule_when_in_hint">20 menit</string>
     <string name="schedule_when_at_hint">2026-10-27T09:00</string>
     <string name="schedule_when_every_hint">1 jam</string>
@@ -381,27 +389,27 @@
     <string name="revert_banner_title">Revert sudah disiapkan</string>
     <!-- Audit-200 B7 (M-027): pilihan revert — pesan saja, atau pesan + file. -->
     <string name="revert_dialog_title">Kembalikan ke pesan ini?</string>
-    <string name="revert_dialog_text">Pesan setelah titik ini akan dihapus. Pilih apakah file yang berubah setelahnya ikut dikembalikan.</string>
+    <string name="revert_dialog_text">Pesan setelah titik ini akan dihapus. Pilih apakah berkas yang berubah setelahnya ikut dikembalikan.</string>
     <string name="revert_messages_only">Pesan saja</string>
     <string name="revert_messages_and_files">Pesan + file</string>
-    <string name="revert_banner_files">%1$d file akan dikembalikan seperti sebelum pesan ini.</string>
-    <string name="revert_banner_files_unknown">File mungkin berubah, tapi daftarnya tidak bisa dibaca.</string>
-    <string name="revert_banner_messages_only">Pesan setelah titik ini akan dihapus. Tidak ada file yang berubah.</string>
+    <string name="revert_banner_files">%1$d berkas akan dikembalikan seperti sebelum pesan ini.</string>
+    <string name="revert_banner_files_unknown">Berkas mungkin berubah, tapi daftarnya tidak bisa dibaca.</string>
+    <string name="revert_banner_messages_only">Pesan setelah titik ini akan dihapus. Tidak ada berkas yang berubah.</string>
     <string name="revert_commit">Terapkan revert</string>
     <string name="revert_discard">Batalkan</string>
-    <string name="chat_status_desc_ready">Mesin online dan siap menerima perintah.</string>
-    <string name="chat_status_desc_working">Mesin sedang menjalankan tugas atau membuat respons.</string>
-    <string name="chat_status_desc_starting">Mesin sedang memulai dan menyiapkan koneksi runtime.</string>
-    <string name="chat_status_desc_stopped">Mesin tidak berjalan. Ketuk Diagnostik untuk melihat log.</string>
-    <string name="chat_status_desc_unhealthy">Mesin bermasalah atau mengalami kesalahan.</string>
+    <string name="chat_status_desc_ready">Engine online dan siap menerima perintah.</string>
+    <string name="chat_status_desc_working">Engine sedang menjalankan tugas atau membuat respons.</string>
+    <string name="chat_status_desc_starting">Engine sedang memulai dan menyiapkan koneksi runtime.</string>
+    <string name="chat_status_desc_stopped">Engine tidak berjalan. Ketuk Diagnostik untuk melihat log.</string>
+    <string name="chat_status_desc_unhealthy">Engine bermasalah atau mengalami kesalahan.</string>
     <string name="empty_title_ready">Apa yang ingin dikerjakan?</string>
-    <string name="empty_title_starting">Memulai mesin…</string>
-    <string name="empty_starting_body">Mesin lokal sedang dimulai. Ini butuh beberapa detik.</string>
+    <string name="empty_title_starting">Memulai engine…</string>
+    <string name="empty_starting_body">Engine lokal sedang dimulai. Ini butuh beberapa detik.</string>
     <string name="empty_ready_body">Pilih saran atau tanyakan apa saja tentang proyek Anda.</string>
     <string name="suggestion_structure">Jelaskan struktur proyek ini</string>
     <string name="suggestion_bug">Cari penyebab sebuah bug</string>
     <string name="suggestion_review">Tinjau perubahan terbaru</string>
-    <string name="suggestion_tests">Tulis tes untuk sebuah file</string>
+    <string name="suggestion_tests">Tulis tes untuk sebuah berkas</string>
     <string name="followup_explain_more">Jelasin lebih detail</string>
     <string name="followup_make_test">Buatin test buat ini</string>
     <string name="followup_explain_code">Jelasin kode ini</string>
@@ -478,12 +486,12 @@
 
     <!-- Pindahkan sesi -->
     <string name="move_title">Pindahkan sesi</string>
-    <string name="move_body">Pindahkan sesi ini ke project lain. Riwayat sesi tetap tersimpan.</string>
-    <string name="move_empty">Tidak ada project lain di engine.</string>
+    <string name="move_body">Pindahkan sesi ini ke proyek lain. Riwayat sesi tetap tersimpan.</string>
+    <string name="move_empty">Tidak ada proyek lain di engine.</string>
     <string name="move_confirm">Pindahkan</string>
     <string name="move_moving">Memindahkan…</string>
     <string name="move_done">Sesi sudah dipindahkan.</string>
-    <string name="move_current">Project saat ini</string>
+    <string name="move_current">Proyek saat ini</string>
 
     <!-- Statistik sesi -->
     <string name="stats_title">Statistik sesi</string>
@@ -537,8 +545,8 @@
 
     <!-- Batas pemakaian -->
     <string name="usage_title">Batas pemakaian</string>
-    <string name="usage_body">Jatah OpenCode Go dan budget Console untuk workspace tempat lokasi ini masuk.</string>
-    <string name="usage_empty">Tidak ada batas pemakaian untuk ditampilkan. Workspace mungkin belum masuk ke OpenCode Console.</string>
+    <string name="usage_body">Jatah OpenCode Go dan budget Console untuk ruang kerja tempat lokasi ini masuk.</string>
+    <string name="usage_empty">Tidak ada batas pemakaian untuk ditampilkan. Ruang kerja mungkin belum masuk ke OpenCode Console.</string>
     <string name="usage_section_go">OpenCode Go</string>
     <string name="usage_meter_rolling">Bergulir</string>
     <string name="usage_meter_weekly">Mingguan</string>
@@ -555,7 +563,7 @@
     <string name="usage_coverage_all">Semua model dan layanan</string>
     <string name="usage_coverage_models">Model terpilih</string>
     <string name="usage_budget_shared">Bersama</string>
-    <string name="composer_not_ready">Mesin belum siap</string>
+    <string name="composer_not_ready">Engine belum siap</string>
     <string name="composer_busy">Agen sedang bekerja…</string>
     <!-- Redesign C working progress: %1$s kalimat langkah live ("Membaca ChatScreen.kt")
          atau label busy di atas; %2$d detik sejak run dimulai. Akhiran "s" mengikuti
@@ -598,10 +606,10 @@
     <string name="voice_error_permission">Pengenalan suara tidak punya izin mikrofon.</string>
     <string name="voice_error_generic">Input suara gagal — coba lagi.</string>
     <string name="attach_picker_title">Lampirkan berkas</string>
-    <string name="attach_picker_hint">Cari file workspace…</string>
-    <string name="attach_picker_empty">Tidak ada file yang cocok dengan “%1$s”</string>
-    <string name="attach_picker_no_files">Tidak ada file di workspace ini</string>
-    <string name="attach_picker_results">%1$d dari %2$d file</string>
+    <string name="attach_picker_hint">Cari berkas ruang kerja…</string>
+    <string name="attach_picker_empty">Tidak ada berkas yang cocok dengan “%1$s”</string>
+    <string name="attach_picker_no_files">Tidak ada berkas di ruang kerja ini</string>
+    <string name="attach_picker_results">%1$d dari %2$d berkas</string>
     <string name="attach_browse_files">Telusuri berkas perangkat</string>
     <string name="attach_file_too_large">“%1$s” terlalu besar untuk dilampirkan. Hanya berkas hingga 64 KB yang dapat disisipkan ke dalam pesan.</string>
     <string name="attach_not_text_file">“%1$s” bukan berkas teks. Hanya berkas teks yang dapat dilampirkan — agen membaca berkas sebagai teks.</string>
@@ -626,7 +634,7 @@
     <string name="question_single_choice">Pilih salah satu opsi</string>
     <string name="question_multi_choice">Pilih satu atau beberapa opsi</string>
     <string name="question_other_option">Lainnya (tulis jawaban sendiri)</string>
-    <string name="question_write_in_hint">Ketik jawabanmu di sini…</string>
+    <string name="question_write_in_hint">Ketik jawaban Anda di sini…</string>
     <string name="question_submit">Kirim jawaban</string>
     <string name="question_answered">Terjawab</string>
     <string name="question_expired">Pertanyaan ini sudah tidak bisa dijawab.</string>
@@ -682,7 +690,7 @@
     <string name="tool_show_less">Tampilkan lebih sedikit</string>
     <string name="tool_filter_all">Semua</string>
     <string name="tool_filter_failed">Gagal</string>
-    <string name="tool_filter_edit">Edit</string>
+    <string name="tool_filter_edit">Ubah</string>
     <string name="tool_filter_read">Baca</string>
     <string name="code_show_more">Tampilkan semua %1$d baris</string>
     <string name="code_label">kode</string>
@@ -693,7 +701,7 @@
     <string name="code_save">Simpan</string>
     <string name="code_run">Jalankan</string>
     <string name="code_run_title">Jalankan perintah ini?</string>
-    <string name="code_run_body">Dijalankan di direktori proyek lewat engine. Periksa dulu — perintah ini bisa mengubah file, menginstal sesuatu, atau menghapus data.</string>
+    <string name="code_run_body">Dijalankan di direktori proyek lewat engine. Periksa dulu — perintah ini bisa mengubah berkas, menginstal sesuatu, atau menghapus data.</string>
     <string name="code_run_confirm">Jalankan</string>
     <string name="code_run_output_title">Hasil perintah</string>
     <string name="code_run_running">Berjalan…</string>
@@ -701,16 +709,16 @@
     <string name="code_run_failed">Perintah tidak bisa dijalankan: %1$s</string>
     <string name="code_run_no_output">Belum ada output.</string>
     <string name="code_run_stop">Berhenti</string>
-    <string name="code_save_failed">Tidak bisa menyimpan file.</string>
+    <string name="code_save_failed">Tidak bisa menyimpan berkas.</string>
     <string name="code_save_picker_failed">Tidak bisa membuka dialog simpan.</string>
     <string name="directory_picker_failed">Tidak bisa membuka pemilih folder.</string>
-    <string name="saf_picker_failed">Tidak bisa membuka pemilih file.</string>
-    <string name="saf_file_dropped">Tidak bisa melampirkan file itu — coba pilih lagi.</string>
+    <string name="saf_picker_failed">Tidak bisa membuka pemilih berkas.</string>
+    <string name="saf_file_dropped">Tidak bisa melampirkan berkas itu — coba pilih lagi.</string>
     <string name="code_highlight_off">Highlight mati (berkas besar)</string>
 
     <!-- Project -->
     <string name="project_current">Saat ini</string>
-    <string name="project_grant_text">Untuk mengerjakan folder di luar aplikasi, berikan akses semua file. Mesin membutuhkan jalur file yang sebenarnya, dan itu hanya bisa dengan izin tersebut.</string>
+    <string name="project_grant_text">Untuk mengerjakan folder di luar aplikasi, berikan akses semua file. Engine membutuhkan jalur file yang sebenarnya, dan itu hanya bisa dengan izin tersebut.</string>
     <string name="project_grant_button">Berikan akses file</string>
     <string name="project_choose">Pilih folder lain…</string>
     <string name="project_internal_note">Folder milik aplikasi (%1$s) selalu tersedia dan tidak membutuhkan izin.</string>
@@ -740,14 +748,14 @@
     <string name="fileview_edit">Ubah</string>
     <string name="fileview_reading">Membaca file…</string>
     <string name="conflict_title">File berubah saat diedit</string>
-    <string name="conflict_body">File di penyimpanan sudah bukan versi yang dibuka di editor ini. Kemungkinan agen telah menulisnya. Belum ada yang disimpan.\n\nMenimpa akan mengganti file dengan teks yang Anda ketik di sini. Memuat ulang akan menampilkan isi file di penyimpanan dan membuang teks yang Anda ketik di sini.</string>
+    <string name="conflict_body">Berkas di penyimpanan sudah bukan versi yang dibuka di editor ini. Kemungkinan agen telah menulisnya. Belum ada yang disimpan.\n\nMenimpa akan mengganti berkas dengan teks yang Anda ketik di sini. Memuat ulang akan menampilkan isi berkas di penyimpanan dan membuang teks yang Anda ketik di sini.</string>
     <string name="conflict_overwrite">Timpa</string>
     <string name="conflict_reload">Muat ulang</string>
     <string name="conflict_keep">Lanjut mengedit</string>
     <string name="conflict_changes_title">Yang berubah di penyimpanan</string>
     <string name="conflict_changes_summary">+%1$d baris ditambahkan, −%2$d baris dihapus sejak editor ini dibuka.</string>
     <string name="conflict_changes_more">+%1$d baris lagi</string>
-    <string name="conflict_changes_too_large">File terlalu besar untuk menampilkan perubahannya di sini — perubahannya mencakup seluruh file.</string>
+    <string name="conflict_changes_too_large">Berkas terlalu besar untuk menampilkan perubahannya di sini — perubahannya mencakup seluruh berkas.</string>
 
     <string name="fileview_discard_title">Buang perubahan yang belum disimpan?</string>
     <string name="fileview_discard_body">Anda memiliki perubahan yang belum disimpan. Keluar akan membuangnya.</string>
@@ -757,63 +765,63 @@
     <string name="fileview_switch_body">Ada perubahan yang belum disimpan. Simpan dulu sebelum membuka %1$s?</string>
     <string name="fileview_dirty_badge">Belum disimpan</string>
     <string name="files_quick_open">Buka cepat</string>
-    <string name="files_quick_open_hint">Cari file berdasarkan nama…</string>
-    <string name="files_quick_open_empty">Tidak ada file yang cocok dengan \"%1$s\"</string>
-    <string name="files_quick_open_loading">Mengindeks file workspace…</string>
-    <string name="files_quick_open_results">%1$d dari %2$d file</string>
+    <string name="files_quick_open_hint">Cari berkas berdasarkan nama…</string>
+    <string name="files_quick_open_empty">Tidak ada berkas yang cocok dengan \"%1$s\"</string>
+    <string name="files_quick_open_loading">Mengindeks berkas ruang kerja…</string>
+    <string name="files_quick_open_results">%1$d dari %2$d berkas</string>
     <string name="files_quick_open_failed">Beberapa folder gagal diindeks — hasilnya mungkin tidak lengkap.</string>
-    <string name="files_quick_open_truncated">Hanya 2.000 file pertama yang diindeks — sebagian file mungkin tidak muncul.</string>
+    <string name="files_quick_open_truncated">Hanya 2.000 berkas pertama yang diindeks — sebagian berkas mungkin tidak muncul.</string>
     <string name="files_quick_open_close">Tutup buka cepat</string>
-    <string name="files_search_content">Cari di file</string>
-    <string name="files_search_hint">Cari isi file…</string>
-    <string name="files_search_empty">Ketik kata atau frasa untuk mencari di semua file workspace ini.</string>
+    <string name="files_search_content">Cari di berkas</string>
+    <string name="files_search_hint">Cari isi berkas…</string>
+    <string name="files_search_empty">Ketik kata atau frasa untuk mencari di semua berkas ruang kerja ini.</string>
     <string name="files_search_none">Tidak ada hasil untuk \"%1$s\"</string>
     <string name="files_search_failed">Pencarian gagal — coba lagi.</string>
     <string name="files_search_truncated">Menampilkan %1$d hasil pertama — persempit pencarian untuk sisanya.</string>
     <string name="files_search_group">%1$s (%2$d)</string>
-    <string name="files_detail_empty">Pilih file untuk melihatnya di sini.</string>
+    <string name="files_detail_empty">Pilih berkas untuk melihatnya di sini.</string>
     <string name="fileview_find">Cari</string>
-    <string name="fileview_find_hint">Cari di file…</string>
+    <string name="fileview_find_hint">Cari di berkas…</string>
     <string name="fileview_find_count">%1$d dari %2$d</string>
     <string name="fileview_find_none">Tidak ada yang cocok</string>
     <string name="fileview_find_partial">Hanya mencari di pratinjau yang dimuat</string>
     <string name="fileview_find_prev">Cocokan sebelumnya</string>
     <string name="fileview_find_next">Cocokan berikutnya</string>
     <string name="fileview_find_close">Tutup pencarian</string>
-    <string name="fileview_large_warning">File besar (lebih dari 1 MB). Menampilkan %1$d baris pertama dari %2$d baris — pencarian hanya mencakup pratinjau ini. Muat seluruh file untuk mengedit atau mencari semuanya.</string>
-    <string name="fileview_large_warning_capped">File ini %1$s — hanya awalnya yang bisa dibaca, jadi pratinjau ini bukan seluruh file. File di atas batas baca 8 MB tidak bisa diedit di sini.</string>
+    <string name="fileview_large_warning">Berkas besar (lebih dari 1 MB). Menampilkan %1$d baris pertama dari %2$d baris — pencarian hanya mencakup pratinjau ini. Muat seluruh berkas untuk mengedit atau mencari semuanya.</string>
+    <string name="fileview_large_warning_capped">Berkas ini %1$s — hanya awalnya yang bisa dibaca, jadi pratinjau ini bukan seluruh berkas. Berkas di atas batas baca 8 MB tidak bisa diedit di sini.</string>
     <string name="fileview_lines_truncated_capped">Bagian awal dari %1$s</string>
-    <string name="fileview_too_large_to_edit">File ini terlalu besar untuk dibuka untuk diedit.</string>
+    <string name="fileview_too_large_to_edit">Berkas ini terlalu besar untuk dibuka untuk diedit.</string>
     <string name="preview_page_of">Halaman %1$d dari %2$d</string>
     <string name="preview_page_prev">Halaman sebelumnya</string>
     <string name="preview_page_next">Halaman berikutnya</string>
     <string name="preview_load_failed">Pratinjau tidak bisa dibuka</string>
     <string name="preview_image_size">%1$d × %2$d</string>
-    <string name="fileview_load_full">Muat seluruh file</string>
+    <string name="fileview_load_full">Muat seluruh berkas</string>
     <string name="fileview_lines_truncated">%1$d dari %2$d baris</string>
 
     <!-- Diff -->
     <string name="diff_loading">Memuat diff…</string>
-    <string name="diff_git_unavailable">Git tidak tersedia di build ini, sehingga perubahan tidak bisa ditampilkan sebagai diff.\n\nIsi file tetap bisa dibaca dari daftar file.</string>
+    <string name="diff_git_unavailable">Git tidak tersedia di build ini, sehingga perubahan tidak bisa ditampilkan sebagai diff.\n\nIsi berkas tetap bisa dibaca dari daftar berkas.</string>
     <string name="diff_none">Tidak ada perubahan untuk ditampilkan.</string>
-    <string name="diff_binary_changed">File ini berubah, tetapi ini file biner — isinya tidak bisa ditampilkan sebagai diff.</string>
-    <string name="diff_mode_changed">Hanya mode file yang berubah (misalnya jadi bisa dieksekusi) — tidak ada teks untuk ditampilkan sebagai diff.</string>
-    <string name="diff_no_text_diff">File ini berubah, tetapi tidak ada diff teks untuk ditampilkan.</string>
-    <string name="diff_truncated">Diff dipotong oleh mesin.</string>
+    <string name="diff_binary_changed">Berkas ini berubah, tetapi ini berkas biner — isinya tidak bisa ditampilkan sebagai diff.</string>
+    <string name="diff_mode_changed">Hanya mode berkas yang berubah (misalnya jadi bisa dieksekusi) — tidak ada teks untuk ditampilkan sebagai diff.</string>
+    <string name="diff_no_text_diff">Berkas ini berubah, tetapi tidak ada diff teks untuk ditampilkan.</string>
+    <string name="diff_truncated">Diff dipotong oleh engine.</string>
     <string name="diff_mode_unified">Terpadu</string>
     <string name="diff_mode_split">Berdampingan</string>
-    <string name="diff_filter_hint">Filter file yang diubah…</string>
-    <string name="diff_filter_no_results">Tidak ada file berubah yang cocok dengan \"%1$s\"</string>
-    <string name="explorer_search_hint">Cari file…</string>
-    <string name="explorer_search_no_results">Tidak ada file yang cocok dengan \"%1$s\"</string>
+    <string name="diff_filter_hint">Filter berkas yang diubah…</string>
+    <string name="diff_filter_no_results">Tidak ada berkas berubah yang cocok dengan \"%1$s\"</string>
+    <string name="explorer_search_hint">Cari berkas…</string>
+    <string name="explorer_search_no_results">Tidak ada berkas yang cocok dengan \"%1$s\"</string>
     <string name="explorer_show_hidden">Tampilkan tersembunyi</string>
     <string name="explorer_hide_hidden">Sembunyikan tersembunyi</string>
-    <string name="diff_files_changed">%1$d file diubah</string>
+    <string name="diff_files_changed">%1$d berkas diubah</string>
     <string name="diff_original">Asli</string>
     <string name="diff_modified">Dimodifikasi</string>
     <string name="difflist_title">Perubahan (%1$d)</string>
     <string name="difflist_empty">Tidak ada perubahan di working tree.\n\nAgen belum mengedit apa pun, atau git tidak tersedia.</string>
-    <string name="sessiondiff_empty">Turn terakhir tidak mengubah file apa pun.</string>
+    <string name="sessiondiff_empty">Turn terakhir tidak mengubah berkas apa pun.</string>
     <string name="sessiondiff_title">Diff giliran terakhir</string>
 
     <!-- History -->
@@ -838,10 +846,10 @@
     <string name="message_sent">Terkirim</string>
     <string name="message_delivered">Diterima</string>
     <string name="message_reply">Balas</string>
-    <string name="message_edit">Edit</string>
+    <string name="message_edit">Ubah</string>
     <string name="message_resend">Kirim ulang</string>
     <string name="message_fork">Fork</string>
-    <string name="message_revert">Revert</string>
+    <string name="message_revert">Kembalikan</string>
     <string name="tool_diff_changes">Perubahan</string>
     <string name="tool_diff_show_full">Tampilkan semua diff</string>
     <string name="tool_diff_show_less">Tampilkan lebih sedikit</string>
@@ -849,7 +857,7 @@
     <string name="tool_diff_reject">Tolak</string>
     <string name="tool_diff_accepted">Diterima</string>
     <string name="tool_diff_rejected">Permintaan revert dikirim</string>
-    <string name="tool_diff_decision_note">Terima mempertahankan perubahan. Tolak meminta agent mengembalikan file ini.</string>
+    <string name="tool_diff_decision_note">Terima mempertahankan perubahan. Tolak meminta agen mengembalikan berkas ini.</string>
     <string name="turn_footer_tokens">%1$s token</string>
     <string name="turn_footer_stop_reason">berhenti: %1$s</string>
     <string name="prompt_history_previous">Prompt sebelumnya</string>
@@ -871,13 +879,13 @@
     <string name="providers_state_no_method">tidak ada metode kunci API</string>
     <string name="providers_search">Cari penyedia</string>
     <string name="providers_key_title">Kunci API untuk %1$s</string>
-    <string name="providers_key_body">Disimpan oleh mesin di databasenya sendiri, di dalam penyimpanan pribadi aplikasi. Tidak ditulis ke file konfigurasi mana pun.</string>
+    <string name="providers_key_body">Disimpan oleh engine di databasenya sendiri, di dalam penyimpanan pribadi aplikasi. Tidak ditulis ke file konfigurasi mana pun.</string>
     <string name="providers_new_key_title">Kunci baru untuk %1$s</string>
     <string name="providers_new_key_body">Kunci baru disimpan lebih dulu, dan kunci lama baru dihapus setelah kunci baru diterima, sehingga kunci yang ditolak tidak membuat penyedia tanpa kunci.</string>
     <string name="providers_replace">Ganti</string>
     <string name="providers_paste_key">tempel kunci</string>
     <string name="providers_delete_title">Hapus kunci ini?</string>
-    <string name="providers_delete_body">%1$s (%2$s) akan dihapus dari database mesin.</string>
+    <string name="providers_delete_body">%1$s (%2$s) akan dihapus dari database engine.</string>
     <string name="providers_delete_last">Ini satu-satunya kunci untuk %1$s, yang akan berhenti berfungsi sampai kunci lain ditambahkan.</string>
     <string name="providers_keys_for">Kunci untuk %1$s</string>
     <string name="providers_key_valid">Format kunci %1$s terverifikasi (%2$s…)</string>
@@ -888,9 +896,9 @@
     <string name="providers_subtitle_free_tier">Model tingkat gratis bawaan</string>
     <string name="providers_subtitle_local">Model lokal &amp; kompatibel OpenAI</string>
     <!-- intentionally untranslated: model names are proper nouns -->
-    <string name="providers_featured_anthropic_subtitle">Claude 3.5 Sonnet, Opus &amp; Haiku</string>
-    <string name="providers_featured_openai_subtitle">GPT-4o, o1, o3-mini</string>
-    <string name="providers_featured_deepseek_subtitle">DeepSeek V3, R1 reasoning</string>
+    <string name="providers_featured_anthropic_subtitle">Claude Sonnet, Opus &amp; Haiku</string>
+    <string name="providers_featured_openai_subtitle">GPT-5, GPT-4o &amp; o-series</string>
+    <string name="providers_featured_deepseek_subtitle">DeepSeek V3 &amp; R1</string>
     <string name="providers_antigravity_models_list">Gemini 3.8 Flash, Gemini 3.1 Pro, dan Claude Opus 4.6 Thinking</string>
     <string name="providers_antigravity_title">Google (Gemini &amp; Antigravity)</string>
     <string name="providers_antigravity_connected">Antigravity OAuth: Terhubung</string>
@@ -920,16 +928,17 @@
     <!-- Audit-200 B7 (M-209): penantian 5 menit habis; janji di atas tidak lagi berlaku. -->
     <string name="providers_patch_not_found_stopped">Plugin Antigravity masih belum terunduh — tambalan berhenti menunggu setelah 5 menit. Restart engine untuk mencoba lagi.</string>
     <!-- Audit-200 B7 (M-206): restart engine supaya tambalan yang sudah mendarat berlaku. -->
-    <string name="providers_patch_restart">Restart engine</string>
-    <string name="providers_manage_body">Mesin menyimpan kunci ini di databasenya sendiri. Isi kuncinya tidak pernah dibaca kembali ke aplikasi, jadi tiap baris dikenali dari id-nya.</string>
+    <string name="providers_patch_restart">Mulai ulang engine</string>
+    <string name="providers_manage_body">Engine menyimpan kunci ini di databasenya sendiri. Isi kuncinya tidak pernah dibaca kembali ke aplikasi, jadi tiap baris dikenali dari id-nya.</string>
     <string name="providers_in_use">DIPAKAI</string>
     <string name="providers_add_another">Tambah kunci lain</string>
     <string name="providers_custom_title">Endpoint kustom</string>
-    <string name="providers_custom_body">Untuk API apa pun yang kompatibel dengan OpenAI. Mesin membaca ini saat mulai, jadi mesin dimulai ulang saat Anda menyimpan.</string>
+    <string name="providers_custom_body">Untuk API apa pun yang kompatibel dengan OpenAI. Engine membaca ini saat mulai, jadi engine dimulai ulang saat Anda menyimpan.</string>
     <string name="providers_field_name">Nama tampilan</string>
     <string name="providers_field_name_hint">Penyedia saya</string>
     <string name="providers_field_url">URL dasar</string>
     <string name="providers_field_key">Kunci API</string>
+    <string name="providers_key_untitled">Kunci tanpa nama</string>
     <string name="providers_field_key_hint">Tempel kunci Anda</string>
     <string name="providers_field_models">Model, dipisah koma atau baris baru</string>
     <string name="providers_field_models_hint">id-model = nama yang tampil di pemilih; tulis \\, untuk koma di dalam nama</string>
@@ -964,14 +973,14 @@
 
     <!-- Diagnostik. Nama field (pid, baseUrl, filesDir) dibiarkan: itulah sebutan nilai di
          laporan bug, dan menerjemahkannya membuat laporan tidak bisa dicari. -->
-    <string name="diag_section_engine_control">Pengawas Mesin</string>
+    <string name="diag_section_engine_control">Pengawas Engine</string>
     <string name="diag_section_health">Kesehatan Sistem</string>
     <string name="diag_section_crashes">Crash Terakhir</string>
     <string name="diag_last_app_crash">Crash aplikasi terakhir</string>
     <string name="diag_last_engine_crash">Crash engine terakhir</string>
-    <string name="diag_restart_engine">Mulai Ulang Mesin</string>
+    <string name="diag_restart_engine">Mulai Ulang Engine</string>
     <string name="diag_restarting">Memulai ulang…</string>
-    <string name="diag_restart_timeout">Restart kehabisan waktu — mesin tidak mencapai status berjalan.</string>
+    <string name="diag_restart_timeout">Restart kehabisan waktu — engine tidak mencapai status berjalan.</string>
     <string name="diag_restart_not_sent">Restart tidak bisa dikirim — service engine tidak berjalan.</string>
     <string name="diag_password_show">Tampilkan sandi</string>
     <string name="diag_password_hide">Sembunyikan sandi</string>
@@ -984,7 +993,15 @@
     <string name="diag_ram">RAM</string>
     <string name="diag_storage">Penyimpanan</string>
     <string name="diag_process_pid">PID Proses</string>
-    <string name="diag_engine_pid">PID Mesin</string>
+    <string name="diag_engine_pid">PID Engine</string>
+    <!-- intentionally untranslated: "core" is a standard developer loanword in Indonesian UI -->
+    <string name="diag_cores">%1$d core</string>
+    <string name="diag_free">%1$s tersisa</string>
+    <!-- intentionally untranslated: "Total:" is kept as-is -->
+    <string name="diag_total">Total: %1$s</string>
+    <!-- intentionally untranslated: "Engine" is a product term (D2 m-937) -->
+    <string name="diag_engine_label">Engine: %1$s</string>
+    <string name="diag_app_pid">PID aplikasi: %1$s</string>
     <string name="diag_tab_all">Semua Log</string>
     <string name="diag_tab_engine_log">Log Disk</string>
     <string name="diag_tab_output">Konsol</string>
@@ -1021,7 +1038,7 @@
     <string name="diag_log_level_info">Info</string>
     <string name="diag_log_level_warning">Peringatan</string>
     <string name="diag_log_level_error">Error</string>
-    <string name="diag_log_level_inferred">Level ditebak dari teks log — mesin tidak melaporkan tingkat keparahan.</string>
+    <string name="diag_log_level_inferred">Level ditebak dari teks log — engine tidak melaporkan tingkat keparahan.</string>
     <string name="diag_log_truncated_note">Log disk lebih besar dari 256 KB — hanya baris terbarunya yang ditampilkan.</string>
 
     <!-- Kata kerja timeline tool. Bentuk sekarang saat tool berjalan, lampau setelah selesai.
@@ -1075,7 +1092,7 @@
     <string name="providers_restart_later">Restart nanti</string>
     <string name="providers_shadowed_json">%1$d provider di opencode.json diabaikan selama opencode.jsonc ada: %2$s. Hapus opencode.jsonc untuk menggunakannya.</string>
     <string name="chat_stale_selection">%1$s sudah tidak tersedia — prompt baru memakai default engine.</string>
-    <string name="cmd_init_desc">Inisialisasi workspace atau konfigurasi proyek</string>
+    <string name="cmd_init_desc">Inisialisasi ruang kerja atau konfigurasi proyek</string>
     <string name="cmd_test_desc">Jalankan test suite atau target test</string>
     <string name="cmd_review_desc">Tinjau perubahan, git diff, atau pull request</string>
     <string name="cmd_fix_desc">Diagnosis error dan terapkan perbaikan otomatis</string>
@@ -1084,6 +1101,10 @@
     <string name="cmd_help_desc">Tampilkan perintah yang tersedia dan panduan penggunaannya</string>
     <string name="cmd_model_desc">Ganti model atau provider aktif</string>
     <string name="cmd_agent_desc">Ganti kepribadian atau mode agen aktif</string>
+    <string name="cmd_execute_fallback">Jalankan /%1$s</string>
+    <string name="cmd_skill_fallback">Pakai skill %1$s</string>
+    <!-- intentionally untranslated: "skill" is a standard developer loanword in Indonesian UI -->
+    <string name="cmd_skill_tag">skill</string>
     <string name="fileview_lines_one">%1$d baris</string>
     <string name="fileview_lines_unsaved_one">%1$d baris · belum disimpan</string>
     <string name="fileview_lines_truncated_one">%1$d dari %2$d baris</string>
@@ -1115,7 +1136,7 @@
     <string name="model_tier_pro">Pro</string>
     <string name="model_tier_reasoning">Penalaran</string>
     <string name="model_tier_fast">Cepat</string>
-    <string name="agent_desc_build">Akses penuh untuk mengedit file, menjalankan perintah &amp; membangun fitur</string>
+    <string name="agent_desc_build">Akses penuh untuk mengedit berkas, menjalankan perintah &amp; membangun fitur</string>
     <string name="agent_desc_plan">Menganalisis codebase &amp; merancang arsitektur tanpa edit</string>
     <string name="agent_desc_chat">Panduan percakapan, penalaran &amp; saran desain</string>
     <string name="agent_desc_review">Memeriksa perubahan kode &amp; mengidentifikasi potensi masalah</string>
@@ -1139,8 +1160,8 @@
     <string name="message_share">Bagikan</string>
     <string name="shortcut_new_session">Sesi baru</string>
     <string name="shortcut_last_session">Lanjut sesi terakhir</string>
-    <string name="notification_agent_done_channel">Balasan agent</string>
-    <string name="notification_agent_done_title">Agent selesai menjawab</string>
+    <string name="notification_agent_done_channel">Balasan agen</string>
+    <string name="notification_agent_done_title">Agen selesai menjawab</string>
     <string name="notification_agent_done_body">Ketuk untuk membuka sesi</string>
     <string name="notification_permission_rationale">Notifikasi memberi tahu saat agen selesai bekerja di background.</string>
     <string name="notification_permission_allow">Izinkan</string>
@@ -1163,7 +1184,7 @@
     <string name="publish_title_publish">Publikasikan artefak ini</string>
     <string name="publish_message_publish">Bagikan agar orang lain bisa membukanya.</string>
     <string name="publish_title_success">Dipublikasikan</string>
-    <string name="publish_message_success">Artefakmu sudah tayang.</string>
+    <string name="publish_message_success">Artefak Anda sudah tayang.</string>
     <string name="publish_title_failed">Publikasi gagal</string>
     <string name="publish_message_failed">Terjadi kesalahan. Coba publikasikan lagi.</string>
     <string name="publish_title_up_to_date">Sudah terbaru</string>

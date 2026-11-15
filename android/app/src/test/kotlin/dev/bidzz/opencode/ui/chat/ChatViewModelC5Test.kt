@@ -261,6 +261,22 @@ class ChatViewModelC5Test {
         assertEquals(emptyList<String>(), findMessageIds(messages, "zzz"))
     }
 
+    @Test
+    fun `D2 m-1119 find tokenises the query like the session search`() {
+        // "fix login" used to match nothing in a message that says "Fix the
+        // login crash", because the whole phrase was one substring search;
+        // a filler word the text does not contain vetoed the query too.
+        val messages = listOf(
+            ChatMessage(id = "m1", role = Role.USER, text = "Fix the login crash"),
+            ChatMessage(id = "m2", role = Role.USER, text = "Refactor parser"),
+        )
+        assertEquals(listOf("m1"), findMessageIds(messages, "fix login"))
+        assertEquals(listOf("m1"), findMessageIds(messages, "login crash"))
+        assertEquals(listOf("m1"), findMessageIds(messages, "please fix login"))
+        assertEquals(listOf("m1"), findMessageIds(messages, "how to fix login"))
+        assertEquals(emptyList<String>(), findMessageIds(messages, "fix missing"))
+    }
+
     // M-100: the view-model find state.
 
     @Test

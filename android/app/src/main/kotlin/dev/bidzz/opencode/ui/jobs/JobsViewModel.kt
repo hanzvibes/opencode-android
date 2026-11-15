@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.dto.JobInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -81,7 +82,7 @@ class JobsViewModel(private val api: EngineApi) : ViewModel() {
                 if (isCurrentJobsLoad(kind, status, _state.value)) {
                     _state.value = _state.value.copy(
                         loading = false,
-                        failure = ApiResult.Failure(code = 0, message = "Engine not running"),
+                        failure = engineDownFailure(),
                     )
                 }
                 return@launch

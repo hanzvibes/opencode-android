@@ -79,4 +79,19 @@ class CredentialPayloadTest {
         // including an explicit null — is a rejected request, not an ignored one.
         assertFalse(body, body.contains("label"))
     }
+
+    @Test
+    fun `toString never prints the secret`() {
+        // Audit-200 D2 (m-889): the default data-class toString would put
+        // `key=<secret>` into any log line, debugger view or exception
+        // message that prints the request object.
+        val secret = "sk-SUPERSECRET"
+        assertFalse(KeyValue("key", secret).toString().contains(secret))
+        assertFalse(
+            CredentialCreateRequest(
+                integrationID = "302ai",
+                value = KeyValue("key", secret),
+            ).toString().contains(secret),
+        )
+    }
 }

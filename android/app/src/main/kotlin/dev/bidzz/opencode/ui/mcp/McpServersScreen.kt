@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -330,6 +331,7 @@ fun McpServersScreen(
             onDismissRequest = { showRestartConfirm = false },
             confirmButton = {
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = {
                         showRestartConfirm = false
                         onRestartEngine()
@@ -342,7 +344,7 @@ fun McpServersScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRestartConfirm = false }) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { showRestartConfirm = false }) {
                     Text(
                         text = stringResource(R.string.common_cancel),
                         color = colors.onSurfaceMuted,
@@ -363,6 +365,7 @@ fun McpServersScreen(
             onDismissRequest = { removeTarget = null },
             confirmButton = {
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = {
                         removeTarget = null
                         onRemove(name)
@@ -375,7 +378,7 @@ fun McpServersScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { removeTarget = null }) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { removeTarget = null }) {
                     Text(
                         text = stringResource(R.string.common_cancel),
                         color = colors.onSurfaceMuted,
@@ -509,14 +512,14 @@ private fun McpServerRow(
             horizontalArrangement = Arrangement.Start,
         ) {
             if (kind == McpStatusKind.CONNECTED) {
-                TextButton(onClick = onDisconnect, enabled = !busy) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onDisconnect, enabled = !busy) {
                     Text(
                         text = stringResource(R.string.mcp_disconnect),
                         color = colors.accentText,
                     )
                 }
             } else {
-                TextButton(onClick = onConnect, enabled = !busy) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onConnect, enabled = !busy) {
                     Text(
                         text = stringResource(R.string.mcp_connect),
                         color = colors.accentText,
@@ -527,14 +530,14 @@ private fun McpServerRow(
             // here now — Connect only retries the same handshake, so it
             // can never fix an expired credential.
             if (kind == McpStatusKind.NEEDS_AUTH) {
-                TextButton(onClick = onReauth, enabled = !busy) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onReauth, enabled = !busy) {
                     Text(
                         text = stringResource(R.string.mcp_reauth),
                         color = colors.accent,
                     )
                 }
             }
-            TextButton(onClick = onRemove, enabled = !busy) {
+            TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onRemove, enabled = !busy) {
                 Text(
                     text = stringResource(R.string.mcp_remove),
                     color = colors.danger,
@@ -660,6 +663,7 @@ private fun AddMcpServerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(
+                modifier = Modifier.sizeIn(minHeight = 48.dp),
                 onClick = {
                     val config = if (isLocal) {
                         McpServerConfig.local(
@@ -701,7 +705,7 @@ private fun AddMcpServerDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onDismiss) {
                 Text(
                     text = stringResource(R.string.common_cancel),
                     color = colors.onSurfaceMuted,
@@ -915,6 +919,7 @@ private fun ReauthDialog(
         confirmButton = {
             if (attempt.needsCode && !failed && !expired) {
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = { onSubmitCode(code) },
                     enabled = !busy && code.isNotBlank(),
                 ) {
@@ -926,7 +931,7 @@ private fun ReauthDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onCancel, enabled = !busy) {
+            TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onCancel, enabled = !busy) {
                 Text(
                     text = stringResource(R.string.common_cancel),
                     color = colors.onSurfaceMuted,
@@ -946,6 +951,7 @@ private fun ReauthDialog(
                     )
                 }
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = {
                         runCatching {
                             context.startActivity(

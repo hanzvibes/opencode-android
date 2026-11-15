@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -236,6 +237,7 @@ private fun PluginRow(
                 horizontalArrangement = Arrangement.Start,
             ) {
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = onUpdate,
                     enabled = !updating,
                 ) {

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.dto.ArtifactInfo
 import dev.bidzz.opencode.core.api.dto.ArtifactProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,7 +64,7 @@ class ArtifactsViewModel(private val api: EngineApi) : ViewModel() {
             if (handle == null) {
                 _state.value = _state.value.copy(
                     loading = false,
-                    failure = ApiResult.Failure(code = 0, message = "Engine not running"),
+                    failure = engineDownFailure(),
                 )
                 return@launch
             }

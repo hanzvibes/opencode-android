@@ -89,7 +89,20 @@ data class SlashCommand(
      * dynamic text, so theirs stays null.
      */
     @StringRes val descriptionRes: Int? = null,
+    /**
+     * Format argument for [descriptionRes] (audit-200 D2, m-930/m-1212):
+     * the fallback descriptions are localised templates ("Execute /%1$s",
+     * "Use the %1$s skill") whose only dynamic part is the command/skill
+     * name. Null for built-ins, whose descriptions take no argument.
+     */
+    val descriptionResArg: String? = null,
     val parameterHint: String? = null,
+    /**
+     * Localised parameter-hint chip for skills (audit-200 D2, m-930/m-1212):
+     * the "skill" tag was a hardcoded English literal. When set, the
+     * palette shows this string instead of [parameterHint].
+     */
+    @StringRes val parameterHintRes: Int? = null,
     val glyph: Glyph = Glyph.Terminal,
     /** True for engine skills: picking one mentions it in the draft instead of running a command. */
     val isSkill: Boolean = false,
@@ -224,7 +237,12 @@ fun resolveSlashCommands(
         }
         // Only the built-in fallback carries a localised description: an
         // engine-supplied description is dynamic text and stays as-is.
-        val descRes = if (!parsedDesc.isNullOrBlank()) null else builtin?.descriptionRes
+        // An engine command with neither gets the localised fallback
+        // template (audit-200 D2, m-930/m-1212) instead of the hardcoded
+        // English "Execute /…".
+        val descRes = if (!parsedDesc.isNullOrBlank()) null
+            else builtin?.descriptionRes ?: R.string.cmd_execute_fallback
+        val descArg = if (!parsedDesc.isNullOrBlank() || builtin != null) null else nameLower
         val hint = parsedHint ?: builtin?.parameterHint
         val glyph = builtin?.glyph ?: Glyph.Terminal
         result.add(
@@ -232,6 +250,7 @@ fun resolveSlashCommands(
                 name = nameLower,
                 description = desc,
                 descriptionRes = descRes,
+                descriptionResArg = descArg,
                 parameterHint = hint,
                 glyph = glyph,
             )
@@ -254,14 +273,20 @@ fun resolveSlashCommands(
         if (nameLower.isEmpty() || !seen.add(nameLower)) continue
         val desc = skill.description?.trim()?.takeIf { it.isNotEmpty() }
             ?: "Use the $nameLower skill"
+        // A skill without a description gets the localised fallback
+        // template (audit-200 D2, m-930/m-1212), not the hardcoded English
+        // "Use the … skill"; the "skill" tag chip is localised too.
+        val hasDesc = skill.description?.trim()?.isNotEmpty() == true
         result.add(
             SlashCommand(
                 name = nameLower,
                 description = desc,
+                descriptionRes = if (hasDesc) null else R.string.cmd_skill_fallback,
+                descriptionResArg = if (hasDesc) null else nameLower,
                 // The tag chip reads as the entry's kind, the way the
                 // parameter hint chip does for commands; skills take no
                 // arguments, so there is no hint to show instead.
-                parameterHint = "skill",
+                parameterHintRes = R.string.cmd_skill_tag,
                 glyph = Glyph.Sparkles,
                 isSkill = true,
                 skillId = skill.id,
@@ -833,7 +858,7 @@ private fun CommandSuggestionRow(
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                if (!command.parameterHint.isNullOrBlank()) {
+                if (command.parameterHintRes != null || !command.parameterHint.isNullOrBlank()) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(radius.xs))
@@ -842,7 +867,8 @@ private fun CommandSuggestionRow(
                             .padding(horizontal = spacing.xs, vertical = 1.dp),
                     ) {
                         Text(
-                            text = command.parameterHint,
+                            text = command.parameterHintRes?.let { stringResource(it) }
+                                ?: command.parameterHint.orEmpty(),
                             style = OpenCodeTypography.code,
                             fontSize = 11.sp,
                             // 47-F1: the selected parameter hint is text —
@@ -855,7 +881,9 @@ private fun CommandSuggestionRow(
 
             if (command.description.isNotBlank()) {
                 Text(
-                    text = command.descriptionRes?.let { stringResource(it) } ?: command.description,
+                    text = command.descriptionRes?.let { res ->
+                        command.descriptionResArg?.let { stringResource(res, it) } ?: stringResource(res)
+                    } ?: command.description,
                     style = OpenCodeTypography.bodySmall,
                     color = colors.onSurfaceMuted,
                     maxLines = 1,

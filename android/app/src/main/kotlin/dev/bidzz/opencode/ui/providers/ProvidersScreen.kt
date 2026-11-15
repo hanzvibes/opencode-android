@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -92,7 +93,6 @@ private data class FeaturedProviderDef(
     val subtitle: String? = null,
     /** A description sentence — resolved at the render site. */
     val subtitleRes: Int? = null,
-    val brandColor: Color,
     val isFreeTier: Boolean = false,
 )
 
@@ -101,38 +101,32 @@ private val FEATURED_PROVIDERS = listOf(
         id = "anthropic",
         name = "Anthropic",
         subtitleRes = R.string.providers_featured_anthropic_subtitle,
-        brandColor = Color(0xFFD97757),
     ),
     FeaturedProviderDef(
         id = "openai",
         name = "OpenAI",
         subtitleRes = R.string.providers_featured_openai_subtitle,
-        brandColor = Color(0xFF10A37F),
     ),
     FeaturedProviderDef(
         id = "opencode",
         name = "OpenCode",
         subtitleRes = R.string.providers_subtitle_free_tier,
-        brandColor = Color(0xFF6366F1),
         isFreeTier = true,
     ),
     FeaturedProviderDef(
         id = "ollama",
         name = "Ollama",
         subtitleRes = R.string.providers_subtitle_local,
-        brandColor = Color(0xFF475569),
     ),
     FeaturedProviderDef(
         id = "deepseek",
         name = "DeepSeek",
         subtitleRes = R.string.providers_featured_deepseek_subtitle,
-        brandColor = Color(0xFF1E88E5),
     ),
     FeaturedProviderDef(
         id = "google",
         name = "Google",
         subtitleRes = R.string.providers_featured_google_subtitle,
-        brandColor = Color(0xFF4285F4),
     ),
 )
 
@@ -292,7 +286,7 @@ fun ProvidersScreen(
                         style = OpenCodeTypography.bodySmall,
                         color = colors.danger,
                     )
-                    TextButton(onClick = onRefresh) {
+                    TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onRefresh) {
                         Text(
                             text = stringResource(R.string.chat_retry),
                             color = colors.accentText,
@@ -313,7 +307,7 @@ fun ProvidersScreen(
                 // only opens the confirmation — the file may hold hand-written
                 // settings, and the store writes a .bak backup before deleting.
                 if (it == R.string.providers_config_jsonc_blocks_write) {
-                    TextButton(onClick = { confirmDeleteJsonc = true }) {
+                    TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmDeleteJsonc = true }) {
                         Text(
                             text = stringResource(R.string.providers_delete_jsonc),
                             color = colors.accentText,
@@ -351,7 +345,7 @@ fun ProvidersScreen(
                     style = OpenCodeTypography.bodySmall,
                     color = colors.warning,
                 )
-                TextButton(onClick = { confirmDeleteJsonc = true }) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmDeleteJsonc = true }) {
                     Text(
                         text = stringResource(R.string.providers_delete_jsonc),
                         color = colors.accentText,
@@ -412,7 +406,7 @@ fun ProvidersScreen(
 
                 FEATURED_PROVIDERS.forEach { def ->
                     val integration = findMatchingIntegration(def, state.integrations)
-                    val stored = integration?.let { rowsFor(state.credentials, it.id) } ?: emptyList()
+                    val stored = integration?.let { rowsFor(state.credentials, it.id, stringResource(R.string.providers_key_untitled)) } ?: emptyList()
                     val isGoogle = def.id == "google"
                     // Honest badge (31-F1): only an account that is enabled AND has
                     // a refresh token counts as connected. A disabled account, or one
@@ -597,7 +591,7 @@ fun ProvidersScreen(
                 }
 
                 shown.forEach { integration ->
-                    val stored = rowsFor(state.credentials, integration.id)
+                    val stored = rowsFor(state.credentials, integration.id, stringResource(R.string.providers_key_untitled))
                     // Same source of truth as the hero and the Featured card
                     // (31-F6): a provider connected via a custom endpoint
                     // or Antigravity must not read MISSING_KEY here.
@@ -661,7 +655,7 @@ fun ProvidersScreen(
     manageFor?.let { integration ->
         ManageCredentialsDialog(
             integration = integration,
-            rows = rowsFor(state.credentials, integration.id),
+            rows = rowsFor(state.credentials, integration.id, stringResource(R.string.providers_key_untitled)),
             onDismiss = { manageFor = null },
             onAddKey = {
                 manageFor = null
@@ -689,7 +683,7 @@ fun ProvidersScreen(
     }
 
     confirmDelete?.let { (integration, row) ->
-        val last = rowsFor(state.credentials, integration.id).size == 1
+        val last = rowsFor(state.credentials, integration.id, stringResource(R.string.providers_key_untitled)).size == 1
         LocalizedDraggableBottomSheet(
             onDismiss = { confirmDelete = null },
             initialStop = SheetStop.PEEK,
@@ -714,10 +708,11 @@ fun ProvidersScreen(
                 )
             },
             actions = {
-                TextButton(onClick = { confirmDelete = null }) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmDelete = null }) {
                     Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
                 }
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = {
                         onDeleteCredential(integration.id, row.id)
                         confirmDelete = null
@@ -729,7 +724,7 @@ fun ProvidersScreen(
     }
 
     googleDetailsFor?.let { integration ->
-        val storedKeys = rowsFor(state.credentials, integration.id)
+        val storedKeys = rowsFor(state.credentials, integration.id, stringResource(R.string.providers_key_untitled))
         // Strict status only (31-F1): an account counts as connected only when it
         // is enabled and has a refresh token — the ViewModel already computes that
         // as activeAntigravityEmail. Accounts that exist but are unusable, and a
@@ -833,7 +828,7 @@ fun ProvidersScreen(
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                     if (!isActive && account.enabled && account.hasRefreshToken) {
-                                        TextButton(onClick = { onSelectAntigravityAccount(account.id) }) {
+                                        TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { onSelectAntigravityAccount(account.id) }) {
                                             Text(
                                                 text = stringResource(R.string.providers_antigravity_use_account),
                                                 color = colors.accentText,
@@ -841,6 +836,7 @@ fun ProvidersScreen(
                                         }
                                     }
                                     TextButton(
+                                        modifier = Modifier.sizeIn(minHeight = 48.dp),
                                         onClick = {
                                             onSetAntigravityAccountEnabled(account.id, !account.enabled)
                                         },
@@ -898,6 +894,7 @@ fun ProvidersScreen(
                     // — so a failure points at the broken step instead
                     // of a bare "it doesn't work".
                     TextButton(
+                        modifier = Modifier.sizeIn(minHeight = 48.dp),
                         onClick = {
                             onTestAntigravity(
                                 patchReport?.outcome?.let {
@@ -951,10 +948,11 @@ fun ProvidersScreen(
                 }
             },
             actions = {
-                TextButton(onClick = { googleDetailsFor = null }) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { googleDetailsFor = null }) {
                     Text(stringResource(R.string.common_done), color = colors.onSurfaceMuted)
                 }
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = {
                         val target = googleDetailsFor
                         googleDetailsFor = null
@@ -1018,10 +1016,11 @@ fun ProvidersScreen(
                 )
             },
             actions = {
-                TextButton(onClick = { confirmDeleteCustomId = null }) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmDeleteCustomId = null }) {
                     Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
                 }
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = {
                         onDeleteCustomProvider(customId)
                         confirmDeleteCustomId = null
@@ -1053,10 +1052,11 @@ fun ProvidersScreen(
                 )
             },
             actions = {
-                TextButton(onClick = { confirmDeleteJsonc = false }) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { confirmDeleteJsonc = false }) {
                     Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
                 }
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = {
                         onDeleteJsoncConfig()
                         confirmDeleteJsonc = false
@@ -1090,10 +1090,10 @@ fun ProvidersScreen(
                 )
             },
             actions = {
-                TextButton(onClick = onDismissRestart) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onDismissRestart) {
                     Text(stringResource(R.string.providers_restart_later), color = colors.onSurfaceMuted)
                 }
-                TextButton(onClick = onConfirmRestart) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onConfirmRestart) {
                     Text(stringResource(R.string.mcp_restart), color = colors.danger)
                 }
             },
@@ -1217,6 +1217,7 @@ private fun PatchStatus(
                     color = colors.warning,
                 )
                 TextButton(
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
                     onClick = onRestartForPatch,
                     enabled = restartPendingFor != ProvidersViewModel.PATCH_RESTART_NAME,
                 ) {
@@ -1372,21 +1373,27 @@ fun ProviderLogo(
     val lowerId = id.lowercase()
     val lowerName = name.lowercase()
 
-    val (bgColor, emblemColor, providerType) = when {
-        lowerId.contains("anthropic") || lowerName.contains("anthropic") ->
-            Triple(Color(0xFFD97757).copy(alpha = 0.16f), Color(0xFFD97757), "anthropic")
-        lowerId == "openai" || lowerName.contains("openai") ->
-            Triple(Color(0xFF10A37F).copy(alpha = 0.16f), Color(0xFF10A37F), "openai")
-        lowerId == "opencode" || lowerId == "zen" || lowerName.contains("opencode") ->
-            Triple(Color(0xFF6366F1).copy(alpha = 0.16f), Color(0xFF6366F1), "opencode")
-        lowerId.contains("ollama") || lowerName.contains("ollama") ->
-            Triple(Color(0xFF475569).copy(alpha = 0.18f), Color(0xFF94A3B8), "ollama")
-        lowerId.contains("deepseek") || lowerName.contains("deepseek") ->
-            Triple(Color(0xFF1E88E5).copy(alpha = 0.16f), Color(0xFF1E88E5), "deepseek")
-        lowerId.contains("google") || lowerId.contains("gemini") || lowerName.contains("gemini") || lowerName.contains("google") ->
-            Triple(Color(0xFF4285F4).copy(alpha = 0.16f), Color(0xFF4285F4), "google")
-        else ->
-            Triple(OpenCodeTheme.colors.surfaceSunken, OpenCodeTheme.colors.onSurfaceMuted, "generic")
+    // Audit-200 D2 (m-1175): the colours used to be hardcoded here — and
+    // wrong in both themes for DeepSeek and Ollama — while providerColor()
+    // already had light/dark variants for them. The `when` below only
+    // picks the emblem type now; the colour comes from the theme, the
+    // single source of truth (same shape as ChatControls.resolveBrand).
+    // The old Ollama emblem was a lighter grey than its tint background;
+    // the token colour is used for both now, like every other provider.
+    val providerType = when {
+        lowerId.contains("anthropic") || lowerName.contains("anthropic") -> "anthropic"
+        lowerId == "openai" || lowerName.contains("openai") -> "openai"
+        lowerId == "opencode" || lowerId == "zen" || lowerName.contains("opencode") -> "opencode"
+        lowerId.contains("ollama") || lowerName.contains("ollama") -> "ollama"
+        lowerId.contains("deepseek") || lowerName.contains("deepseek") -> "deepseek"
+        lowerId.contains("google") || lowerId.contains("gemini") || lowerName.contains("gemini") || lowerName.contains("google") -> "google"
+        else -> "generic"
+    }
+    val brand = OpenCodeTheme.colors.providerColor("$id $name")
+    val (bgColor, emblemColor) = if (providerType == "generic") {
+        OpenCodeTheme.colors.surfaceSunken to OpenCodeTheme.colors.onSurfaceMuted
+    } else {
+        brand.copy(alpha = 0.16f) to brand
     }
 
     Box(
@@ -1840,10 +1847,10 @@ private fun KeyPrompt(
             }
         },
         actions = {
-            TextButton(onClick = onDismiss) {
+            TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onDismiss) {
                 Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted)
             }
-            TextButton(onClick = { onSubmit(value.trim()) }, enabled = canSubmit && !busy) {
+            TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { onSubmit(value.trim()) }, enabled = canSubmit && !busy) {
                 // 31-F17: accent as text failed WCAG AA; accentText is the text-safe tone.
                 if (busy) {
                     CircularProgressIndicator(
@@ -1996,7 +2003,7 @@ private fun ManageCredentialsDialog(
             }
         },
         actions = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done), color = colors.accentText) }
+            TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onDismiss) { Text(stringResource(R.string.common_done), color = colors.accentText) }
         },
     )
 }
@@ -2113,12 +2120,13 @@ private fun CustomProviderDialog(
         },
         actions = {
             if (onDelete != null) {
-                TextButton(onClick = onDelete) {
+                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onDelete) {
                     Text(stringResource(R.string.common_delete), color = colors.danger)
                 }
             }
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted) }
+            TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = onDismiss) { Text(stringResource(R.string.common_cancel), color = colors.onSurfaceMuted) }
             TextButton(
+                modifier = Modifier.sizeIn(minHeight = 48.dp),
                 onClick = { onSubmit(name, baseURL, apiKey, models, initialEditingId) },
                 enabled = ready && validationError == null,
             ) {

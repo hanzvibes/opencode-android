@@ -21,14 +21,19 @@ data class CredentialRow(
 )
 
 /** The key the engine uses to group credentials is its integration id. */
-fun rowsFor(entries: List<CredentialEntry>, integrationID: String): List<CredentialRow> =
+fun rowsFor(
+    entries: List<CredentialEntry>,
+    integrationID: String,
+    /** Localised fallback title for keys stored without a label, resolved by the caller (audit-200 D2, m-931). */
+    untitledFallback: String,
+): List<CredentialRow> =
     entries.asSequence()
         .filter { it.integrationID == integrationID }
-        .sortedWith(compareByDescending<CredentialEntry> { it.active }.thenBy { credentialTitle(it) })
+        .sortedWith(compareByDescending<CredentialEntry> { it.active }.thenBy { credentialTitle(it, untitledFallback) })
         .map { entry ->
             CredentialRow(
                 id = entry.id,
-                title = credentialTitle(entry),
+                title = credentialTitle(entry, untitledFallback),
                 detail = shortId(entry.id),
                 inUse = entry.active,
             )
@@ -38,8 +43,14 @@ fun rowsFor(entries: List<CredentialEntry>, integrationID: String): List<Credent
 /**
  * Engine credentials can carry an empty label — every key this app stores comes
  * without one — so the row needs a fallback that still reads as a key.
+ *
+ * The fallback is passed in because this function runs in the view model as
+ * well as in composition (audit-200 D2, m-931): the hardcoded English
+ * "API key" used to leak into the Indonesian UI even though the ID
+ * translation ("Kunci API") already existed.
  */
-fun credentialTitle(entry: CredentialEntry): String = entry.label.ifBlank { "API key" }
+fun credentialTitle(entry: CredentialEntry, untitledFallback: String): String =
+    entry.label.ifBlank { untitledFallback }
 
 /**
  * Truncated credential id, for telling two identically-labelled keys apart.

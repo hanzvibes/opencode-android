@@ -56,6 +56,15 @@ class SettingsSearchTest {
     }
 
     @Test
+    fun `a multi-word query tokenises like the session search`() {
+        // Audit-200 D2 (m-1119): "engine port" used to match nothing,
+        // because the whole phrase was one substring search.
+        assertTrue(matchesSettingsQuery("engine port", portRow))
+        assertTrue(matchesSettingsQuery("port engine", portRow))
+        assertFalse(matchesSettingsQuery("engine theme", portRow))
+    }
+
+    @Test
     fun `filtering keeps order and only the matching rows`() {
         assertEquals(
             listOf(languageRow),

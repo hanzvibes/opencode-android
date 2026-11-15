@@ -142,4 +142,27 @@ class McpPluginDecodingTest {
             encoded,
         )
     }
+
+    @Test
+    fun `toString never prints OAuth or environment secrets`() {
+        // Audit-200 D2 (m-889): the default data-class toString would put
+        // `clientSecret=<secret>` — and whole environment values — into any
+        // log line that prints the config. Keys are shown so a redacted
+        // dump still says which variables exist.
+        val secret = "sekret-rahasia"
+        val oauth = dev.bidzz.opencode.core.api.dto.McpOAuthConfig(
+            clientId = "cid-123",
+            clientSecret = secret,
+            scope = "read",
+        )
+        assertFalse(oauth.toString().contains(secret))
+        assertTrue(oauth.toString().contains("cid-123"))
+
+        val config = McpServerConfig.local(
+            command = listOf("npx", "-y", "srv"),
+            environment = mapOf("API_TOKEN" to secret),
+        )
+        assertFalse(config.toString().contains(secret))
+        assertTrue(config.toString().contains("API_TOKEN"))
+    }
 }

@@ -182,4 +182,75 @@ class SyntaxHighlightTest {
         // A real char literal is still a string.
         assertEquals(TokenKind.String, kind("rust", "'a'", "let c = 'a';"))
     }
+
+    @Test
+    fun `sql keywords and dash comments are coloured`() {
+        // Audit-200 D2 (m-1148): SQL blocks rendered plain even though the
+        // pill and the Save action both recognised the tag.
+        val code = "SELECT * FROM t WHERE id = 1 -- keep this row"
+        val tokens = highlight("sql", code)
+        assertEquals(code, tokens.joinToString("") { it.text })
+        assertEquals(TokenKind.Keyword, kind("sql", "SELECT", code))
+        assertEquals(TokenKind.Keyword, kind("sql", "FROM", code))
+        assertEquals(TokenKind.Keyword, kind("sql", "WHERE", code))
+        assertEquals(TokenKind.Number, kind("sql", "1", code))
+        assertTrue(tokens.any { it.kind == TokenKind.Comment && it.text == "-- keep this row" })
+        // Keywords are case-insensitive in SQL.
+        assertEquals(TokenKind.Keyword, kind("sql", "select", "select 1"))
+    }
+
+    @Test
+    fun `css property words are coloured, selectors stay plain`() {
+        // Audit-200 D2 (m-1148): first pass only — declarations get
+        // colour, selectors do not pretend to be parsed.
+        val code = "color: red; margin: 0;"
+        assertEquals(TokenKind.Keyword, kind("css", "color", code))
+        assertEquals(TokenKind.Keyword, kind("css", "margin", code))
+        assertEquals(TokenKind.Number, kind("css", "0", code))
+        // Plain runs merge, so "red" is never a token of its own — it
+        // rides inside the " red; " run. What matters is that run is plain.
+        assertEquals(TokenKind.Plain, highlight("css", code).first { it.text.contains("red") }.kind)
+        assertEquals(code, highlight("css", code).joinToString("") { it.text })
+    }
+
+    @Test
+    fun `html tags are coloured, text stays plain`() {
+        // Audit-200 D2 (m-1148): the tag name is a Type, attribute names
+        // are Keywords and quoted values are Strings.
+        val code = "<div class=\"x\">hi</div>"
+        val tokens = highlight("html", code)
+        assertEquals(code, tokens.joinToString("") { it.text })
+        assertEquals(TokenKind.Type, kind("html", "div", code))
+        assertEquals(TokenKind.Keyword, kind("html", "class", code))
+        assertEquals(TokenKind.String, kind("html", "\"x\"", code))
+        assertEquals(TokenKind.Plain, kind("html", "hi", code))
+        assertEquals(
+            TokenKind.Comment,
+            highlight("html", "<!-- c -->").single().kind,
+        )
+        // A `>` inside a quoted value does not close the tag early.
+        val quoted = "<a title=\"x > y\">t</a>"
+        assertEquals(quoted, highlight("html", quoted).joinToString("") { it.text })
+        assertEquals(TokenKind.String, kind("html", "\"x > y\"", quoted))
+        // A stray `<` in text is not a tag.
+        val stray = highlight("html", "a < b")
+        assertEquals("a < b", stray.joinToString("") { it.text })
+        assertTrue(stray.none { it.kind == TokenKind.Type })
+    }
+
+    @Test
+    fun `a js template literal is one string token`() {
+        // Audit-200 D2 (m-1148): backticks used to fall through as plain
+        // text, so a template and its interpolation had no colour at all.
+        val code = "const s = `halo \${nama}`;"
+        val string = highlight("js", code).first { it.kind == TokenKind.String }
+        assertEquals("`halo \${nama}`", string.text)
+        // Templates span lines, like triple-quoted strings.
+        val multi = "const s = `a\nb`;"
+        assertEquals("`a\nb`", highlight("js", multi).first { it.kind == TokenKind.String }.text)
+        // An unterminated template runs to the end of the input.
+        val unterminated = "const s = `abc"
+        assertEquals("`abc", highlight("js", unterminated).first { it.kind == TokenKind.String }.text)
+        assertEquals(unterminated, highlight("js", unterminated).joinToString("") { it.text })
+    }
 }

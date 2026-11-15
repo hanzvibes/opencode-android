@@ -358,6 +358,13 @@ object Palette {
     // darkened to #5C8A00 for text use, like the other providers.
     val darkProviderNvidia = Color(0xFF76B900)
     val lightProviderNvidia = Color(0xFF5C8A00)
+
+    // OpenCode (audit-200 D2, m-1175): the Providers screen hardcoded the
+    // brand indigo #6366F1 in two places instead of using providerColor(),
+    // which had no OpenCode branch at all. Light variant darkened to
+    // #4F46E5, like the other providers.
+    val darkProviderOpenCode = Color(0xFF6366F1)
+    val lightProviderOpenCode = Color(0xFF4F46E5)
 }
 
 /**

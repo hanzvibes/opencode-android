@@ -40,6 +40,24 @@ class FailureReasonD1Test {
     }
 
     @Test
+    fun `a NoImageModel tag becomes NO_IMAGE_MODEL, not UNREACHABLE`() {
+        // Audit-200 D2 (m-1217): the stale-model branch used to build a
+        // bare code-0 failure, so the user read "Cannot reach the engine"
+        // while the engine was alive — the real problem was that no image
+        // model was selected. The tag must win over the code.
+        val failure = ApiResult.Failure(code = 0, tag = "NoImageModel")
+        assertEquals(FailureReason.NO_IMAGE_MODEL, failure.reason)
+    }
+
+    @Test
+    fun `a bare code-0 failure is still UNREACHABLE`() {
+        // The control for the test above: the engine-down shape
+        // (engineDownFailure()) still routes to UNREACHABLE.
+        val failure = ApiResult.Failure(code = 0)
+        assertEquals(FailureReason.UNREACHABLE, failure.reason)
+    }
+
+    @Test
     fun `an unknown tag with a message still surfaces verbatim`() {
         val failure = ApiResult.Failure(
             code = 500,

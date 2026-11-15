@@ -422,7 +422,10 @@ fun DiagnosticsScreen(
         }
     }
 
-    // Copy entire diagnostics report to clipboard
+    // Copy entire diagnostics report to clipboard.
+    // Audit-200 D2 (m-940): the report body stays in English by design —
+    // it is pasted into bug reports, where the log lines and headers are
+    // English anyway. Only the on-screen Health rows are localised.
     val copyAllDiagnostics = {
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         val report = buildString {
@@ -865,7 +868,7 @@ fun DiagnosticsScreen(
                         glyph = Glyph.Terminal,
                         badgeColor = Color(0xFF007AFF),
                         title = stringResource(R.string.diag_cpu),
-                        primaryText = "$cpuCores Cores",
+                        primaryText = stringResource(R.string.diag_cores, cpuCores),
                         secondaryText = cpuAbi,
                         tagLabel = stringResource(R.string.diag_health_good),
                         tagColor = colors.success,
@@ -879,8 +882,8 @@ fun DiagnosticsScreen(
                         glyph = Glyph.Code,
                         badgeColor = Color(0xFF30B0C7),
                         title = stringResource(R.string.diag_ram),
-                        primaryText = "$ramFreeStr free",
-                        secondaryText = "Total: $ramTotalStr",
+                        primaryText = stringResource(R.string.diag_free, ramFreeStr),
+                        secondaryText = stringResource(R.string.diag_total, ramTotalStr),
                         tagLabel = stringResource(if (memInfo.lowMemory) R.string.diag_health_low_mem else R.string.diag_health_good),
                         tagColor = if (memInfo.lowMemory) colors.warning else colors.success,
                     )
@@ -899,8 +902,8 @@ fun DiagnosticsScreen(
                         glyph = Glyph.Folder,
                         badgeColor = Color(0xFF34C759),
                         title = stringResource(R.string.diag_storage),
-                        primaryText = if (storageUnknown) storageFreeStr else "$storageFreeStr free",
-                        secondaryText = "Total: $storageTotalStr",
+                        primaryText = if (storageUnknown) storageFreeStr else stringResource(R.string.diag_free, storageFreeStr),
+                        secondaryText = stringResource(R.string.diag_total, storageTotalStr),
                         tagLabel = stringResource(
                             if (storageUnknown) R.string.diag_storage_unknown
                             else if (isLowStorage) R.string.diag_health_low_storage
@@ -916,8 +919,8 @@ fun DiagnosticsScreen(
                         glyph = Glyph.Sliders,
                         badgeColor = Color(0xFFFF9500),
                         title = stringResource(R.string.diag_process_pid),
-                        primaryText = "Engine: ${status.pid ?: "—"}",
-                        secondaryText = "App PID: ${Process.myPid()}",
+                        primaryText = stringResource(R.string.diag_engine_label, status.pid?.toString() ?: "—"),
+                        secondaryText = stringResource(R.string.diag_app_pid, Process.myPid()),
                         tagLabel = stringResource(if (status.pid != null) R.string.diag_health_active else R.string.diag_health_inactive),
                         tagColor = if (status.pid != null) colors.success else colors.onSurfaceMuted,
                     )

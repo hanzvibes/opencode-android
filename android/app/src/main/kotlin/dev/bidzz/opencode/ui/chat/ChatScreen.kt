@@ -5179,8 +5179,11 @@ private fun EmptyChat(
     val radius = OpenCodeTheme.tokens.radius
     val status = engineState.toStatus(busy)
 
-    // Dismissed starters are remembered by prompt resource id in
-    // SharedPreferences, so a dismissed card stays gone across restarts.
+    // Dismissed starters are remembered by stable id in SharedPreferences,
+    // so a dismissed card stays gone across restarts. The id used to be the
+    // `R.string` int of the prompt (audit-200 D2, m-1241) — and R ids shift
+    // between builds, so an update could resurrect a dismissed card or hide
+    // one never dismissed. Old numeric entries are migrated once on load.
     // There is no "recent prompts" list and no reset: the four starters
     // are fixed suggestions, and dismissing one is a per-item choice.
     val context = LocalContext.current
@@ -5188,9 +5191,12 @@ private fun EmptyChat(
         context.getSharedPreferences("opencode_chat", Context.MODE_PRIVATE)
     }
     var dismissedStarterIds by remember {
-        mutableStateOf(
-            starterPrefs.getStringSet(DISMISSED_STARTERS_KEY, emptySet())?.toSet().orEmpty(),
-        )
+        val stored = starterPrefs.getStringSet(DISMISSED_STARTERS_KEY, emptySet())?.toSet().orEmpty()
+        val migrated = migrateDismissedStarterIds(stored, STARTER_RES_ID_TO_ID)
+        if (migrated != stored) {
+            starterPrefs.edit().putStringSet(DISMISSED_STARTERS_KEY, migrated).apply()
+        }
+        mutableStateOf(migrated)
     }
     // No git repo → no "Review changes" starter: reviewing diffs in a
     // workspace without version control is a dead suggestion (audit 1).
@@ -5198,7 +5204,7 @@ private fun EmptyChat(
     val visibleStarters = remember(dismissedStarterIds, hasGitRepo) {
         STARTER_PROMPTS.filter { item ->
             (hasGitRepo || item.promptRes != R.string.starter_review_prompt) &&
-                item.promptRes.toString() !in dismissedStarterIds
+                item.id !in dismissedStarterIds
         }
     }
 
@@ -5359,7 +5365,7 @@ private fun EmptyChat(
                                         glyph = item.glyph,
                                         onClick = { onSuggestion(prompt) },
                                         onDismiss = {
-                                            val next = dismissedStarterIds + item.promptRes.toString()
+                                            val next = dismissedStarterIds + item.id
                                             dismissedStarterIds = next
                                             starterPrefs.edit()
                                                 .putStringSet(DISMISSED_STARTERS_KEY, next)
@@ -5760,35 +5766,75 @@ private fun ActionableStarterCard(
 }
 
 private data class ActionablePrompt(
+    /** Stable id (audit-200 D2, m-1241): what a dismissal is stored as. */
+    val id: String,
     val titleRes: Int,
     val descRes: Int,
     val promptRes: Int,
     val glyph: Glyph,
 )
 
-/** SharedPreferences key for the set of dismissed starter prompt ids. */
+/** SharedPreferences key for the set of dismissed starter ids. */
 private const val DISMISSED_STARTERS_KEY = "dismissed_starters"
+
+/** Stable ids of the four starters. */
+internal val STARTER_IDS = setOf("explain", "bugs", "tests", "review")
+
+/** Current `R.string` prompt id per stable starter id, for the one-time migration. */
+private val STARTER_RES_ID_TO_ID = mapOf(
+    R.string.starter_explain_prompt to "explain",
+    R.string.starter_bugs_prompt to "bugs",
+    R.string.starter_tests_prompt to "tests",
+    R.string.starter_review_prompt to "review",
+)
+
+/**
+ * Migrates a stored dismissed-starters set to stable ids (audit-200 D2,
+ * m-1241): entries that are already stable ids pass through, entries that
+ * are the decimal `R.string` int of a starter's prompt map to that
+ * starter's id, and anything else — a numeric id from an older build that
+ * no longer belongs to any starter — is dropped.
+ *
+ * The mapping is a parameter because unit tests run with stubbed `R`
+ * values (all zero); production passes [STARTER_RES_ID_TO_ID].
+ */
+internal fun migrateDismissedStarterIds(
+    stored: Set<String>,
+    resIdToStableId: Map<Int, String>,
+): Set<String> {
+    if (stored.isEmpty()) return stored
+    return stored.mapNotNull { value ->
+        when {
+            value in STARTER_IDS -> value
+            else -> value.toIntOrNull()?.let { resIdToStableId[it] }
+        }
+    }.toSet()
+}
 
 private val STARTER_PROMPTS = listOf(
     ActionablePrompt(
+        id = "explain",
         titleRes = R.string.starter_explain_title,
         descRes = R.string.starter_explain_desc,
         promptRes = R.string.starter_explain_prompt,
         glyph = Glyph.Folder,
     ),
     ActionablePrompt(
+        id = "bugs",
         titleRes = R.string.starter_bugs_title,
         descRes = R.string.starter_bugs_desc,
         promptRes = R.string.starter_bugs_prompt,
         glyph = Glyph.Terminal,
     ),
     ActionablePrompt(
+        id = "tests",
         titleRes = R.string.starter_tests_title,
         descRes = R.string.starter_tests_desc,
         promptRes = R.string.starter_tests_prompt,
         glyph = Glyph.Pencil,
     ),
     ActionablePrompt(
+        id = "review",
         titleRes = R.string.starter_review_title,
         descRes = R.string.starter_review_desc,
         promptRes = R.string.starter_review_prompt,
