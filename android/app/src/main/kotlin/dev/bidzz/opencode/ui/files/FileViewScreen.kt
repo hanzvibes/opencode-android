@@ -813,8 +813,16 @@ private fun CodeViewerPane(
     val verticalScroll = rememberScrollState()
     val horizontalScroll = rememberScrollState()
 
-    val highlightedText = remember(content, language, colors, findMatches, selectedMatch) {
-        withFindHighlights(buildAnnotatedCode(language, content, colors), findMatches, selectedMatch, colors)
+    // Audit-200 C17 (M-253): the full-file highlight used to re-run on
+    // every find step, because the find state was part of the same
+    // remember key as the content. The highlight is keyed on the content
+    // only now; stepping through matches re-applies just the find
+    // overlay on the already-highlighted text.
+    val baseHighlighted = remember(content, language, colors) {
+        buildAnnotatedCode(language, content, colors)
+    }
+    val highlightedText = remember(baseHighlighted, findMatches, selectedMatch) {
+        withFindHighlights(baseHighlighted, findMatches, selectedMatch, colors)
     }
 
     val codeStyle = TextStyle(
@@ -869,6 +877,14 @@ private fun LineNumberGutter(
     val spacing = OpenCodeTheme.tokens.spacing
     val gutterWidth = (maxOf(3, lineCount.toString().length) * 8 + 16).dp
 
+    // Audit-200 C17 (M-253): one Text per line used to compose thousands
+    // of nodes at once for a long file. A single Text with the same line
+    // height renders identically — the numbers still align with the code
+    // lines, because both use CodeLineHeight.
+    val gutterText = remember(lineCount) {
+        (1..lineCount).joinToString("\n")
+    }
+
     Column(
         modifier = Modifier
             .width(gutterWidth)
@@ -877,15 +893,12 @@ private fun LineNumberGutter(
             .padding(vertical = spacing.xs, horizontal = 4.dp),
         horizontalAlignment = Alignment.End,
     ) {
-        for (i in 1..lineCount) {
-            Text(
-                text = i.toString(),
-                style = codeStyle.copy(fontSize = 11.sp),
-                color = colors.onSurfaceFaint,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-            )
-        }
+        Text(
+            text = gutterText,
+            style = codeStyle.copy(fontSize = 11.sp),
+            color = colors.onSurfaceFaint,
+            textAlign = TextAlign.End,
+        )
     }
 }
 

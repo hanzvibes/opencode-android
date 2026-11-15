@@ -7,6 +7,9 @@ import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.ProjectInfo
 import dev.bidzz.opencode.core.api.dto.WorktreeDirectory
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,9 +24,18 @@ data class WorktreeSection(
 
 data class WorktreesUiState(
     val sections: List<WorktreeSection> = emptyList(),
+    /** Projects whose worktree list could not be read, with why. */
+    val failedProjects: List<FailedWorktreeProject> = emptyList(),
     val loading: Boolean = true,
     /** What went wrong, as a value; the screen words it in the app's language. */
     val failure: ApiResult.Failure? = null,
+)
+
+/** One project whose worktree list could not be read. */
+data class FailedWorktreeProject(
+    val projectName: String,
+    val projectPath: String,
+    val failure: ApiResult.Failure,
 )
 
 /**
@@ -54,9 +66,13 @@ internal fun buildWorktreeSections(
  * (`POST /api/worktree`, `DELETE /api/worktree`,
  * `POST /api/worktree/refresh`) the app does not call.
  *
- * The list needs one call per project, so a failure on any call fails the
- * load instead of showing a partial list: a missing project section would
- * read as "no worktrees there", which is not what a failed request means.
+ * The list needs one call per project. A failed project used to fail
+ * the whole load instead of showing a partial list — a missing section
+ * would read as "no worktrees there", which is not what a failed request
+ * means. Since audit-200 C17 (M-255) the calls run in parallel and a
+ * failed project is reported per project ([FailedWorktreeProject]): the
+ * projects that loaded still show, and the failed one says why instead
+ * of silently vanishing.
  */
 class WorktreesViewModel(
     private val api: EngineApi,
@@ -80,18 +96,31 @@ class WorktreesViewModel(
                     return@launch
                 }
             }
+            // Audit-200 C17 (M-255): one request per project, fetched in
+            // parallel — the old loop paid N round trips one after another,
+            // and a single failure aborted the whole screen. A failed
+            // project is reported per project now; the projects that
+            // loaded still show.
+            val results = coroutineScope {
+                projects.map { project ->
+                    async { project to handle.worktrees.list(project.id) }
+                }.awaitAll()
+            }
             val byProject = mutableMapOf<String, List<WorktreeDirectory>>()
-            for (project in projects) {
-                when (val result = handle.worktrees.list(project.id)) {
+            val failed = mutableListOf<FailedWorktreeProject>()
+            for ((project, result) in results) {
+                when (result) {
                     is ApiResult.Success -> byProject[project.id] = result.value
-                    is ApiResult.Failure -> {
-                        _state.value = _state.value.copy(loading = false, failure = result)
-                        return@launch
-                    }
+                    is ApiResult.Failure -> failed += FailedWorktreeProject(
+                        projectName = project.name?.takeIf { it.isNotBlank() } ?: project.canonical,
+                        projectPath = project.canonical,
+                        failure = result,
+                    )
                 }
             }
             _state.value = _state.value.copy(
                 sections = buildWorktreeSections(projects, byProject),
+                failedProjects = failed.sortedBy { it.projectName.lowercase() },
                 loading = false,
             )
         }

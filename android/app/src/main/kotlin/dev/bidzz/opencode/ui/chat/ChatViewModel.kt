@@ -10,6 +10,7 @@ import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.ChatState
+import dev.bidzz.opencode.core.api.InboxApi
 import dev.bidzz.opencode.core.api.PermissionRestoreGate
 import dev.bidzz.opencode.core.api.LiveTool
 import dev.bidzz.opencode.core.api.VcsApi
@@ -189,6 +190,45 @@ data class ChatUiState(
      * what the user typed: only that goes into prompt history, so pressing
      * Up never restores a 64 KB file dump into the composer. */
     val queuedPrompts: List<QueuedPrompt> = emptyList(),
+    /**
+     * Queued inbox items for the open session (audit-200 C17, M-258):
+     * prompts the engine parked while the agent worked. The repository
+     * stamps [ChatState.inboxUpdatedAtMs] on every inbox event and the
+     * view model re-reads the count from REST; the chat shows a chip
+     * above the composer while the count is above zero. 0 = none (or
+     * not loaded yet — the chip stays hidden until the first read).
+     */
+    val inboxCount: Int = 0,
+    /**
+     * Wall-clock of the last inbox event for the open session, mirrored
+     * from the repository (M-258): the Inbox screen re-lists when it
+     * changes. 0 = no event yet.
+     */
+    val inboxUpdatedAtMs: Long = 0L,
+    /**
+     * Pending generic forms for the open session (audit-200 C17, M-263):
+     * forms the agent (or an MCP elicitation) opened that are NOT
+     * question cards — those live in the transcript as tool calls. A
+     * generic form has no card anywhere else, so without this list the
+     * run waits on an answer the user can never give. Question forms
+     * are excluded (see [refreshForms]).
+     */
+    val pendingForms: List<dev.bidzz.opencode.core.api.dto.FormInfo> = emptyList(),
+    /** Form ids with a submit or cancel in flight. */
+    val formBusy: Set<String> = emptySet(),
+    /**
+     * What the last form submit or cancel got wrong; the screen shows it
+     * once as a snackbar, then clears it. A failed list refresh is silent
+     * instead — the card simply keeps showing the last known forms.
+     */
+    val formFailure: ApiResult.Failure? = null,
+    /**
+     * What the last skill activation got wrong (audit-200 C17, M-259);
+     * the screen shows it once as a snackbar, then clears it. A
+     * successful activation needs no report — the skill message lands
+     * in the transcript and the run resumes.
+     */
+    val skillFailure: ApiResult.Failure? = null,
     /** True after Stop was tapped until the run actually ends. */
     val stopping: Boolean = false,
     /** Id of the user message being edited in the composer, or null. */
@@ -1088,6 +1128,12 @@ class ChatViewModel(
      */
     private val revertPromptCalls = mutableMapOf<String, String>()
     private var collector: Job? = null
+    /** In-flight inbox-count load, cancelled when a newer one starts (audit-200 C17, M-258). */
+    private var inboxCountJob: Job? = null
+    /** Last inbox-event stamp seen from the repository (M-258). */
+    private var lastInboxUpdatedAtMs: Long = 0L
+    /** In-flight generic-forms list, cancelled when a newer one starts (audit-200 C17, M-263). */
+    private var formsJob: Job? = null
     /** The pending debounced composer park (audit-200 A9-3, DL-010). */
     private var composerParkJob: Job? = null
     /** Last busy session reported to [onBusySessionChanged] (DL-029): the callback fires only on change. */
@@ -2259,6 +2305,30 @@ class ChatViewModel(
         if (sessionChanged) {
             toolStartedAt.clear()
             toolCompletedAt.clear()
+            // Audit-200 C17 (M-258): the queue count belongs to the old
+            // session — clear it, then re-read it for the new one below.
+            lastInboxUpdatedAtMs = chat.inboxUpdatedAtMs
+            inboxCountJob?.cancel()
+            if (chat.sessionID != null) refreshInboxCount()
+        }
+
+        // Audit-200 C17 (M-258): an inbox event arrived for this session —
+        // a prompt was enqueued or one was delivered. Re-read the queue
+        // count so the chip above the composer stays true.
+        if (!sessionChanged && chat.inboxUpdatedAtMs != lastInboxUpdatedAtMs) {
+            lastInboxUpdatedAtMs = chat.inboxUpdatedAtMs
+            refreshInboxCount()
+        }
+        // Audit-200 C17 (M-263): forms have no SSE event — the app learns
+        // about them by listing. A new session starts with no forms, and
+        // a run that just went idle may have left one waiting.
+        if (sessionChanged) {
+            _state.value = _state.value.copy(pendingForms = emptyList())
+            if (chat.sessionID != null) refreshForms(chat.sessionID)
+        } else if (wasBusy && !chat.busy) {
+            refreshForms(chat.sessionID)
+        }
+        if (sessionChanged) {
             // Audit-200 B5 (M-065): confirmed question answers belong
             // to a session's calls — a new session must not inherit
             // another session's answered cards.
@@ -2365,6 +2435,11 @@ class ChatViewModel(
             hasMoreOlder = chat.hasMoreOlder,
             loadingEarlier = chat.loadingEarlier,
             busy = chat.busy,
+            // Audit-200 C17 (M-258): a new session starts with no queue
+            // count until the first read lands (triggered above); any
+            // other emission keeps the count the inbox loader last set.
+            inboxCount = if (sessionChanged) 0 else previous.inboxCount,
+            inboxUpdatedAtMs = chat.inboxUpdatedAtMs,
             // A rejected model/agent selection survives the collector
             // (43-F2): the repo's lastFailure clears on a successful send,
             // which used to wipe the banner while the chip still showed
@@ -2754,6 +2829,151 @@ class ChatViewModel(
      */
     private fun sessionGone(failure: ApiResult.Failure?): Boolean =
         failure?.isSessionMissing == true && sessionReloadAttempts >= SESSION_RELOAD_LIMIT
+
+    /**
+     * Re-reads the open session's inbox queue count (audit-200 C17,
+     * M-258): the repository stamps the event, this is the REST read
+     * behind the chip above the composer. A failed read keeps the last
+     * count — the Inbox screen itself reports the failure, and a stale
+     * chip is better than a chip that flickers to zero on every flap.
+     */
+    private fun refreshInboxCount() {
+        val id = _state.value.sessionID ?: return
+        inboxCountJob?.cancel()
+        inboxCountJob = viewModelScope.launch {
+            val handle = api.handle() ?: return@launch
+            when (val result = InboxApi(handle.client).list(id)) {
+                is ApiResult.Success -> _state.value = _state.value.copy(inboxCount = result.value.size)
+                is ApiResult.Failure -> Unit
+            }
+        }
+    }
+
+    /**
+     * Re-reads the open session's pending generic forms (audit-200 C17,
+     * M-263).
+     *
+     * Forms have no SSE event, so the app learns about them by listing:
+     * on session open and when a run goes idle (see [onRepoState]). A
+     * failed refresh is silent — the card keeps the last known forms
+     * rather than flashing an error for a list that is secondary to the
+     * transcript. Question forms are excluded: they already have their
+     * card in the transcript, and showing them twice would answer the
+     * same question from two places.
+     */
+    private fun refreshForms(sessionID: String? = _state.value.sessionID) {
+        val id = sessionID ?: return
+        formsJob?.cancel()
+        formsJob = viewModelScope.launch {
+            val handle = api.handle() ?: return@launch
+            when (val result = handle.sessions.listForms(id)) {
+                is ApiResult.Success -> {
+                    // Only apply to the session the list was read for —
+                    // a fast session switch must not plant A's forms on B.
+                    if (_state.value.sessionID != id) return@launch
+                    _state.value = _state.value.copy(
+                        pendingForms = result.value.filter { it.isGeneric() },
+                    )
+                }
+                is ApiResult.Failure -> Unit
+            }
+        }
+    }
+
+    /** Submits an answer to a pending generic form, then re-lists. */
+    fun submitForm(formID: String, answer: Map<String, JsonElement>) {
+        val id = _state.value.sessionID ?: return
+        if (formID in _state.value.formBusy) return
+        _state.value = _state.value.copy(
+            formBusy = _state.value.formBusy + formID,
+            formFailure = null,
+        )
+        viewModelScope.launch {
+            val handle = api.handle()
+            if (handle == null) {
+                _state.value = _state.value.copy(
+                    formBusy = _state.value.formBusy - formID,
+                    formFailure = engineDownFailure(),
+                )
+                return@launch
+            }
+            when (val result = handle.sessions.replyForm(id, formID, answer)) {
+                is ApiResult.Success -> {
+                    _state.value = _state.value.copy(
+                        formBusy = _state.value.formBusy - formID,
+                    )
+                    refreshForms(id)
+                }
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    formBusy = _state.value.formBusy - formID,
+                    formFailure = result,
+                )
+            }
+        }
+    }
+
+    /** Cancels a pending generic form, then re-lists. */
+    fun cancelForm(formID: String) {
+        val id = _state.value.sessionID ?: return
+        if (formID in _state.value.formBusy) return
+        _state.value = _state.value.copy(
+            formBusy = _state.value.formBusy + formID,
+            formFailure = null,
+        )
+        viewModelScope.launch {
+            val handle = api.handle()
+            if (handle == null) {
+                _state.value = _state.value.copy(
+                    formBusy = _state.value.formBusy - formID,
+                    formFailure = engineDownFailure(),
+                )
+                return@launch
+            }
+            when (val result = handle.sessions.cancelForm(id, formID)) {
+                is ApiResult.Success -> {
+                    _state.value = _state.value.copy(
+                        formBusy = _state.value.formBusy - formID,
+                    )
+                    refreshForms(id)
+                }
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    formBusy = _state.value.formBusy - formID,
+                    formFailure = result,
+                )
+            }
+        }
+    }
+
+    /** The screen calls this after showing [ChatUiState.formFailure] once. */
+    fun clearFormFailure() {
+        _state.value = _state.value.copy(formFailure = null)
+    }
+
+    /**
+     * Activates a skill for the open session, without a prompt
+     * (audit-200 C17, M-259): the engine appends a skill message and
+     * resumes execution. Unlike the composer's skill attachment — which
+     * runs the skill on a prompt — this is "run this skill now".
+     */
+    fun activateSkill(skillID: String) {
+        val id = _state.value.sessionID ?: return
+        viewModelScope.launch {
+            val handle = api.handle()
+            if (handle == null) {
+                _state.value = _state.value.copy(skillFailure = engineDownFailure())
+                return@launch
+            }
+            when (val result = handle.skills.activate(id, skillID)) {
+                is ApiResult.Success -> Unit
+                is ApiResult.Failure -> _state.value = _state.value.copy(skillFailure = result)
+            }
+        }
+    }
+
+    /** The screen calls this after showing [ChatUiState.skillFailure] once. */
+    fun clearSkillFailure() {
+        _state.value = _state.value.copy(skillFailure = null)
+    }
 
     /**
      * Fetches the control lists for a freshly attached engine.

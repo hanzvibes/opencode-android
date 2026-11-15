@@ -20,6 +20,8 @@ import dev.bidzz.opencode.core.api.PluginApi
 import dev.bidzz.opencode.core.api.ProjectApi
 import dev.bidzz.opencode.core.api.WorktreeApi
 import dev.bidzz.opencode.core.api.ProviderApi
+import dev.bidzz.opencode.core.api.ScheduleApi
+import dev.bidzz.opencode.core.api.SessionLogApi
 import dev.bidzz.opencode.core.api.SkillApi
 import dev.bidzz.opencode.core.api.SessionApi
 import dev.bidzz.opencode.core.api.ShellApi
@@ -66,6 +68,10 @@ class EngineApi(private val workspaceDirectory: () -> String) {
         val providers: ProviderApi,
         val permissions: PermissionApi,
         val integrations: IntegrationApi,
+        /** Scheduled prompts (audit-200 C17, M-259). */
+        val schedules: ScheduleApi,
+        /** The durable session event log (audit-200 C17, M-259). */
+        val sessionLog: SessionLogApi,
         /** Named to avoid colliding with [credentials], which is the engine's own auth. */
         val credentialStore: CredentialApi,
         val stream: EventStream,
@@ -115,6 +121,8 @@ class EngineApi(private val workspaceDirectory: () -> String) {
             providers = ProviderApi(client),
             permissions = PermissionApi(client),
             integrations = IntegrationApi(client),
+            schedules = ScheduleApi(client),
+            sessionLog = SessionLogApi(client),
             credentialStore = CredentialApi(client),
             stream = EventStream(client),
             credentials = credentials,

@@ -27,10 +27,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.serializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * What a chat screen needs, derived from REST plus the event stream.
@@ -71,6 +72,16 @@ data class ChatState(
     val pendingPermissionQueue: List<PendingPermission> = emptyList(),
     /** Tool calls seen on the stream this run, keyed by call id. Cleared on resync. */
     val liveTools: Map<String, LiveTool> = emptyMap(),
+    /**
+     * Wall-clock of the last inbox event (`session.inbox.enqueued` /
+     * `session.inbox.delivered`) for this session (audit-200 C17, M-258):
+     * the inbox used to be invisible from the chat — prompts queued while
+     * the agent worked arrived silently, and the Inbox screen only lived
+     * behind the session list. The view model watches this stamp, refreshes
+     * the queue count from REST, and the chat shows a chip that opens the
+     * Inbox; the Inbox screen re-lists when it changes. 0 = no event yet.
+     */
+    val inboxUpdatedAtMs: Long = 0L,
     /** True when the transcript window cut older messages: more are available above. */
     val hasMoreOlder: Boolean = false,
     /** True while an explicit "load earlier" fetch is in flight. */
@@ -296,6 +307,16 @@ class ChatRepository(
         private const val MESSAGE_PAGE = 100
 
         /**
+         * A stream down longer than this may have missed a permission ask
+         * (audit-200 C17, M-254): the reconnect resync re-reads the
+         * permission list then, even if nothing else flagged it dirty.
+         * Shorter gaps skip the round trip — an ask landing in a
+         * sub-second gap is vanishingly unlikely, and the next resync
+         * still restores it.
+         */
+        private const val PERMISSION_RESYNC_GAP_MS = 5_000L
+
+        /**
          * Terminal resync retries (03-F2): the finished answer only reaches
          * the transcript through that resync, so one transient failure hid
          * it until the next run. Three attempts, 1s then 2s apart.
@@ -312,6 +333,21 @@ class ChatRepository(
 
     /** Transcript window for resync: grows with "load earlier", resets on open (item 28). */
     private var messageLimit = INITIAL_MESSAGE_LIMIT
+
+    /**
+     * Audit-200 C17 (M-254): the permission list is re-read only when it
+     * may have changed — on open, on a manual refresh, or when the stream
+     * was down long enough that an ask could have arrived unheard (see
+     * [PERMISSION_RESYNC_GAP_MS]). A reconnect after a brief drop skips
+     * the round trip and keeps the pending set it already has; the
+     * transcript fetch itself cannot be skipped — the server replays
+     * nothing, so re-reading state over REST is the only recovery
+     * (see [EventStream]).
+     */
+    private var permissionsDirty = true
+
+    /** Wall-clock of the last event received on the stream (0 = none yet). */
+    private var lastStreamEventAtMs = 0L
 
     /**
      * Cursor for the page older than the loaded window (audit-200 C12,
@@ -395,6 +431,8 @@ class ChatRepository(
         close()
         runEnded = false
         pendingArrivedAtMs.clear()
+        permissionsDirty = true
+        lastStreamEventAtMs = 0L
         this.sessionID = sessionID
         // A fresh open starts at the default window (item 28): earlier
         // messages are one tap away, not fetched up front every time.
@@ -413,8 +451,18 @@ class ChatRepository(
                     // with the Main handler. Run it on the scope instead
                     // and wait for it, so every mutation is confined to
                     // one dispatcher.
-                    scope.launch { resync() }.join()
+                    // Audit-200 C17 (M-254): a reconnect after a brief
+                    // drop skips the permission round trip (nothing
+                    // indicates the pending set changed); a long gap
+                    // re-reads it, since an ask may have arrived unheard.
+                    val gapMs = System.currentTimeMillis() - lastStreamEventAtMs
+                    val fetchPermissions = permissionsDirty || gapMs >= PERMISSION_RESYNC_GAP_MS
+                    scope.launch { resync(fetchPermissions = fetchPermissions) }.join()
                 }).collect { event ->
+                    // The stream is alive if it delivers anything at all —
+                    // including SERVER_CONNECTED and other sessions' events —
+                    // so the gap in M-254 is measured from every emission.
+                    lastStreamEventAtMs = System.currentTimeMillis()
                     if (event.type == EventTypes.SERVER_CONNECTED) return@collect
                     if (event.sessionIDOf() != sessionID) return@collect
                     handle(event)
@@ -561,6 +609,8 @@ class ChatRepository(
      * terminal state the stream never delivered.
      */
     suspend fun refresh() {
+        // A manual refresh re-reads everything, permissions included.
+        permissionsDirty = true
         resync()
     }
 
@@ -568,6 +618,9 @@ class ChatRepository(
         fromTerminal: Boolean = false,
         forSessionID: String? = null,
         terminalGeneration: Int? = null,
+        // Audit-200 C17 (M-254): defaults to the dirty flag — the caller
+        // that knows the stream was down long (onReconnect) passes true.
+        fetchPermissions: Boolean = permissionsDirty,
     ): ResyncOutcome {
         val id = forSessionID ?: sessionID ?: return ResyncOutcome.SKIPPED
         // Pinned to another session (audit-200 B3, M-490): the switch
@@ -595,11 +648,16 @@ class ChatRepository(
         // when the transcript fetch fails — the old code never asked for
         // it then — and the join waits for it, bounded by the HTTP
         // timeout.
+        // Audit-200 C17 (M-254): the permission call is conditional now —
+        // it runs only when [fetchPermissions] says the pending set may
+        // have changed. A skipped fetch leaves the pending set exactly
+        // as it was (the reconciliation below is skipped with it).
         val listStartedAtMs = System.currentTimeMillis()
         val (messagesResult, permissionsResult) = coroutineScope {
-            val permissionsDeferred = async { sessionApi.listPermissions(id) }
+            val permissionsDeferred =
+                if (fetchPermissions) async { sessionApi.listPermissions(id) } else null
             val messagesResult = sessionApi.messagesPage(id, limit = messageLimit)
-            messagesResult to permissionsDeferred.await()
+            messagesResult to permissionsDeferred?.await()
         }
         when (val result = messagesResult) {
             is ApiResult.Success -> {
@@ -764,6 +822,10 @@ class ChatRepository(
                 // `listStartedAtMs` (above) is the instant before the
                 // permission call started.
                 when (val pending = permissionsResult) {
+                    // Audit-200 C17 (M-254): the fetch was skipped —
+                    // nothing indicates the pending set changed, so it
+                    // stays exactly as it was.
+                    null -> Unit
                     is ApiResult.Success -> {
                         if (sessionID != id) return ResyncOutcome.SUCCEEDED
                         if (terminalGeneration != null && terminalGeneration != runGeneration) {
@@ -815,6 +877,12 @@ class ChatRepository(
                         }
                         val liveIds = (listOfNotNull(newHead) + newQueue).map { it.id }.toSet()
                         pendingArrivedAtMs.keys.retainAll(liveIds)
+                        // Audit-200 C17 (M-254): the list was re-read and
+                        // reconciled — it is fresh until something flags it
+                        // dirty again. Set here, after the staleness
+                        // guards, so a stale resync never clears the flag
+                        // on behalf of the newer one.
+                        permissionsDirty = false
                         _state.value = current.copy(
                             pendingPermission = newHead,
                             pendingPermissionQueue = newQueue,
@@ -1083,7 +1151,7 @@ class ChatRepository(
     }
 
     private fun handle(event: EngineEvent) {
-        val payload = event.data?.jsonObject ?: return
+        val payload = event.data.asObjectOrNull() ?: return
         when (event.type) {
             EventTypes.TEXT_STARTED -> {
                 val started = event.decode<TextStarted>() ?: return
@@ -1126,18 +1194,20 @@ class ChatRepository(
             EventTypes.TOOL_SUCCESS, EventTypes.TOOL_FAILED,
             EventTypes.TOOL_PROGRESS -> applyToolEvent(event.type, payload)
 
+            // Audit-200 C17 (M-258): the inbox events were defined and then
+            // ignored — no subscriber anywhere. The stamp is the signal:
+            // the view model refreshes the queue count from REST, the chat
+            // shows a chip, and the Inbox screen re-lists while open.
+            EventTypes.INBOX_ENQUEUED, EventTypes.INBOX_DELIVERED -> {
+                _state.value = _state.value.copy(inboxUpdatedAtMs = System.currentTimeMillis())
+            }
+
             EventTypes.PERMISSION_ASKED -> {
-                val payload = event.data?.jsonObject ?: return
-                val id = payload["id"]?.jsonPrimitive?.contentOrNull ?: return
-                val action = payload["action"]?.jsonPrimitive?.contentOrNull ?: return
-                val resources = payload["resources"]?.jsonArray
-                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-                    ?.toSet()
-                    .orEmpty()
-                val save = payload["save"]?.jsonArray
-                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
-                    ?.toSet()
-                    .orEmpty()
+                val payload = event.data.asObjectOrNull() ?: return
+                val id = payload["id"].stringOrNull() ?: return
+                val action = payload["action"].stringOrNull() ?: return
+                val resources = payload["resources"].stringSetOrNull()
+                val save = payload["save"].stringSetOrNull()
                 // Stored so the UI can render the prompt and the operator can reply.
                 // The engine blocks the tool until this is answered.
                 // Audit-200 C3 (M-060): a second ask queues behind the
@@ -1151,7 +1221,7 @@ class ChatRepository(
                     action = action,
                     resources = resources,
                     save = save,
-                    message = payload["message"]?.jsonPrimitive?.contentOrNull,
+                    message = payload["message"].stringOrNull(),
                 )
                 pendingArrivedAtMs[id] = System.currentTimeMillis()
                 val current = _state.value
@@ -1292,13 +1362,13 @@ class ChatRepository(
     }
 
     private fun applyToolEvent(type: String, p: kotlinx.serialization.json.JsonObject) {
-        val id = p["id"]?.jsonPrimitive?.contentOrNull ?: return
-        val messageID = p["assistantMessageID"]?.jsonPrimitive?.contentOrNull ?: return
+        val id = p["id"].stringOrNull() ?: return
+        val messageID = p["assistantMessageID"].stringOrNull() ?: return
         val tools = _state.value.liveTools
         val prev = tools[id]?.call
         val next = when (type) {
             EventTypes.TOOL_INPUT_STARTED ->
-                ToolCall(id, p["name"]?.jsonPrimitive?.contentOrNull.orEmpty(), "streaming")
+                ToolCall(id, p["name"].stringOrNull().orEmpty(), "streaming")
             EventTypes.TOOL_CALLED -> prev?.copy(status = "running", input = p["input"])
                 ?: ToolCall(id, "", "running", input = p["input"])
             EventTypes.TOOL_PROGRESS -> {
@@ -1307,8 +1377,8 @@ class ChatRepository(
                 // event metadata — so the client can page the command's
                 // live output while it runs. Other tools report other
                 // metadata, or none; only a shell id starts a poll.
-                val shellID = p["metadata"]?.jsonObject?.get("shellID")
-                    ?.jsonPrimitive?.contentOrNull
+                val shellID = p["metadata"].asObjectOrNull()?.get("shellID")
+                    .stringOrNull()
                 val next = prev?.copy(shellID = shellID ?: prev.shellID)
                     ?: ToolCall(id, "", "running", shellID = shellID)
                 if (shellID != null) startLiveShellPoll(id, messageID, shellID)
@@ -1359,8 +1429,8 @@ class ChatRepository(
 
     /** The `error` object of a `tool.failed` event as display text. */
     private fun parseToolError(p: kotlinx.serialization.json.JsonObject): String =
-        p["error"]?.jsonObject?.let { e ->
-            (e["message"] ?: e["type"])?.jsonPrimitive?.contentOrNull
+        p["error"].asObjectOrNull()?.let { e ->
+            (e["message"] ?: e["type"]).stringOrNull()
         } ?: "failed"
 
     /**
@@ -1416,7 +1486,29 @@ class ChatRepository(
 
     /** Session id from any event payload; every event carries one. */
     private fun EngineEvent.sessionIDOf(): String? =
-        data?.jsonObject?.get("sessionID")?.jsonPrimitive?.contentOrNull
+        data.asObjectOrNull()?.get("sessionID").stringOrNull()
+
+    /**
+     * Safe JSON accessors for the event path (audit-200 C17, M-265): the
+     * throwing `.jsonObject`/`.jsonPrimitive`/`.jsonArray` accessors used
+     * to let one malformed field kill the whole stream — the exception
+     * escaped the collector, EventStream treated it as a disconnect, and
+     * the client reconnected with backoff, losing the event (and, for a
+     * systematically malformed `PERMISSION_ASKED`, the permission card
+     * itself). A malformed field now yields null, so the event is skipped
+     * the same way a decode failure already is (`decode()` above) — the
+     * stream never notices. The safe-`as?` idiom already existed in the
+     * codebase (`QuestionData.kt`); the event path is the last place that
+     * had not migrated to it.
+     */
+    private fun JsonElement?.asObjectOrNull(): JsonObject? = this as? JsonObject
+
+    private fun JsonElement?.stringOrNull(): String? =
+        (this as? JsonPrimitive)?.contentOrNull
+
+    private fun JsonElement?.stringSetOrNull(): Set<String> =
+        (this as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            ?.toSet().orEmpty()
 
     private inline fun <reified T> EngineEvent.decode(): T? =
         data?.let { element ->

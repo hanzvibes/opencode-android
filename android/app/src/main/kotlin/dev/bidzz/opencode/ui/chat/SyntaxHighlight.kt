@@ -22,6 +22,9 @@ enum class TokenKind { Plain, Keyword, String, Number, Comment, Function, Type, 
 
 internal const val MAX_HIGHLIGHT_CHARS = 20_000
 
+/** While streaming, blocks longer than this render plain until the stream finishes (M-252). */
+internal const val STREAMING_HIGHLIGHT_CHARS = 1_000
+
 /** One run of characters sharing a [TokenKind]. */
 data class Token(val text: String, val kind: TokenKind)
 
@@ -32,16 +35,20 @@ data class Token(val text: String, val kind: TokenKind)
  * unterminated string stops at the end of its line rather than running to the end of
  * the block, which keeps one stray quote from colouring everything below it.
  *
- * While [streaming], a block over 4000 characters is rendered plain until the
+ * While [streaming], a block over 1000 characters is rendered plain until the
  * stream finishes: re-highlighting the whole block on every delta is the
  * expensive part, and a half-coloured block is no better than a plain one.
+ * The threshold used to be 4000 (audit-200 C17, M-252): a 20-line snippet —
+ * the common case, and the one the 30-line collapse does not protect —
+ * was re-highlighted ~10 times a second for its whole stream. Short
+ * snippets still colour live; the full highlight runs once, on completion.
  */
 fun highlight(language: String?, code: String, streaming: Boolean = false): List<Token> {
     if (code.isEmpty()) return emptyList()
     // ponytail: past this size colouring is skipped; it runs on the UI thread on every
     // streamed delta. Move to a background dispatcher if big blocks need colour.
     if (code.length > MAX_HIGHLIGHT_CHARS) return listOf(Token(code, TokenKind.Plain))
-    if (streaming && code.length > 4_000) return listOf(Token(code, TokenKind.Plain))
+    if (streaming && code.length > STREAMING_HIGHLIGHT_CHARS) return listOf(Token(code, TokenKind.Plain))
     val dialect = dialectOf(language) ?: return listOf(Token(code, TokenKind.Plain))
 
     val tokens = TokenList()

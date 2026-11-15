@@ -52,26 +52,37 @@ class MoveSessionViewModel(
     fun load(sessionID: String) {
         this.sessionID = sessionID
         val handle = api.handle() ?: run {
-            _state.value = MoveSessionUiState(loading = false, failure = engineDownFailure())
+            // Same keep-the-list rule as the fetch below (M-264): an
+            // engine-down retry reports the failure without blanking
+            // the projects and the selection the operator already made.
+            _state.value = _state.value.copy(loading = false, failure = engineDownFailure())
             return
         }
-        _state.value = MoveSessionUiState(loading = true)
+        // Audit-200 C17 (M-264): a reload keeps the list it already has —
+        // the old full reset blanked the projects (and the selection) on
+        // every retry, so the operator re-picked the target after each
+        // failure. Only the loading flag and the failure are replaced.
+        _state.value = _state.value.copy(loading = true, failure = null)
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             val session = when (val result = SessionApi(handle.client).get(sessionID)) {
                 is ApiResult.Success -> result.value
                 is ApiResult.Failure -> {
-                    _state.value = MoveSessionUiState(loading = false, failure = result)
+                    _state.value = _state.value.copy(loading = false, failure = result)
                     return@launch
                 }
             }
             when (val result = handle.projects.list()) {
-                is ApiResult.Success -> _state.value = MoveSessionUiState(
+                is ApiResult.Success -> _state.value = _state.value.copy(
                     projects = result.value.sortedBy { it.displayName().lowercase() },
                     currentProjectID = session.projectID,
                     loading = false,
                 )
-                is ApiResult.Failure -> _state.value = MoveSessionUiState(
+                is ApiResult.Failure -> _state.value = _state.value.copy(
+                    // The session was already read, so its project id
+                    // survives a failed project list — the current
+                    // project stays marked instead of vanishing.
+                    currentProjectID = session.projectID,
                     loading = false,
                     failure = result,
                 )

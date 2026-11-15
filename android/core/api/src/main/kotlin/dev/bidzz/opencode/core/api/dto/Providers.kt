@@ -60,6 +60,32 @@ data class CredentialEntry(
     val active: Boolean = false,
 )
 
+/**
+ * An OAuth authorization attempt (`Integration.Attempt`).
+ *
+ * `mode` is "auto" (the browser redirect lands on the engine by itself)
+ * or "code" (the provider shows a code to paste back). An "auto" attempt
+ * with `paste` also accepts the redirect URL pasted from the browser as
+ * its code — see [IntegrationApi.completeOAuth].
+ */
+@Serializable
+data class OAuthAttempt(
+    val attemptID: String = "",
+    val url: String = "",
+    val instructions: String = "",
+    val mode: String = "",
+    val paste: Boolean = false,
+)
+
+/** One poll of an OAuth attempt (`Integration.AttemptStatus`). */
+@Serializable
+data class OAuthAttemptStatus(
+    /** "pending" | "complete" | "failed" | "expired". */
+    val status: String = "",
+    /** Present when [status] is "failed". */
+    val message: String? = null,
+)
+
 @Serializable
 data class CredentialsResponse(
     val data: List<CredentialEntry> = emptyList(),

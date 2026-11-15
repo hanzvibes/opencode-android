@@ -382,8 +382,10 @@ private fun CodeBlock(
         }
     }
 
-    val lines = remember(code) { code.lines() }
-    val lineCount = lines.size
+    // Audit-200 C17 (M-252): the split used to allocate the whole line
+    // list on every publish; only the count is needed until the block
+    // collapses, and the visible slice is one remember of its own.
+    val lineCount = remember(code) { code.count { it == '\n' } + 1 }
     // Long blocks (>30 lines) start collapsed and can be expanded. The
     // choice is plain remember — deliberately not keyed on `code`, so a
     // block that grows past 30 lines while streaming collapses on its own
@@ -399,10 +401,12 @@ private fun CodeBlock(
         animationSpec = OpenCodeTheme.tokens.motion.tweenQuick(),
         label = "code_expand_rotation",
     )
-    val visibleCode = if (collapsed) {
-        lines.take(CODE_COLLAPSE_THRESHOLD).joinToString("\n")
-    } else {
-        code
+    val visibleCode = remember(code, collapsed) {
+        if (collapsed) {
+            code.lines().take(CODE_COLLAPSE_THRESHOLD).joinToString("\n")
+        } else {
+            code
+        }
     }
     val visibleLineCount = if (collapsed) CODE_COLLAPSE_THRESHOLD else lineCount
     val showLineNumbers = visibleLineCount > 1
@@ -424,7 +428,12 @@ private fun CodeBlock(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .animateContentSize(animationSpec = OpenCodeTheme.tokens.motion.springSmooth())
+            // Audit-200 C17 (M-252): the size animation used to re-run
+            // its layout animation on every growth while streaming —
+            // the block grows ~10 times a second, so the animation never
+            // settled. While streaming the block just grows; the spring
+            // runs once, when it is done.
+            .then(if (streaming) Modifier else Modifier.animateContentSize(animationSpec = OpenCodeTheme.tokens.motion.springSmooth()))
             .clip(RoundedCornerShape(radius.lg))
             .background(colors.surfaceSunken)
             .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.lg)),
