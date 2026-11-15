@@ -495,6 +495,22 @@ fun Composer(
             }
 
             // Multi-line text field with comfortable line height
+            // Audit-200 D3 (m-911): the composer was silent for TalkBack
+            // when empty — label it with the same hint text the sighted
+            // user sees. Hoisted here (and out of .semantics {}, which
+            // is not a composable scope) so the field and the placeholder
+            // read the same string.
+            // Crossfade between the not-ready / hint states so the
+            // placeholder swaps instead of popping. The idle hint names
+            // the model (or the agent when no model is known) so the
+            // composer says who will answer, not just "ask anything".
+            val placeholderText = when {
+                busy -> stringResource(R.string.composer_hint_queued)
+                !enabled -> stringResource(R.string.composer_not_ready)
+                modelLabel != null -> stringResource(R.string.composer_hint_named, modelLabel)
+                agentLabel != null -> stringResource(R.string.composer_hint_named, agentLabel)
+                else -> stringResource(R.string.composer_hint)
+            }
             BasicTextField(
                 value = value,
                 onValueChange = onTextChange,
@@ -518,6 +534,7 @@ fun Composer(
                         isFocused = it.isFocused
                         onFocusChange(it.isFocused)
                     }
+                    .semantics { contentDescription = placeholderText }
                     .then(if (onKeyEvent != null) Modifier.onPreviewKeyEvent(onKeyEvent) else Modifier),
                 decorationBox = { inner ->
                     Box(
@@ -532,18 +549,6 @@ fun Composer(
                             // above says what the agent is doing; this says
                             // what the user's typing does — different
                             // information, not a duplicate.
-                            // Crossfade between the not-ready / hint states
-                            // so the placeholder swaps instead of popping.
-                            // The idle hint names the model (or the agent when
-                            // no model is known) so the composer says who will
-                            // answer, not just "ask anything".
-                            val placeholderText = when {
-                                busy -> stringResource(R.string.composer_hint_queued)
-                                !enabled -> stringResource(R.string.composer_not_ready)
-                                modelLabel != null -> stringResource(R.string.composer_hint_named, modelLabel)
-                                agentLabel != null -> stringResource(R.string.composer_hint_named, agentLabel)
-                                else -> stringResource(R.string.composer_hint)
-                            }
                             Crossfade(
                                 targetState = placeholderText,
                                 animationSpec = motion.tweenQuick(),

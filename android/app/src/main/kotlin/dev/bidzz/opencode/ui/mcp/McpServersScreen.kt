@@ -37,6 +37,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.OpenCodeApplication
@@ -869,6 +871,10 @@ private fun FormField(
                     RoundedCornerShape(radius.md),
                 )
                 .padding(horizontal = spacing.md, vertical = spacing.xs)
+                // Audit-200 D3 (m-911): the field was silent for TalkBack
+                // — its label is a separate Text above it, so bind the
+                // label to the field (a plain String param).
+                .semantics { contentDescription = label }
                 .onFocusChanged { isFocused = it.isFocused },
             decorationBox = { inner ->
                 Box(modifier = Modifier.fillMaxWidth()) {

@@ -488,9 +488,17 @@ class SessionApi(private val client: EngineClient) {
  * plus in a path — so `+` is rewritten to `%20`. Valid session ids (the
  * `isValidSessionId` charset: letters, digits, `_`, `-`, `.`) pass through
  * unchanged, so legitimate traffic is byte-identical.
+ *
+ * Audit-200 D3 (m-897): a segment that IS just `.` or `..` is refused
+ * outright — `URLEncoder` lets dots through and OkHttp resolves them away
+ * (`..` pops the previous segment), and percent-encoding the dots does not
+ * help either (OkHttp normalises `%2E` too). A dot INSIDE an id
+ * (e.g. `"ses-abc_123.x"`) is still fine.
  */
-internal fun encodePathSegment(segment: String): String =
-    URLEncoder.encode(segment, Charsets.UTF_8.name()).replace("+", "%20")
+internal fun encodePathSegment(segment: String): String {
+    require(segment != "." && segment != "..") { "Refusing dot-only path segment: \"$segment\"" }
+    return URLEncoder.encode(segment, Charsets.UTF_8.name()).replace("+", "%20")
+}
 
 /**
  * Percent-encodes one query value (audit-200 C12, M-173/M-175).

@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -1720,6 +1722,10 @@ private fun KeyPrompt(
                 ) {
                     GlyphIcon(Glyph.Key, tint = colors.onSurfaceMuted, size = 16.dp)
 
+                    // Audit-200 D3 (m-911): the key field was silent for
+                    // TalkBack when empty — label it with its hint.
+                    // Resolved here, not inside .semantics {}.
+                    val keyDescription = stringResource(R.string.providers_paste_key)
                     BasicTextField(
                         value = value,
                         onValueChange = { value = it },
@@ -1732,7 +1738,7 @@ private fun KeyPrompt(
                             imeAction = ImeAction.Done,
                         ),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).semantics { contentDescription = keyDescription },
                         decorationBox = { inner ->
                             if (value.isEmpty()) {
                                 Text(
@@ -2189,6 +2195,9 @@ private fun FormField(
                 ),
                 modifier = Modifier
                     .weight(1f)
+                    // Audit-200 D3 (m-911): same as the MCP FormField —
+                    // bind the separate label Text to the field.
+                    .semantics { contentDescription = label }
                     .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
                 decorationBox = { inner ->
                     if (value.isEmpty()) {

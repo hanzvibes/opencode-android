@@ -40,11 +40,13 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -200,7 +202,8 @@ fun DraggableBottomSheet(
                         .background(Color.Black.copy(alpha = 0.45f))
                         // A11y (#8b): a dismiss scrim is not an action for
                         // TalkBack — it has no name; dismissal stays
-                        // available through the sheet's own close control.
+                        // available through the sheet's own close control
+                        // (the Close button in the header, D3 m-914).
                         .clearAndSetSemantics { }
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -264,20 +267,41 @@ fun DraggableBottomSheet(
                                 .background(colors.hairline),
                         )
                         // Drag handle: the grabbable strip. Tapping it does
-                        // nothing; dragging it moves between stops.
-                        Box(
+                        // nothing; dragging it moves between stops. The
+                        // Close button at the end is the sheet's own close
+                        // control — Audit-200 D3 (m-914): the sheet had no
+                        // labelled way to dismiss for TalkBack (the scrim
+                        // and the handle are both invisible to it); Back
+                        // still dismisses too. The button is 48dp and
+                        // labelled via IconAction.
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .then(dragModifier)
-                                .padding(vertical = spacing.sm),
-                            contentAlignment = Alignment.Center,
+                                .padding(
+                                    start = spacing.md,
+                                    end = spacing.xs,
+                                    top = spacing.sm,
+                                    bottom = spacing.xs,
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
-                                modifier = Modifier
-                                    .width(36.dp)
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(radius.full))
-                                    .background(colors.onSurfaceFaint),
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(36.dp)
+                                        .height(4.dp)
+                                        .clip(RoundedCornerShape(radius.full))
+                                        .background(colors.onSurfaceFaint),
+                                )
+                            }
+                            IconAction(
+                                glyph = Glyph.Close,
+                                description = stringResource(R.string.common_close),
+                                onClick = { dismiss() },
                             )
                         }
                         if (title != null) {

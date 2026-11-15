@@ -93,6 +93,15 @@ class ArtifactApi(private val client: EngineClient) {
     fun viewPath(id: String): String =
         "/api/experimental/artifacts/${encode(id)}/view/"
 
-    private fun encode(value: String): String =
-        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+    // Audit-200 D3 (m-897): a bare "." / ".." segment is NOT encoded by
+    // URLEncoder, and OkHttp resolves it away — get("..") silently lands
+    // on /api/experimental/ instead of the artifact. Percent-encoding the
+    // dots does NOT help either (OkHttp normalises %2E too), so the only
+    // correct client-side fix is to refuse the segment outright. Legit
+    // ids are unaffected: a dot INSIDE an id (e.g. "ses-abc_123.x") still
+    // passes through unchanged.
+    private fun encode(value: String): String {
+        require(value != "." && value != "..") { "Refusing dot-only path segment: \"$value\"" }
+        return URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+    }
 }

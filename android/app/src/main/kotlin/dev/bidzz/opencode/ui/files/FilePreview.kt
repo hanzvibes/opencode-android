@@ -203,7 +203,14 @@ private fun ImagePreview(file: File, modifier: Modifier = Modifier) {
                 ) {
                     Image(
                         bitmap = image.bitmap.asImageBitmap(),
-                        contentDescription = null,
+                        // Audit-200 D3 (m-031): TalkBack skipped the
+                        // preview entirely — name the file and its size.
+                        contentDescription = stringResource(
+                            R.string.preview_image_desc,
+                            file.name,
+                            image.width,
+                            image.height,
+                        ),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(spacing.sm))
@@ -333,7 +340,16 @@ private fun PdfPreview(file: File, modifier: Modifier = Modifier) {
                 else -> {
                     Image(
                         bitmap = bitmap!!.asImageBitmap(),
-                        contentDescription = null,
+                        // Audit-200 D3 (m-031): TalkBack skipped the page
+                        // entirely — name the file and the page number.
+                        // (The page is an image; its text stays unread —
+                        // that is 146-F2, a separate cluster.)
+                        contentDescription = stringResource(
+                            R.string.preview_pdf_page_desc,
+                            file.name,
+                            pageIndex + 1,
+                            pageCount,
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .verticalScroll(rememberScrollState())

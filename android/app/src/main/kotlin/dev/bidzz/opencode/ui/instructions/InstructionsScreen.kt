@@ -269,6 +269,10 @@ private fun EditorField(
             .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
             .padding(horizontal = spacing.md, vertical = spacing.sm),
     ) {
+        // Audit-200 D3 (m-911): the instruction field was silent for
+        // TalkBack when empty — label it with its hint. Resolved here,
+        // not inside .semantics {}.
+        val hint = stringResource(hintRes)
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -280,7 +284,7 @@ private fun EditorField(
             keyboardOptions = KeyboardOptions(
                 imeAction = if (singleLine) ImeAction.Next else ImeAction.Default,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = hint },
             decorationBox = { inner ->
                 if (value.isEmpty()) {
                     Text(

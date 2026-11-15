@@ -301,8 +301,12 @@ data class Dimensions(
     /** Streaming indicator pulse (11dp dot, 22dp animated pulse ring). Large enough to
      *  read at a glance while the assistant is typing, unlike the 8dp status dot. */
     val streamingIndicatorSize: Dp = 11.dp,
-    /** Touch target for the composer send/stop button. Visual stays 36dp; the
+    /** Touch target for the composer send/stop button. Visual stays 32dp; the
      *  extra padding is hit area only, so the transcript does not shrink. */
+    // Audit-200 D3 (m-1160): the comment still said 36dp — the visual
+    // shrank to 32dp with the pulse removal (Composer.kt:1320-1322,1341).
+    // Doc-only fix; the 44dp hit area is unchanged on purpose (184-F19
+    // is a separate cluster — do NOT raise it to 48dp here).
     val composerActionTouchTarget: Dp = 44.dp,
     /** Touch target for composer quick-action chips and the clear button. */
     val composerChipTouchTarget: Dp = 40.dp,

@@ -538,6 +538,10 @@ private fun QuickOpenPalette(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 GlyphIcon(Glyph.Search, tint = colors.onSurfaceMuted, size = 15.dp)
+                // Audit-200 D3 (m-911): the quick-open field was silent
+                // for TalkBack when empty — label it with its hint.
+                // Resolved here, not inside .semantics {}.
+                val searchDescription = stringResource(R.string.files_quick_open_hint)
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -549,6 +553,7 @@ private fun QuickOpenPalette(
                         .weight(1f)
                         .padding(start = spacing.sm)
                         .focusRequester(focusRequester)
+                        .semantics { contentDescription = searchDescription }
                         .onKeyEvent { event ->
                             if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                             when (event.key) {

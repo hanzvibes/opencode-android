@@ -183,6 +183,8 @@
     <string name="generate_mode_text">Text</string>
     <string name="generate_mode_image">Image</string>
     <string name="generate_model_default">Default model</string>
+    <string name="generate_model_pick">Choose model: %1$s</string>
+    <string name="generate_model_none">No model selected</string>
     <string name="generate_prompt_hint_text">Describe what to write…</string>
     <string name="generate_prompt_hint_image">Describe the image…</string>
     <string name="generate_resolution_default">Default size</string>
@@ -201,6 +203,10 @@
     <string name="websearch_empty">Type a query and search.</string>
     <string name="websearch_no_results">No results for this query.</string>
     <string name="websearch_provider_default">Default provider</string>
+    <string name="websearch_provider_pick">Choose provider: %1$s</string>
+    <string name="websearch_open_result">Open %1$s</string>
+    <string name="dropdown_expanded">Expanded</string>
+    <string name="dropdown_collapsed">Collapsed</string>
     <string name="websearch_provider_line">From %1$s</string>
     <string name="artifact_title">Artifacts</string>
     <string name="artifact_body">Published artifacts from the engine — pages, previews and files the agent made. Open one to view it in the browser.</string>
@@ -210,6 +216,8 @@
     <string name="artifact_provider_default">default</string>
     <string name="artifact_row_meta">%1$s · Updated %2$s</string>
     <string name="artifact_delete">Delete</string>
+    <string name="artifact_delete_item">Delete %1$s</string>
+    <string name="artifact_open">Open %1$s</string>
     <string name="artifact_remove_title">Delete this artifact?</string>
     <string name="artifact_remove_body">The artifact and its stored files are removed. This cannot be undone.</string>
     <string name="artifact_remove_confirm">Delete</string>
@@ -777,6 +785,7 @@
     <string name="files_detail_empty">Select a file to view it here.</string>
     <string name="fileview_find">Find</string>
     <string name="fileview_find_hint">Find in file…</string>
+    <string name="code_editor_desc">Code editor</string>
     <string name="fileview_find_count">%1$d of %2$d</string>
     <string name="fileview_find_none">No matches</string>
     <string name="fileview_find_partial">Searching the loaded preview only</string>
@@ -792,6 +801,8 @@
     <string name="preview_page_next">Next page</string>
     <string name="preview_load_failed">Could not open this preview</string>
     <string name="preview_image_size">%1$d × %2$d</string>
+    <string name="preview_image_desc">Image preview, %1$s, %2$d by %3$d pixels</string>
+    <string name="preview_pdf_page_desc">PDF page %2$d of %3$d, %1$s (image, text not available)</string>
     <string name="fileview_load_full">Load full file</string>
     <string name="fileview_lines_truncated">%1$d of %2$d lines</string>
 

@@ -624,7 +624,10 @@ fun SearchField(
         if (query.isNotEmpty()) {
             Box(
                 modifier = Modifier
-                    .size(28.dp)
+                    // Audit-200 D3 (m-859): the clear button was 28dp
+                    // inside a 48dp field — the icon stays 14dp, only the
+                    // hit area grows to the 48dp standard.
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                     .clip(RoundedCornerShape(radius.sm))
                     .clickable(role = Role.Button) { onQueryChange("") }
                     .semantics { contentDescription = clearDescription },
@@ -761,6 +764,9 @@ fun SelectorChip(
             // A11y (#8c): a filter chip is a toggle, not a plain button —
             // toggleable announces "selected / not selected" with the label.
             .toggleable(value = selected, role = Role.Checkbox, onValueChange = { onClick() })
+            // Audit-200 D3 (m-859): the chip was ~22dp tall — below even
+            // the 24dp WCAG floor. One line here lifts all 16 call sites.
+            .defaultMinSize(minHeight = 48.dp)
             .padding(horizontal = spacing.sm, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {

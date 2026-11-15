@@ -23,6 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.OpenCodeApplication
@@ -178,10 +182,21 @@ private fun ArtifactRow(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
+    // Audit-200 D3 (m-340/m-556/m-612): the row is tappable but TalkBack
+    // announced only its text, with no role — and the Delete button read
+    // just "Delete" with no artifact name. Resolved here, not inside
+    // .semantics {}: the semantics lambda is not a composable scope.
+    val openDescription = stringResource(R.string.artifact_open, artifact.title)
+    val deleteDescription = stringResource(R.string.artifact_delete_item, artifact.title)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
+            .semantics {
+                role = Role.Button
+                contentDescription = openDescription
+            }
             .clickable(onClick = onOpen)
             .padding(vertical = spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
@@ -218,7 +233,7 @@ private fun ArtifactRow(
             )
         }
         TextButton(
-            modifier = Modifier.sizeIn(minHeight = 48.dp),
+            modifier = Modifier.sizeIn(minHeight = 48.dp).semantics { contentDescription = deleteDescription },
             onClick = onDelete,
             enabled = !deleting,
         ) {

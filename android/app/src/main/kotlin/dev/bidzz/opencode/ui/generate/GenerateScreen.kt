@@ -35,6 +35,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -259,7 +264,14 @@ private fun ModelPicker(
     var expanded by remember { mutableStateOf(false) }
     val selected = selectedModelId?.let { id -> models.firstOrNull { it.id == id } }
     val label = selected?.label()
-        ?: if (allowDefault) stringResource(R.string.generate_model_default) else ""
+        ?: if (allowDefault) stringResource(R.string.generate_model_default) else stringResource(R.string.generate_model_none)
+
+    // Audit-200 D3 (m-340/m-556/m-859): the picker trigger read only the
+    // selected model name, with no role and no open/closed state — and at
+    // ~38dp it was under the 48dp touch target. Resolved here, not inside
+    // .semantics {}: the semantics lambda is not a composable scope.
+    val pickerDescription = stringResource(R.string.generate_model_pick, label)
+    val pickerState = stringResource(if (expanded) R.string.dropdown_expanded else R.string.dropdown_collapsed)
 
     Box {
         Row(
@@ -267,6 +279,12 @@ private fun ModelPicker(
                 .clip(RoundedCornerShape(radius.md))
                 .background(colors.fill)
                 .border(0.5.dp, colors.hairline, RoundedCornerShape(radius.md))
+                .heightIn(min = 48.dp)
+                .semantics {
+                    role = Role.DropdownList
+                    contentDescription = pickerDescription
+                    stateDescription = pickerState
+                }
                 .clickable { expanded = true }
                 .padding(horizontal = spacing.md, vertical = spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
@@ -338,7 +356,11 @@ private fun PromptField(
             onValueChange = onValueChange,
             textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.accent),
-            modifier = Modifier.fillMaxWidth(),
+            // Audit-200 D3 (m-911): the prompt field was silent for
+            // TalkBack when empty — label it with its placeholder
+            // (a plain String param, so no stringResource call is needed
+            // inside .semantics {}).
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = placeholder },
             decorationBox = { inner ->
                 if (value.isEmpty()) {
                     Text(
