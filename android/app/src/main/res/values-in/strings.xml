@@ -412,7 +412,11 @@
     <string name="revert_banner_target_unknown">Kembali ke sebelum sebuah pesan lama.</string>
     <string name="revert_banner_show_files">Tampilkan berkas</string>
     <string name="revert_banner_hide_files">Sembunyikan berkas</string>
-    <string name="revert_banner_and_more">dan %1$d lagi</string>
+    <!-- Audit-200 D7 (m-1104): plural — Indonesian has no singular/plural split, both forms identical. -->
+    <plurals name="revert_banner_and_more">
+        <item quantity="one">dan %1$d berkas lagi</item>
+        <item quantity="other">dan %1$d berkas lagi</item>
+    </plurals>
     <string name="revert_commit">Terapkan revert</string>
     <string name="revert_discard">Batalkan</string>
     <string name="chat_status_desc_ready">Engine online dan siap menerima perintah.</string>
@@ -731,8 +735,6 @@
     <string name="code_save_picker_failed">Tidak bisa membuka dialog simpan.</string>
     <string name="directory_picker_failed">Tidak bisa membuka pemilih folder.</string>
     <string name="saf_picker_failed">Tidak bisa membuka pemilih berkas.</string>
-    <string name="saf_file_dropped">Tidak bisa melampirkan berkas itu — coba pilih lagi.</string>
-    <!-- Audit-200 D7 (m-1164): pick yang hilang disebutkan namanya, supaya pengguna tahu berkas mana yang lenyap. -->
     <string name="saf_file_dropped_named">"Tidak bisa melampirkan '%1$s' — coba pilih lagi."</string>
     <string name="code_highlight_off">Highlight mati (berkas besar)</string>
 
@@ -1012,10 +1014,18 @@
     <string name="diag_logcat_failed">Log aplikasi tidak bisa dibaca.</string>
     <string name="diag_copy_logs">Salin Log</string>
     <!-- Audit-200 D7 (m-1093): tombol menyebut apa yang akan disalin saat filter/pencarian aktif. -->
-    <string name="diag_copy_logs_filtered">Salin %1$d baris yang cocok</string>
+    <!-- Audit-200 D7 (m-1093): plural — Indonesian has no singular/plural split, both forms identical. -->
+    <plurals name="diag_copy_logs_filtered">
+        <item quantity="one">Salin %1$d baris yang cocok</item>
+        <item quantity="other">Salin %1$d baris yang cocok</item>
+    </plurals>
     <string name="diag_copied_toast">Disalin ke papan klip</string>
     <!-- Audit-200 D7 (m-1093): toast menyebut berapa dari baris yang ditahan yang disalin. -->
-    <string name="diag_copied_logs_filtered">Disalin %1$d dari %2$d baris</string>
+    <!-- Audit-200 D7 (m-1093): plural — Indonesian has no singular/plural split, both forms identical. -->
+    <plurals name="diag_copied_logs_filtered">
+        <item quantity="one">Disalin %1$d dari %2$d baris</item>
+        <item quantity="other">Disalin %1$d dari %2$d baris</item>
+    </plurals>
     <string name="diag_cpu">CPU</string>
     <string name="diag_ram">RAM</string>
     <string name="diag_storage">Penyimpanan</string>

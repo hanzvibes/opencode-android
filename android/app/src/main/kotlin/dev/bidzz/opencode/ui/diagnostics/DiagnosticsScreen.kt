@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -577,7 +578,7 @@ fun DiagnosticsScreen(
             val text = (listOf(header) + lines.map { formatCopiedLogLine(it) }).joinToString("\n")
             val copiedMessage = if (copyPlainText(context, "OpenCode Logs", text)) {
                 if (logFilterActive) {
-                    context.getString(R.string.diag_copied_logs_filtered, lines.size, indexedLogs.size)
+                    context.resources.getQuantityString(R.plurals.diag_copied_logs_filtered, lines.size, lines.size, indexedLogs.size)
                 } else {
                     context.getString(R.string.diag_copied_toast)
                 }
@@ -1206,7 +1207,7 @@ fun DiagnosticsScreen(
                                 Spacer(Modifier.width(spacing.xxs))
                                 Text(
                                     text = if (logFilterActive) {
-                                        stringResource(R.string.diag_copy_logs_filtered, filteredLogs.size)
+                                        pluralStringResource(R.plurals.diag_copy_logs_filtered, filteredLogs.size, filteredLogs.size)
                                     } else {
                                         stringResource(R.string.diag_copy_logs)
                                     },

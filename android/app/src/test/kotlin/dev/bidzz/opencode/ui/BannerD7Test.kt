@@ -105,7 +105,7 @@ class BannerD7Test {
     @Test
     fun `m-1104 the banner lists its files on demand, five plus the rest`() {
         assertTrue(chatScreen.contains("revertBannerFileLines(paths)"))
-        assertTrue(chatScreen.contains("stringResource(R.string.revert_banner_and_more, fileList.remaining)"))
+        assertTrue(chatScreen.contains("pluralStringResource(R.plurals.revert_banner_and_more, fileList.remaining, fileList.remaining)"))
         // The toggle is one stringResource with a conditional id, not
         // two separate calls.
         assertTrue(chatScreen.contains("R.string.revert_banner_show_files"))

@@ -410,7 +410,11 @@
     <string name="revert_banner_target_unknown">Revert to just before an earlier message.</string>
     <string name="revert_banner_show_files">Show files</string>
     <string name="revert_banner_hide_files">Hide files</string>
-    <string name="revert_banner_and_more">and %1$d more</string>
+    <!-- Audit-200 D7 (m-1104): plural — "and 1 more file" vs "and 3 more files". -->
+    <plurals name="revert_banner_and_more">
+        <item quantity="one">and %1$d more file</item>
+        <item quantity="other">and %1$d more files</item>
+    </plurals>
     <string name="revert_commit">Apply revert</string>
     <string name="revert_discard">Discard</string>
     <string name="chat_status_desc_ready">Engine is online and ready for prompts.</string>
@@ -726,8 +730,6 @@
     <string name="code_save_picker_failed">Could not open the save dialog.</string>
     <string name="directory_picker_failed">Could not open the folder picker.</string>
     <string name="saf_picker_failed">Could not open the file picker.</string>
-    <string name="saf_file_dropped">Could not attach that file — try picking it again.</string>
-    <!-- Audit-200 D7 (m-1164): the dropped pick is named, so the user knows which file vanished. -->
     <string name="saf_file_dropped_named">"Could not attach '%1$s' — try picking it again."</string>
     <string name="code_highlight_off">Highlight off (large file)</string>
 
@@ -1007,10 +1009,18 @@
     <string name="diag_logcat_failed">Could not read the app log.</string>
     <string name="diag_copy_logs">Copy Logs</string>
     <!-- Audit-200 D7 (m-1093): the button says what it will copy when a filter/search is active. -->
-    <string name="diag_copy_logs_filtered">Copy %1$d matching lines</string>
+    <!-- Audit-200 D7 (m-1093): plural — "Copy 1 matching line" vs "Copy 3 matching lines". -->
+    <plurals name="diag_copy_logs_filtered">
+        <item quantity="one">Copy %1$d matching line</item>
+        <item quantity="other">Copy %1$d matching lines</item>
+    </plurals>
     <string name="diag_copied_toast">Copied to clipboard</string>
     <!-- Audit-200 D7 (m-1093): the toast says how many of the retained lines were copied. -->
-    <string name="diag_copied_logs_filtered">Copied %1$d of %2$d lines</string>
+    <!-- Audit-200 D7 (m-1093): plural — "Copied 1 of 5 lines" keeps the singular. -->
+    <plurals name="diag_copied_logs_filtered">
+        <item quantity="one">Copied %1$d of %2$d line</item>
+        <item quantity="other">Copied %1$d of %2$d lines</item>
+    </plurals>
     <string name="diag_cpu">CPU</string>
     <string name="diag_ram">RAM</string>
     <string name="diag_storage">Storage</string>

@@ -118,6 +118,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.AnnotatedString
@@ -3080,7 +3081,7 @@ private fun StagedRevertBanner(
                 }
                 if (fileList.remaining > 0) {
                     Text(
-                        text = stringResource(R.string.revert_banner_and_more, fileList.remaining),
+                        text = pluralStringResource(R.plurals.revert_banner_and_more, fileList.remaining, fileList.remaining),
                         style = OpenCodeTypography.caption,
                         color = colors.onSurfaceMuted,
                         modifier = Modifier.padding(start = spacing.lg, top = spacing.xxs),

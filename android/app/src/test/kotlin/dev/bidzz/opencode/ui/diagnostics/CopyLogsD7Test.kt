@@ -84,7 +84,7 @@ class CopyLogsD7Test {
     @Test
     fun `m-1093 the label and toast name the filtered count`() {
         val screen = read("src/main/kotlin/dev/bidzz/opencode/ui/diagnostics/DiagnosticsScreen.kt")
-        assertTrue(screen.contains("stringResource(R.string.diag_copy_logs_filtered, filteredLogs.size)"))
-        assertTrue(screen.contains("context.getString(R.string.diag_copied_logs_filtered, lines.size, indexedLogs.size)"))
+        assertTrue(screen.contains("pluralStringResource(R.plurals.diag_copy_logs_filtered, filteredLogs.size, filteredLogs.size)"))
+        assertTrue(screen.contains("context.resources.getQuantityString(R.plurals.diag_copied_logs_filtered, lines.size, lines.size, indexedLogs.size)"))
     }
 }
