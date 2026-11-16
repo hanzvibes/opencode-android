@@ -105,7 +105,8 @@
     <string name="search_clear">Hapus pencarian</string>
     <string name="mcp_title">Server MCP</string>
     <string name="mcp_body">Server yang dikonfigurasi di engine, beserta status koneksinya. Tambah, hubungkan, putuskan, dan hapus dari sini — perubahan berlaku saat runtime dan hilang setelah engine di-restart.</string>
-    <string name="mcp_empty">Belum ada server MCP yang dikonfigurasi di engine.</string>
+    <string name="mcp_empty">Belum ada server MCP yang dikonfigurasi di engine. Tambahkan lewat tombol Tambah di atas.</string>
+    <string name="mcp_resources_failed">Tidak bisa memuat sumber daya dari server yang terhubung.</string>
     <string name="mcp_add">Tambah</string>
     <string name="mcp_connect">Hubungkan</string>
     <string name="mcp_disconnect">Putuskan</string>
@@ -171,7 +172,7 @@
     <string name="mcp_status_unknown">Tidak diketahui</string>
     <string name="plugin_title">Plugin</string>
     <string name="plugin_body">Plugin yang aktif di engine, beserta statusnya. Periksa pembaruan untuk melihat plugin paket mana yang punya pembaruan.</string>
-    <string name="plugin_empty">Tidak ada plugin yang aktif di engine.</string>
+    <string name="plugin_empty">Tidak ada plugin yang aktif di engine. Periksa pembaruan di atas untuk mencari yang baru.</string>
     <string name="plugin_check_updates">Periksa pembaruan</string>
     <string name="plugin_checking">Memeriksa…</string>
     <string name="plugin_update">Perbarui</string>
@@ -207,6 +208,7 @@
     <string name="websearch_query_hint">Cari di web…</string>
     <string name="websearch_searching">Mencari…</string>
     <string name="websearch_empty">Ketik query lalu cari.</string>
+    <string name="websearch_recent">Pencarian terakhir</string>
     <string name="websearch_no_results">Tidak ada hasil untuk query ini.</string>
     <string name="websearch_provider_default">Provider bawaan</string>
     <string name="websearch_provider_pick">Pilih provider: %1$s</string>
@@ -244,10 +246,10 @@
     <string name="job_started">Dimulai %1$s</string>
     <string name="worktree_title">Worktree</string>
     <string name="worktree_body">Worktree yang tersimpan di engine, dikelompokkan per proyek. Membuat, menghapus dan refresh worktree belum tersedia.</string>
-    <string name="worktree_empty">Tidak ada worktree yang tersimpan di engine.</string>
+    <string name="worktree_empty">Tidak ada worktree yang tersimpan di engine. Worktree yang dibuat oleh engine muncul di sini.</string>
     <string name="config_title">Konfigurasi engine</string>
     <string name="config_body">Dokumen konfigurasi yang dibaca engine, dari prioritas terendah ke tertinggi. Mengubah konfigurasi dari aplikasi belum tersedia.</string>
-    <string name="config_empty">Tidak ada dokumen konfigurasi di engine.</string>
+    <string name="config_empty">Tidak ada dokumen konfigurasi di engine. Tambahkan berkas konfigurasi ke engine untuk melihatnya di sini.</string>
     <string name="config_directory">Direktori yang dicari — tidak berisi dokumen.</string>
     <!-- intentionally untranslated: "Model" is a standard developer loanword in Indonesian UI -->
     <string name="config_field_model">Model</string>
@@ -508,7 +510,7 @@
     <!-- Kotak masuk sesi -->
     <string name="inbox_title">Kotak masuk</string>
     <string name="inbox_body">Pekerjaan antrean sesi ini yang belum terkirim.</string>
-    <string name="inbox_empty">Tidak ada antrean untuk sesi ini.</string>
+    <string name="inbox_empty">Tidak ada antrean untuk sesi ini. Kirim pesan saat agen sibuk dan pesan itu akan menunggu di sini.</string>
     <string name="inbox_cancel">Batalkan</string>
     <string name="inbox_switch_steer">Kirim sekarang</string>
     <string name="inbox_switch_queue">Antrekan saja</string>
@@ -533,7 +535,7 @@
     <!-- Statistik sesi -->
     <string name="stats_title">Statistik sesi</string>
     <string name="stats_body">Ringkasan aktivitas, pemakaian, dan keandalan tool sesi.</string>
-    <string name="stats_empty">Belum ada aktivitas sesi yang tercatat.</string>
+    <string name="stats_empty">Belum ada aktivitas sesi yang tercatat. Mulai obrolan untuk mencatat aktivitas di sini.</string>
     <string name="stats_field_sessions">Sesi</string>
     <string name="stats_field_prompts">Prompt</string>
     <string name="stats_field_steps">Langkah</string>
@@ -772,7 +774,7 @@
     <!-- Files -->
     <string name="files_up">Naik satu folder</string>
     <string name="files_diff">Diff (%1$d)</string>
-    <string name="files_empty">Folder ini kosong.</string>
+    <string name="files_empty">Folder ini kosong. Berkas yang dibuat agen muncul di sini.</string>
     <string name="files_root">Root</string>
     <string name="files_note_not_repo">Bukan repositori git. Perubahan tidak dilacak.</string>
     <string name="files_note_clean">Repositori git tanpa perubahan yang belum di-commit.</string>
@@ -851,7 +853,7 @@
     <!-- Diff -->
     <string name="diff_loading">Memuat diff…</string>
     <string name="diff_git_unavailable">Git tidak tersedia di build ini, sehingga perubahan tidak bisa ditampilkan sebagai diff.\n\nIsi berkas tetap bisa dibaca dari daftar berkas.</string>
-    <string name="diff_none">Tidak ada perubahan untuk ditampilkan.</string>
+    <string name="diff_none">Tidak ada perubahan untuk ditampilkan. Ubah berkas untuk melihat perubahannya di sini.</string>
     <string name="diff_binary_changed">Berkas ini berubah, tetapi ini berkas biner — isinya tidak bisa ditampilkan sebagai diff.</string>
     <string name="diff_mode_changed">Hanya mode berkas yang berubah (misalnya jadi bisa dieksekusi) — tidak ada teks untuk ditampilkan sebagai diff.</string>
     <string name="diff_no_text_diff">Berkas ini berubah, tetapi tidak ada diff teks untuk ditampilkan.</string>
@@ -869,7 +871,7 @@
     <string name="diff_modified">Dimodifikasi</string>
     <string name="difflist_title">Perubahan (%1$d)</string>
     <string name="difflist_empty">Tidak ada perubahan di working tree.\n\nAgen belum mengedit apa pun, atau git tidak tersedia.</string>
-    <string name="sessiondiff_empty">Turn terakhir tidak mengubah berkas apa pun.</string>
+    <string name="sessiondiff_empty">Turn terakhir tidak mengubah berkas apa pun. Minta agen mengubah berkas untuk melihat perubahannya di sini.</string>
     <string name="sessiondiff_title">Diff giliran terakhir</string>
 
     <!-- History -->
@@ -887,6 +889,7 @@
     <string name="history_showing_more">Menampilkan %1$d dari %2$d+ yang dimuat</string>
     <string name="history_load_more">Muat lebih banyak sesi</string>
     <string name="history_previews_loading">Pratinjau masih dimuat — hasil pencarian bisa bertambah.</string>
+    <string name="history_previews_incomplete">Beberapa pratinjau tidak bisa dimuat — pencarian bisa melewatkan kecocokan.</string>
 
     <!-- Pembatas tanggal, status terkirim, balas, riwayat prompt (audit C) -->
     <string name="date_today">Hari ini</string>
@@ -1046,12 +1049,16 @@
         <item quantity="other">Salin %1$d baris yang cocok</item>
     </plurals>
     <string name="diag_copied_toast">Disalin ke papan klip</string>
+    <string name="diag_copied_partial">Disalin %1$d KB pertama — laporan lengkap terlalu besar untuk disalin.</string>
     <!-- Audit-200 D7 (m-1093): toast menyebut berapa dari baris yang ditahan yang disalin. -->
     <!-- Audit-200 D7 (m-1093): plural — Indonesian has no singular/plural split, both forms identical. -->
     <plurals name="diag_copied_logs_filtered">
         <item quantity="other">Disalin %1$d dari %2$d baris</item>
     </plurals>
     <string name="diag_cpu">CPU</string>
+    <string name="diag_app_version">Versi aplikasi</string>
+    <string name="diag_android_version">Versi Android</string>
+    <string name="diag_transitions">Transisi terakhir</string>
     <string name="diag_ram">RAM</string>
     <string name="diag_storage">Penyimpanan</string>
     <string name="diag_process_pid">PID Proses</string>

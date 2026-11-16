@@ -108,7 +108,8 @@
     <string name="search_clear">Clear search</string>
     <string name="mcp_title">MCP servers</string>
     <string name="mcp_body">Servers configured on the engine, and their connection status. Add, connect, disconnect and remove from here — changes apply at runtime and are gone after the next engine restart.</string>
-    <string name="mcp_empty">No MCP servers configured on the engine.</string>
+    <string name="mcp_empty">No MCP servers configured on the engine. Add one with the Add button above.</string>
+    <string name="mcp_resources_failed">Could not load resources from the connected servers.</string>
     <string name="mcp_add">Add</string>
     <string name="mcp_connect">Connect</string>
     <string name="mcp_disconnect">Disconnect</string>
@@ -174,7 +175,7 @@
     <string name="mcp_status_unknown">Unknown</string>
     <string name="plugin_title">Plugins</string>
     <string name="plugin_body">Plugins enabled on the engine, and their status. Check for updates to see which package plugins have one.</string>
-    <string name="plugin_empty">No plugins enabled on the engine.</string>
+    <string name="plugin_empty">No plugins enabled on the engine. Check for updates above to find new ones.</string>
     <string name="plugin_check_updates">Check updates</string>
     <string name="plugin_checking">Checking…</string>
     <string name="plugin_update">Update</string>
@@ -210,6 +211,7 @@
     <string name="websearch_query_hint">Search the web…</string>
     <string name="websearch_searching">Searching…</string>
     <string name="websearch_empty">Type a query and search.</string>
+    <string name="websearch_recent">Recent searches</string>
     <string name="websearch_no_results">No results for this query.</string>
     <string name="websearch_provider_default">Default provider</string>
     <string name="websearch_provider_pick">Choose provider: %1$s</string>
@@ -246,10 +248,10 @@
     <string name="job_started">Started %1$s</string>
     <string name="worktree_title">Worktrees</string>
     <string name="worktree_body">Worktrees saved on the engine, grouped by project. Creating, removing and refreshing worktrees are not available yet.</string>
-    <string name="worktree_empty">No worktrees saved on the engine.</string>
+    <string name="worktree_empty">No worktrees saved on the engine. Worktrees created by the engine appear here.</string>
     <string name="config_title">Engine config</string>
     <string name="config_body">Configuration documents resolved by the engine, lowest to highest priority. Editing config from the app is not available yet.</string>
-    <string name="config_empty">No configuration documents found on the engine.</string>
+    <string name="config_empty">No configuration documents found on the engine. Add a configuration file to the engine to see it here.</string>
     <string name="config_directory">Searched directory — holds no document.</string>
     <string name="config_field_model">Model</string>
     <string name="config_field_agent">Default agent</string>
@@ -507,7 +509,7 @@
     <!-- Session inbox -->
     <string name="inbox_title">Inbox</string>
     <string name="inbox_body">Queued work for this session that has not been delivered yet.</string>
-    <string name="inbox_empty">Nothing queued for this session.</string>
+    <string name="inbox_empty">Nothing queued for this session. Send a message while the agent is busy and it will wait here.</string>
     <string name="inbox_cancel">Cancel</string>
     <string name="inbox_switch_steer">Send now</string>
     <string name="inbox_switch_queue">Queue instead</string>
@@ -532,7 +534,7 @@
     <!-- Session stats -->
     <string name="stats_title">Session stats</string>
     <string name="stats_body">Aggregate session activity, usage, and tool reliability.</string>
-    <string name="stats_empty">No session activity recorded yet.</string>
+    <string name="stats_empty">No session activity recorded yet. Start a chat to record activity here.</string>
     <string name="stats_field_sessions">Sessions</string>
     <string name="stats_field_prompts">Prompts</string>
     <string name="stats_field_steps">Steps</string>
@@ -768,7 +770,7 @@
     <!-- Files -->
     <string name="files_up">Up one folder</string>
     <string name="files_diff">Diff (%1$d)</string>
-    <string name="files_empty">This folder is empty.</string>
+    <string name="files_empty">This folder is empty. Files created by the agent appear here.</string>
     <string name="files_root">Root</string>
     <string name="files_note_not_repo">Not a git repository. Changes are not tracked.</string>
     <string name="files_note_clean">Git repository with no uncommitted changes.</string>
@@ -847,7 +849,7 @@
     <!-- Diff -->
     <string name="diff_loading">Loading diff…</string>
     <string name="diff_git_unavailable">Git is not available in this build, so changes cannot be shown as a diff.\n\nThe file contents are still readable from the file list.</string>
-    <string name="diff_none">No changes to show.</string>
+    <string name="diff_none">No changes to show. Edit a file to see its changes here.</string>
     <string name="diff_binary_changed">This file changed, but it is a binary file — its contents cannot be shown as a diff.</string>
     <string name="diff_mode_changed">Only the file mode changed (for example, it became executable) — there is no text to show as a diff.</string>
     <string name="diff_no_text_diff">This file changed, but there is no text diff to show.</string>
@@ -865,7 +867,7 @@
     <string name="diff_modified">Modified</string>
     <string name="difflist_title">Changes (%1$d)</string>
     <string name="difflist_empty">No changes in the working tree.\n\nEither the agent has not edited anything yet, or git is not available.</string>
-    <string name="sessiondiff_empty">The latest turn changed no files.</string>
+    <string name="sessiondiff_empty">The latest turn changed no files. Ask the agent to change a file to see the diff here.</string>
     <string name="sessiondiff_title">Latest turn diff</string>
 
     <!-- History -->
@@ -883,6 +885,7 @@
     <string name="history_showing_more">Showing %1$d of %2$d+ loaded</string>
     <string name="history_load_more">Load more sessions</string>
     <string name="history_previews_loading">Previews still loading — search results may grow.</string>
+    <string name="history_previews_incomplete">Some previews could not be loaded — search may miss matches.</string>
 
     <!-- Date dividers, delivery status, reply, prompt history (audit C) -->
     <string name="date_today">Today</string>
@@ -1043,6 +1046,7 @@
         <item quantity="other">Copy %1$d matching lines</item>
     </plurals>
     <string name="diag_copied_toast">Copied to clipboard</string>
+    <string name="diag_copied_partial">Copied the first %1$d KB — the full report was too large to copy.</string>
     <!-- Audit-200 D7 (m-1093): the toast says how many of the retained lines were copied. -->
     <!-- Audit-200 D7 (m-1093): plural — "Copied 1 of 5 lines" keeps the singular. -->
     <plurals name="diag_copied_logs_filtered">
@@ -1050,6 +1054,9 @@
         <item quantity="other">Copied %1$d of %2$d lines</item>
     </plurals>
     <string name="diag_cpu">CPU</string>
+    <string name="diag_app_version">App version</string>
+    <string name="diag_android_version">Android version</string>
+    <string name="diag_transitions">Recent transitions</string>
     <string name="diag_ram">RAM</string>
     <string name="diag_storage">Storage</string>
     <string name="diag_process_pid">Process PID</string>

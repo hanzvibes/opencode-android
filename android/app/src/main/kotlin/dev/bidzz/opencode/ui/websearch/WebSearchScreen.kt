@@ -121,7 +121,6 @@ fun WebSearchScreen(
             }
             val response = state.response
             when {
-                state.searching -> LoadingState(stringResource(R.string.websearch_searching))
                 // Audit-200 B1 (M-183/M-310): a failed search is a
                 // persistent error with a retry, not a snackbar — the
                 // previous response is cleared with the failure, and
@@ -132,37 +131,93 @@ fun WebSearchScreen(
                     isError = true,
                     onRetry = onSearch,
                 )
-                response == null -> EmptyState(stringResource(R.string.websearch_empty))
-                response.results.isEmpty() -> EmptyState(stringResource(R.string.websearch_no_results))
-                else -> {
-                    Text(
-                        text = stringResource(
-                            R.string.websearch_provider_line,
-                            response.providerID,
-                        ),
-                        style = OpenCodeTypography.bodySmall,
-                        color = colors.onSurfaceMuted,
-                        modifier = Modifier.padding(
-                            horizontal = spacing.lg,
-                            vertical = spacing.xxs,
-                        ),
-                    )
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = spacing.lg),
+                // Audit-200 D10 (m-667): the searching branch used to come
+                // first and hide the previous results — the VM keeps the
+                // response while a new search runs (it only clears it on
+                // failure, B1/M-310), but the screen threw it away. With
+                // results on screen the old ones stay, with a small
+                // "Searching…" above them so they read as stale, not as
+                // the answer to the query still running.
+                response != null && response.results.isNotEmpty() -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
                     ) {
-                        itemsIndexed(
-                            response.results,
-                            key = { index, result -> webSearchResultKey(index, result.url) },
-                            contentType = { _, _ -> "data_row" },
-                        ) { index, result ->
-                            if (index > 0) RowDivider(inset = spacing.md)
-                            WebSearchRow(
-                                result = result,
-                                onOpen = { onOpenUrl(result.url) },
+                        if (state.searching) {
+                            LoadingState(
+                                stringResource(R.string.websearch_searching),
+                                fillMaxSize = false,
                             )
                         }
+                        Text(
+                            text = stringResource(
+                                R.string.websearch_provider_line,
+                                response.providerID,
+                            ),
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.onSurfaceMuted,
+                            modifier = Modifier.padding(
+                                horizontal = spacing.lg,
+                                vertical = spacing.xxs,
+                            ),
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = spacing.lg),
+                        ) {
+                            itemsIndexed(
+                                response.results,
+                                key = { index, result -> webSearchResultKey(index, result.url) },
+                                contentType = { _, _ -> "data_row" },
+                            ) { index, result ->
+                                if (index > 0) RowDivider(inset = spacing.md)
+                                WebSearchRow(
+                                    result = result,
+                                    onOpen = { onOpenUrl(result.url) },
+                                )
+                            }
+                        }
+                    }
+                }
+                state.searching -> LoadingState(stringResource(R.string.websearch_searching))
+                response != null -> EmptyState(stringResource(R.string.websearch_no_results))
+                else -> {
+                    // Audit-200 D10 (m-658): the screen used to show
+                    // nothing but "type a query" — a repeated search had
+                    // to be retyped. The recent queries sit above the
+                    // empty state; tapping one fills it in and searches.
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (state.recentQueries.isNotEmpty()) {
+                            Text(
+                                text = stringResource(R.string.websearch_recent),
+                                style = OpenCodeTypography.bodySmall,
+                                color = colors.onSurfaceMuted,
+                                modifier = Modifier.padding(
+                                    horizontal = spacing.lg,
+                                    vertical = spacing.xs,
+                                ),
+                            )
+                            state.recentQueries.forEach { recent ->
+                                Text(
+                                    text = recent,
+                                    style = OpenCodeTypography.body,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onQueryChange(recent)
+                                            onSearch()
+                                        }
+                                        .padding(
+                                            horizontal = spacing.lg,
+                                            vertical = spacing.sm,
+                                        ),
+                                )
+                            }
+                            RowDivider(inset = spacing.lg)
+                        }
+                        EmptyState(stringResource(R.string.websearch_empty))
                     }
                 }
             }

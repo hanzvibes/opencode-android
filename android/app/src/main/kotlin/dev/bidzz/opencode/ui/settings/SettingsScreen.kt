@@ -181,7 +181,12 @@ fun SettingsScreen(
     LaunchedEffect(engineHandle) { loadSavedPermissions() }
     fun revokeSavedPermission(saved: PermissionSavedInfo) {
         if (saved.id in revokingPermissionIds) return
-        val handle = app.engineApi.handle() ?: return
+        // Audit-200 D10 (m-817): a dead engine used to swallow the tap
+        // silently — report it the same way a failed revoke is reported.
+        val handle = app.engineApi.handle() ?: run {
+            savedPermissionsFailure = engineDownFailure()
+            return
+        }
         revokingPermissionIds = revokingPermissionIds + saved.id
         permissionsScope.launch {
             try {

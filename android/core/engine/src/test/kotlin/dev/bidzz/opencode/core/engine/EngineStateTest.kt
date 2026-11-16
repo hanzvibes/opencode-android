@@ -1,5 +1,6 @@
 package dev.bidzz.opencode.core.engine
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,6 +28,38 @@ class EngineStateTest {
     @Test
     fun `cannot jump from STOPPED to RUNNING`() {
         assertFalse(EngineState.STOPPED.canTransitionTo(EngineState.RUNNING))
+    }
+
+    // ---- audit-200 D10 (m-510): the transition history -------------------
+
+    @Test
+    fun `m-510 transitions append in order`() {
+        val history = appendEngineTransition(
+            emptyList(),
+            EngineState.STOPPED,
+            EngineState.STARTING,
+            1000L,
+        ).let { appendEngineTransition(it, EngineState.STARTING, EngineState.RUNNING, 2000L) }
+        assertEquals(2, history.size)
+        assertEquals(EngineState.STOPPED, history[0].from)
+        assertEquals(EngineState.RUNNING, history[1].to)
+        assertEquals(2000L, history[1].atEpochMs)
+    }
+
+    @Test
+    fun `m-510 the history keeps only the newest twenty`() {
+        var history = emptyList<EngineTransition>()
+        repeat(MAX_TRANSITION_HISTORY + 5) { i ->
+            history = appendEngineTransition(
+                history,
+                EngineState.STOPPED,
+                EngineState.STARTING,
+                i.toLong(),
+            )
+        }
+        assertEquals(MAX_TRANSITION_HISTORY, history.size)
+        assertEquals(5L, history.first().atEpochMs)
+        assertEquals((MAX_TRANSITION_HISTORY + 4).toLong(), history.last().atEpochMs)
     }
 
     @Test

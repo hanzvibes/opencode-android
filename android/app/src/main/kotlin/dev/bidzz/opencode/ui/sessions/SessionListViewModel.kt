@@ -9,6 +9,7 @@ import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.ui.MAX_SESSION_TITLE_LENGTH
 import dev.bidzz.opencode.ui.chat.ReadPositionStore
+import dev.bidzz.opencode.ui.engineDownFailure
 import dev.bidzz.opencode.ui.formatCompactTokens
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -101,7 +102,46 @@ data class SessionListUiState(
      * search look complete while rows are still unknown.
      */
     val detailsLoading: Boolean = false,
+    /**
+     * True when a preview walk finished with at least one lookup failed
+     * (audit-200 D10, m-173/m-1115): the walk is over, so [detailsLoading]
+     * is false, but some session's preview is still unknown — the search
+     * note must say the search may be incomplete instead of vanishing
+     * with the loading flag. Reset when a new walk starts; a retry that
+     * lands clears it the same way.
+     */
+    val previewsIncomplete: Boolean = false,
 )
+
+/**
+ * What the session list says about its previews (audit-200 D10,
+ * m-173/m-1115): [LOADING] while a walk is in flight, [INCOMPLETE]
+ * when a walk finished with at least one lookup failed, [NONE] when
+ * every listed session's preview is known (or there is nothing to say
+ * because no row is unknown). The History screen and the drawer share
+ * this one derivation, so the note can never disagree between them.
+ */
+enum class SessionPreviewNote {
+    NONE,
+    LOADING,
+    INCOMPLETE,
+}
+
+/**
+ * Derives the preview note from one state snapshot. Pure so the rule is
+ * testable without a live engine: a note only ever appears while some
+ * listed session's preview is still unknown — rows below the fold that
+ * were never walked do not trigger it on their own, and a walk that
+ * finished clean hides it even though [detailsLoading] just turned off.
+ */
+fun resolveSessionPreviewNote(state: SessionListUiState): SessionPreviewNote {
+    if (!state.rows.any { state.details[it.id]?.previewKnown != true }) return SessionPreviewNote.NONE
+    return when {
+        state.detailsLoading -> SessionPreviewNote.LOADING
+        state.previewsIncomplete -> SessionPreviewNote.INCOMPLETE
+        else -> SessionPreviewNote.NONE
+    }
+}
 
 /**
  * Session history.
@@ -254,7 +294,13 @@ class SessionListViewModel(
     fun loadMore() {
         val cursor = sessionCursor ?: return
         if (_state.value.loading || _state.value.loadingMore) return
-        val handle = api.handle() ?: return
+        // Audit-200 D10 (m-817): a dead engine used to swallow the tap
+        // silently — the same B2 pattern as addServer/mutate, where the
+        // failure is reported the same way a failed page is.
+        val handle = api.handle() ?: run {
+            _state.value = _state.value.copy(failure = engineDownFailure())
+            return
+        }
         val generation = loadGeneration
         val directory = _state.value.filterDirectory
         _state.value = _state.value.copy(loadingMore = true)
@@ -363,7 +409,10 @@ class SessionListViewModel(
         val generation = loadGeneration
         previewJob = viewModelScope.launch {
             val self = coroutineContext[Job]!!
-            _state.value = _state.value.copy(detailsLoading = true)
+            // Audit-200 D10 (m-173/m-1115): a new walk re-decides the
+            // incomplete flag — a stale failure from the last walk must
+            // not survive into this one.
+            _state.value = _state.value.copy(detailsLoading = true, previewsIncomplete = false)
             try {
                 while (previewWantedIds.isNotEmpty()) {
                     if (generation != loadGeneration) return@launch
@@ -374,6 +423,13 @@ class SessionListViewModel(
                     }.awaitAll()
                     if (generation != loadGeneration) return@launch
                     val filled = _state.value.details.toMutableMap()
+                    // A lookup that lands with complete = false failed
+                    // (a superseded walk returns before this point, so a
+                    // false here is a genuine fetch failure, not a
+                    // generation change) — remember it, so the search note
+                    // survives the walk instead of vanishing with the
+                    // loading flag.
+                    val batchFailed = results.any { (_, lookup) -> !lookup.complete }
                     for ((id, lookup) in results) {
                         previewWantedIds.remove(id)
                         val existing = filled[id]
@@ -385,7 +441,10 @@ class SessionListViewModel(
                             previewKnown = lookup.complete,
                         )
                     }
-                    _state.value = _state.value.copy(details = filled.toMap())
+                    _state.value = _state.value.copy(
+                        details = filled.toMap(),
+                        previewsIncomplete = _state.value.previewsIncomplete || batchFailed,
+                    )
                 }
             } finally {
                 if (previewJob === self) {

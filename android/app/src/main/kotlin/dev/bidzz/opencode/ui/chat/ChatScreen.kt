@@ -147,7 +147,9 @@ import dev.bidzz.opencode.ui.CollapsedSidebarWidth
 import dev.bidzz.opencode.ui.Glyph
 import dev.bidzz.opencode.ui.GlyphIcon
 import dev.bidzz.opencode.ui.HairlineSeparator
+import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.IconAction
+import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.NoticeKind
 import dev.bidzz.opencode.ui.HatchRowSpinner
 import dev.bidzz.opencode.ui.NoticeRow
@@ -167,6 +169,7 @@ import dev.bidzz.opencode.ui.sessions.RenameSessionDialog
 import dev.bidzz.opencode.ui.sessions.SessionActionMenu
 import dev.bidzz.opencode.ui.sessions.SessionDateGroup
 import dev.bidzz.opencode.ui.sessions.SessionDetail
+import dev.bidzz.opencode.ui.sessions.SessionPreviewNote
 import dev.bidzz.opencode.ui.sessions.highlightMatches
 import dev.bidzz.opencode.ui.sessions.searchTokens
 import dev.bidzz.opencode.ui.sessions.sessionMatchSnippet
@@ -218,6 +221,7 @@ fun ChatScreen(
     sessionsLoading: Boolean = false,
     sessionsFailure: ApiResult.Failure? = null,
     sessionsFailureKey: Int? = null,
+    sessionsPreviewNote: SessionPreviewNote = SessionPreviewNote.NONE,
     /**
      * Failed delete/rename in the drawer (audit-200 D6, m-477): the
      * drawer and the sessions screen share one SessionListViewModel, so
@@ -2664,6 +2668,7 @@ fun ChatScreen(
                         sessionsLoading = sessionsLoading,
                         sessionsFailure = sessionsFailure,
                         sessionsFailureKey = sessionsFailureKey,
+                        sessionsPreviewNote = sessionsPreviewNote,
                         sessionsDeleteFailure = sessionsDeleteFailure,
                         sessionsDeleteFailureKey = sessionsDeleteFailureKey,
                         sessionsDeleteFailedSessionID = sessionsDeleteFailedSessionID,
@@ -2721,6 +2726,7 @@ fun ChatScreen(
                         sessionsLoading = sessionsLoading,
                         sessionsFailure = sessionsFailure,
                         sessionsFailureKey = sessionsFailureKey,
+                        sessionsPreviewNote = sessionsPreviewNote,
                         sessionsDeleteFailure = sessionsDeleteFailure,
                         sessionsDeleteFailureKey = sessionsDeleteFailureKey,
                         sessionsDeleteFailedSessionID = sessionsDeleteFailedSessionID,
@@ -4118,6 +4124,7 @@ private fun ChatDrawer(
     sessionsLoading: Boolean = false,
     sessionsFailure: ApiResult.Failure? = null,
     sessionsFailureKey: Int? = null,
+    sessionsPreviewNote: SessionPreviewNote = SessionPreviewNote.NONE,
     sessionsDeleteFailure: ApiResult.Failure? = null,
     sessionsDeleteFailureKey: Int? = null,
     sessionsDeleteFailedSessionID: String? = null,
@@ -4168,6 +4175,7 @@ private fun ChatDrawer(
                 sessionsLoading = sessionsLoading,
                 sessionsFailure = sessionsFailure,
                 sessionsFailureKey = sessionsFailureKey,
+                sessionsPreviewNote = sessionsPreviewNote,
                 sessionsDeleteFailure = sessionsDeleteFailure,
                 sessionsDeleteFailureKey = sessionsDeleteFailureKey,
                 sessionsDeleteFailedSessionID = sessionsDeleteFailedSessionID,
@@ -4227,6 +4235,7 @@ private fun ChatDrawerContent(
     sessionsLoading: Boolean = false,
     sessionsFailure: ApiResult.Failure? = null,
     sessionsFailureKey: Int? = null,
+    sessionsPreviewNote: SessionPreviewNote = SessionPreviewNote.NONE,
     sessionsDeleteFailure: ApiResult.Failure? = null,
     sessionsDeleteFailureKey: Int? = null,
     sessionsDeleteFailedSessionID: String? = null,
@@ -4495,25 +4504,26 @@ private fun ChatDrawerContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 when {
+                    // Audit-200 D10 (m-196): the drawer loading state was
+                    // a static text while every other screen shows a
+                    // spinner — the same LoadingState the History screen
+                    // uses, mini so it fits the drawer column, with the
+                    // same retry the failure branch offers.
                     sessionsLoading && sessions.isEmpty() -> {
-                        Text(
-                            text = stringResource(R.string.common_loading),
-                            style = OpenCodeTypography.bodySmall,
-                            color = colors.onSurfaceMuted,
-                            textAlign = TextAlign.Center,
+                        LoadingState(
+                            stringResource(R.string.common_loading),
+                            onRetry = onRetrySessions,
+                            fillMaxSize = false,
                         )
                     }
                     (sessionsFailure != null || sessionsFailureKey != null) && sessions.isEmpty() -> {
-                        Text(
-                            text = sessionsFailure?.message()
+                        EmptyState(
+                            sessionsFailure?.message()
                                 ?: sessionsFailureKey?.let { stringResource(it) }.orEmpty(),
-                            style = OpenCodeTypography.bodySmall,
-                            color = colors.onSurfaceMuted,
-                            textAlign = TextAlign.Center,
+                            isError = true,
+                            onRetry = onRetrySessions,
+                            fillMaxSize = false,
                         )
-                        TextButton(onClick = onRetrySessions) {
-                            Text(stringResource(R.string.chat_retry))
-                        }
                     }
                     else -> {
                         Text(
@@ -4529,6 +4539,23 @@ private fun ChatDrawerContent(
                         if (sidebarQuery.isBlank()) {
                             Text(
                                 text = stringResource(R.string.sidebar_empty_hint),
+                                style = OpenCodeTypography.caption,
+                                color = colors.onSurfaceFaint,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = spacing.xs),
+                            )
+                        }
+                        // Audit-200 D10 (m-173/m-1115): the drawer had no
+                        // preview note at all — a search with no matches
+                        // read as complete while previews were still
+                        // arriving (or had failed). Same note as History,
+                        // derived from the same state.
+                        if (sidebarQuery.isNotBlank() && sessionsPreviewNote != SessionPreviewNote.NONE) {
+                            Text(
+                                text = stringResource(
+                                    if (sessionsPreviewNote == SessionPreviewNote.LOADING) R.string.history_previews_loading
+                                    else R.string.history_previews_incomplete,
+                                ),
                                 style = OpenCodeTypography.caption,
                                 color = colors.onSurfaceFaint,
                                 textAlign = TextAlign.Center,
@@ -4722,6 +4749,7 @@ private fun ChatSidebar(
     sessionsLoading: Boolean = false,
     sessionsFailure: ApiResult.Failure? = null,
     sessionsFailureKey: Int? = null,
+    sessionsPreviewNote: SessionPreviewNote = SessionPreviewNote.NONE,
     sessionsDeleteFailure: ApiResult.Failure? = null,
     sessionsDeleteFailureKey: Int? = null,
     sessionsDeleteFailedSessionID: String? = null,
@@ -4770,6 +4798,7 @@ private fun ChatSidebar(
             sessionsLoading = sessionsLoading,
             sessionsFailure = sessionsFailure,
             sessionsFailureKey = sessionsFailureKey,
+            sessionsPreviewNote = sessionsPreviewNote,
             sessionsDeleteFailure = sessionsDeleteFailure,
             sessionsDeleteFailureKey = sessionsDeleteFailureKey,
             sessionsDeleteFailedSessionID = sessionsDeleteFailedSessionID,

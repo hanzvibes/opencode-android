@@ -73,6 +73,7 @@ import dev.bidzz.opencode.core.engine.EngineBinary
 import dev.bidzz.opencode.core.engine.EngineCrashReport
 import dev.bidzz.opencode.core.engine.EngineDiagnostics
 import dev.bidzz.opencode.core.engine.EngineState
+import dev.bidzz.opencode.core.engine.EngineTransition
 import dev.bidzz.opencode.core.engine.StartupTimings
 import dev.bidzz.opencode.ui.AppTag
 import dev.bidzz.opencode.ui.CardGroup
@@ -258,6 +259,69 @@ internal fun logcatCommand(pid: Int): List<String> = listOf("logcat", "-d", "--p
 internal fun trimLogcatTail(text: String, maxChars: Int = LOGCAT_EXPORT_MAX_CHARS): String =
     if (text.length <= maxChars) text else text.takeLast(maxChars)
 
+/** Most characters a copied diagnostics report or log may carry (audit-200 D10, m-902): the same 256 KB convention as the logcat export — the clipboard crosses Binder, and an unbounded paste is how a copy silently fails. */
+internal const val DIAG_COPY_MAX_CHARS = 256 * 1024
+
+/** The smaller copy retried when the full one fails (audit-200 D10, m-902): small enough to fit any clipboard transaction. */
+internal const val DIAG_COPY_PARTIAL_MAX_CHARS = 64 * 1024
+
+/**
+ * Caps copied text at [maxChars], keeping the head and saying so.
+ * Pure, so the rule is unit-tested here rather than through the copy
+ * buttons: a capped copy never pretends to be the whole report — the
+ * truncation note names how much was kept.
+ */
+internal fun capDiagnosticsText(text: String, maxChars: Int = DIAG_COPY_MAX_CHARS): String {
+    if (text.length <= maxChars) return text
+    val head = text.take(maxChars).substringBeforeLast("\n").ifEmpty { text.take(maxChars) }
+    return "$head\n\n[truncated: showing the first ${head.length} of ${text.length} characters]"
+}
+
+/**
+ * Shortens an absolute path for a pasted report (audit-200 D10, m-902):
+ * paths under the app's private directory become `app/...` — the package
+ * directory is public knowledge, the full device layout is not — and any
+ * other path keeps only its last two segments. Pure, so the rule is
+ * unit-tested here.
+ */
+internal fun shortenDiagnosticPath(path: String, appPrivateRoot: String): String {
+    if (appPrivateRoot.isNotEmpty()) {
+        if (path == appPrivateRoot) return "app"
+        if (path.startsWith("$appPrivateRoot/")) return "app" + path.substring(appPrivateRoot.length)
+    }
+    val parts = path.split("/").filter { it.isNotEmpty() }
+    return if (parts.size <= 2) path else "…/" + parts.takeLast(2).joinToString("/")
+}
+
+/** What a clipboard copy of diagnostics text ended as (audit-200 D10, m-902). */
+internal enum class DiagCopyResult { COPIED, COPIED_PARTIAL, FAILED }
+
+/**
+ * Copies [text] to the clipboard, retrying once with a shorter copy when
+ * the full one fails: a clipboard that refuses the whole report may
+ * still take the first 64 KB, and that is worth more than a bare failure
+ * toast. The text is capped first, so the "copied" case is never
+ * unbounded either.
+ */
+internal fun copyDiagnosticsText(context: Context, label: String, text: String): DiagCopyResult {
+    val capped = capDiagnosticsText(text)
+    if (copyPlainText(context, label, capped)) return DiagCopyResult.COPIED
+    val partial = capDiagnosticsText(text, DIAG_COPY_PARTIAL_MAX_CHARS)
+    if (partial != capped && copyPlainText(context, label, partial)) return DiagCopyResult.COPIED_PARTIAL
+    return DiagCopyResult.FAILED
+}
+
+/**
+ * One history line for a transition (audit-200 D10, m-510): the time,
+ * the change, and the redacted reason when the change had one. Pure,
+ * so the shape is unit-tested here.
+ */
+internal fun formatEngineTransition(transition: EngineTransition): String {
+    val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(transition.atEpochMs))
+    val base = "$time ${transition.from.name} -> ${transition.to.name}"
+    return if (transition.error.isNullOrBlank()) base else "$base — ${transition.error}"
+}
+
 /**
  * The text the logcat export shares: a header naming the app and pid,
  * then the capped log. Null when logcat produced nothing usable — the
@@ -290,6 +354,17 @@ fun DiagnosticsScreen(
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
     val status by app.engineStatus.collectAsStateWithLifecycle()
+
+    // Audit-200 D10 (m-509): the version travels with every report and
+    // shows on the Health card — a bug report without it cannot say
+    // which build misbehaved. Read once, like About does.
+    @Suppress("DEPRECATION")
+    val appVersion = remember {
+        runCatching {
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            "${info.versionName ?: "unknown"} (${info.longVersionCode})"
+        }.getOrDefault("unknown")
+    }
 
     val diagnostics = remember {
         EngineDiagnostics(
@@ -483,6 +558,13 @@ fun DiagnosticsScreen(
             appendLine("- CPU: $cpuCores Cores ($cpuAbi)")
             appendLine("- RAM: ${formatBytes(memInfo.availMem)} free / ${formatBytes(memInfo.totalMem)} (lowMemory: ${memInfo.lowMemory})")
             appendLine("- Storage: ${formatBytes(storageFree)} free / ${formatBytes(storageTotal)}")
+            // Audit-200 D10 (m-509): a report without versions cannot say
+            // which build misbehaved. There is no runtime engine version
+            // to report — the engine is a bundled fork, and its version
+            // is a build-time fact, not a supervisor fact — so the app
+            // and Android versions travel instead.
+            appendLine("- App Version: $appVersion")
+            appendLine("- Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
             appendLine("- App PID: ${Process.myPid()}")
             appendLine("- Engine PID: ${status.pid ?: "None"}")
             appendLine()
@@ -504,6 +586,15 @@ fun DiagnosticsScreen(
             // Audit-200 D5 (m-875): cold-start timings travel with the
             // report, so a pasted bug report carries the stage breakdown.
             appendLine("- Startup Timings: ${StartupTimings.report()}")
+            // Audit-200 D10 (m-510): the transition history travels too —
+            // a report that says FAILED but never how it got there cannot
+            // be debugged from the paste alone.
+            if (status.recentTransitions.isNotEmpty()) {
+                appendLine("- Recent Transitions:")
+                status.recentTransitions.forEach { appendLine("  - ${formatEngineTransition(it)}") }
+            } else {
+                appendLine("- Recent Transitions: None")
+            }
             appendLine()
             // Audit-200 C13 (M-179/M-180): the crash records travel with
             // the report, so a pasted bug report carries them.
@@ -525,8 +616,12 @@ fun DiagnosticsScreen(
             }
             appendLine()
             appendLine("## Paths")
+            // Audit-200 D10 (m-902): absolute paths leak the device layout
+            // into a pasted report — app-private paths shorten to app/...,
+            // anything else keeps only its last two segments.
+            val appPrivateRoot = app.filesDir.parentFile?.absolutePath.orEmpty()
             diagnostics.paths().forEach { (k, v) ->
-                appendLine("- $k: $v")
+                appendLine("- $k: ${shortenDiagnosticPath(v, appPrivateRoot)}")
             }
             appendLine()
             // Audit-200 C9 (M-136): the headers say how much was kept,
@@ -550,10 +645,16 @@ fun DiagnosticsScreen(
         }
 
         // 65-F4: the "copied" snackbar only fires on a real copy.
-        val copiedMessage = if (copyPlainText(context, "OpenCode Diagnostics", report)) {
-            context.getString(R.string.diag_copied_toast)
-        } else {
-            context.getString(R.string.copy_failed)
+        // Audit-200 D10 (m-902): the copy is capped and retried short —
+        // a clipboard that refuses the whole report may still take the
+        // first 64 KB, and the toast says which one happened.
+        val copiedMessage = when (copyDiagnosticsText(context, "OpenCode Diagnostics", report)) {
+            DiagCopyResult.COPIED -> context.getString(R.string.diag_copied_toast)
+            DiagCopyResult.COPIED_PARTIAL -> context.getString(
+                R.string.diag_copied_partial,
+                DIAG_COPY_PARTIAL_MAX_CHARS / 1024,
+            )
+            DiagCopyResult.FAILED -> context.getString(R.string.copy_failed)
         }
         (context.applicationContext as OpenCodeApplication).showSnackbar(copiedMessage)
     }
@@ -576,14 +677,20 @@ fun DiagnosticsScreen(
                 total = indexedLogs.size,
             )
             val text = (listOf(header) + lines.map { formatCopiedLogLine(it) }).joinToString("\n")
-            val copiedMessage = if (copyPlainText(context, "OpenCode Logs", text)) {
-                if (logFilterActive) {
+            // Audit-200 D10 (m-902): same cap-and-retry as Copy All —
+            // the viewer already bounds what it keeps, but the paste is
+            // still unbounded without the cap.
+            val copiedMessage = when (copyDiagnosticsText(context, "OpenCode Logs", text)) {
+                DiagCopyResult.COPIED -> if (logFilterActive) {
                     context.resources.getQuantityString(R.plurals.diag_copied_logs_filtered, lines.size, lines.size, indexedLogs.size)
                 } else {
                     context.getString(R.string.diag_copied_toast)
                 }
-            } else {
-                context.getString(R.string.copy_failed)
+                DiagCopyResult.COPIED_PARTIAL -> context.getString(
+                    R.string.diag_copied_partial,
+                    DIAG_COPY_PARTIAL_MAX_CHARS / 1024,
+                )
+                DiagCopyResult.FAILED -> context.getString(R.string.copy_failed)
             }
             (context.applicationContext as OpenCodeApplication).showSnackbar(copiedMessage)
         }
@@ -815,6 +922,35 @@ fun DiagnosticsScreen(
                                 value = StartupTimings.report(),
                                 isCode = true,
                             )
+
+                            // Audit-200 D10 (m-510): the last transitions,
+                            // newest last — a FAILED state with no history
+                            // cannot say how it got there. The card shows
+                            // the last five; the full twenty travel with
+                            // Copy All.
+                            if (status.recentTransitions.isNotEmpty()) {
+                                RowDivider(inset = spacing.md)
+                                Text(
+                                    text = stringResource(R.string.diag_transitions),
+                                    style = OpenCodeTypography.bodySmall,
+                                    color = colors.onSurfaceFaint,
+                                    modifier = Modifier.padding(
+                                        horizontal = spacing.md,
+                                        vertical = spacing.xs,
+                                    ),
+                                )
+                                status.recentTransitions.takeLast(5).forEach { transition ->
+                                    Text(
+                                        text = formatEngineTransition(transition),
+                                        style = OpenCodeTypography.code,
+                                        color = colors.onSurface,
+                                        modifier = Modifier.padding(
+                                            horizontal = spacing.md,
+                                            vertical = spacing.xxs,
+                                        ),
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -1005,6 +1141,22 @@ fun DiagnosticsScreen(
                         secondaryText = stringResource(R.string.diag_app_pid, Process.myPid()),
                         tagLabel = stringResource(if (status.pid != null) R.string.diag_health_active else R.string.diag_health_inactive),
                         tagColor = if (status.pid != null) colors.success else colors.onSurfaceMuted,
+                    )
+                    RowDivider(inset = spacing.md)
+
+                    // Audit-200 D10 (m-509): the versions the report
+                    // carries, on screen too — a bug report starts here,
+                    // and the build must be visible without copying.
+                    DiagnosticRow(
+                        label = stringResource(R.string.diag_app_version),
+                        value = appVersion,
+                        isCode = true,
+                    )
+                    RowDivider(inset = spacing.md)
+                    DiagnosticRow(
+                        label = stringResource(R.string.diag_android_version),
+                        value = "${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})",
+                        isCode = true,
                     )
                 }
 

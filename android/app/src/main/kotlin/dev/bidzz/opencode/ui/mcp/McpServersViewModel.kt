@@ -22,6 +22,15 @@ data class McpServersUiState(
     val failure: ApiResult.Failure? = null,
     /** Resources and templates from every connected server; null until loaded. */
     val resources: McpResourceCatalog? = null,
+    /**
+     * What the catalog load got wrong (audit-200 D10, m-1010): a failed
+     * catalog used to leave [resources] null — the same value as "no
+     * resources exist" — so the section vanished without a word. Kept
+     * separate from [failure] on purpose: the server list is fine, only
+     * the secondary catalog failed, so the screen shows a banner over
+     * the list instead of a full-screen error.
+     */
+    val resourcesFailure: ApiResult.Failure? = null,
     /** Names of servers with a connect / disconnect / remove in flight. */
     val busyServers: Set<String> = emptySet(),
     /** True while an add is in flight. */
@@ -207,9 +216,11 @@ class McpServersViewModel(
      * `showLoading` is false after a successful mutation: the list stays
      * visible and is replaced in place instead of flashing the loading
      * state. A failed catalog load leaves [McpServersUiState.resources]
-     * null and hides the resources section — the catalog is secondary to
-     * the server list, and a failed list already reports the engine
-     * problem through [McpServersUiState.failure].
+     * null and records [McpServersUiState.resourcesFailure] — the
+     * catalog is secondary to the server list, so the screen shows a
+     * banner over the list instead of a full-screen error; a failed list
+     * already reports the engine problem through
+     * [McpServersUiState.failure].
      */
     /**
      * The engine handle this VM last loaded from (M-292): a restart
@@ -262,11 +273,11 @@ class McpServersViewModel(
                     when (val catalog = handle.mcp.resourceCatalog()) {
                         is ApiResult.Success -> {
                             if (generation != loadGeneration) return@launch
-                            _state.value = _state.value.copy(resources = catalog.value)
+                            _state.value = _state.value.copy(resources = catalog.value, resourcesFailure = null)
                         }
                         is ApiResult.Failure -> {
                             if (generation != loadGeneration) return@launch
-                            _state.value = _state.value.copy(resources = null)
+                            _state.value = _state.value.copy(resources = null, resourcesFailure = catalog)
                         }
                     }
                 }

@@ -1302,6 +1302,12 @@ class ChatViewModel(
     private var lastLiveToolsRef: Map<String, LiveTool>? = null
     private var lastToolDurations: Map<String, Long> = emptyMap()
     private var lastToolStartedAt: Map<String, Long> = emptyMap()
+    // Audit-200 D10 (m-458): the prepend fast path also pins the inputs
+    // the per-message map reads besides the lists — whether a run is in
+    // flight (it settles tool calls) and the confirmed question answers
+    // (mutated in place, so the snapshot is a copy, not the reference).
+    private var lastBuildBusy: Boolean = false
+    private var lastAnswered: Map<String, List<String>> = emptyMap()
     // Audit-200 C12 (M-016): the last merged transcript and the streaming
     // map it was merged for — re-merging on every emission is skipped
     // while the overlay input is unchanged. Sizes of the tool clocks at
@@ -2392,11 +2398,60 @@ class ChatViewModel(
             lastMergedStreaming = chat.streaming
             return merged
         }
+        // Audit-200 D10 (m-458): loading earlier only PREPENDS older
+        // messages — the tail is the old window verbatim, except its first
+        // element when a turn split across the page edge (the repository
+        // merges it and keeps the old id). Rebuilding the whole transcript
+        // for that is the jank on every "load earlier" tap, so only the
+        // head is built fresh and the cached tail is reused. The tail is
+        // only reusable while every other per-message input is unchanged:
+        // live tools (by reference), durations, the streaming map, whether
+        // a run is in flight (it settles tool calls), and the confirmed
+        // question answers (by value — the map is mutated in place). The
+        // head is built from the current state and filtered to head ids,
+        // so streaming ghosts and live-tool appends for tail messages —
+        // which the fresh build would attach to the head — are dropped;
+        // the tail already carries them from the previous build. The old
+        // first element's built form is dropped by id, not by position:
+        // an idle marker produces no entry, so position 0 is not always
+        // its built form. Anything unexpected falls through to the full
+        // rebuild below.
+        val oldMessages = lastMessagesRef
+        if (oldMessages != null && lastUnmergedMessages.isNotEmpty() &&
+            chat.liveTools === lastLiveToolsRef &&
+            toolDurations == lastToolDurations && toolStartedAt == lastToolStartedAt &&
+            chat.streaming == lastMergedStreaming &&
+            chat.busy == lastBuildBusy &&
+            confirmedQuestionAnswers == lastAnswered
+        ) {
+            val headCount = prependedHeadCount(chat.messages, oldMessages)
+            if (headCount >= 1) {
+                val headMessages = chat.messages.take(headCount + 1)
+                val headIds = headMessages.map { it.id }.toSet()
+                val headBuilt = chat.copy(messages = headMessages)
+                    .buildUnmergedMessages(toolDurations, toolStartedAt, confirmedQuestionAnswers)
+                    .filter { it.id in headIds }
+                val unmerged = headBuilt + lastUnmergedMessages.filter { it.id != oldMessages.first().id }
+                lastUnmergedMessages = unmerged
+                lastMessagesRef = chat.messages
+                lastLiveToolsRef = chat.liveTools
+                lastToolDurations = toolDurations
+                lastToolStartedAt = toolStartedAt
+                lastBuildBusy = chat.busy
+                lastAnswered = confirmedQuestionAnswers.toMap()
+                val merged = mergeContiguousAssistant(unmerged)
+                lastMergedMessages = merged
+                lastMergedStreaming = chat.streaming
+                return merged
+            }
+        }
         lastUnmergedMessages = chat.buildUnmergedMessages(toolDurations, toolStartedAt, confirmedQuestionAnswers)
         lastMessagesRef = chat.messages
         lastLiveToolsRef = chat.liveTools
         lastToolDurations = toolDurations
         lastToolStartedAt = toolStartedAt
+        lastBuildBusy = chat.busy
+        lastAnswered = confirmedQuestionAnswers.toMap()
         val merged = mergeContiguousAssistant(lastUnmergedMessages)
         lastMergedMessages = merged
         lastMergedStreaming = chat.streaming
@@ -6619,9 +6674,32 @@ private fun applyStreamingOverlay(result: MutableList<ChatMessage>, streaming: M
     }
 }
 
+/**
+ * Counts how many messages were prepended to [oldMessages] to make
+ * [newMessages] (audit-200 D10, m-458): the tail must be the old list
+ * verbatim — same objects, same order — except its first element, which
+ * the repository may have replaced with a merge of the page's last
+ * message and the window's first one (a turn split across the page
+ * edge; the merge keeps the old element's id). Returns the head count,
+ * or -1 when the new list is not a prepend-extension of the old one.
+ * Pure so the rule is unit-tested without a live engine.
+ */
+internal fun prependedHeadCount(
+    newMessages: List<SessionMessage>,
+    oldMessages: List<SessionMessage>,
+): Int {
+    if (oldMessages.isEmpty() || newMessages.size <= oldMessages.size) return -1
+    val head = newMessages.size - oldMessages.size
+    // The first tail element may be a boundary merge, so identity is
+    // required only from the second one on.
+    for (i in 1 until oldMessages.size) {
+        if (newMessages[head + i] !== oldMessages[i]) return -1
+    }
+    return head
+}
+
 /** Merges contiguous assistant messages into one unified turn. */
-internal fun mergeContiguousAssistant(messages: List<ChatMessage>): List<ChatMessage> {
-    // Merge contiguous assistant messages into one unified turn
+internal fun mergeContiguousAssistant(messages: List<ChatMessage>): List<ChatMessage> {    // Merge contiguous assistant messages into one unified turn
     val merged = mutableListOf<ChatMessage>()
     messages.forEach { msg ->
         val last = merged.lastOrNull()
