@@ -3,8 +3,11 @@ package dev.bidzz.opencode.ui.chat
 import dev.bidzz.opencode.api.EngineApi
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.ChatState
+import dev.bidzz.opencode.core.api.LiveTool
 import dev.bidzz.opencode.core.api.dto.MessageContent
+import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.api.dto.SessionMessage
+import dev.bidzz.opencode.core.api.dto.ToolCall
 import dev.bidzz.opencode.core.api.dto.ToolError
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -95,6 +98,36 @@ class ChatErrorTurnTest {
         // path runs, and the ghost must go with it.
         vm.onRepoState(ChatState(messages = history, streaming = emptyMap()))
         assertTrue(vm.state.value.messages.none { it.id == "m1" })
+    }
+
+    @Test
+    fun `m-054 a live tool bubble survives an unrelated emission on the incremental path`() {
+        // Audit-200 D16 (m-054): the ghost removal used to erase a
+        // still-running tool's bubble whenever an unrelated emission
+        // (here: a permission ask) took the incremental path — the entry
+        // is streaming, has no history row, and its id is not in the
+        // streaming map. The live-tool exception keeps it.
+        val vm = viewModel()
+        val history = emptyList<SessionMessage>()
+        val call = ToolCall(id = "call-1", name = "read", status = "running")
+        val liveTools = mapOf("call-1" to LiveTool(messageID = "m1", call = call))
+
+        vm.onRepoState(
+            ChatState(messages = history, streaming = mapOf("m1" to "partial"), liveTools = liveTools),
+        )
+        assertTrue(vm.state.value.messages.any { it.id == "m1" })
+
+        // Same history and liveTools references, streaming cleared, a
+        // permission ask arrives: the incremental path runs.
+        vm.onRepoState(
+            ChatState(
+                messages = history,
+                streaming = emptyMap(),
+                liveTools = liveTools,
+                pendingPermission = PendingPermission(id = "p1", sessionID = "s1", action = "read"),
+            ),
+        )
+        assertTrue(vm.state.value.messages.any { it.id == "m1" })
     }
 
     @Test

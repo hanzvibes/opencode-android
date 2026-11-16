@@ -50,4 +50,31 @@ class HeaderTitleTest {
     fun `a bare folder name with no path is still a name`() {
         assertEquals("myapp", headerTitle("myapp"))
     }
+
+    // Audit-200 D16 (m-199): same folder name in two places -----------
+
+    @Test
+    fun `m-199 a colliding name shows its parent segment`() {
+        val known = setOf("/storage/emulated/0/Projects/client-a/app", "/storage/emulated/0/Projects/client-b/app")
+        assertEquals("client-a/app", headerTitle("/storage/emulated/0/Projects/client-a/app", known))
+        assertEquals("client-b/app", headerTitle("/storage/emulated/0/Projects/client-b/app", known))
+    }
+
+    @Test
+    fun `m-199 a unique name stays a single segment even with known workspaces`() {
+        val known = setOf("/storage/emulated/0/Projects/demo", "/storage/emulated/0/Projects/other")
+        assertEquals("demo", headerTitle("/storage/emulated/0/Projects/demo", known))
+    }
+
+    @Test
+    fun `m-199 the workspace itself does not count as a collision`() {
+        // Only one workspace with this name, even if it is in the known set.
+        val known = setOf("/storage/emulated/0/Projects/demo")
+        assertEquals("demo", headerTitle("/storage/emulated/0/Projects/demo", known))
+    }
+
+    @Test
+    fun `m-199 a colliding name with no parent falls back to the name`() {
+        assertEquals("app", headerTitle("app", setOf("app", "other/app")))
+    }
 }

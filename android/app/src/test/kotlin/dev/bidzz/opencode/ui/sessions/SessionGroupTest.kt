@@ -274,4 +274,51 @@ class SessionGroupTest {
         assertEquals(10, annotated.spanStyles[1].start)
         assertEquals(15, annotated.spanStyles[1].end)
     }
+
+    // Audit-200 D16 (m-175): search matches the directory basename,
+    // not the absolute path -------------------------------------------
+
+    @Test
+    fun `m-175 a path segment that is not the basename matches nothing`() {
+        val row = session("1").copy(directory = "/storage/emulated/0/Projects/my-app")
+        assertTrue(!matchesSessionQuery("storage", row))
+        assertTrue(!matchesSessionQuery("emulated", row))
+        assertTrue(!matchesSessionQuery("Projects", row))
+    }
+
+    @Test
+    fun `m-175 the basename itself still matches by substring`() {
+        val row = session("1").copy(directory = "/storage/emulated/0/Projects/my-app")
+        assertTrue(matchesSessionQuery("my-app", row))
+        // Substring within the basename is accepted behaviour (D16
+        // decision): "app" finds "my-app", but not every project.
+        assertTrue(matchesSessionQuery("app", row))
+    }
+
+    // Audit-200 D16 (m-163): pin first, then cap ------------------------
+
+    @Test
+    fun `m-163 a pin below the cap still reaches the drawer`() {
+        // 25 sessions, the pin at position 21 (index 20): a plain take(20)
+        // would drop it before grouping ever saw it.
+        val rows = (1..25).map { n ->
+            session("$n", timestamp = now, isPinned = n == 21)
+        }
+        val drawn = drawerSessions(rows, cap = 20)
+        assertTrue(drawn.any { it.id == "21" })
+        assertEquals(20, drawn.size)
+        // The pin rides first; the 19 newest unpinned follow.
+        assertEquals("21", drawn.first().id)
+        assertTrue(drawn.drop(1).none { it.isPinned })
+    }
+
+    @Test
+    fun `m-163 pins beyond the cap still ride along`() {
+        val rows = (1..25).map { n ->
+            session("$n", timestamp = now, isPinned = n <= 3)
+        }
+        val drawn = drawerSessions(rows, cap = 20)
+        assertEquals(listOf("1", "2", "3"), drawn.take(3).map { it.id })
+        assertEquals(20, drawn.size)
+    }
 }

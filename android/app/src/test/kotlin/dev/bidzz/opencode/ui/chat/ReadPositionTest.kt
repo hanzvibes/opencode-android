@@ -58,4 +58,36 @@ class ReadPositionTest {
     fun `DL-037 a legacy count with an empty window cannot be resolved`() {
         assertNull(resolveMigratedReadId(2, emptyList()))
     }
+
+    // Audit-200 D16 (m-049): the watermark advances only when at least
+    // half of the first unread item is on screen -----------------------
+
+    @Test
+    fun `m-049 a one-pixel sliver at the viewport edge does not count as read`() {
+        // Item 200px tall, only its last pixel inside a 1000px viewport.
+        assertEquals(0.005f, visibleFraction(itemOffset = 999, itemSize = 200, viewportHeight = 1000), 0.001f)
+    }
+
+    @Test
+    fun `m-049 exactly half visible counts as read`() {
+        assertEquals(0.5f, visibleFraction(itemOffset = 900, itemSize = 200, viewportHeight = 1000), 0.001f)
+    }
+
+    @Test
+    fun `m-049 more than half visible counts as read`() {
+        assertEquals(0.75f, visibleFraction(itemOffset = 850, itemSize = 200, viewportHeight = 1000), 0.001f)
+    }
+
+    @Test
+    fun `m-049 an item fully above or below the viewport is not visible`() {
+        assertEquals(0f, visibleFraction(itemOffset = -200, itemSize = 200, viewportHeight = 1000), 0.001f)
+        assertEquals(0f, visibleFraction(itemOffset = 1000, itemSize = 200, viewportHeight = 1000), 0.001f)
+        assertEquals(0f, visibleFraction(itemOffset = -50, itemSize = 0, viewportHeight = 1000), 0.001f)
+    }
+
+    @Test
+    fun `m-049 an item scrolled partly past the top still counts its visible part`() {
+        // Top 50px scrolled past: 150 of 200px visible.
+        assertEquals(0.75f, visibleFraction(itemOffset = -50, itemSize = 200, viewportHeight = 1000), 0.001f)
+    }
 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -98,6 +99,13 @@ fun DiffScreen(
     // onSaveInstanceState (same class as C-006).
     var modeName by rememberSaveable { mutableStateOf(DiffViewMode.Unified.name) }
     val mode = diffViewModeForName(modeName)
+    // Audit-200 D16 (m-262): one scroll state per mode, saved across
+    // rotation — switching Unified ↔ Split used to rebuild the list from
+    // position 0 every time, because neither LazyColumn held a state.
+    // Per-mode (not one shared state): the two lists have different
+    // shapes, so an index in one is meaningless in the other.
+    val unifiedListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val splitListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
     ScreenScaffold(
         title = state.file.substringAfterLast('/'),
@@ -122,8 +130,8 @@ fun DiffScreen(
             state.failure != null -> EmptyState(state.failure.message(), isError = true, onRetry = onRetry)
             state.failureKey != null -> EmptyState(stringResource(state.failureKey), isError = true, onRetry = onRetry)
             state.hunks.isEmpty() -> EmptyState(stringResource(noTextDiffMessage(state.patch) ?: R.string.diff_none))
-            mode == DiffViewMode.Unified -> UnifiedDiffView(state = state)
-            mode == DiffViewMode.Split -> SplitDiffView(state = state)
+            mode == DiffViewMode.Unified -> UnifiedDiffView(state = state, listState = unifiedListState)
+            mode == DiffViewMode.Split -> SplitDiffView(state = state, listState = splitListState)
         }
     }
 }
@@ -189,11 +197,12 @@ private fun ModeOptionChip(
 
 /** Unified diff view: old/new gutters with single-column code flow. */
 @Composable
-private fun UnifiedDiffView(state: DiffUiState) {
+private fun UnifiedDiffView(state: DiffUiState, listState: LazyListState) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = spacing.xxl),
     ) {
@@ -346,10 +355,16 @@ private fun UnifiedDiffLineRow(line: DiffLine, colors: OpenCodeColors) {
 
 /** Side-by-side (Split) diff view: Old code on Left, New code on Right. */
 @Composable
-private fun SplitDiffView(state: DiffUiState) {
+private fun SplitDiffView(state: DiffUiState, listState: LazyListState) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val horizontalScroll = rememberScrollState()
+    // Audit-200 D16 (m-256): ONE horizontal scroll state shared by both
+    // cells of every row — the Unified view scrolls each line, the Split
+    // cells had no scroll at all, so a long line's tail was unreachable.
+    // Shared (not per cell): the two columns stay aligned while reading
+    // the same region of an old/new pair.
+    val cellScrollState = rememberScrollState()
 
     Column(
         modifier = Modifier
@@ -409,6 +424,7 @@ private fun SplitDiffView(state: DiffUiState) {
 
         // Lazy hunks list for split view
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .width(720.dp)
                 .weight(1f),
@@ -425,7 +441,7 @@ private fun SplitDiffView(state: DiffUiState) {
                     key = { rowIndex, pair -> "$hunkKey:${diffPairKey(hunk, pairedRows, rowIndex, pair)}" },
                     contentType = { _, _ -> "side_by_side_row" },
                 ) { _, pair ->
-                    SplitDiffRow(pair, colors)
+                    SplitDiffRow(pair, colors, cellScrollState)
                 }
             }
             // Audit-200 C9 (M-144): the unified view had this footer; the
@@ -445,7 +461,11 @@ private fun SplitDiffView(state: DiffUiState) {
 }
 
 @Composable
-private fun SplitDiffRow(pair: DiffSideBySideRow, colors: OpenCodeColors) {
+private fun SplitDiffRow(
+    pair: DiffSideBySideRow,
+    colors: OpenCodeColors,
+    horizontalScrollState: androidx.compose.foundation.ScrollState,
+) {
     val spacing = OpenCodeTheme.tokens.spacing
 
     Row(
@@ -469,7 +489,9 @@ private fun SplitDiffRow(pair: DiffSideBySideRow, colors: OpenCodeColors) {
         ) {
             if (pair.left != null) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(horizontalScrollState),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // Accent stripe
@@ -529,7 +551,9 @@ private fun SplitDiffRow(pair: DiffSideBySideRow, colors: OpenCodeColors) {
         ) {
             if (pair.right != null) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(horizontalScrollState),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // Accent stripe
