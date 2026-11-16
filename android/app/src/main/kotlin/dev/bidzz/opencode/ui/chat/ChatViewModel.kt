@@ -87,6 +87,15 @@ data class ChatUiState(
      * abandoned. While true the composer is disabled and sends are held.
      */
     val restoringSession: Boolean = false,
+    /**
+     * True while [ChatViewModel.openSessionById] is verifying a
+     * deep-link id (audit-200 D13, m-977): the GET that proves the
+     * session exists is in flight. Like [restoringSession] it gets its
+     * own row, so a link that takes seconds to verify reads as "wait a
+     * moment", not "broken" — the old code showed nothing at all until
+     * the GET resolved or the 120s client timeout hit.
+     */
+    val openingSession: Boolean = false,
     /** What went wrong, as a value; the screen words it in the app’s language. */
     val failure: ApiResult.Failure? = null,
     /** A message with no failure behind it, e.g. the engine never started. */
@@ -517,6 +526,9 @@ enum class RetryKind {
     /** Restoring the remembered session after an engine restart failed:
      * re-run the restore (the GET, not a re-send). */
     RESTORE_SESSION,
+    /** A deep-link open was deferred (the engine did not answer):
+     * re-run the verification GET for the queued id. */
+    RETRY_OPEN,
 }
 
 /** A single rendered message. */
@@ -2383,6 +2395,16 @@ class ChatViewModel(
         // it is refused ([refuseSessionOpen]), or when the user
         // navigates elsewhere. An id equal to the session already open
         // drops without opening, and the next queued link takes its turn.
+        // Audit-200 D13 (m-1004): the in-memory queue is loaded once
+        // at construction, so a link parked long ago would outlive its
+        // TTL here even though the store already pruned it. Re-sync
+        // with the store first: an id the store no longer holds is
+        // stale (abandoned at the lock screen, or simply too old) and
+        // must not open over the restored session.
+        val fresh = pendingOpenStore.loadPendingOpens()
+        if (fresh.size != pendingOpenQueue.size || !pendingOpenQueue.containsAll(fresh)) {
+            mutatePendingOpens { retainAll(fresh) }
+        }
         while (true) {
             val pending = pendingOpenQueue.firstOrNull() ?: return
             if (pending == _state.value.sessionID) {
@@ -2778,6 +2800,13 @@ class ChatViewModel(
             rateLimitGuidanceShown = rateLimitGuidanceKept,
             pendingPermission = effectivePending,
             deferredPermission = effectiveDeferred,
+            // Audit-200 D13 (m-977): the opening flag is set
+            // synchronously by a drain mid-fold (consumePendingOpen
+            // starts a verification GET) — the captured `previous`
+            // predates it, so the fold must carry the CURRENT value
+            // or the indicator never appears for a cold-start link.
+            // Same clobber shape as D12's failureKey lesson (m-379).
+            openingSession = _state.value.openingSession,
             // While a permission prompt is outstanding the prompt is the
             // action, not the banner: Retry must not offer to re-send a
             // prompt into a run that is blocked waiting for an answer.
@@ -5094,6 +5123,11 @@ class ChatViewModel(
             RetryKind.RESEND -> retryLastSend()
             RetryKind.RELOAD_SESSION -> reloadSession()
             RetryKind.RESTORE_SESSION -> lastRestoreTargetSessionID?.let { onResume(it) }
+            // Audit-200 D13 (m-977): re-run the verification GET for the
+            // deferred deep-link id. The banner clears when the session
+            // opens (resolveFailureKey drops link keys on session change);
+            // a fresh failure defers again with a new Retry.
+            RetryKind.RETRY_OPEN -> retryPendingOpen()
             RetryKind.RATE_LIMITED -> {
                 // Audit-200 D6 (m-312): the tap shows the guidance instead
                 // of re-sending — and the guidance is now owned by the
@@ -5113,6 +5147,17 @@ class ChatViewModel(
             }
             RetryKind.RESTART_ENGINE, RetryKind.REAUTH, RetryKind.NONE -> Unit
         }
+    }
+
+    /**
+     * Re-runs the verification GET for the queued deep-link id
+     * (audit-200 D13, m-977): the banner's Retry after a defer. A
+     * no-op when the queue drained meanwhile (another open superseded
+     * it, or the id was refused) — the banner is already gone then, so
+     * the tap cannot happen; this is only the belt to its braces.
+     */
+    fun retryPendingOpen() {
+        if (pendingOpenQueue.isNotEmpty()) consumePendingOpen()
     }
 
     /**
@@ -6038,9 +6083,26 @@ class ChatViewModel(
             // one more verification in flight until it resolves.
             val mySeq = ++openVerificationSeq
             openVerificationInFlight++
+            // Audit-200 D13 (m-977): the indicator goes up with the
+            // request, not after it — the old code showed nothing while
+            // the GET ran.
+            _state.value = _state.value.copy(openingSession = true)
             viewModelScope.launch {
                 try {
-                    when (val result = h.sessions.get(sessionID)) {
+                    // Audit-200 D13 (m-977): a dedicated timeout for the
+                    // verification GET only — never the 120s client
+                    // timeout, which a prompt needs. A timeout reads as
+                    // a transient failure (code 0, like a dropped
+                    // connection), so the existing Failure branch defers
+                    // it with Retry instead of hanging until 120s.
+                    val result = try {
+                        withTimeout(OPEN_VERIFICATION_TIMEOUT_MS) {
+                            h.sessions.get(sessionID)
+                        }
+                    } catch (e: TimeoutCancellationException) {
+                        ApiResult.Failure(code = 0, message = "verification timed out")
+                    }
+                    when (result) {
                         is ApiResult.Success -> {
                             val refusal = sessionOpenRefusal(
                                 meta = result.value,
@@ -6101,6 +6163,13 @@ class ChatViewModel(
                     }
                 } finally {
                     openVerificationInFlight--
+                    // Audit-200 D13 (m-977): the indicator drops with
+                    // the last verification in flight — a superseded
+                    // request resolving first must not hide the newer
+                    // one still running.
+                    if (openVerificationInFlight == 0) {
+                        _state.value = _state.value.copy(openingSession = false)
+                    }
                 }
             }
             return
@@ -6136,7 +6205,10 @@ class ChatViewModel(
         _state.value = _state.value.copy(
             failureKey = R.string.session_link_verify_failed,
             rateLimitGuidanceShown = false,
-            retryKind = RetryKind.NONE,
+            // Audit-200 D13 (m-977): a defer is retryable — the id stays
+            // queued, and the banner's Retry re-runs the verification
+            // instead of leaving the link stranded until the next attach.
+            retryKind = RetryKind.RETRY_OPEN,
         )
     }
 
@@ -6996,6 +7068,15 @@ internal fun contextUsageTokens(messages: List<SessionMessage>): Long? =
 
 /** Minimum gap between context-meter refreshes while a run is in progress (23-F3). */
 private const val CONTEXT_REFRESH_BUSY_INTERVAL_MS = 30_000L
+
+/**
+ * How long a deep-link verification GET may run (audit-200 D13,
+ * m-977): the engine answers a local GET in well under a second when
+ * it is up, so 10 seconds is already generous — and it bounds the
+ * "opening…" window the user stares at. The 120s client timeout stays
+ * untouched: a prompt can legitimately take a minute.
+ */
+private const val OPEN_VERIFICATION_TIMEOUT_MS = 10_000L
 
 /** Pure throttle decision for the busy-run meter refresh: due once the gap has passed. */
 internal fun contextRefreshDue(nowMs: Long, lastMs: Long, intervalMs: Long = CONTEXT_REFRESH_BUSY_INTERVAL_MS): Boolean =

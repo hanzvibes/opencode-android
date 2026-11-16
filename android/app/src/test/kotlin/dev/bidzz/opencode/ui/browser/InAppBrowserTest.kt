@@ -60,4 +60,22 @@ class InAppBrowserTest {
         assertFalse(isForwardableUrl(""))
         assertFalse(isForwardableUrl("mailto:"))
     }
+
+    @Test
+    fun `D13 m-899 only a real tap on the main frame forwards to the system`() {
+        assertTrue(shouldForwardToSystem("tel:+621234567", isMainFrame = true, hasGesture = true))
+        assertTrue(shouldForwardToSystem("mailto:rehan@example.com", isMainFrame = true, hasGesture = true))
+    }
+
+    @Test
+    fun `D13 m-899 navigation without a gesture never forwards`() {
+        // JS navigation, meta-refresh and redirects carry no gesture.
+        assertFalse(shouldForwardToSystem("tel:+621234567", isMainFrame = true, hasGesture = false))
+        assertFalse(shouldForwardToSystem("mailto:rehan@example.com", isMainFrame = true, hasGesture = false))
+        // A subframe never forwards, even with a gesture.
+        assertFalse(shouldForwardToSystem("tel:+621234567", isMainFrame = false, hasGesture = true))
+        // A non-forwardable scheme never forwards, even tapped.
+        assertFalse(shouldForwardToSystem("tel:*#06#", isMainFrame = true, hasGesture = true))
+        assertFalse(shouldForwardToSystem("intent://scan/#Intent;scheme=zxing;end", isMainFrame = true, hasGesture = true))
+    }
 }

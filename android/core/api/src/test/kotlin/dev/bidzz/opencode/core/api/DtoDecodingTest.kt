@@ -13,6 +13,7 @@ import dev.bidzz.opencode.core.api.dto.VcsBranchesResponse
 import dev.bidzz.opencode.core.api.dto.VcsDiffResponse
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -298,5 +299,14 @@ class DtoDecodingTest {
         assertTrue(!unauthorized.isSessionMissing)
         assertTrue(missing.isSessionMissing)
         assertTrue(!missing.isUnauthorized)
+    }
+
+    @Test
+    fun `D13 m-984 any 404 except LocationNotFoundError is a missing session`() {
+        assertTrue(ApiResult.Failure(code = 404, tag = null).isSessionMissing)
+        assertTrue(ApiResult.Failure(code = 404, tag = "SomeOtherError").isSessionMissing)
+        assertTrue(ApiResult.Failure(code = 404, tag = "SessionNotFoundError").isSessionMissing)
+        assertFalse(ApiResult.Failure(code = 404, tag = "LocationNotFoundError").isSessionMissing)
+        assertFalse(ApiResult.Failure(code = 500, tag = "SomeOtherError").isSessionMissing)
     }
 }

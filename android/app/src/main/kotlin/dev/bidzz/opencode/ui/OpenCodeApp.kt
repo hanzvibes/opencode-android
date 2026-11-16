@@ -163,7 +163,15 @@ import kotlinx.coroutines.supervisorScope
 internal sealed interface Screen {
     data object Chat : Screen
     data object Sessions : Screen
-    data object Projects : Screen
+    /**
+     * Where Back returns to (audit-200 D13, m-1167): Projects opens
+     * from Settings and from the drawer, and each of them is the right
+     * place to come back to. Same pattern as [Diagnostics.returnTo]
+     * (C10) and [InAppBrowser.returnTo] (B7); like them, the return
+     * target is not carried in the saved key, so a restore after
+     * process death returns to Chat.
+     */
+    data class Projects(val returnTo: Screen = Screen.Chat) : Screen
     data object Files : Screen
     /**
      * Where Back returns to (audit-200 C10, M-160): a file is opened from
@@ -246,7 +254,7 @@ internal sealed interface Screen {
     fun toSavedKey(): String = when (this) {
         Chat -> "chat"
         Sessions -> "sessions"
-        Projects -> "projects"
+        is Projects -> "projects"
         Files -> "files"
         is FileView -> "fileview:$path"
         DiffList -> "difflist"
@@ -286,7 +294,7 @@ internal fun screenFromSavedKey(key: String): Screen {
     return when (kind) {
         "chat" -> Screen.Chat
         "sessions" -> Screen.Sessions
-        "projects" -> Screen.Projects
+        "projects" -> Screen.Projects()
         "files" -> Screen.Files
         "fileview" -> payload?.let { Screen.FileView(it) } ?: Screen.Chat
         "difflist" -> Screen.DiffList
@@ -379,6 +387,9 @@ internal fun Screen.parent(): Screen = when (this) {
     Screen.SessionStats -> Screen.Settings
     Screen.UsageLimits -> Screen.Settings
     is Screen.About -> this.returnTo
+    // Audit-200 D13 (m-1167): Projects returns to the screen that
+    // opened it (Settings or Chat), not always to Chat.
+    is Screen.Projects -> this.returnTo
     // Audit-200 C10 (M-157): Diagnostics returns to the screen that
     // opened it (Settings or Chat), not always to Chat.
     is Screen.Diagnostics -> this.returnTo
@@ -397,7 +408,7 @@ internal fun Screen.parent(): Screen = when (this) {
 internal fun Screen.depth(): Int = when (this) {
     Screen.Chat -> 0
     Screen.Sessions -> 1
-    Screen.Projects, Screen.Files, Screen.Settings, is Screen.Diagnostics -> 2
+    is Screen.Projects, Screen.Files, Screen.Settings, is Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
     Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Artifacts, Screen.Jobs,
     Screen.Generate, Screen.WebSearch,
@@ -467,6 +478,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // survive a recreate (fold, rotation) instead of resetting to Chat.
     var screen by rememberSaveable(stateSaver = ScreenSaver) { mutableStateOf<Screen>(Screen.Chat) }
     var sessionScopeToProject by rememberSaveable { mutableStateOf(true) }
+    // Audit-200 D13 (m-980): the deep-link id waiting for its session
+    // to be confirmed open. The collector only records it — navigation
+    // happens in the effect below, when the session is really open.
+    var pendingDeepLinkSessionID by remember { mutableStateOf<String?>(null) }
 
     // #4d: one host for every snackbar in the app, overlaid at the root
     // (BottomCenter) below — see the collector in LaunchedEffect(Unit).
@@ -760,7 +775,14 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 collectSafely("session-open") {
                     app.sessionOpenRequested.collect { sessionID ->
                         chatViewModel.openSession(sessionID)
-                        screen = Screen.Chat
+                        // Audit-200 D13 (m-980): do NOT navigate yet —
+                        // the session is only parked (cold, no engine
+                        // yet) or still being verified (warm GET in
+                        // flight). The effect below navigates when the
+                        // session is confirmed open, so a refused or
+                        // deferred link never yanks the user onto the
+                        // wrong session first.
+                        pendingDeepLinkSessionID = sessionID
                     }
                 }
             }
@@ -815,6 +837,30 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     }
                 }
             }
+        }
+    }
+
+    // Audit-200 D13 (m-980): navigate to Chat only when the deep-linked
+    // session is confirmed open. A parked (cold) or verifying (warm)
+    // link must not move the screen — the old collector navigated
+    // unconditionally, so a refused link still yanked the user onto the
+    // wrong session first, with the refusal banner arriving afterwards.
+    LaunchedEffect(chatState.sessionID, pendingDeepLinkSessionID) {
+        val pending = pendingDeepLinkSessionID
+        if (pending != null && chatState.sessionID == pending) {
+            pendingDeepLinkSessionID = null
+            screen = Screen.Chat
+        }
+    }
+    // A refused link never opens: drop the pending navigation, or the
+    // next session the user opens by hand would inherit a stale jump.
+    // A deferred link keeps its pending id — the Retry (or the next
+    // attach) may still open it, and then the effect above navigates.
+    LaunchedEffect(chatState.failureKey) {
+        if (chatState.failureKey == R.string.session_link_gone ||
+            chatState.failureKey == R.string.session_link_wrong_workspace
+        ) {
+            pendingDeepLinkSessionID = null
         }
     }
 
@@ -1482,14 +1528,14 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         )
                     }
 
-                    Screen.Projects -> {
+                    is Screen.Projects -> {
                         val current = app.workspaceStore.resolve().absolutePath
                         ProjectPickerScreen(
                             currentPath = current,
                             internalPath = app.workspaceStore.internalPath(),
                             hasAllFilesAccess = app.workspaceStore.hasAllFilesAccess(),
                             options = buildProjectOptions(app, current),
-                            onBack = { screen = Screen.Chat },
+                            onBack = { screen = screen.parent() },
                             onSelect = { option ->
                                 // A refused switch stays on this screen (item 30):
                                 // starting a new session and navigating away would
@@ -1547,7 +1593,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         },
                         onBack = { screen = Screen.Chat },
                         onDiagnostics = { screen = Screen.Diagnostics(Screen.Settings) },
-                        onProjects = { screen = Screen.Projects },
+                        onProjects = { screen = Screen.Projects(Screen.Settings) },
                         onProviders = { screen = Screen.Providers },
                         onMcpServers = { screen = Screen.McpServers },
                         onPlugins = { screen = Screen.Plugins },
@@ -1976,7 +2022,7 @@ private fun ChatDestination(
         onRequestVoicePermission = app::requestVoicePermission,
         voicePermissionResult = app.voicePermissionResult,
         onSessionsClick = { onNavigate(Screen.Sessions) },
-        onProjectClick = { onNavigate(Screen.Projects) },
+        onProjectClick = { onNavigate(Screen.Projects()) },
         onFilesClick = { onNavigate(Screen.Files) },
         onSettingsClick = { onNavigate(Screen.Settings) },
         onDiagnosticsClick = { onNavigate(Screen.Diagnostics(Screen.Chat)) },

@@ -31,7 +31,16 @@ sealed interface ApiResult<out T> {
         val retryAfterSeconds: Int? = null,
     ) : ApiResult<Nothing> {
         val isUnauthorized: Boolean get() = tag == "UnauthorizedError" || code == 401
-        val isSessionMissing: Boolean get() = tag == "SessionNotFoundError" || (code == 404 && tag == null)
+        // Audit-200 D13 (m-984): every 404 on GET /api/session/{id} is a
+        // missing session, whatever tag it carries — the engine only ever
+        // 404s that endpoint for a session that is gone. The old rule
+        // (tag == null only) let a 404 with an unfamiliar tag slip past
+        // the refusal into a transient defer with the wrong banner
+        // ("could not verify") and a queue entry that never retried.
+        // The one exception is LocationNotFoundError: the session exists
+        // but its project folder moved, which is a different problem.
+        val isSessionMissing: Boolean get() =
+            tag == "SessionNotFoundError" || (code == 404 && tag != "LocationNotFoundError")
         val isLocationMissing: Boolean get() = tag == "LocationNotFoundError"
         val isNetwork: Boolean get() = code == 0
 

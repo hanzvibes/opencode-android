@@ -16,7 +16,9 @@ import dev.bidzz.opencode.core.engine.StartupTimings
 import dev.bidzz.opencode.service.EngineService
 import dev.bidzz.opencode.ui.chat.CodeSaveQueue
 import dev.bidzz.opencode.ui.chat.CodeSaveRequest
+import dev.bidzz.opencode.ui.chat.PendingOpenStore
 import dev.bidzz.opencode.ui.chat.SharedPrefsCodeSaveQueueStore
+import dev.bidzz.opencode.ui.chat.SharedPrefsPendingOpenStore
 import dev.bidzz.opencode.ui.chat.sanitizeFallbackName
 import dev.bidzz.opencode.workspace.WorkspaceStore
 import java.io.File
@@ -41,6 +43,25 @@ import kotlinx.coroutines.launch
  * torn down and recreated. [EngineService] is what keeps the process alive
  * across a task swipe; this class only holds the handle.
  */
+/**
+ * What offering a deep-link id to the app came to (audit-200 D13,
+ * m-525/m-532): the old `Boolean` could not tell "not a session id"
+ * from "the in-memory flow was full", so a valid link dropped by a
+ * full buffer got the same "not valid" snackbar as a broken one.
+ */
+enum class SessionOpenDelivery {
+    /** The id reached the collector (and the disk queue) and will open. */
+    DELIVERED,
+    /** The id is not shaped like a session id — rejected, never queued. */
+    INVALID,
+    /**
+     * The in-memory flow was full, but the id is safely on disk and
+     * will open at attach — no snackbar: there is nothing wrong to
+     * report, the link is queued, not lost.
+     */
+    BUFFER_FULL,
+}
+
 class OpenCodeApplication : Application() {
     companion object {
         private const val TAG = "OpenCodeApp"
@@ -512,25 +533,44 @@ class OpenCodeApplication : Application() {
      * tells the user the link is not valid (audit-200 D12, m-377) —
      * a rejected link used to die silently and the tap did nothing.
      *
-     * Returns false when the id could not be queued (56-F4): the old
-     * code ignored the `tryEmit` result, so a second deep link arriving
-     * before the first was consumed vanished without a trace. The
-     * agent-done notification is cancelled when the session actually
+     * Audit-200 D13 (m-525/m-948): the id is persisted to the pending
+     * store BEFORE emitting it. The flow is in-memory (replay 0), so a
+     * process death between here and the first collector used to lose
+     * the link silently — the store is the second copy, and the
+     * collector's openSession dedups against it (D12 m-380), so the
+     * link opens exactly once. A full buffer no longer loses the link
+     * either: it stays on disk and opens at attach (BUFFER_FULL).
+     *
+     * The agent-done notification is cancelled when the session actually
      * opens (OpenCodeApp, 55-F7), not here — cancelling it before the
      * id was even verified deleted the notification for links that
      * were then refused or deferred (audit-200 D12, m-382).
      */
-    fun deliverSessionOpen(sessionID: String): Boolean {
-        if (!isValidSessionId(sessionID)) return false
+    fun deliverSessionOpen(sessionID: String): SessionOpenDelivery {
+        if (!isValidSessionId(sessionID)) return SessionOpenDelivery.INVALID
+        pendingOpenStore.addPendingOpen(sessionID)
         val delivered = sessionOpenRequested.tryEmit(sessionID)
         if (!delivered) {
-            Log.w(TAG, "session open request dropped (buffer full): $sessionID")
+            Log.w(TAG, "session open request dropped (buffer full, kept on disk): $sessionID")
         }
-        return delivered
+        return if (delivered) SessionOpenDelivery.DELIVERED else SessionOpenDelivery.BUFFER_FULL
     }
 
     /** Session ids from deep links; the chat screen opens them. */
     val sessionOpenRequested = MutableSharedFlow<String>(extraBufferCapacity = 16)
+
+    /** The disk half of the pending-open queue (audit-200 D13, m-525). */
+    private val pendingOpenStore: PendingOpenStore by lazy { SharedPrefsPendingOpenStore(this) }
+
+    /**
+     * Whether MainActivity has run onCreate once in this process
+     * (audit-200 D13, m-525/m-948, 125-F3): a process death hands the
+     * launch intent back with a non-null savedInstanceState, so the old
+     * "first launch only" gate threw a deep link away on a restore from
+     * recents. The first onCreate in a process is still a first launch
+     * even with saved state; a config-change recreate is not.
+     */
+    internal var activityCreatedOnce: Boolean = false
 
     /**
      * A launcher shortcut asked for a fresh session (Native C). Same
@@ -714,6 +754,12 @@ private object ForegroundTracker : Application.ActivityLifecycleCallbacks {
  */
 internal fun isValidSessionId(id: String): Boolean {
     if (id.isEmpty()) return false
+    // Audit-200 D13 (m-780): engine ids are ~26 chars (ses_*) and UUIDs
+    // are 36 — a valid-looking id of tens of kilobytes used to pass the
+    // charset check, get persisted to disk (D12 m-379) and build a giant
+    // GET path, then stall the pending queue when the GET failed. 128
+    // leaves ample room for any real id.
+    if (id.length > 128) return false
     if (!id.first().isLetterOrDigit()) return false
     return id.all { it.isLetterOrDigit() || it == '_' || it == '-' || it == '.' }
 }

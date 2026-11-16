@@ -478,7 +478,18 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        handleExternalIntentIfFirstLaunch(intent, savedInstanceState == null)
+        // Audit-200 D13 (m-525/m-948, 125-F3): a process death hands the
+        // launch intent back with a non-null savedInstanceState, so the
+        // old "first launch only" gate threw a deep link away on a
+        // restore from recents. The first onCreate in this process is
+        // still a first launch even with saved state; a config-change
+        // recreate (unfold, resize, font scale) is not.
+        val isFirstCreationInProcess = !app.activityCreatedOnce
+        app.activityCreatedOnce = true
+        handleExternalIntentIfFirstLaunch(
+            intent,
+            savedInstanceState == null || isFirstCreationInProcess,
+        )
     }
 
     /**
@@ -525,8 +536,10 @@ class MainActivity : FragmentActivity() {
                         // Audit-200 D12 (m-377): an id that fails
                         // validation is no longer a silent drop — the
                         // shortcut pointed at a session id the app cannot
-                        // open, so the tap says so.
-                        if (!app.deliverSessionOpen(id)) {
+                        // open, so the tap says so. A full buffer
+                        // (D13, m-532) needs no snackbar: the id is on
+                        // disk and will open at attach.
+                        if (app.deliverSessionOpen(id) == SessionOpenDelivery.INVALID) {
                             app.showSnackbar(localizedString(R.string.session_link_invalid))
                         }
                     }
@@ -557,7 +570,7 @@ class MainActivity : FragmentActivity() {
                     app.showSnackbar(localizedString(R.string.session_link_invalid))
                     return
                 }
-                if (!app.deliverSessionOpen(sessionID)) {
+                if (app.deliverSessionOpen(sessionID) == SessionOpenDelivery.INVALID) {
                     app.showSnackbar(localizedString(R.string.session_link_invalid))
                 }
             }

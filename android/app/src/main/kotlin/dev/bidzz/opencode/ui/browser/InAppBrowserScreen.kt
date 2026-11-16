@@ -90,6 +90,20 @@ fun isForwardableUrl(url: String): Boolean {
     }
 }
 
+/**
+ * Whether a forwardable URL may actually leave the WebView for the
+ * system (audit-200 D13, m-899): only a real user tap on the main
+ * frame. `shouldOverrideUrlLoading` also fires for JS navigation
+ * (`location.href`), meta-refresh and redirects — none of those carry
+ * a gesture, and forwarding them lets a page open the dialer or the
+ * mail composer without the user touching anything. Pure, so the rule
+ * is unit-tested without a WebView. Caveat, documented not fixed: a
+ * tap that 302-redirects to `tel:` is dropped too, because the
+ * redirect request itself carries no gesture.
+ */
+internal fun shouldForwardToSystem(target: String, isMainFrame: Boolean, hasGesture: Boolean): Boolean =
+    isMainFrame && hasGesture && isForwardableUrl(target)
+
 private val TEL_NUMBER_REGEX = Regex("^tel:\\+?[0-9\\s().-]*$")
 
 /** The host for the toolbar title, or the raw URL when it has none. */
@@ -212,10 +226,21 @@ fun InAppBrowserScreen(
                         // mailto: and a strictly-shaped tel: belong to the
                         // system, not this WebView. Guarded: no app for
                         // the scheme must not crash the browser.
-                        runCatching {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, request.url),
+                        // Audit-200 D13 (m-899): only a real user tap
+                        // forwards — JS navigation, meta-refresh and
+                        // redirects carry no gesture, so they drop here
+                        // instead of opening the dialer unprompted.
+                        if (shouldForwardToSystem(
+                                target,
+                                request.isForMainFrame,
+                                request.hasGesture(),
                             )
+                        ) {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, request.url),
+                                )
+                            }
                         }
                         true
                     } else {
@@ -239,6 +264,25 @@ fun InAppBrowserScreen(
                     // 69-F13: keep the latest page state saveable, so a
                     // recreate restores this page and its history.
                     savedWebViewUrl = finishedUrl
+                    savedWebViewState = Bundle().also { view.saveState(it) }
+                }
+
+                override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                    // Audit-200 D13 (m-777): the URL commits here, long
+                    // before onPageFinished — a slow or streaming page
+                    // that never finishes used to leave the saved state
+                    // on the PREVIOUS page, so a process death mid-load
+                    // restored the wrong page. Save the committed URL
+                    // and state now; the finish handler above still
+                    // refreshes both when the load completes. Same
+                    // main-frame guard as m-442: only the frame the
+                    // WebView itself is on may move the state.
+                    val committed = url ?: return
+                    if (view.url != null && committed != view.url) return
+                    currentUrl = committed
+                    canGoBack = view.canGoBack()
+                    canGoForward = view.canGoForward()
+                    savedWebViewUrl = committed
                     savedWebViewState = Bundle().also { view.saveState(it) }
                 }
 
