@@ -227,6 +227,12 @@ fun InAppBrowserScreen(
                 }
 
                 override fun onPageFinished(view: WebView, finishedUrl: String) {
+                    // Audit-200 D12 (m-442): only a main-frame finish may
+                    // move the toolbar URL — a subframe finish carrying a
+                    // different URL must not overwrite it (Share/copy
+                    // would then send the iframe's URL). `view.url` is
+                    // the frame the WebView itself is on.
+                    if (view.url != null && finishedUrl != view.url) return
                     currentUrl = finishedUrl
                     canGoBack = view.canGoBack()
                     canGoForward = view.canGoForward()
@@ -296,8 +302,14 @@ fun InAppBrowserScreen(
             // is the same URL it was saved from; otherwise load fresh.
             // A failed restore (null back-forward list) falls back to
             // loading the entry URL.
+            // Audit-200 D12 (m-422): compare against `currentUrl`, the
+            // page the user was actually on — the entry URL no longer
+            // matches once they navigated or were redirected, and the
+            // old comparison skipped the restore and reloaded the entry
+            // page with no history. The entry-URL case is unchanged:
+            // on first open both are the entry URL.
             val savedState = savedWebViewState
-            val restored = savedState != null && savedWebViewUrl == url &&
+            val restored = savedState != null && savedWebViewUrl == currentUrl &&
                 restoreState(savedState) != null
             if (!restored) {
                 loadUrl(url)

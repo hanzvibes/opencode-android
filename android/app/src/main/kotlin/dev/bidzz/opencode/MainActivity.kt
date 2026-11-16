@@ -522,7 +522,13 @@ class MainActivity : FragmentActivity() {
                     ACTION_OPEN_SESSION -> {
                         val id = intent.getStringExtra(EXTRA_SESSION_ID)
                             ?.takeIf { it.isNotBlank() } ?: return
-                        app.deliverSessionOpen(id)
+                        // Audit-200 D12 (m-377): an id that fails
+                        // validation is no longer a silent drop — the
+                        // shortcut pointed at a session id the app cannot
+                        // open, so the tap says so.
+                        if (!app.deliverSessionOpen(id)) {
+                            app.showSnackbar(localizedString(R.string.session_link_invalid))
+                        }
                     }
                 }
             }
@@ -539,9 +545,21 @@ class MainActivity : FragmentActivity() {
                 // used to silently open "b", and a %2F-decoded slash in the
                 // id reached the engine's API path unencoded. The charset
                 // itself is checked in deliverSessionOpen.
-                if (uri.pathSegments.size != 1) return
-                val sessionID = uri.lastPathSegment?.takeIf { it.isNotBlank() } ?: return
-                app.deliverSessionOpen(sessionID)
+                // Audit-200 D12 (m-377): the scheme and host matched, so
+                // this IS a session link, just a broken one — a malformed
+                // link used to die silently and the tap did nothing.
+                if (uri.pathSegments.size != 1) {
+                    app.showSnackbar(localizedString(R.string.session_link_invalid))
+                    return
+                }
+                val sessionID = uri.lastPathSegment?.takeIf { it.isNotBlank() }
+                if (sessionID == null) {
+                    app.showSnackbar(localizedString(R.string.session_link_invalid))
+                    return
+                }
+                if (!app.deliverSessionOpen(sessionID)) {
+                    app.showSnackbar(localizedString(R.string.session_link_invalid))
+                }
             }
         }
     }

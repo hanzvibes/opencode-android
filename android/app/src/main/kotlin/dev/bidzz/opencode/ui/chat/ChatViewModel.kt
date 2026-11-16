@@ -721,9 +721,10 @@ internal fun shouldOpenAfterResume(
  * - [directoryMatches] null (older engines report no location): allowed
  *   through, like onResume — a null location cannot be verified, so it
  *   must not break the open.
- * - [meta] null without [isMissing]: a transient failure — allowed
- *   unchecked, and the resync banner reports the session if it is
- *   really gone.
+ * - [meta] null without [isMissing]: a transient failure — no refusal
+ *   (null); the caller defers instead of opening unchecked
+ *   (audit-200 C15, M-227), so this arm never green-lights an
+ *   unchecked open on its own.
  *
  * Returns the `@StringRes` banner key, or null to proceed.
  */
@@ -971,6 +972,13 @@ class ChatViewModel(
      * store so parked drafts survive process death (57-F1).
      */
     private val parkedStore: ParkedComposerStore = InMemoryParkedComposerStore(),
+    /**
+     * Where deep-link / restore ids waiting for attach are persisted
+     * (audit-200 D12, m-379). Defaults to in-memory, which is what unit
+     * tests get; the app passes the SharedPreferences-backed store so a
+     * process death before attach does not lose them (like [parkedStore]).
+     */
+    private val pendingOpenStore: PendingOpenStore = InMemoryPendingOpenStore(),
     /**
      * Called when the busy session changes (audit-200 A9-3, DL-029): the
      * session id while a run is in flight, null when no run is going.
@@ -1371,17 +1379,51 @@ class ChatViewModel(
      * start the engine takes seconds to attach while the UI composes
      * immediately, so `openSession` used to hit `repository ?: return`
      * and the link died silently — the app opened the remembered
-     * session instead, with no sign the link failed. The id waits here
-     * until [attachIfNeeded] can open it; it clears when the repository
-     * confirms the session ([onRepoState]) or when the user navigates
+     * session instead, with no sign the link failed. The ids wait here
+     * until [attachIfNeeded] can open them; each clears when the
+     * repository confirms its session ([onRepoState]), when it is
+     * refused ([refuseSessionOpen]), or when the user navigates
      * elsewhere explicitly ([newSession], [openSession] with a live
-     * repository). In-memory only: a process death in the few seconds
-     * before attach loses it, and the user taps the link again.
+     * repository). Audit-200 D12 (m-380): a queue, not a single slot —
+     * the second link used to silently overwrite the first. Audit-200
+     * D12 (m-379): persisted in [pendingOpenStore], so a process death
+     * in the seconds before attach keeps the queue instead of losing it.
      */
-    private var pendingOpenSessionID: String? = null
+    private val pendingOpenQueue: ArrayDeque<String> =
+        ArrayDeque(pendingOpenStore.loadPendingOpens())
 
-    /** Test seam for the pending open (56-F1): the id waiting for attach, if any. */
-    internal fun pendingOpenForTest(): String? = pendingOpenSessionID
+    /** Test seam for the pending open (56-F1): the oldest waiting id, if any. */
+    internal fun pendingOpenForTest(): String? = pendingOpenQueue.firstOrNull()
+
+    /** Test seam for the whole pending queue (audit-200 D12, m-380). */
+    internal fun pendingOpensForTest(): List<String> = pendingOpenQueue.toList()
+
+    /** Mutates the pending queue and persists it (audit-200 D12, m-379). */
+    private fun mutatePendingOpens(block: ArrayDeque<String>.() -> Unit) {
+        pendingOpenQueue.block()
+        pendingOpenStore.savePendingOpens(pendingOpenQueue.toList())
+    }
+
+    /** Sets the pending restore id and persists it (audit-200 D12, m-379). */
+    private fun setPendingRestore(id: String?) {
+        pendingRestoreSessionID = id
+        pendingOpenStore.savePendingRestore(id)
+    }
+
+    /**
+     * Orders explicit open requests (audit-200 D12, m-381): every
+     * verifying GET takes the next number, and only the newest
+     * request's result may open — a late first GET must never clobber
+     * the second link the user tapped while it was in flight.
+     */
+    private var openVerificationSeq = 0L
+
+    /**
+     * Verifying GETs currently in flight (audit-200 D12, m-378): a
+     * restore resolving while one is outstanding yields instead of
+     * opening the remembered session over the deep link.
+     */
+    private var openVerificationInFlight = 0
 
     /**
      * The session [onResume] could not restore because no repository or
@@ -1392,9 +1434,10 @@ class ChatViewModel(
      * consumes it right after attaching, like the pending deep link
      * above. It clears when a session is open, when the user navigates
      * elsewhere explicitly ([newSession]), or when the restore runs.
-     * In-memory only, like the pending open.
+     * Persisted in [pendingOpenStore] (audit-200 D12, m-379), like the
+     * pending open queue above.
      */
-    private var pendingRestoreSessionID: String? = null
+    private var pendingRestoreSessionID: String? = pendingOpenStore.loadPendingRestore()
 
     /**
      * The session [onResume] is restoring right now (audit-200 C18,
@@ -2322,7 +2365,7 @@ class ChatViewModel(
      */
     private fun consumePendingRestore() {
         val pending = pendingRestoreSessionID ?: return
-        if (pendingOpenSessionID != null) return
+        if (pendingOpenQueue.isNotEmpty()) return
         onResume(pending)
     }
 
@@ -2335,12 +2378,20 @@ class ChatViewModel(
      * opening: re-opening it would only clear the draft and queue.
      */
     private fun consumePendingOpen() {
-        val pending = pendingOpenSessionID ?: return
-        if (pending == _state.value.sessionID) {
-            pendingOpenSessionID = null
+        // The head stays queued through its verifying GET: it leaves
+        // only when the repository confirms it ([onRepoState]), when
+        // it is refused ([refuseSessionOpen]), or when the user
+        // navigates elsewhere. An id equal to the session already open
+        // drops without opening, and the next queued link takes its turn.
+        while (true) {
+            val pending = pendingOpenQueue.firstOrNull() ?: return
+            if (pending == _state.value.sessionID) {
+                mutatePendingOpens { removeFirst() }
+                continue
+            }
+            openSessionById(pending, fetchMeta = true)
             return
         }
-        openSessionById(pending, fetchMeta = true)
     }
 
     /** (Re)starts collecting one repository's state into [_state]. */
@@ -2530,8 +2581,13 @@ class ChatViewModel(
         // A pending deep-link open (56-F1) is done once the repository
         // confirms the session id — including the 404 case, where open()
         // still installs the id and the session-gone banner follows.
-        if (pendingOpenSessionID != null && chat.sessionID == pendingOpenSessionID) {
-            pendingOpenSessionID = null
+        val pendingHead = pendingOpenQueue.firstOrNull()
+        if (pendingHead != null && chat.sessionID == pendingHead) {
+            // Audit-200 D12 (m-380): the head opened — drop it and drain
+            // the next queued link, if any, instead of leaving it
+            // waiting until the next attach (which may never come).
+            mutatePendingOpens { removeFirst() }
+            consumePendingOpen()
         }
 
         // A load that succeeds resets the reload budget (item 24): the
@@ -5750,10 +5806,10 @@ class ChatViewModel(
         // A fresh session is an explicit navigation: a deep link waiting
         // for attach (56-F1) must not yank the user back to it once the
         // engine comes up.
-        pendingOpenSessionID = null
+        mutatePendingOpens { clear() }
         // Audit-200 C15 (M-232): same for a restore waiting for attach —
         // the user chose a fresh chat, not the remembered session.
-        pendingRestoreSessionID = null
+        setPendingRestore(null)
         // Audit-200 C18 (M-449): same for a restore already in flight —
         // the fresh chat wins, so the send gate lifts at once instead of
         // waiting for the GET to resolve and refuse itself.
@@ -5842,7 +5898,12 @@ class ChatViewModel(
      * and the abandoned session are handled exactly like [newSession].
      */
     fun newSessionAfterRestart() {
-        pendingOpenSessionID = null
+        mutatePendingOpens { clear() }
+        // Audit-200 D12 (m-379): same as [newSession] — the pending
+        // restore belongs to the abandoned session, not the fresh chat
+        // after the restart; leaving it persisted would resurrect it
+        // at the next attach.
+        setPendingRestore(null)
         // Audit-200 C18 (M-449): same as newSession — an in-flight restore
         // is abandoned for the fresh chat after the restart.
         clearRestoringSession()
@@ -5910,7 +5971,7 @@ class ChatViewModel(
         validateActiveSelection()
         // An explicit open supersedes a deep link still waiting for
         // attach (56-F1).
-        if (repository != null) pendingOpenSessionID = null
+        if (repository != null) mutatePendingOpens { clear() }
         // Audit-200 C7 (M-117): hand the row's meta through, so the
         // unchecked open syncs from it instead of seeing a null meta
         // and (wrongly) clearing the chips this call just set.
@@ -5923,10 +5984,18 @@ class ChatViewModel(
         // id waits for [attachIfNeeded] instead of dying on `?: return`.
         // Opening the session already open stores nothing.
         if (repository == null) {
-            if (sessionID != _state.value.sessionID) pendingOpenSessionID = sessionID
+            // Audit-200 D12 (m-380): a queue, not a slot — the second
+            // link no longer overwrites the first; both wait for attach
+            // in order. Dedup: tapping the same link twice queues it once.
+            if (sessionID != _state.value.sessionID && !pendingOpenQueue.contains(sessionID)) {
+                mutatePendingOpens { addLast(sessionID) }
+            }
             return
         }
-        pendingOpenSessionID = null
+        // Warm: an explicit open supersedes everything still queued —
+        // those links are older requests, and the user just chose this
+        // session. The id itself is verified now, not waiting.
+        mutatePendingOpens { clear() }
         openSessionById(sessionID, fetchMeta = true)
     }
 
@@ -5965,45 +6034,73 @@ class ChatViewModel(
                 return
             }
             val attachedAtRequest = repo.state.value.sessionID
+            // Audit-200 D12 (m-381/m-378): this request's number, and
+            // one more verification in flight until it resolves.
+            val mySeq = ++openVerificationSeq
+            openVerificationInFlight++
             viewModelScope.launch {
-                when (val result = h.sessions.get(sessionID)) {
-                    is ApiResult.Success -> {
-                        val refusal = sessionOpenRefusal(
-                            meta = result.value,
-                            isMissing = false,
-                            directoryMatches = result.value.location?.directory?.let {
-                                sameDirectory(it, workspace())
-                            },
-                        )
-                        if (!stillOn(attachedAtRequest, repo)) return@launch
-                        if (refusal != null) {
-                            refuseSessionOpen(refusal, sessionID)
-                        } else {
-                            openSessionUnchecked(sessionID, repo, meta = result.value)
+                try {
+                    when (val result = h.sessions.get(sessionID)) {
+                        is ApiResult.Success -> {
+                            val refusal = sessionOpenRefusal(
+                                meta = result.value,
+                                isMissing = false,
+                                directoryMatches = result.value.location?.directory?.let {
+                                    sameDirectory(it, workspace())
+                                },
+                            )
+                            // A newer open request supersedes this one
+                            // (m-381): its result must not open, refuse or
+                            // defer — the newer request owns the outcome.
+                            // The id leaves the queue: it lost to a newer
+                            // explicit choice, so it must not stall onResume
+                            // or resurrect at the next attach.
+                            if (mySeq != openVerificationSeq) {
+                                mutatePendingOpens { remove(sessionID) }
+                                return@launch
+                            }
+                            if (!stillOn(attachedAtRequest, repo)) {
+                                mutatePendingOpens { remove(sessionID) }
+                                return@launch
+                            }
+                            if (refusal != null) {
+                                refuseSessionOpen(refusal, sessionID)
+                            } else {
+                                openSessionUnchecked(sessionID, repo, meta = result.value)
+                            }
+                        }
+                        is ApiResult.Failure -> {
+                            if (mySeq != openVerificationSeq) {
+                                mutatePendingOpens { remove(sessionID) }
+                                return@launch
+                            }
+                            if (!stillOn(attachedAtRequest, repo)) {
+                                mutatePendingOpens { remove(sessionID) }
+                                return@launch
+                            }
+                            val refusal = sessionOpenRefusal(
+                                meta = null,
+                                isMissing = result.isSessionMissing,
+                                directoryMatches = null,
+                            )
+                            if (refusal != null) {
+                                refuseSessionOpen(refusal, sessionID)
+                            } else {
+                                // Audit-200 C15 (M-227): a transient failure
+                                // (engine mid-restart, a dropped connection)
+                                // must not open the session unchecked — the
+                                // link may point at another workspace's
+                                // session, and the next prompt would run in
+                                // the wrong project. Defer instead: the
+                                // banner says why, nothing is parked, and the
+                                // id stays queued so the next attach
+                                // re-verifies it.
+                                deferSessionOpen()
+                            }
                         }
                     }
-                    is ApiResult.Failure -> {
-                        if (!stillOn(attachedAtRequest, repo)) return@launch
-                        val refusal = sessionOpenRefusal(
-                            meta = null,
-                            isMissing = result.isSessionMissing,
-                            directoryMatches = null,
-                        )
-                        if (refusal != null) {
-                            refuseSessionOpen(refusal, sessionID)
-                        } else {
-                            // Audit-200 C15 (M-227): a transient failure
-                            // (engine mid-restart, a dropped connection)
-                            // must not open the session unchecked — the
-                            // link may point at another workspace's
-                            // session, and the next prompt would run in
-                            // the wrong project. Defer instead: the
-                            // banner says why, nothing is parked, and the
-                            // pending deep-link id is kept so the next
-                            // attach re-verifies it.
-                            deferSessionOpen()
-                        }
-                    }
+                } finally {
+                    openVerificationInFlight--
                 }
             }
             return
@@ -6029,8 +6126,9 @@ class ChatViewModel(
      * to another workspace's session could otherwise land under the
      * wrong workspace header, and the next prompt would run in the
      * wrong project. Like [refuseSessionOpen], nothing is parked and
-     * lastSessionID is untouched — but unlike a refusal, the pending
-     * deep-link id is KEPT, so the next engine attach re-verifies it
+     * lastSessionID is untouched — but unlike a refusal, the id stays
+     * queued (audit-200 D12, m-379/m-380): it was never removed for
+     * verification, so the next engine attach re-verifies it
      * ([consumePendingOpen]). An explicit session open supersedes it,
      * and a verified refusal clears it.
      */
@@ -6053,8 +6151,14 @@ class ChatViewModel(
      * drive it without a live engine.
      */
     internal fun refuseSessionOpen(@StringRes failureKey: Int, sessionID: String) {
-        if (pendingOpenSessionID == sessionID) pendingOpenSessionID = null
+        mutatePendingOpens { remove(sessionID) }
         _state.value = _state.value.copy(failureKey = failureKey, retryKind = RetryKind.NONE, rateLimitGuidanceShown = false)
+        // Audit-200 D12 (m-380): the refused id is done — a link queued
+        // behind it takes its turn now, or it would stall until the next
+        // attach (which may never come). Only with a live repository:
+        // without one the open would fail with an engine banner and
+        // clobber the refusal this call just set.
+        if (pendingOpenQueue.isNotEmpty() && repository != null) consumePendingOpen()
     }
 
     /**
@@ -6171,10 +6275,10 @@ class ChatViewModel(
         // A deep link waiting for attach (56-F1) wins over the remembered
         // session: resuming the old session here would open it first and
         // the pending open would have to fight it afterwards.
-        if (pendingOpenSessionID != null) return
+        if (pendingOpenQueue.isNotEmpty()) return
         val target = lastSessionID ?: run {
             // Nothing remembered — a pending restore for an older id is stale.
-            pendingRestoreSessionID = null
+            setPendingRestore(null)
             return
         }
         // Audit-200 B5 (M-190/M-231): the guard is "a session is already
@@ -6182,7 +6286,7 @@ class ChatViewModel(
         // when the engine dies, so a non-empty transcript must not block
         // the restore — only an actually open session may.
         if (_state.value.sessionID != null) {
-            pendingRestoreSessionID = null
+            setPendingRestore(null)
             return
         }
         // Audit-200 C15 (M-232): no repository or handle yet — the
@@ -6190,14 +6294,14 @@ class ChatViewModel(
         // returning silently: attachIfNeeded consumes it right after
         // attaching, so the restore still happens instead of never.
         val repo = repository ?: run {
-            pendingRestoreSessionID = target
+            setPendingRestore(target)
             return
         }
         val h = handle ?: run {
-            pendingRestoreSessionID = target
+            setPendingRestore(target)
             return
         }
-        pendingRestoreSessionID = null
+        setPendingRestore(null)
         lastRestoreTargetSessionID = target
         // Audit-200 C18 (M-449): the restore is in flight from here until
         // the GET resolves. Mark it so no send mints a new session for
@@ -6217,7 +6321,17 @@ class ChatViewModel(
                         // repository sets it synchronously in open(), so
                         // it holds even before the collector's first
                         // emission.
-                        if (shouldOpenAfterResume(
+                        // Audit-200 D12 (m-378): a deep-link
+                        // verification in flight outranks this restore —
+                        // opening the remembered session now would let the
+                        // deep link's GET resolve into `stillOn` failing
+                        // and drop the link silently. Yielding costs
+                        // nothing: if the link opens, the restore is moot
+                        // (the attached session no longer matches the
+                        // target); if it is refused or deferred, the user
+                        // is still looking at the current session and can
+                        // restore from the list.
+                        if (openVerificationInFlight == 0 && shouldOpenAfterResume(
                                 attachedSessionID = repository?.state?.value?.sessionID,
                                 targetSessionID = target,
                                 repositoryChanged = repository !== repo,
