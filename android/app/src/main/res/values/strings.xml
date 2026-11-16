@@ -754,7 +754,7 @@
          used to show only a 1.5dp border, with no label and no hint
          while hovering the transcript. -->
     <string name="drag_drop_to_attach">Drop to attach</string>
-    <string name="drag_drop_rejected">"Can't attach this here"</string>
+    <string name="drag_drop_rejected">Cannot attach this here</string>
     <string name="code_highlight_off">Highlight off (large file)</string>
 
     <!-- Project -->
