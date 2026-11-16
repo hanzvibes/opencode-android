@@ -47,9 +47,13 @@ class WebSearchGenerateD7Test {
         assertFalse(screen.contains("showSnackbar"))
         assertFalse(screen.contains("onClearFailure"))
         assertFalse(screen.contains("clearFailure"))
-        // The failure branch comes before the idle branch.
+        // The failure branch comes before the idle branch. Audit-200
+        // D10 (m-667) restructured the when: the idle branch is now the
+        // else at the end (recent searches above the empty state), so the
+        // idle position is pinned by the empty-state string, not by the
+        // old `response == null` branch.
         val failureAt = screen.indexOf("state.failure != null -> EmptyState(")
-        val idleAt = screen.indexOf("response == null -> EmptyState(")
+        val idleAt = screen.indexOf("R.string.websearch_empty")
         assertTrue(failureAt >= 0 && idleAt >= 0 && failureAt < idleAt)
     }
 
