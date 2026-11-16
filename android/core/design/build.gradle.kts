@@ -41,8 +41,6 @@ dependencies {
     api(libs.compose.ui)
     api(libs.compose.foundation)
     api(libs.compose.material3)
-    api(libs.compose.material.icons.core)
-    api(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 
     // Audit-200 C13 (M-018): this module declares no direct activity /

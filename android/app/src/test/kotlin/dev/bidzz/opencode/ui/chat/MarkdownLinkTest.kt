@@ -83,4 +83,32 @@ class MarkdownLinkTest {
         assertTrue(Markdown.isOpenableLink("tel:(021) 123456"))
         assertTrue(!Markdown.isOpenableLink("tel:*#06#"))
     }
+
+    // Audit-200 D11 (m-058): a markdown image is not a link — there is no
+    // image span, so it renders as one plain placeholder, never a
+    // tappable "!alt" link, and the URL is not kept.
+
+    @Test
+    fun `m-058 an image renders as a placeholder, not a link`() {
+        val result = spans("![kucing](https://example.com/cat.png)")
+        assertEquals(listOf(MdSpan.Text("[gambar: kucing]")), result)
+    }
+
+    @Test
+    fun `m-058 an image with no alt text renders as a bare placeholder`() {
+        val result = spans("![](https://example.com/cat.png)")
+        assertEquals(listOf(MdSpan.Text("[gambar]")), result)
+    }
+
+    @Test
+    fun `m-058 a streaming unclosed image is plain text, not a link`() {
+        val result = (Markdown.parse("![kucing](https://example.com/cat.png", streaming = true).single() as MdBlock.Paragraph).spans
+        assertTrue(result.none { it is MdSpan.Link })
+    }
+
+    @Test
+    fun `m-058 a plain link is still a link`() {
+        val links = spans("[docs](https://example.com)").filterIsInstance<MdSpan.Link>()
+        assertEquals(listOf(MdSpan.Link(listOf(MdSpan.Text("docs")), "https://example.com")), links)
+    }
 }

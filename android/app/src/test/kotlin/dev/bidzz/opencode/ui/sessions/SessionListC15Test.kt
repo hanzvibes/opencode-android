@@ -18,4 +18,16 @@ class SessionListC15Test {
         // server rejects.
         assertEquals(200, PREVIEW_PAGE_SIZE)
     }
+
+    @Test
+    fun `m-355 the preview walk is capped at 25 pages`() {
+        // Audit-200 D11 (m-355): a 10,000-message session used to walk
+        // its whole history before its row showed a preview. 25 pages
+        // at 200 messages bounds one walk at 5,000 messages — every
+        // ordinary session still finds its true first user message —
+        // and a capped walk reports incomplete (see
+        // fetchFirstUserPreview), so the D10 note says so.
+        assertEquals(25, MAX_PREVIEW_WALK_PAGES)
+        assertEquals(5_000, MAX_PREVIEW_WALK_PAGES * PREVIEW_PAGE_SIZE)
+    }
 }

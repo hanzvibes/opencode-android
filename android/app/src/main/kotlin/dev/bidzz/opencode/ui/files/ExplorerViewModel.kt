@@ -681,6 +681,22 @@ class FileViewViewModel(
 
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
+            // Audit-200 D11 (m-388): a preview (image/PDF) never shows
+            // text, so downloading the whole body just to throw it away
+            // only delays the preview — a 100 MB log used to stream to
+            // the end before the image appeared. The preview decodes the
+            // file from disk itself and reports a missing or corrupt file,
+            // so no read is needed here at all.
+            if (previewKindForPath(path) != FilePreviewKind.NONE) {
+                if (_state.value.path != path) return@launch
+                // Audit-200 A6 (DL-023): opening another file abandons an
+                // unrestored draft, same as the text path below.
+                if (restoredPath != null && restoredPath != path) {
+                    clearPersistedDraft()
+                }
+                _state.value = FileViewState(loading = false, path = path)
+                return@launch
+            }
             val result = FileApi(handle.client).readText(workspace(), path)
             // Another file was opened while this read was in flight: its
             // content must not land in the viewer afterwards (item 26).
@@ -740,6 +756,7 @@ class FileViewViewModel(
                         path = path,
                         diskContent = file.text,
                         basisHash = restoredBasisHash,
+                        isPreview = previewKindForPath(path) != FilePreviewKind.NONE,
                     )
                     // Audit-200 A6 (DL-023): a draft restored after process
                     // death belongs to its file, and opening another file
@@ -795,6 +812,11 @@ class FileViewViewModel(
         // A truncated preview must never become a draft: saving it would write
         // the preview back over the real file. Load the full file first.
         if (s.truncated) return
+        // Audit-200 D11 (m-714): a preview (image/PDF) has no editable text
+        // at all — the screen never shows an Edit action for it, but the
+        // view model must refuse too, so no caller can turn a preview into
+        // a draft and save binary over the real file.
+        if (previewKindForPath(s.path) != FilePreviewKind.NONE) return
         // A fresh edit starts from what is on screen, so its basis is current.
         _state.value = s.copy(editing = true, draft = s.content, saved = false, conflict = false, conflictDiskContent = null, draftStale = false)
         persistDraft()
@@ -838,6 +860,10 @@ class FileViewViewModel(
     fun save(overwrite: Boolean = false) {
         val s = _state.value
         if (!s.editing || s.saving) return
+        // Audit-200 D11 (m-714): backstop for startEditing — a preview
+        // file must never be written, even if some path put it in
+        // editing state anyway.
+        if (previewKindForPath(s.path) != FilePreviewKind.NONE) return
         // A draft restored on top of newer disk content (89-F3) may only be
         // written by an explicit Overwrite: a plain Save would silently
         // replace the agent's newer work with a draft based on an older
@@ -1200,8 +1226,12 @@ internal fun resolveRestoreDecision(
     path: String,
     diskContent: String,
     basisHash: String?,
+    // Audit-200 D11 (m-714): a draft restored after process death must
+    // never come back as an edit on a preview file — there is no text to
+    // edit, and saving it would write the preview over the real file.
+    isPreview: Boolean = false,
 ): RestoreDecision {
-    if (restoredPath != path || !restoredEditing || truncated) return RestoreDecision.Skip
+    if (restoredPath != path || !restoredEditing || truncated || isPreview) return RestoreDecision.Skip
     if (basisHash == null) return RestoreDecision.Apply
     return if (basisHash == sha256Hex(diskContent)) RestoreDecision.Apply else RestoreDecision.StaleConflict
 }

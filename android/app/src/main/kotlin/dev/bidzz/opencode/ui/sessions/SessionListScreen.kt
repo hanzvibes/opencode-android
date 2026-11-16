@@ -280,6 +280,21 @@ fun SessionListPane(
                 )
             }
     }
+    // Audit-200 D11 (m-485): a search that matches nothing may only
+    // mean "the matching session was never walked" — rows below the fold
+    // have no search text until their preview walk runs. When a
+    // non-blank search lands on zero results while listed sessions are
+    // still unwalked, walk those too: if the word lives in an unwalked
+    // preview, the results arrive as the walk lands; if it lives
+    // nowhere, the zero stands. Once per query, so a walk that fails
+    // cannot re-trigger itself forever.
+    var searchWalkQuery by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(query, filteredRows.isEmpty()) {
+        val toWalk = idsToWalkForEmptySearch(query, filteredRows.isNotEmpty(), state.rows, details)
+        if (toWalk.isEmpty() || searchWalkQuery == query) return@LaunchedEffect
+        searchWalkQuery = query
+        onVisibleSessions(toWalk)
+    }
     Column(
         modifier = modifier.fillMaxSize(),
     ) {

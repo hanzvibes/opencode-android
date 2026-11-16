@@ -707,6 +707,7 @@
     <string name="tool_status_failed">Failed</string>
     <string name="tool_status_interrupted">Interrupted</string>
     <string name="tool_output_on_finish">Output appears when the tool finishes.</string>
+    <string name="tool_output_unreadable">Tool output could not be displayed</string>
     <string name="tool_lines_one">%1$d line</string>
     <string name="tool_lines">%1$d lines</string>
     <string name="tool_stdout">STDOUT</string>
@@ -840,6 +841,7 @@
     <string name="preview_page_prev">Previous page</string>
     <string name="preview_page_next">Next page</string>
     <string name="preview_load_failed">Could not open this preview</string>
+    <string name="preview_unsupported_format">This file format is not supported for preview</string>
     <string name="preview_image_size">%1$d × %2$d</string>
     <string name="preview_image_desc">Image preview, %1$s, %2$d by %3$d pixels</string>
     <string name="preview_pdf_page_desc">PDF page %2$d of %3$d, %1$s (image, text not available)</string>

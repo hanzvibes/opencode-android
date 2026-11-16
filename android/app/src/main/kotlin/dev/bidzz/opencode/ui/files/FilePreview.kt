@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.widget.ImageView
 import androidx.compose.foundation.Image
@@ -64,6 +65,12 @@ enum class FilePreviewKind {
     NONE,
     IMAGE,
     PDF,
+    /**
+     * A known image format this device cannot decode — AVIF below API 34,
+     * TIFF, ICO (audit-200 D11, m-722). The viewer says so plainly
+     * instead of opening the binary as text.
+     */
+    UNSUPPORTED,
 }
 
 /**
@@ -71,12 +78,25 @@ enum class FilePreviewKind {
  * a missing extension, a double extension (`report.pdf.bak`), or an
  * unknown extension is [FilePreviewKind.NONE]. Unit-tested in
  * FilePreviewKindTest.
+ *
+ * Audit-200 D11 (m-722): HEIC/HEIF decode since API 26 (minSdk 29), so
+ * they are IMAGE unconditionally. AVIF decodes only on API 34+ — below
+ * that it is UNSUPPORTED, not NONE, so the viewer explains instead of
+ * showing binary as text. TIFF and ICO are UNSUPPORTED for the same
+ * reason (neither BitmapFactory nor ImageDecoder handles them). SVG
+ * stays NONE on purpose: it is XML text, and the text viewer already
+ * shows it.
+ *
+ * [sdkInt] is a parameter (defaulting to the device's API level) so the
+ * AVIF gate is unit-testable without a device.
  */
-fun previewKindForPath(path: String): FilePreviewKind {
+fun previewKindForPath(path: String, sdkInt: Int = Build.VERSION.SDK_INT): FilePreviewKind {
     val extension = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
     return when (extension) {
-        "jpg", "jpeg", "png", "webp", "gif", "bmp" -> FilePreviewKind.IMAGE
+        "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif" -> FilePreviewKind.IMAGE
+        "avif" -> if (sdkInt >= 34) FilePreviewKind.IMAGE else FilePreviewKind.UNSUPPORTED
         "pdf" -> FilePreviewKind.PDF
+        "tif", "tiff", "ico" -> FilePreviewKind.UNSUPPORTED
         else -> FilePreviewKind.NONE
     }
 }
@@ -111,11 +131,23 @@ fun FilePreview(
     when (kind) {
         FilePreviewKind.IMAGE -> ImagePreview(file = file, modifier = modifier)
         FilePreviewKind.PDF -> PdfPreview(file = file, modifier = modifier)
+        // Audit-200 D11 (m-722): a known-but-undecodable format gets an
+        // honest message, not the text view's binary garbage — and no
+        // retry, since retrying cannot make the decoder appear.
+        FilePreviewKind.UNSUPPORTED -> HatchFilePreviewUnavailableCard(
+            message = stringResource(R.string.preview_unsupported_format),
+            modifier = modifier,
+        )
         FilePreviewKind.NONE -> Unit
     }
 }
 
-/** A decoded image with its pixel size, or null when the file is not a decodable image. */
+/**
+ * A decoded image. [width]/[height] are the file's ORIGINAL dimensions
+ * (audit-200 D11, m-715): the bitmap itself is sampled down, but the
+ * footer and the TalkBack description must name the real size, not the
+ * sampling size. Null when the file is not a decodable image.
+ */
 private data class DecodedImage(
     val bitmap: Bitmap,
     val width: Int,
@@ -162,10 +194,17 @@ private fun decodeSampledBitmap(file: File, maxDimension: Int = 2048): DecodedIm
         inPreferredConfig = Bitmap.Config.RGB_565
     }
     val bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
-    return DecodedImage(bitmap, bitmap.width, bitmap.height)
+    // Audit-200 D11 (m-715): the footer shows the ORIGINAL size — the
+    // sampled bitmap's own width/height are the downscaled ones.
+    return DecodedImage(bitmap, width, height)
 }
 
-/** An animated image that [ImageDecoder] decoded, with its target size. */
+/**
+ * An animated image that [ImageDecoder] decoded. [width]/[height] are
+ * the file's ORIGINAL dimensions (audit-200 D11, m-715) — the drawable
+ * itself is target-sized by [ImageDecoder.setTargetSize], so its
+ * intrinsic size is the sampled one and must not be shown as the size.
+ */
 internal data class AnimatedPreview(
     val drawable: AnimatedImageDrawable,
     val width: Int,
@@ -192,9 +231,16 @@ internal fun isAnimatedCandidate(path: String): Boolean {
  * caller's thread — call from IO.
  */
 internal fun decodeAnimatedDrawable(file: File, maxDimension: Int = 2048): AnimatedPreview? {
+    // Audit-200 D11 (m-715): the original size is read before
+    // setTargetSize — after it, the drawable's intrinsic size is the
+    // sampled (target) size, not the file's real one.
+    var originalWidth = 0
+    var originalHeight = 0
     val drawable = previewOrNull {
         ImageDecoder.decodeDrawable(ImageDecoder.createSource(file)) { decoder, info, _ ->
             val size = info.size
+            originalWidth = size.width
+            originalHeight = size.height
             val scale = (maxDimension.toFloat() / maxOf(size.width, size.height)).coerceAtMost(1f)
             decoder.setTargetSize(
                 (size.width * scale).toInt().coerceAtLeast(1),
@@ -203,7 +249,8 @@ internal fun decodeAnimatedDrawable(file: File, maxDimension: Int = 2048): Anima
         }
     } ?: return null
     val animated = drawable as? AnimatedImageDrawable ?: return null
-    return AnimatedPreview(animated, animated.intrinsicWidth, animated.intrinsicHeight)
+    if (originalWidth <= 0 || originalHeight <= 0) return null
+    return AnimatedPreview(animated, originalWidth, originalHeight)
 }
 
 /** Image preview: sampled decode on IO, fit-to-width, scrollable both ways. */
