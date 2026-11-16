@@ -152,6 +152,11 @@ class InstructionsViewModel(
             _state.value = _state.value.copy(keyInvalid = true)
             return
         }
+        // Audit-200 D9 (m-1057): the button's `enabled = !saving` is the
+        // only guard — two taps landing before recomposition both saw an
+        // enabled button and both fired a PUT. The VM is the backstop:
+        // refuse a second save while one is in flight.
+        if (_state.value.saving) return
         // Audit-200 D1 (m-468): a non-string value must never be saved
         // back as a string. The UI disables Save for these entries; this
         // is the backstop for any other caller.

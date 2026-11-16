@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
@@ -335,6 +336,8 @@ private fun GenericFormField(
                                 label = option.label.ifBlank { option.value },
                                 selected = single == option.value,
                                 onClick = { onSingleChange(option.value) },
+                                // Audit-200 D9 (m-853): one value at a time.
+                                role = Role.RadioButton,
                             )
                         }
                     }

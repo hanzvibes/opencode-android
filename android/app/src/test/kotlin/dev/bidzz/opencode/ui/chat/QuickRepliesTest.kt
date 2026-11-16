@@ -17,14 +17,23 @@ class QuickRepliesTest {
         multiple = multiple,
     )
 
+    private fun itemWithOptions(
+        options: List<QuestionOption>,
+        multiple: Boolean = false,
+        header: String? = null,
+    ) = QuestionItem(
+        header = header,
+        question = "Pick one?",
+        options = options,
+        multiple = multiple,
+    )
+
     @Test
-    fun `short single-choice options become chips with the card answer text`() {
+    fun `short single-choice options become chips`() {
         val chips = quickReplyChips(item(listOf("Ya", "Tidak"), header = "Lanjut?"))
 
         assertEquals(listOf("Ya", "Tidak"), chips.map { it.label })
         assertEquals(listOf("Ya", "Tidak"), chips.map { it.optionId })
-        assertEquals("Lanjut?: Ya", chips[0].answer)
-        assertEquals("Lanjut?: Tidak", chips[1].answer)
     }
 
     @Test
@@ -54,10 +63,46 @@ class QuickRepliesTest {
     }
 
     @Test
-    fun `duplicate labels chip once`() {
+    fun `same option listed twice chips once`() {
+        // Audit-200 D9 (m-447): the same id twice is one option, not two
+        // — the answer it sends is unambiguous, so one chip is safe.
+        // Ambiguity is the same label under DIFFERENT ids (next test):
+        // those cannot be told apart, so that label gets no chip.
+        // (m-117 guarantees ids are unique per option at parse time, so
+        // a repeated id can only be the same option listed twice.)
         val chips = quickReplyChips(item(listOf("Ya", "Ya", "Tidak")))
 
         assertEquals(listOf("Ya", "Tidak"), chips.map { it.label })
+    }
+
+    @Test
+    fun `same label with different ids still produces no chip for that label`() {
+        val chips = quickReplyChips(
+            itemWithOptions(
+                listOf(
+                    QuestionOption(id = "yes-a", label = "Ya"),
+                    QuestionOption(id = "yes-b", label = "Ya"),
+                    QuestionOption(id = "no", label = "Tidak"),
+                ),
+            ),
+        )
+
+        assertEquals(listOf("Tidak"), chips.map { it.label })
+    }
+
+    @Test
+    fun `exact duplicate options chip once`() {
+        val chips = quickReplyChips(
+            itemWithOptions(
+                listOf(
+                    QuestionOption(id = "a", label = "A"),
+                    QuestionOption(id = "a", label = "A"),
+                    QuestionOption(id = "b", label = "B"),
+                ),
+            ),
+        )
+
+        assertEquals(listOf("A", "B"), chips.map { it.label })
     }
 
     @Test

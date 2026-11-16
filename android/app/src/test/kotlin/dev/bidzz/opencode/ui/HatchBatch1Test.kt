@@ -80,6 +80,15 @@ class HatchBatch1Test {
     }
 
     @Test
+    fun `m-693 m-913 the dismiss button says Cancel while publishing, Done on success, Close on failure`() {
+        assertEquals(R.string.session_action_cancel, hatchPublishDismissLabelRes(HatchPublishState.PUBLISH))
+        assertEquals(R.string.common_done, hatchPublishDismissLabelRes(HatchPublishState.SUCCESS))
+        assertEquals(R.string.common_done, hatchPublishDismissLabelRes(HatchPublishState.UP_TO_DATE))
+        assertEquals(R.string.common_close, hatchPublishDismissLabelRes(HatchPublishState.FAILED))
+        assertEquals(R.string.common_close, hatchPublishDismissLabelRes(HatchPublishState.UNPUBLISHED))
+    }
+
+    @Test
     fun `publish titles and messages default per state, five distinct each (D1 m-696)`() {
         // A sheet with no title/message must still say what happened.
         val titles = HatchPublishState.entries.map { hatchPublishTitleRes(it) }

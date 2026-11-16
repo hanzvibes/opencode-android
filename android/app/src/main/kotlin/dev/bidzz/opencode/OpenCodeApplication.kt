@@ -58,6 +58,13 @@ class OpenCodeApplication : Application() {
          * vanished. Same size as the snackbar queue (D6 m-593).
          */
         internal const val SAF_PICK_BUFFER_CAPACITY = 16
+        /**
+         * Photos the chat can hold (audit-200 D9, m-488): same size as
+         * the SAF picks above — the camera flow used to be a buffer-1
+         * SharedFlow whose tryEmit silently dropped the third photo of
+         * a burst while the first was still being copied.
+         */
+        internal const val CAMERA_PHOTO_BUFFER_CAPACITY = 16
         /** SharedPreferences file the app restores from (also read by the widget). */
         const val PREFS_NAME = "app"
         /** Last opened session id (also read by the widget). */
@@ -538,14 +545,29 @@ class OpenCodeApplication : Application() {
      * Camera photo (Native C): asks MainActivity to open the system
      * camera, and the URI of the photo it took. Same bridge shape as
      * the SAF attach flow above.
+     *
+     * Audit-200 D9 (m-488): both flows used to be buffer-1 SharedFlows
+     * whose tryEmit was never checked — a photo taken while the previous
+     * one was still being copied vanished without a word. They are
+     * Channels now, like the SAF picks (D7 m-1164), and a photo that
+     * still cannot be queued names the file it lost.
      */
     fun requestCameraPhoto() {
-        cameraPhotoRequest.tryEmit(System.currentTimeMillis())
+        if (!cameraPhotoRequestChannel.trySend(System.currentTimeMillis()).isSuccess) {
+            showSnackbar(getString(R.string.camera_open_failed))
+        }
     }
 
     /** Delivers the URI of a photo just taken. */
     fun deliverCameraPhoto(uri: Uri) {
-        cameraPhotoPicked.tryEmit(uri)
+        if (!cameraPhotoPickedChannel.trySend(uri).isSuccess) {
+            val name = safDisplayName(uri)
+            showSnackbarWithRetry(
+                applicationScope,
+                getString(R.string.camera_photo_dropped_named, name),
+                long = true,
+            )
+        }
     }
 
     /**
@@ -557,9 +579,11 @@ class OpenCodeApplication : Application() {
         cameraPhotoCopied.tryEmit(uri)
     }
 
-    val cameraPhotoRequest = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
+    private val cameraPhotoRequestChannel = Channel<Long>(capacity = CAMERA_PHOTO_BUFFER_CAPACITY)
+    val cameraPhotoRequest: Flow<Long> = cameraPhotoRequestChannel.receiveAsFlow()
+    private val cameraPhotoPickedChannel = Channel<Uri>(capacity = CAMERA_PHOTO_BUFFER_CAPACITY)
     /** URIs of photos just taken; the chat screen copies them in. */
-    val cameraPhotoPicked = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+    val cameraPhotoPicked: Flow<Uri> = cameraPhotoPickedChannel.receiveAsFlow()
     /** URIs the chat screen finished copying (success or failure). */
     val cameraPhotoCopied = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
 

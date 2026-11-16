@@ -99,6 +99,20 @@ fun hatchPublishMessageRes(state: HatchPublishState): Int = when (state) {
 }
 
 /**
+ * The dismiss button's label for a state (Audit-200 D9, m-693/m-913):
+ * "Cancel" is only honest while something is in flight. On success or
+ * when already up to date the sheet just closes a finished job
+ * ("Done"); on failure or when nothing was published it only closes
+ * ("Close" — Retry, if any, is the primary action). Pure so it is
+ * unit-testable, like [hatchPublishStateLabelRes].
+ */
+fun hatchPublishDismissLabelRes(state: HatchPublishState): Int = when (state) {
+    HatchPublishState.PUBLISH -> R.string.session_action_cancel
+    HatchPublishState.SUCCESS, HatchPublishState.UP_TO_DATE -> R.string.common_done
+    HatchPublishState.FAILED, HatchPublishState.UNPUBLISHED -> R.string.common_close
+}
+
+/**
  * A publish-state sheet: a 4dp status band on top (mesh gradient while
  * publishing / on success, danger while failed, hairline otherwise),
  * the state label with its dot, then title + message and an optional
@@ -187,7 +201,7 @@ fun HatchPublishBottomSheet(
                 modifier = Modifier.sizeIn(minHeight = 48.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.session_action_cancel),
+                    text = stringResource(hatchPublishDismissLabelRes(state)),
                     style = OpenCodeTypography.body,
                     color = colors.onSurfaceMuted,
                 )

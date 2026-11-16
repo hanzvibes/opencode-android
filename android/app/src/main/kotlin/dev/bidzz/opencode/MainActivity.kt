@@ -15,7 +15,9 @@ import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
+import android.app.Activity
 import androidx.annotation.StringRes
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -183,8 +185,22 @@ class MainActivity : FragmentActivity() {
      * application, which the chat screen reads in as text.
      */
     private val pickSafFile =
-        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { (application as OpenCodeApplication).deliverSafFile(it) }
+        registerForActivityResult(OpenDocumentPersistable()) { uri ->
+            uri?.let {
+                // Audit-200 D9 (m-488): take a persistable read grant so
+                // the file is still readable if the process dies between
+                // the pick and the read — the grant used to die with the
+                // process and the pick came back unreadable. The grant is
+                // deliberately kept afterwards: the file stays re-readable
+                // and the grant is cheap metadata, released on uninstall.
+                runCatching {
+                    contentResolver.takePersistableUriPermission(
+                        it,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                }
+                (application as OpenCodeApplication).deliverSafFile(it)
+            }
         }
 
     /**
@@ -299,6 +315,31 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+    /**
+     * Audit-200 D9 (m-569): the byte size of a pending photo's MediaStore
+     * row, or -1 when the row is gone / unreadable. A row of size 0 is an
+     * empty capture that never landed; a row with bytes is a real photo
+     * whose callback never arrived. Never delete on size alone without
+     * this check — the row must be proven empty first.
+     */
+    private fun pendingPhotoRowSize(uri: Uri): Long {
+        return try {
+            contentResolver.query(
+                uri,
+                arrayOf(MediaStore.Images.Media.SIZE),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return -1L
+                val index = cursor.getColumnIndex(MediaStore.Images.Media.SIZE)
+                if (index < 0) -1L else cursor.getLong(index)
+            } ?: -1L
+        } catch (_: Exception) {
+            -1L
+        }
+    }
+
     private fun launchCamera() {
         // A second tap while the camera is already open would create a
         // second MediaStore row and overwrite the pending URI, orphaning
@@ -327,6 +368,16 @@ class MainActivity : FragmentActivity() {
                 (application as OpenCodeApplication).showSnackbar(localizedString(R.string.camera_insert_failed))
                 return
             }
+        // Audit-200 D9 (m-569): never overwrite a stale pending URI
+        // blindly — its empty row would orphan in the gallery. Clear it
+        // first, but only when it holds no photo: a delivered photo's
+        // copy may still be running, and its row must survive.
+        pendingPhotoStore.get()?.let { stale ->
+            if (!pendingPhotoStore.isDelivered() && pendingPhotoRowSize(stale) <= 0) {
+                runCatching { contentResolver.delete(stale, null, null) }
+                pendingPhotoStore.clear()
+            }
+        }
         pendingPhotoUri = uri
         pendingPhotoStore.put(uri)
         cameraOpen = true
@@ -365,6 +416,26 @@ class MainActivity : FragmentActivity() {
         // screen rotated (15-F6): the TakePicture result is re-delivered
         // to this recreated activity, and the callback reads this field.
         pendingPhotoUri = pendingPhotoStore.get()
+        // Audit-200 D9 (m-569): a restored URI used to be trusted
+        // blindly — an empty MediaStore row lingered in the gallery
+        // forever, and the stale URI sat until the next launch overwrote
+        // it. On a FRESH start only (savedInstanceState == null): a
+        // recreation still has its camera result coming, and the row may
+        // legitimately be empty while the camera writes. Validate the
+        // row — empty or gone means the photo was never taken, so delete
+        // the row and clear the trace; a row that holds a photo means
+        // the shot landed but its callback never arrived, so deliver it
+        // instead of deleting a real photo.
+        if (savedInstanceState == null && pendingPhotoUri != null && !pendingPhotoStore.isDelivered()) {
+            val restored = pendingPhotoUri!!
+            if (pendingPhotoRowSize(restored) <= 0) {
+                runCatching { contentResolver.delete(restored, null, null) }
+                pendingPhotoStore.clear()
+                pendingPhotoUri = null
+            } else {
+                (application as OpenCodeApplication).deliverCameraPhoto(restored)
+            }
+        }
         // Audit-200 A6 (DL-027): a photo whose result already arrived but
         // whose workspace copy never finished — the process died mid-copy
         // — is delivered again, so the copy runs and the pending trace
@@ -721,3 +792,27 @@ class MainActivity : FragmentActivity() {
  */
 internal fun mayAskNotificationPermission(onboardingCompleted: Boolean, onboardingWillShow: Boolean): Boolean =
     onboardingCompleted || !onboardingWillShow
+
+/**
+ * Audit-200 D9 (m-488): the stock `OpenDocument` contract's intent
+ * carries no `FLAG_GRANT_PERSISTABLE_URI_PERMISSION` — verified against
+ * the androidx.activity 1.9.3 bytecode, which only sets the action, the
+ * MIME-types extra and a wildcard type. Without the flag,
+ * `takePersistableUriPermission` on the result throws
+ * SecurityException, so the read grant died with the process. This
+ * contract is the stock one plus the read + persistable flags; the
+ * result parsing is the same (a URI on RESULT_OK, else null).
+ */
+internal class OpenDocumentPersistable : ActivityResultContract<Array<String>, Uri?>() {
+    override fun createIntent(context: Context, input: Array<String>): Intent =
+        Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .putExtra(Intent.EXTRA_MIME_TYPES, input)
+            .setType("*/*")
+            .addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) intent?.data else null
+}

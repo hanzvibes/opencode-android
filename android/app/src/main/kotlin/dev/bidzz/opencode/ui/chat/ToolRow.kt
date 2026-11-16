@@ -451,6 +451,8 @@ fun ToolTrace(
                         label = stringResource(option.labelRes),
                         selected = selected,
                         onClick = { filterName = option.name },
+                        // Audit-200 D9 (m-853): one trace filter at a time.
+                        role = Role.RadioButton,
                     )
                 }
             }
@@ -2146,7 +2148,13 @@ private fun DiffDecisionRow(
         verticalArrangement = Arrangement.spacedBy(spacing.xs),
     ) {
         Text(
-            text = stringResource(R.string.tool_diff_decision_note),
+            // Audit-200 D9 (m-088): the note used to promise a Reject
+            // button even on rows where Reject is hidden (the file path
+            // could not be verified) — say so honestly instead.
+            text = stringResource(
+                if (showReject) R.string.tool_diff_decision_note
+                else R.string.tool_diff_decision_note_no_reject,
+            ),
             style = OpenCodeTypography.caption.copy(fontSize = 11.sp),
             color = colors.onSurfaceMuted,
         )

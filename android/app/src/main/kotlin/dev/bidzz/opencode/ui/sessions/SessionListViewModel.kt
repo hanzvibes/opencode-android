@@ -165,6 +165,15 @@ class SessionListViewModel(
         val directory = if (scopedToWorkspace) workspace() else null
         val generation = ++loadGeneration
         lastScopedToWorkspace = scopedToWorkspace
+        // Audit-200 D9 (m-1116): the scope chip moves to the requested
+        // scope at once, but the rows stay the old scope's until the
+        // network answers — and on failure nothing restored them, so the
+        // chip showed the new scope over the old list, with Load more
+        // gone (hasMoreSessions was reset too). Capture the previous
+        // scope/cursor/page state and restore it in the Failure branch.
+        val previousDirectory = _state.value.filterDirectory
+        val previousCursor = sessionCursor
+        val previousHasMore = _state.value.hasMoreSessions
         sessionCursor = null
         previewJob?.cancel()
         previewWantedIds.clear()
@@ -221,7 +230,18 @@ class SessionListViewModel(
                 }
                 is ApiResult.Failure -> {
                     if (generation != loadGeneration) return@launch
-                    _state.value = _state.value.copy(loading = false, failure = result)
+                    // Audit-200 D9 (m-1116): the load failed, so the chip
+                    // and the list go back to the scope they showed
+                    // before — a failed scope switch must not leave the
+                    // new chip over the old rows with no Load more.
+                    // (The generation check above already drops stale
+                    // results, so these are this load's own values.)
+                    sessionCursor = previousCursor
+                    _state.value = resolveLoadFailure(
+                        _state.value, result,
+                        previousDirectory = previousDirectory,
+                        previousHasMore = previousHasMore,
+                    )
                 }
             }
         }
@@ -589,6 +609,29 @@ internal fun resolveRenameFailure(
         renameFailureKey = failureKey,
     )
 }
+
+/**
+ * Audit-200 D9 (m-1116): a failed load hands the scope back — the
+ * directory chip, the "Load more" flag and the failure land together, so
+ * a failed scope switch never leaves the new chip over the old rows with
+ * no Load more. The rows themselves are untouched (they still belong to
+ * the old scope). Pure so the branch is testable without a live engine:
+ * [SessionListViewModel.load] runs it inside a coroutine the JVM unit
+ * tests cannot drive (no Main dispatcher on the test classpath). The
+ * [sessionCursor] restore is not part of the state and stays in load().
+ */
+internal fun resolveLoadFailure(
+    state: SessionListUiState,
+    result: ApiResult.Failure,
+    previousDirectory: String?,
+    previousHasMore: Boolean,
+): SessionListUiState =
+    state.copy(
+        loading = false,
+        failure = result,
+        filterDirectory = previousDirectory,
+        hasMoreSessions = previousHasMore,
+    )
 
 /**
  * True when a just-loaded first page cannot prove a pin is a ghost

@@ -30,6 +30,22 @@ data class WebSearchUiState(
 )
 
 /**
+ * Audit-200 D9 (m-666): clearing the query (the X button) left the old
+ * results on screen with no way out — the Search button is disabled for
+ * a blank query, so the stale results could not even be replaced. A
+ * blank query clears the response (and the failure, for the same
+ * reason); any non-blank keystroke keeps the results until the next
+ * search replaces them. Pure so the rule is testable without a live
+ * engine.
+ */
+internal fun WebSearchUiState.withQuery(query: String): WebSearchUiState =
+    if (query.isBlank()) {
+        copy(query = query, response = null, failure = null)
+    } else {
+        copy(query = query)
+    }
+
+/**
  * Direct web search (mockup group 5).
  *
  * One query at a time through the selected provider (or the engine's
@@ -52,7 +68,7 @@ class WebSearchViewModel(private val api: EngineApi) : ViewModel() {
     }
 
     fun setQuery(query: String) {
-        _state.value = _state.value.copy(query = query)
+        _state.value = _state.value.withQuery(query)
     }
 
     fun setProvider(providerId: String?) {

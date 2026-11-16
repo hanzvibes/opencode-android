@@ -146,4 +146,47 @@ class SessionListPageTest {
         assertFalse(shouldShowFullScreenLoading(loading = false, rowsEmpty = true))
         assertFalse(shouldShowFullScreenLoading(loading = false, rowsEmpty = false))
     }
+
+    @Test
+    fun `m-1116 a failed load hands the scope back to what it showed before`() {
+        val failure = ApiResult.Failure(code = 500, tag = null, message = "boom")
+        val before = SessionListUiState(
+            loading = true,
+            rows = listOf(row("s1", "Old")),
+            filterDirectory = "/new",
+            hasMoreSessions = false,
+        )
+
+        val after = resolveLoadFailure(
+            before, failure,
+            previousDirectory = "/old",
+            previousHasMore = true,
+        )
+
+        assertFalse(after.loading)
+        assertEquals(failure, after.failure)
+        assertEquals("/old", after.filterDirectory)
+        assertTrue(after.hasMoreSessions)
+        // The rows still belong to the old scope — they are untouched.
+        assertEquals(listOf(row("s1", "Old")), after.rows)
+    }
+
+    @Test
+    fun `m-1116 a failed first load restores the unscoped list`() {
+        val failure = ApiResult.Failure(code = 500, tag = null, message = "boom")
+        val before = SessionListUiState(
+            loading = true,
+            filterDirectory = "/new",
+            hasMoreSessions = false,
+        )
+
+        val after = resolveLoadFailure(
+            before, failure,
+            previousDirectory = null,
+            previousHasMore = true,
+        )
+
+        assertNull(after.filterDirectory)
+        assertTrue(after.hasMoreSessions)
+    }
 }

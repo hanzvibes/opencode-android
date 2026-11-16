@@ -390,6 +390,10 @@ fun ChatScreen(
     composerBounds: MutableState<Rect?>,
     /** True while a drag hovers the composer: the composer draws its drop border. */
     dragOverComposer: Boolean,
+    /** True while an accepted drag hovers anywhere but the composer: a drop hint shows above it. */
+    dragOverElsewhere: Boolean,
+    /** True while a drag whose types cannot drop here is active: a rejection hint shows. */
+    dragRejected: Boolean,
     /**
      * Opens the system file picker for a file outside the workspace (SAF).
      * The launcher lives in MainActivity: a Compose launcher here crashed
@@ -2323,6 +2327,14 @@ fun ChatScreen(
                             if (picked.isSkill) onSkillPick(picked) else onDraftChange("/${picked.name} ")
                         } else if (pickedMention != null) {
                             onDraftChange(insertMention(state.draft, pickedMention.path))
+                        } else if (paletteActive || mentionActive) {
+                            // Audit-200 D9 (m-1044): the palette/mention
+                            // is open but nothing matches — do NOT send the
+                            // raw draft: "/zzz" used to go out verbatim
+                            // through IME Send / Ctrl+Enter, while physical
+                            // Enter only inserted a newline. Doing nothing
+                            // mirrors the intent: close the palette or
+                            // mention first, or pick a match, then send.
                         } else if (state.editingMessageId != null) {
                             onSubmitEdit()
                         } else {
@@ -2467,6 +2479,38 @@ fun ChatScreen(
                             onSubmit = { answer -> onSubmitForm(form.id, answer) },
                             onCancel = { onCancelForm(form.id) },
                         )
+                    }
+
+                    // Audit-200 D9 (m-732): a drag used to show nothing
+                    // but a 1.5dp border on the composer — no label, no
+                    // hint while hovering the transcript, and no
+                    // difference between a valid drop and a rejected one.
+                    // The hint sits above the composer while a drag is
+                    // active: where to drop when it hovers elsewhere, and
+                    // that it cannot drop here when the types are wrong.
+                    if (dragOverComposer || dragOverElsewhere || dragRejected) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    if (dragRejected) R.string.drag_drop_rejected
+                                    else R.string.drag_drop_to_attach,
+                                ),
+                                style = OpenCodeTypography.caption.copy(
+                                    fontWeight = FontWeight.Medium,
+                                ),
+                                color = if (dragRejected) colors.danger else colors.accentText,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.full))
+                                    .background(
+                                        if (dragRejected) colors.danger.copy(alpha = 0.08f)
+                                        else colors.accent.copy(alpha = 0.12f),
+                                    )
+                                    .padding(horizontal = spacing.md, vertical = spacing.xs),
+                            )
+                        }
                     }
 
                     Composer(
@@ -3911,6 +3955,9 @@ private fun EngineStatusDialog(
                                         onDismiss()
                                         onActivateSkill(skill.id)
                                     },
+                                    // Audit-200 D9 (m-853): this is an
+                                    // action, not a choice — never checked.
+                                    role = SemanticsRole.Button,
                                 )
                             }
                         }

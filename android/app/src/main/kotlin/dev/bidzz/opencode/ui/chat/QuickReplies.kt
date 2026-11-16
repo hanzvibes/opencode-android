@@ -16,8 +16,6 @@ data class QuickReplyChip(
     val optionId: String,
     /** Short label shown on the chip. */
     val label: String,
-    /** Text sent as the user message, header included, like the card's. */
-    val answer: String,
 )
 
 /** Chips are a shortcut, not a second list: at most this many are shown. */
@@ -31,7 +29,14 @@ private const val MAX_QUICK_REPLY_LABEL_LENGTH = 24
  * to offer: a multi-choice question (it needs the Submit button), a
  * question with no options (nothing to chip — an answer is never invented,
  * so no synthetic "Ya / Tidak" appears), or options whose labels are all
- * too long. Labels are deduplicated, in option order.
+ * too long. Chips are deduplicated by option id, in option order.
+ * Audit-200 D9 (m-447): a label is chipped only when every option
+ * carrying it shares one id. Two different options under one label
+ * cannot be told apart on a chip, and tapping one used to answer with
+ * the first option's id — so that label gets no chip at all. The same
+ * option listed twice (one id) is one chip: the answer is unambiguous.
+ * The full list below the card still shows every row, with its
+ * description, so a dropped option stays reachable.
  */
 fun quickReplyChips(
     item: QuestionItem,
@@ -39,15 +44,21 @@ fun quickReplyChips(
     maxLabelLength: Int = MAX_QUICK_REPLY_LABEL_LENGTH,
 ): List<QuickReplyChip> {
     if (item.multiple) return emptyList()
-    return item.options
+    // Audit-200 D9 (m-447): dedup exact repeats first (same id twice is
+    // one option, not two), then drop every label that is still
+    // ambiguous — the same label under different ids cannot be told
+    // apart on a chip, so no chip at all is safer than a wrong one.
+    val deduped = item.options
         .filter { it.label.isNotBlank() && it.label.length <= maxLabelLength }
-        .distinctBy { it.label }
+        .distinctBy { it.id }
+    val labelCounts = deduped.groupingBy { it.label }.eachCount()
+    return deduped
+        .filter { labelCounts[it.label] == 1 }
         .take(maxChips)
         .map { option ->
             QuickReplyChip(
                 optionId = option.id,
                 label = option.label,
-                answer = formatQuestionAnswer(item, listOf(option.label)),
             )
         }
 }

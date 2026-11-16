@@ -981,6 +981,15 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // when the user has since moved on (A9-2, DL-017/DL-018).
     val dropComposerBounds = remember { mutableStateOf<Rect?>(null) }
     var dragOverComposer by remember { mutableStateOf(false) }
+    // Audit-200 D9 (m-732): a drag used to show nothing but a 1.5dp
+    // border on the composer — no label, no hint while hovering the
+    // transcript, and no difference between a valid drop and a rejected
+    // one. Track the drag itself (active + accepted), so the chat can
+    // show a hint while the drag hovers anywhere, and a rejection when
+    // the MIME types are not droppable here. Both reset in every branch
+    // that resets dragOverComposer, so no hint ever sticks.
+    var dragActive by remember { mutableStateOf(false) }
+    var dragAccepted by remember { mutableStateOf(false) }
     val dropRootView = LocalView.current
     DisposableEffect(dropRootView, screen, chatState.sessionID) {
         val inChat = screen is Screen.Chat
@@ -993,7 +1002,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     val types = (0 until description.mimeTypeCount)
                         .map { description.getMimeType(it) }
                         .toSet()
-                    acceptsDropMimeTypes(types)
+                    val accepted = acceptsDropMimeTypes(types)
+                    dragActive = true
+                    dragAccepted = accepted
+                    accepted
                 }
                 DragEvent.ACTION_DRAG_ENTERED, DragEvent.ACTION_DRAG_LOCATION -> {
                     dragOverComposer = inChat && dropComposerBounds.value
@@ -1006,6 +1018,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 }
                 DragEvent.ACTION_DROP -> {
                     dragOverComposer = false
+                    dragActive = false
+                    dragAccepted = false
                     if (inChat) {
                         val inside = dropComposerBounds.value
                             ?.contains(Offset(event.x, event.y)) == true
@@ -1034,6 +1048,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 }
                 DragEvent.ACTION_DRAG_ENDED -> {
                     dragOverComposer = false
+                    dragActive = false
+                    dragAccepted = false
                     true
                 }
                 else -> false
@@ -1042,6 +1058,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         dropRootView.setOnDragListener(listener)
         onDispose { dropRootView.setOnDragListener(null) }
     }
+
+    // Audit-200 D9 (m-732): derived drag hints — a valid drag hovering
+    // anywhere but the composer, and a drag whose types cannot drop here.
+    val dragOverElsewhere = dragActive && dragAccepted && !dragOverComposer
+    val dragRejected = dragActive && !dragAccepted
 
     CompositionLocalProvider(
         LocalContext provides localized,
@@ -1132,6 +1153,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onInvalidateFileIndex = explorerViewModel::invalidateQuickOpenIndex,
                         composerBounds = dropComposerBounds,
                         dragOverComposer = dragOverComposer,
+                        dragOverElsewhere = dragOverElsewhere,
+                        dragRejected = dragRejected,
                     )
 
                     Screen.Files -> ExplorerScreen(
@@ -1361,6 +1384,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                     onInvalidateFileIndex = explorerViewModel::invalidateQuickOpenIndex,
                                     composerBounds = dropComposerBounds,
                                     dragOverComposer = dragOverComposer,
+                                    dragOverElsewhere = dragOverElsewhere,
+                                    dragRejected = dragRejected,
                                 )
                             }
                         }
@@ -1799,7 +1824,12 @@ private fun ChatDestination(
      * hover flag travel down through this destination.
      */
     composerBounds: MutableState<Rect?>,
+    /** True while a drag hovers the composer: the composer draws its drop border. */
     dragOverComposer: Boolean,
+    /** True while an accepted drag hovers anywhere but the composer: the chat shows a drop hint. */
+    dragOverElsewhere: Boolean,
+    /** True while a drag whose types cannot drop here is active: the chat shows a rejection hint. */
+    dragRejected: Boolean,
 ) {
     ChatScreen(
         state = chatState,
@@ -1897,6 +1927,8 @@ private fun ChatDestination(
         onRemoveAttachment = chatViewModel::removeAttachment,
         composerBounds = composerBounds,
         dragOverComposer = dragOverComposer,
+        dragOverElsewhere = dragOverElsewhere,
+        dragRejected = dragRejected,
         onDismissAttachNotice = chatViewModel::dismissAttachNotice,
         onDismissQueueNotice = chatViewModel::dismissQueueNotice,
         onDismissStaleSelection = chatViewModel::clearStaleSelection,

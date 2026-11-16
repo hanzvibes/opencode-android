@@ -96,6 +96,11 @@ class MoveSessionViewModel(
     }
 
     fun move() {
+        // Audit-200 D9 (m-1057): the button's `enabled = !moving` is the
+        // only guard — two taps landing before recomposition both saw an
+        // enabled button and both fired a POST /move. The VM is the
+        // backstop: refuse a second move while one is in flight.
+        if (_state.value.moving) return
         val sessionID = sessionID ?: return
         val target = _state.value.projects.firstOrNull { it.id == _state.value.selectedProjectID }
             ?: return

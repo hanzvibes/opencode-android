@@ -2,8 +2,11 @@ package dev.bidzz.opencode.ui.files
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
+import android.widget.ImageView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +32,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
@@ -159,12 +165,54 @@ private fun decodeSampledBitmap(file: File, maxDimension: Int = 2048): DecodedIm
     return DecodedImage(bitmap, bitmap.width, bitmap.height)
 }
 
+/** An animated image that [ImageDecoder] decoded, with its target size. */
+internal data class AnimatedPreview(
+    val drawable: AnimatedImageDrawable,
+    val width: Int,
+    val height: Int,
+)
+
+/**
+ * Pure: only GIF and WebP can animate in this preview set — every other
+ * image format goes straight to the sampled bitmap path. Unit-tested.
+ */
+internal fun isAnimatedCandidate(path: String): Boolean {
+    val extension = path.substringAfterLast('.', "").lowercase(Locale.ROOT)
+    return extension == "gif" || extension == "webp"
+}
+
+/**
+ * Audit-200 D9 (m-718): GIF/WebP animation used to show only the first
+ * frame — [BitmapFactory] decodes one frame, and nothing in the app
+ * played animations. [ImageDecoder] (API 28+, minSdk 29) decodes the
+ * animation; the result decides, not the extension — a static WebP
+ * decodes to a plain drawable and falls back to the sampled bitmap
+ * path. Frames are capped at [maxDimension] on the long side via
+ * [ImageDecoder.setTargetSize], like the bitmap sampler. Runs on the
+ * caller's thread — call from IO.
+ */
+internal fun decodeAnimatedDrawable(file: File, maxDimension: Int = 2048): AnimatedPreview? {
+    val drawable = previewOrNull {
+        ImageDecoder.decodeDrawable(ImageDecoder.createSource(file)) { decoder, info, _ ->
+            val size = info.size
+            val scale = (maxDimension.toFloat() / maxOf(size.width, size.height)).coerceAtMost(1f)
+            decoder.setTargetSize(
+                (size.width * scale).toInt().coerceAtLeast(1),
+                (size.height * scale).toInt().coerceAtLeast(1),
+            )
+        }
+    } ?: return null
+    val animated = drawable as? AnimatedImageDrawable ?: return null
+    return AnimatedPreview(animated, animated.intrinsicWidth, animated.intrinsicHeight)
+}
+
 /** Image preview: sampled decode on IO, fit-to-width, scrollable both ways. */
 @Composable
 private fun ImagePreview(file: File, modifier: Modifier = Modifier) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     var decoded by remember(file) { mutableStateOf<DecodedImage?>(null) }
+    var animated by remember(file) { mutableStateOf<AnimatedPreview?>(null) }
     var failed by remember(file) { mutableStateOf(false) }
     // Audit-200 C13 (M-008): a decode failure is retryable in place — a
     // file that was still being written, or briefly unreadable, needs no
@@ -173,13 +221,39 @@ private fun ImagePreview(file: File, modifier: Modifier = Modifier) {
     var retryAttempt by remember(file) { mutableStateOf(0) }
 
     LaunchedEffect(file, retryAttempt) {
-        val result = withContext(Dispatchers.IO) {
-            previewOrNull { decodeSampledBitmap(file) }
+        val (animation, bitmap) = withContext(Dispatchers.IO) {
+            // Audit-200 D9 (m-718): an animated GIF/WebP used to show
+            // only its first frame. Try the animation first; a static
+            // file decodes to a plain drawable and falls back to the
+            // sampled bitmap below.
+            val animation = if (isAnimatedCandidate(file.name)) {
+                decodeAnimatedDrawable(file)
+            } else {
+                null
+            }
+            val bitmap = if (animation == null) {
+                previewOrNull { decodeSampledBitmap(file) }
+            } else {
+                null
+            }
+            animation to bitmap
         }
-        if (result == null) failed = true else decoded = result
+        if (animation != null) {
+            animated = animation
+        } else if (bitmap != null) {
+            decoded = bitmap
+        } else {
+            failed = true
+        }
     }
     DisposableEffect(decoded) {
         onDispose { decoded?.bitmap?.recycle() }
+    }
+    // The animation runs only while the preview owns it.
+    DisposableEffect(animated) {
+        val current = animated?.drawable
+        current?.start()
+        onDispose { current?.stop() }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -189,36 +263,70 @@ private fun ImagePreview(file: File, modifier: Modifier = Modifier) {
                 onRetry = {
                     failed = false
                     decoded = null
+                    animated = null
                     retryAttempt++
                 },
             )
-            decoded == null -> LoadingState(stringResource(R.string.fileview_reading))
+            decoded == null && animated == null -> LoadingState(stringResource(R.string.fileview_reading))
             else -> {
-                val image = decoded!!
+                val image = decoded
+                val animation = animated
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
                         .horizontalScroll(rememberScrollState()),
                 ) {
-                    Image(
-                        bitmap = image.bitmap.asImageBitmap(),
-                        // Audit-200 D3 (m-031): TalkBack skipped the
-                        // preview entirely — name the file and its size.
-                        contentDescription = stringResource(
+                    if (animation != null) {
+                        // Audit-200 D9 (m-718): there is no drawable-painter
+                        // helper in Compose 1.7.6 — an AnimatedImageDrawable
+                        // is shown through an ImageView, which plays it like
+                        // any view.
+                        // The description resolves in composition: a
+                        // semantics block is not a @Composable scope.
+                        val animationDescription = stringResource(
                             R.string.preview_image_desc,
                             file.name,
-                            image.width,
-                            image.height,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                            animation.width,
+                            animation.height,
+                        )
+                        AndroidView(
+                            factory = { context ->
+                                ImageView(context).apply {
+                                    adjustViewBounds = true
+                                    setImageDrawable(animation.drawable)
+                                }
+                            },
+                            update = { it.setImageDrawable(animation.drawable) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics { contentDescription = animationDescription },
+                        )
+                    } else if (image != null) {
+                        Image(
+                            bitmap = image.bitmap.asImageBitmap(),
+                            // Audit-200 D3 (m-031): TalkBack skipped the
+                            // preview entirely — name the file and its size.
+                            contentDescription = stringResource(
+                                R.string.preview_image_desc,
+                                file.name,
+                                image.width,
+                                image.height,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Spacer(Modifier.height(spacing.sm))
+                    val (shownWidth, shownHeight) = if (animation != null) {
+                        animation.width to animation.height
+                    } else {
+                        image!!.width to image.height
+                    }
                     Text(
                         text = stringResource(
                             R.string.preview_image_size,
-                            image.width,
-                            image.height,
+                            shownWidth,
+                            shownHeight,
                         ),
                         style = OpenCodeTypography.caption,
                         color = colors.onSurfaceMuted,

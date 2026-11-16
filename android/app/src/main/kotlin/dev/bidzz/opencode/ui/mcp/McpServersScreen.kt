@@ -37,8 +37,12 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.OpenCodeApplication
@@ -747,12 +751,30 @@ private fun AddMcpServerDialog(
     val detailValid = if (isLocal) command.isNotBlank() else isValidMcpRemoteUrl(url)
     val valid = nameValid && detailValid
     val existing = if (nameValid) existingServer(name.trim()) else null
+    // Audit-200 D9 (m-915): the Add button's disabled reason, in the
+    // order the user meets the fields — a wrong-but-present value names
+    // its own error; a merely empty form gets the generic reason.
+    val invalidReasonRes = when {
+        name.isNotEmpty() && !nameValid -> R.string.mcp_add_name_invalid
+        !isLocal && url.isNotEmpty() && !isValidMcpRemoteUrl(url) -> R.string.mcp_add_url_invalid
+        !valid -> R.string.mcp_add_incomplete
+        else -> null
+    }
+    // Resolve the reason in composition: a semantics block is not a
+    // @Composable scope, so stringResource cannot be called inside it.
+    val invalidReason = invalidReasonRes?.let { stringResource(it) }
 
     LocalizedAlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(
-                modifier = Modifier.sizeIn(minHeight = 48.dp),
+                modifier = Modifier
+                    .sizeIn(minHeight = 48.dp)
+                    // Audit-200 D9 (m-915): a disabled Add said nothing
+                    // about why — TalkBack now reads the reason.
+                    .semantics {
+                        invalidReason?.let { stateDescription = it }
+                    },
                 onClick = {
                     val config = if (isLocal) {
                         McpServerConfig.local(
@@ -815,11 +837,14 @@ private fun AddMcpServerDialog(
                         label = stringResource(R.string.mcp_add_local),
                         selected = isLocal,
                         onClick = { isLocal = true },
+                        // Audit-200 D9 (m-853): local XOR remote — radio.
+                        role = Role.RadioButton,
                     )
                     SelectorChip(
                         label = stringResource(R.string.mcp_add_remote),
                         selected = !isLocal,
                         onClick = { isLocal = false },
+                        role = Role.RadioButton,
                     )
                 }
                 FormField(
@@ -833,6 +858,10 @@ private fun AddMcpServerDialog(
                         text = stringResource(R.string.mcp_add_name_invalid),
                         style = OpenCodeTypography.caption,
                         color = colors.danger,
+                        // Audit-200 D9 (m-915): the error was visual
+                        // only — a polite live region announces it when
+                        // it appears, once per transition.
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
                 }
                 if (isLocal) {
@@ -870,6 +899,9 @@ private fun AddMcpServerDialog(
                             text = stringResource(R.string.mcp_add_url_invalid),
                             style = OpenCodeTypography.caption,
                             color = colors.danger,
+                            // Audit-200 D9 (m-915): same as the name
+                            // error above — announced when it appears.
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         )
                     }
                     FormField(

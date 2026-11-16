@@ -113,7 +113,25 @@ private fun parseSingleQuestion(element: JsonElement): QuestionItem? {
             }
             else -> null
         }
-    }.orEmpty()
+    }.orEmpty().let { parsed ->
+        // Audit-200 D9 (m-117): the id defaults to the label, so two
+        // options with the same label shared one selection key — one tap
+        // highlighted both rows and answered "Header: Ya, Ya". Ids are
+        // only local selection keys (the engine receives labels, see
+        // questionReplyFields), so make them unique per position; the
+        // first keeps its id, later duplicates get a "#n" suffix.
+        val usedIds = mutableSetOf<String>()
+        parsed.map { option ->
+            var candidate = option.id
+            var suffix = 1
+            while (candidate in usedIds) {
+                candidate = "${option.id}#$suffix"
+                suffix++
+            }
+            usedIds += candidate
+            if (candidate == option.id) option else option.copy(id = candidate)
+        }
+    }
 
     if (questionText.isBlank() && options.isEmpty()) return null
     return QuestionItem(

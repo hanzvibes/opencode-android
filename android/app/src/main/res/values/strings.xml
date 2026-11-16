@@ -123,6 +123,10 @@
     <string name="mcp_add_name">Name</string>
     <string name="mcp_add_name_hint">my-server</string>
     <string name="mcp_add_name_invalid">Letters, digits, - and _ only.</string>
+    <!-- Audit-200 D9 (m-915): the Add button's disabled reason when the
+         form is simply incomplete (empty name / command / URL) — the two
+         invalid strings above only cover wrong-but-present input. -->
+    <string name="mcp_add_incomplete">Fill in the required fields.</string>
     <!-- Audit-200 D7 (m-631): a remote server needs a real URL, not just non-blank text. -->
     <string name="mcp_add_url_invalid">A remote server needs an http(s) URL with a host, e.g. https://example.com:8080/mcp.</string>
     <string name="mcp_add_command">Command</string>
@@ -182,6 +186,9 @@
     <string name="generate_title">Generate</string>
     <string name="generate_body">One-shot text and image generation from the engine, without starting a session. Text uses the default model unless one is picked; images need an image model.</string>
     <string name="generate_action">Generate</string>
+    <!-- Audit-200 D9 (m-915): why the Generate action is disabled. -->
+    <string name="generate_prompt_empty">Write a prompt first.</string>
+    <string name="generate_model_required">Choose a model first.</string>
     <string name="generate_mode_text">Text</string>
     <string name="generate_mode_image">Image</string>
     <string name="generate_model_default">Default model</string>
@@ -483,6 +490,9 @@
     <string name="session_action_export">Export</string>
     <string name="session_action_instructions">Instructions</string>
     <string name="session_rename_title">Rename chat</string>
+    <!-- Audit-200 D9 (m-915): announced when Done is pressed with an
+         empty title, and the Save button's disabled reason. -->
+    <string name="rename_title_empty">Title cannot be empty.</string>
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
     <string name="session_delete_message">Are you sure you want to delete “%1$s”? This action cannot be undone.</string>
@@ -737,6 +747,14 @@
     <string name="directory_picker_failed">Could not open the folder picker.</string>
     <string name="saf_picker_failed">Could not open the file picker.</string>
     <string name="saf_file_dropped_named">"Could not attach '%1$s' — try picking it again."</string>
+    <!-- Audit-200 D9 (m-488): a photo that could not be queued after it
+         was taken — same shape as the SAF drop message above. -->
+    <string name="camera_photo_dropped_named">"Could not attach '%1$s' — try taking it again."</string>
+    <!-- Audit-200 D9 (m-732): the drag hint above the composer — a drag
+         used to show only a 1.5dp border, with no label and no hint
+         while hovering the transcript. -->
+    <string name="drag_drop_to_attach">Drop to attach</string>
+    <string name="drag_drop_rejected">Cannot attach this here</string>
     <string name="code_highlight_off">Highlight off (large file)</string>
 
     <!-- Project -->
@@ -884,6 +902,10 @@
     <string name="tool_diff_accepted">Accepted</string>
     <string name="tool_diff_rejected">Revert requested</string>
     <string name="tool_diff_decision_note">Accept keeps the change. Reject asks the agent to revert this file.</string>
+    <!-- Audit-200 D9 (m-088): shown when Reject is hidden because the
+         file path could not be verified — the plain note would promise
+         a button that is not there. -->
+    <string name="tool_diff_decision_note_no_reject">Accept keeps the change. Reject is unavailable: the file path could not be verified.</string>
     <string name="turn_footer_tokens">%1$s tokens</string>
     <string name="turn_footer_stop_reason">stop: %1$s</string>
     <string name="prompt_history_previous">Previous prompt</string>
@@ -1217,7 +1239,9 @@
     <string name="widget_no_session">No recent session</string>
     <string name="task_delete_title">Delete task</string>
     <string name="task_delete_message">Are you sure you want to delete “%1$s”? This action cannot be undone.</string>
-    <string name="publish_state_publish">Publish</string>
+    <!-- Audit-200 D9 (m-687): was the imperative "Publish" while the
+         other four labels are states — PUBLISH is in progress. -->
+    <string name="publish_state_publish">Publishing…</string>
     <string name="publish_state_success">Published</string>
     <string name="publish_state_failed">Publish failed</string>
     <string name="publish_state_up_to_date">Up to date</string>
