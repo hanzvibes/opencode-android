@@ -1227,15 +1227,17 @@ fun ChatScreen(
             // Compact confirm (mockup group 2): the header's status dialog
             // offers Compact; the confirm lives here so it survives the
             // status dialog closing first.
-            var showCompactDialog by remember { mutableStateOf(false) }
+            // Audit-200 D8 (m-425/m-946): a confirm open during a process
+            // death comes back, instead of vanishing silently.
+            var showCompactDialog by rememberSaveable { mutableStateOf(false) }
             // Audit-200 C14 (M-196): a shell code block the user asked to
             // run, waiting for confirmation — the command is shown
             // verbatim, so the user sees exactly what would execute.
-            var pendingRun by remember { mutableStateOf<String?>(null) }
+            var pendingRun by rememberSaveable { mutableStateOf<String?>(null) }
             // Audit-200 B7 (M-027): the message a revert was asked for —
             // the dialog below asks whether the files change too, so the
             // staging only happens once the user picks.
-            var revertTargetId by remember { mutableStateOf<String?>(null) }
+            var revertTargetId by rememberSaveable { mutableStateOf<String?>(null) }
             ChatHeader(
                 title = headerTitle(state.workspacePath),
                 // The active session's own title, so the header says which
@@ -3248,7 +3250,9 @@ fun ChatHeader(
     val dims = OpenCodeTheme.tokens.dimensions
     val status = engineState.toStatus(busy)
 
-    var showStatusDialog by remember { mutableStateOf(false) }
+    // Audit-200 D8 (m-425/m-946): the status dialog survives a process
+    // death instead of vanishing silently.
+    var showStatusDialog by rememberSaveable { mutableStateOf(false) }
 
     // The status dot pulses on the one live period (pulsePeriodMs), and the
     // infinite transition only exists while WORKING: a ready/error/idle dot
@@ -3559,7 +3563,9 @@ private fun EngineStatusDialog(
     // Branch list (Tier 2): expanded from the branch row below. Hoisted
     // here, not in the row: the row only exists while a branch is known,
     // and a conditional remember would reset on a branch change.
-    var showBranches by remember { mutableStateOf(false) }
+    // Audit-200 D8 (m-425/m-946): the expanded branch list survives a
+    // process death instead of collapsing silently.
+    var showBranches by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(showBranches) {
         if (showBranches) onLoadBranches()
     }
@@ -3572,7 +3578,9 @@ private fun EngineStatusDialog(
         dev.bidzz.opencode.core.engine.EngineState.INITIALIZING -> R.string.chat_status_desc_starting
         dev.bidzz.opencode.core.engine.EngineState.FAILED,
         dev.bidzz.opencode.core.engine.EngineState.DEGRADED -> R.string.chat_status_desc_unhealthy
-        dev.bidzz.opencode.core.engine.EngineState.STOPPING,
+        // Audit-200 D8 (m-200): STOPPING is not STOPPED — the engine is
+        // still winding down, so it gets its own description.
+        dev.bidzz.opencode.core.engine.EngineState.STOPPING -> R.string.chat_status_desc_stopping
         dev.bidzz.opencode.core.engine.EngineState.STOPPED -> R.string.chat_status_desc_stopped
     }
 
@@ -4211,29 +4219,42 @@ private fun ChatDrawerContent(
     val radius = OpenCodeTheme.tokens.radius
     val dims = OpenCodeTheme.tokens.dimensions
 
-    var sessionToRename by remember { mutableStateOf<SessionRow?>(null) }
-    var sessionToDelete by remember { mutableStateOf<SessionRow?>(null) }
+    // Audit-200 D8 (m-425/m-946/m-1006): the dialog targets survive a
+    // process death — only the id is saved, the row is looked up again,
+    // so a renamed or deleted session can no longer leave a stale target.
+    var sessionToRenameId by rememberSaveable { mutableStateOf<String?>(null) }
+    var sessionToDeleteId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    sessionToRename?.let { target ->
-        RenameSessionDialog(
-            initialTitle = target.title,
-            onDismiss = { sessionToRename = null },
-            onConfirm = { newTitle ->
-                sessionToRename = null
-                onRenameSession(target.id, newTitle)
-            },
-        )
+    sessionToRenameId?.let { id ->
+        sessions.find { it.id == id }?.let { target ->
+            RenameSessionDialog(
+                initialTitle = target.title,
+                onDismiss = { sessionToRenameId = null },
+                onConfirm = { newTitle ->
+                    sessionToRenameId = null
+                    onRenameSession(target.id, newTitle)
+                },
+            )
+        }
     }
 
-    sessionToDelete?.let { target ->
-        DeleteSessionDialog(
-            sessionTitle = target.title,
-            onDismiss = { sessionToDelete = null },
-            onConfirm = {
-                sessionToDelete = null
-                onDeleteSession(target.id)
-            },
-        )
+    sessionToDeleteId?.let { id ->
+        sessions.find { it.id == id }?.let { target ->
+            DeleteSessionDialog(
+                sessionTitle = target.title,
+                onDismiss = { sessionToDeleteId = null },
+                onConfirm = {
+                    sessionToDeleteId = null
+                    onDeleteSession(target.id)
+                },
+                // Audit-200 D8 (m-171): the dialog warns when this is the
+                // session with a run in progress.
+                isRunning = busy && currentSessionID == target.id,
+                // Audit-200 D8 (m-1228): the directory tells same-titled
+                // sessions apart.
+                sessionDirectory = target.directory,
+            )
+        }
     }
     // One Column owns the whole height in both hosts (item 19): the
     // session list takes the remaining space (weight(1f)) and the footer
@@ -4515,8 +4536,8 @@ private fun ChatDrawerContent(
                         selected = selected,
                         onClick = { onOpenSession(row.id) },
                         onPinToggle = { onTogglePinSession(row.id) },
-                        onRenameClick = { sessionToRename = row },
-                        onDeleteClick = { sessionToDelete = row },
+                        onRenameClick = { sessionToRenameId = row.id },
+                        onDeleteClick = { sessionToDeleteId = row.id },
                         modifier = Modifier.animateItem(),
                     )
                 }

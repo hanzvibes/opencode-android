@@ -123,7 +123,7 @@
     <!-- Audit-200 D7 (m-631): server remote butuh URL yang benar, bukan sekadar teks tak kosong. -->
     <string name="mcp_add_url_invalid">Server remote butuh URL http(s) dengan host, contoh: https://example.com:8080/mcp.</string>
     <string name="mcp_add_command">Perintah</string>
-    <string name="mcp_add_command_hint">npx -y @scope/server /tmp</string>
+    <string name="mcp_add_command_hint">npx -y @scope/server "/tmp/my dir"</string>
     <string name="mcp_add_cwd">Direktori kerja (opsional)</string>
     <string name="mcp_add_cwd_hint">/home/user/project</string>
     <string name="mcp_add_url">URL</string>
@@ -422,6 +422,8 @@
     <string name="chat_status_desc_working">Engine sedang menjalankan tugas atau membuat respons.</string>
     <string name="chat_status_desc_starting">Engine sedang memulai dan menyiapkan koneksi runtime.</string>
     <string name="chat_status_desc_stopped">Engine tidak berjalan. Ketuk Diagnostik untuk melihat log.</string>
+    <!-- Audit-200 D8 (m-200): STOPPING adalah kondisi sendiri, bukan "tidak berjalan". -->
+    <string name="chat_status_desc_stopping">Engine sedang dimatikan…</string>
     <string name="chat_status_desc_unhealthy">Engine bermasalah atau mengalami kesalahan.</string>
     <string name="empty_title_ready">Apa yang ingin dikerjakan?</string>
     <string name="empty_title_starting">Memulai engine…</string>
@@ -485,6 +487,10 @@
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
     <string name="session_delete_message">Apakah Anda yakin ingin menghapus “%1$s”? Tindakan ini tidak dapat dibatalkan.</string>
+    <!-- Audit-200 D8 (m-171): ditambahkan bila sesi sedang menjalankan tugas. -->
+    <string name="session_delete_message_running">Sesi ini sedang menjalankan tugas. Menghapusnya akan menghentikan tugas itu.</string>
+    <!-- Audit-200 D8 (m-1228): ditampilkan di baris sendiri supaya sesi berjudul sama bisa dibedakan. -->
+    <string name="session_delete_message_directory">Direktori: %1$s</string>
     <string name="session_actions">Tindakan sesi</string>
     <string name="session_action_cancel">Batal</string>
     <string name="session_action_save">Simpan</string>

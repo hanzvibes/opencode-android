@@ -1272,6 +1272,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 state = sessionsState,
                                 onOpen = { row -> chatViewModel.openSession(row.id) },
                                 onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
+                                // Audit-200 D8 (m-171): the delete dialog
+                                // warns about the session with a run.
+                                runningSessionId = chatState.sessionID.takeIf { chatState.busy },
                                 onRename = { row, newTitle ->
                                     sessionViewModel.rename(row.id, newTitle)
                                 },
@@ -1369,6 +1372,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 chatViewModel.openSession(row.id)
                                 screen = Screen.Chat
                             },
+                            // Audit-200 D8 (m-171): the delete dialog
+                            // warns about the session with a run.
+                            runningSessionId = chatState.sessionID.takeIf { chatState.busy },
                             details = sessionsState.details,
                             onToggleScope = { sessionScopeToProject = !sessionScopeToProject },
                             onNewSession = {

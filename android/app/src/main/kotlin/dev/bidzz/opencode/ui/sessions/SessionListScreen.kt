@@ -119,6 +119,12 @@ fun SessionListScreen(
      */
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    /**
+     * Audit-200 D8 (m-171): the id of the session with a run in
+     * progress, or null while nothing runs — the delete dialog warns
+     * about deleting that session.
+     */
+    runningSessionId: String? = null,
 ) {
     ScreenScaffold(
         title = stringResource(R.string.history_title),
@@ -149,6 +155,7 @@ fun SessionListScreen(
             onVisibleSessions = onVisibleSessions,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
+            runningSessionId = runningSessionId,
             modifier = Modifier.fillMaxSize(),
         )
     }
@@ -178,6 +185,12 @@ fun SessionListPane(
     onInstructions: (SessionRow) -> Unit = {},
     details: Map<String, SessionDetail> = emptyMap(),
     selectedSessionId: String? = null,
+    /**
+     * Audit-200 D8 (m-171): the id of the session with a run in
+     * progress, or null while nothing runs — the delete dialog warns
+     * about deleting that session.
+     */
+    runningSessionId: String? = null,
     /** Reloads the list; used as the retry for a load error. */
     onRefresh: () -> Unit = {},
     /** Dismisses the failed-delete banner. */
@@ -207,29 +220,42 @@ fun SessionListPane(
     val spacing = OpenCodeTheme.tokens.spacing
     val colors = OpenCodeTheme.colors
 
-    var sessionToRename by remember { mutableStateOf<SessionRow?>(null) }
-    var sessionToDelete by remember { mutableStateOf<SessionRow?>(null) }
+    // Audit-200 D8 (m-425/m-946/m-1006): the dialog targets survive a
+    // process death — only the id is saved, the row is looked up again,
+    // so a renamed or deleted session can no longer leave a stale target.
+    var sessionToRenameId by rememberSaveable { mutableStateOf<String?>(null) }
+    var sessionToDeleteId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    sessionToRename?.let { target ->
-        RenameSessionDialog(
-            initialTitle = target.title,
-            onDismiss = { sessionToRename = null },
-            onConfirm = { newTitle ->
-                sessionToRename = null
-                onRename(target, newTitle)
-            },
-        )
+    sessionToRenameId?.let { id ->
+        state.rows.find { it.id == id }?.let { target ->
+            RenameSessionDialog(
+                initialTitle = target.title,
+                onDismiss = { sessionToRenameId = null },
+                onConfirm = { newTitle ->
+                    sessionToRenameId = null
+                    onRename(target, newTitle)
+                },
+            )
+        }
     }
 
-    sessionToDelete?.let { target ->
-        DeleteSessionDialog(
-            sessionTitle = target.title,
-            onDismiss = { sessionToDelete = null },
-            onConfirm = {
-                sessionToDelete = null
-                onDelete(target)
-            },
-        )
+    sessionToDeleteId?.let { id ->
+        state.rows.find { it.id == id }?.let { target ->
+            DeleteSessionDialog(
+                sessionTitle = target.title,
+                onDismiss = { sessionToDeleteId = null },
+                onConfirm = {
+                    sessionToDeleteId = null
+                    onDelete(target)
+                },
+                // Audit-200 D8 (m-171): the dialog warns when this is the
+                // session with a run in progress.
+                isRunning = runningSessionId == target.id,
+                // Audit-200 D8 (m-1228): the directory tells same-titled
+                // sessions apart.
+                sessionDirectory = target.directory,
+            )
+        }
     }
 
     // Search matches titles and, when supplied, transcript previews,
@@ -567,8 +593,8 @@ fun SessionListPane(
                                 isLast = index == rows.lastIndex,
                                 onClick = { onOpen(row) },
                                 onPinToggle = { onTogglePin(row) },
-                                onRenameClick = { sessionToRename = row },
-                                onDeleteClick = { sessionToDelete = row },
+                                onRenameClick = { sessionToRenameId = row.id },
+                                onDeleteClick = { sessionToDeleteId = row.id },
                                 onInboxClick = { onInbox(row) },
                                 onMoveClick = { onMove(row) },
                                 onExportClick = { onExport(row) },

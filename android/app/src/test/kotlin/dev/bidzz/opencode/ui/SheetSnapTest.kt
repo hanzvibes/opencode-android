@@ -1,6 +1,7 @@
 package dev.bidzz.opencode.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -79,5 +80,38 @@ class SheetSnapTest {
         // 400 px/s is the threshold, not a fling: nearest stop wins.
         assertEquals(SheetSnap.Stop(1), resolveSheetSnap(580f, 400f, stops))
         assertEquals(SheetSnap.Stop(1), resolveSheetSnap(580f, -400f, stops))
+    }
+
+    // Audit-200 D8 (m-950): Peek has an absolute floor (220dp at the
+    // call site) — without it a short landscape container opens the
+    // sheet below its own chrome, hiding the delete message.
+
+    @Test
+    fun `m-950 peek never drops below its floor on a short screen`() {
+        // 0.32 * 400 is 128, below the 220 floor.
+        val short = sheetStopHeights(400f, peekMinPx = 220f)
+        assertEquals(220f, short[0], 0.01f)
+        assertEquals(232f, short[1], 0.01f)
+        assertEquals(376f, short[2], 0.01f)
+    }
+
+    @Test
+    fun `m-950 the floor never changes a tall screen`() {
+        // 0.32 * 1000 is 320, above the 220 floor: the pinned stops stay.
+        val tall = sheetStopHeights(1000f, peekMinPx = 220f)
+        assertEquals(320f, tall[0], 0.01f)
+        assertEquals(580f, tall[1], 0.01f)
+        assertEquals(940f, tall[2], 0.01f)
+    }
+
+    @Test
+    fun `m-950 the floor is capped at half so the stops stay ordered`() {
+        // 0.58 * 360 is 208.8, below the 220 floor: Peek == Half rather
+        // than overtaking it.
+        val tiny = sheetStopHeights(360f, peekMinPx = 220f)
+        assertEquals(208.8f, tiny[0], 0.01f)
+        assertEquals(208.8f, tiny[1], 0.01f)
+        assertEquals(338.4f, tiny[2], 0.01f)
+        assertTrue(tiny[0] <= tiny[1] && tiny[1] <= tiny[2])
     }
 }

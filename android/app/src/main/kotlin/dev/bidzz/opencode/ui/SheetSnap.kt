@@ -27,9 +27,21 @@ sealed interface SheetSnap {
     object Dismiss : SheetSnap
 }
 
-/** Stop heights for a container of [maxHeightPx], in pixels. */
-fun sheetStopHeights(maxHeightPx: Float): List<Float> =
-    listOf(0.32f, 0.58f, 0.94f).map { it * maxHeightPx }
+/**
+ * Stop heights for a container of [maxHeightPx], in pixels.
+ *
+ * Audit-200 D8 (m-950): the Peek stop has an absolute floor
+ * ([peekMinPx], 220dp at the call site) — without it, a short
+ * landscape container opens the sheet at 0.32 * height, which is
+ * below the sheet chrome (~160dp), so a delete message stays hidden
+ * until the user drags. The floor is capped at the Half stop so the
+ * stops stay ordered (on a very short screen Peek == Half).
+ */
+fun sheetStopHeights(maxHeightPx: Float, peekMinPx: Float = 0f): List<Float> {
+    val half = 0.58f * maxHeightPx
+    val peek = maxOf(0.32f * maxHeightPx, minOf(peekMinPx, half))
+    return listOf(peek, half, 0.94f * maxHeightPx)
+}
 
 /** Index of the stop nearest to [currentHeightPx] (ties go to the lower stop). */
 fun nearestSheetStopIndex(currentHeightPx: Float, stopHeightsPx: List<Float>): Int =

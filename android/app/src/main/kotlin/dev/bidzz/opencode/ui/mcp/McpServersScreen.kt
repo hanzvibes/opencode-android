@@ -50,6 +50,7 @@ import dev.bidzz.opencode.core.design.OpenCodeTheme
 import dev.bidzz.opencode.core.design.OpenCodeTypography
 import dev.bidzz.opencode.ui.EmptyState
 import dev.bidzz.opencode.ui.HatchBannerKind
+import dev.bidzz.opencode.ui.HatchDeleteConfirmationDialog
 import dev.bidzz.opencode.ui.HatchInlineBanner
 import dev.bidzz.opencode.ui.LoadingState
 import dev.bidzz.opencode.ui.LocalizedAlertDialog
@@ -152,8 +153,11 @@ fun McpServersScreen(
     val reauthErrorMessage = state.reauthError?.let {
         stringResource(R.string.mcp_reauth_no_oauth)
     }
-    var showAddForm by remember { mutableStateOf(false) }
-    var showRestartConfirm by remember { mutableStateOf(false) }
+    // Audit-200 D8 (m-425/m-946): these dialog triggers survive a process
+    // death instead of vanishing silently — the add form's own fields are
+    // already saveable, so the form comes back with its values.
+    var showAddForm by rememberSaveable { mutableStateOf(false) }
+    var showRestartConfirm by rememberSaveable { mutableStateOf(false) }
     // While the add form is open, the failure is shown inside it instead:
     // clearing it for the snackbar would erase the form's error before
     // the user reads it (audit-200 A9-1, DL-016). The snackbar fires when
@@ -186,7 +190,9 @@ fun McpServersScreen(
         }
     }
 
-    var removeTarget by remember { mutableStateOf<String?>(null) }
+    // Audit-200 D8 (m-425/m-946): the server awaiting removal survives a
+    // process death instead of vanishing silently.
+    var removeTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
     ScreenScaffold(
         title = stringResource(R.string.mcp_title),
@@ -372,44 +378,24 @@ fun McpServersScreen(
     }
 
     removeTarget?.let { name ->
-        LocalizedAlertDialog(
-            onDismissRequest = { removeTarget = null },
-            confirmButton = {
-                TextButton(
-                    modifier = Modifier.sizeIn(minHeight = 48.dp),
-                    onClick = {
-                        removeTarget = null
-                        onRemove(name)
-                    },
-                ) {
-                    Text(
-                        text = stringResource(R.string.mcp_remove_confirm),
-                        color = colors.danger,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(modifier = Modifier.sizeIn(minHeight = 48.dp), onClick = { removeTarget = null }) {
-                    Text(
-                        text = stringResource(R.string.common_cancel),
-                        color = colors.onSurfaceMuted,
-                    )
-                }
-            },
-            title = {
-                Text(text = stringResource(R.string.mcp_remove_title, name))
-            },
-            text = {
+        // Audit-200 D8 (m-1216): removing an MCP server was the only
+        // delete confirmation still a centered dialog — it now uses the
+        // same bottom-sheet confirmation as every other delete.
+        HatchDeleteConfirmationDialog(
+            title = stringResource(R.string.mcp_remove_title, name),
+            message = stringResource(
                 // Audit-200 A9-1 (DL-015): the old body promised every
                 // server "comes back from the config file" after a
                 // restart — false for a server added at runtime, which
                 // lives in no file and is gone for good once removed.
-                Text(
-                    text = stringResource(
-                        if (isRuntimeOnly(name)) R.string.mcp_remove_body_runtime
-                        else R.string.mcp_remove_body,
-                    ),
-                )
+                if (isRuntimeOnly(name)) R.string.mcp_remove_body_runtime
+                else R.string.mcp_remove_body,
+            ),
+            confirmLabel = stringResource(R.string.mcp_remove_confirm),
+            onDismiss = { removeTarget = null },
+            onConfirm = {
+                removeTarget = null
+                onRemove(name)
             },
         )
     }
@@ -646,8 +632,8 @@ private fun mcpStatusWord(kind: McpStatusKind): String = stringResource(
  * Validation lives here, not in the ViewModel: the name must be one word
  * of letters, digits, `-` or `_` (the engine takes the name as a path
  * segment, and the client-MCP names use the same alphabet), and the
- * command / URL must be non-blank. The command is split on whitespace,
- * so quoted arguments are not supported — the hint says so. OAuth,
+ * command / URL must be non-blank. The command is split shell-style
+ * ([splitShellCommand]), so quoted arguments keep their spaces. OAuth,
  * timeouts, the protocol, the pool and Code Mode are not in this form
  * (audit-200 B2, M-291: they need structured editors, not text lines);
  * the engine defaults apply, and the form's note says the server is
@@ -673,6 +659,58 @@ internal fun isValidMcpRemoteUrl(url: String): Boolean {
         return false
     }
     return (parsed.scheme == "http" || parsed.scheme == "https") && !parsed.host.isNullOrBlank()
+}
+
+/**
+ * Audit-200 D8 (m-578): split a local MCP command the way a shell would —
+ * single quotes, double quotes, and backslash escapes keep spaces inside
+ * one argument (`npx -y @scope/server "/tmp/my dir"` is three arguments,
+ * not four). An unmatched quote is tolerated (the rest of the line stays
+ * one argument) rather than failing the add. Pure function, unit-tested
+ * on the JVM like [isValidMcpRemoteUrl].
+ */
+internal fun splitShellCommand(command: String): List<String> {
+    val args = mutableListOf<String>()
+    val current = StringBuilder()
+    var inSingle = false
+    var inDouble = false
+    var hasToken = false
+    var i = 0
+    while (i < command.length) {
+        val c = command[i]
+        when {
+            c == '\\' && !inSingle && i + 1 < command.length -> {
+                current.append(command[i + 1])
+                hasToken = true
+                i += 2
+            }
+            c == '\'' && !inDouble -> {
+                inSingle = !inSingle
+                hasToken = true
+                i++
+            }
+            c == '"' && !inSingle -> {
+                inDouble = !inDouble
+                hasToken = true
+                i++
+            }
+            c.isWhitespace() && !inSingle && !inDouble -> {
+                if (hasToken) {
+                    args.add(current.toString())
+                    current.clear()
+                    hasToken = false
+                }
+                i++
+            }
+            else -> {
+                current.append(c)
+                hasToken = true
+                i++
+            }
+        }
+    }
+    if (hasToken) args.add(current.toString())
+    return args
 }
 
 @Composable
@@ -718,7 +756,7 @@ private fun AddMcpServerDialog(
                 onClick = {
                     val config = if (isLocal) {
                         McpServerConfig.local(
-                            command = command.trim().split(Regex("\\s+")),
+                            command = splitShellCommand(command.trim()),
                             cwd = cwd.trim().takeIf { it.isNotEmpty() },
                             environment = parseKeyValueLines(environment)
                                 .takeIf { it.isNotEmpty() },

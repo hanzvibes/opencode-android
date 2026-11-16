@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,7 +70,10 @@ fun ArtifactsScreen(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val context = LocalContext.current
-    var pendingDelete by remember { mutableStateOf<ArtifactInfo?>(null) }
+    // Audit-200 D8 (m-425/m-946): the pending delete survives a process
+    // death — only the id is saved; the message names no artifact, so no
+    // lookup is needed to show the dialog again.
+    var pendingDeleteId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { onRefresh() }
 
@@ -145,7 +149,7 @@ fun ArtifactsScreen(
                                 artifact = artifact,
                                 deleting = artifact.id in state.deletingIds,
                                 onOpen = { onOpen(artifact) },
-                                onDelete = { pendingDelete = artifact },
+                                onDelete = { pendingDeleteId = artifact.id },
                             )
                         }
                     }
@@ -154,8 +158,8 @@ fun ArtifactsScreen(
         }
     }
 
-    val toDelete = pendingDelete
-    if (toDelete != null) {
+    val toDeleteId = pendingDeleteId
+    if (toDeleteId != null) {
         // Batch 1 (Aura full, Opsi B): the Hatch delete sheet instead of
         // the generic AlertDialog. Same strings and behaviour — dismiss
         // never deletes, confirm deletes this artifact's stored files.
@@ -163,10 +167,10 @@ fun ArtifactsScreen(
             title = stringResource(R.string.artifact_remove_title),
             message = stringResource(R.string.artifact_remove_body),
             confirmLabel = stringResource(R.string.artifact_remove_confirm),
-            onDismiss = { pendingDelete = null },
+            onDismiss = { pendingDeleteId = null },
             onConfirm = {
-                pendingDelete = null
-                onDelete(toDelete.id)
+                pendingDeleteId = null
+                onDelete(toDeleteId)
             },
         )
     }

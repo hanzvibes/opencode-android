@@ -126,7 +126,7 @@
     <!-- Audit-200 D7 (m-631): a remote server needs a real URL, not just non-blank text. -->
     <string name="mcp_add_url_invalid">A remote server needs an http(s) URL with a host, e.g. https://example.com:8080/mcp.</string>
     <string name="mcp_add_command">Command</string>
-    <string name="mcp_add_command_hint">npx -y @scope/server /tmp</string>
+    <string name="mcp_add_command_hint">npx -y @scope/server "/tmp/my dir"</string>
     <string name="mcp_add_cwd">Working directory (optional)</string>
     <string name="mcp_add_cwd_hint">/home/user/project</string>
     <string name="mcp_add_url">URL</string>
@@ -421,6 +421,8 @@
     <string name="chat_status_desc_working">Engine is actively running tasks or generating responses.</string>
     <string name="chat_status_desc_starting">Engine is starting up and establishing runtime connections.</string>
     <string name="chat_status_desc_stopped">Engine is not running. Tap Diagnostics to inspect logs.</string>
+    <!-- Audit-200 D8 (m-200): STOPPING is a state of its own, not "not running". -->
+    <string name="chat_status_desc_stopping">Engine is stopping…</string>
     <string name="chat_status_desc_unhealthy">Engine is degraded or encountered an error.</string>
     <string name="empty_title_ready">What are we working on?</string>
     <string name="empty_title_starting">Starting engine…</string>
@@ -484,6 +486,10 @@
     <string name="session_rename_hint">Chat title</string>
     <string name="session_delete_title">Delete chat</string>
     <string name="session_delete_message">Are you sure you want to delete “%1$s”? This action cannot be undone.</string>
+    <!-- Audit-200 D8 (m-171): appended when the session has a run in progress. -->
+    <string name="session_delete_message_running">This session has a run in progress. Deleting it stops the run.</string>
+    <!-- Audit-200 D8 (m-1228): shown on its own line so same-titled sessions can be told apart. -->
+    <string name="session_delete_message_directory">Directory: %1$s</string>
     <string name="session_actions">Session actions</string>
     <string name="session_action_cancel">Cancel</string>
     <string name="session_action_save">Save</string>

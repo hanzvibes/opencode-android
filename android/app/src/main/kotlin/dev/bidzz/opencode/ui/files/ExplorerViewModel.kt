@@ -608,10 +608,17 @@ class FileViewViewModel(
      */
     fun requestLoad(path: String): Boolean {
         val s = _state.value
-        // Same file, still failed: the tap IS the retry — a failed load
-        // must be reloadable by tapping the file again (audit-100 89-F5).
-        // Same file, loaded fine: no reload, the viewer already shows it.
-        if (path == s.path && !shouldReloadSamePath(s.failure, s.failureKey)) return true
+        // Audit-200 D8 (m-537): asking for the file already open is never
+        // a switch — a failed load is retried directly, never held as a
+        // "switch to the file you are already viewing".
+        if (path == s.path) {
+            // Same file, still failed: the tap IS the retry — a failed load
+            // must be reloadable by tapping the file again (audit-100 89-F5).
+            // Same file, loaded fine: no reload, the viewer already shows it.
+            if (!shouldReloadSamePath(s.failure, s.failureKey)) return true
+            load(path)
+            return true
+        }
         if (s.dirty) {
             _state.value = s.copy(confirmSwitchTo = path)
             return false
@@ -807,7 +814,9 @@ class FileViewViewModel(
         // cannot stop a write that is already in flight.
         saveGeneration++
         saveJob?.cancel()
-        _state.value = _state.value.copy(editing = false, draft = "", conflict = false, conflictDiskContent = null, saving = false, draftStale = false)
+        // Audit-200 D8 (m-537): discarding also drops a held switch —
+        // the draft it was guarding is gone, so the switch is stale.
+        _state.value = _state.value.copy(editing = false, draft = "", conflict = false, conflictDiskContent = null, saving = false, draftStale = false, confirmSwitchTo = null)
         clearPersistedDraft()
     }
 
@@ -965,6 +974,10 @@ class FileViewViewModel(
         saveGeneration++
         saveJob?.cancel()
         val s = _state.value
+        // Audit-200 D8 (m-534): a switch held for this save is not
+        // dropped by the reload — the draft is gone, so open the file
+        // asked for, mirroring the save-success branch.
+        val pending = s.confirmSwitchTo
         _state.value = s.copy(editing = false, draft = "", conflict = false, conflictDiskContent = null, saving = false, draftStale = false)
         // Audit-200 C11 (M-164): with nothing open there is no file to
         // re-read — the empty-path load is refused inside load() — but
@@ -972,7 +985,7 @@ class FileViewViewModel(
         // point (a restored draft must not survive an explicit reload),
         // pinned by FileDraftStoreTest.
         clearPersistedDraft()
-        load(s.path)
+        if (pending != null) load(pending) else load(s.path)
     }
 
     /**
