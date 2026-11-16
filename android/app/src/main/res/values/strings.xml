@@ -99,6 +99,8 @@
     <string name="lock_failed">Not recognized — try again</string>
     <string name="settings_about_title">About the developer</string>
     <string name="settings_about_body">Portfolio and ways to get in touch.</string>
+    <string name="settings_replay_onboarding_title">Replay setup</string>
+    <string name="settings_replay_onboarding_body">Show the first-run setup again.</string>
     <string name="settings_saved_permissions">Saved permissions</string>
     <string name="settings_saved_permissions_body">Permissions saved with “Always”. Revoke one to be asked again next time.</string>
     <string name="settings_saved_permissions_empty">No saved permissions yet. Answer “Always” to a permission prompt to save one.</string>

@@ -29,4 +29,37 @@ class NotificationGateD8Test {
         // appears, so waiting for it would block the prompt forever.
         assertTrue(mayAskNotificationPermission(onboardingCompleted = false, onboardingWillShow = false))
     }
+
+    @Test
+    fun `m-1088 no prompt before the lock screen is passed`() {
+        assertFalse(
+            mayAskNotificationPermission(
+                onboardingCompleted = true, onboardingWillShow = false,
+                lockEnabled = true, unlocked = false,
+            ),
+        )
+    }
+
+    @Test
+    fun `m-1088 prompt once unlocked, and always without a lock`() {
+        assertTrue(
+            mayAskNotificationPermission(
+                onboardingCompleted = true, onboardingWillShow = false,
+                lockEnabled = true, unlocked = true,
+            ),
+        )
+        assertTrue(
+            mayAskNotificationPermission(
+                onboardingCompleted = true, onboardingWillShow = false,
+                lockEnabled = false, unlocked = false,
+            ),
+        )
+        // The lock gate does not rescue a pending onboarding either.
+        assertFalse(
+            mayAskNotificationPermission(
+                onboardingCompleted = false, onboardingWillShow = true,
+                lockEnabled = true, unlocked = true,
+            ),
+        )
+    }
 }

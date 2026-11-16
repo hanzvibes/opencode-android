@@ -23,6 +23,16 @@ enum class AppLanguage(val code: String, val tag: String?) {
 }
 
 /**
+ * The [Locale] a pinned language resolves to (audit-200 D15, m-502):
+ * pure, so unit tests can pin the "id" vs legacy "in" question without
+ * a Context — Indonesian is "id", never the legacy Java tag "in" (the
+ * app's own pin is stored as "id" too, so the two can never drift).
+ * Null for [AppLanguage.System], which keeps the phone's own locales.
+ */
+internal fun localeFor(language: AppLanguage): Locale? =
+    language.tag?.let { Locale.forLanguageTag(it) }
+
+/**
  * Remembers the chosen [AppLanguage] and builds a [Context] that shows it.
  *
  * Applied inside Compose (see `OpenCodeApp`) rather than by recreating the activity, so
@@ -47,7 +57,7 @@ object LanguageStore {
 
     /** [base] showing [language]; for [AppLanguage.System] the phone's own locales. */
     fun wrap(base: Context, language: AppLanguage): Context {
-        val locales = language.tag?.let { LocaleList(Locale.forLanguageTag(it)) }
+        val locales = localeFor(language)?.let { LocaleList(it) }
             ?: Resources.getSystem().configuration.locales
         val config = Configuration(base.resources.configuration).apply { setLocales(locales) }
         return base.createConfigurationContext(config)

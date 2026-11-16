@@ -18,15 +18,17 @@ import org.junit.Test
  * The exact hex values extracted from the Meta Muse app
  * (`com.facebook.aura` 16.0.0.2.159, `resources.arsc`), and the WCAG
  * contrast audit of every Aura text role on the surfaces it may sit on
- * (#FFFFFF card / #F6F7F8 Aura page). Pure JVM: [Color.toArgb] plus
+ * (#FFFFFF card / #F9F9FA app page). Pure JVM: [Color.toArgb] plus
  * local luminance math, no Android framework, no Robolectric — the same
  * pattern as [WhiteThemeTest].
  *
  * The guard is the point: Aura blue #5890FF and faint #9197A3 look like
  * text colours but fail AA outright, so the tests lock them to
- * dots/fills/decoration. [AuraPalette.auraBlueFill] and [AuraPalette.auraDanger]
- * pass on white and fail on the Aura page, so the tests lock the
- * white-only rule instead of letting a call site assume AA everywhere.
+ * dots/fills/decoration. [AuraPalette.auraBlueFill] is white-only
+ * (4.58 on white, 4.35 on the app page) and [AuraPalette.auraDanger]
+ * is AA on white and, barely, on the app page (4.77 / 4.54), so the
+ * tests lock those rules instead of letting a call site assume AA
+ * everywhere.
  */
 class AuraThemeTest {
 

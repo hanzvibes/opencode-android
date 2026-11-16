@@ -24,8 +24,13 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.bidzz.opencode.AppLanguage
+import dev.bidzz.opencode.LanguageStore
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
 import androidx.fragment.app.FragmentActivity
@@ -120,6 +126,7 @@ fun SettingsScreen(
     onSessionStats: () -> Unit,
     onUsageLimits: () -> Unit,
     onAbout: () -> Unit,
+    onReplayOnboarding: () -> Unit,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -273,14 +280,36 @@ fun SettingsScreen(
     val providerSubtitle = stringResource(R.string.settings_provider_body)
     val aboutTitle = stringResource(R.string.settings_about_title)
     val aboutSubtitle = stringResource(R.string.settings_about_body)
+    val replayTitle = stringResource(R.string.settings_replay_onboarding_title)
+    val replayBody = stringResource(R.string.settings_replay_onboarding_body)
 
     // App lock (Batch 7): one boolean in SharedPreferences, read once when
-    // this screen opens. The availability is read once too — the sensor set
-    // does not change while the screen is open.
+    // this screen opens.
     val lockContext = LocalContext.current
     val lockActivity = lockContext as? FragmentActivity
     var lockEnabled by remember { mutableStateOf(AppLockPrefs.isEnabled(lockContext)) }
-    val lockAvailability = remember { lockAvailability(lockContext) }
+    // Audit-200 D15 (m-706): availability is re-read on every resume, not
+    // once — the old comment claimed the sensor set never changes while
+    // the screen is open, but the user can enroll or remove a biometric
+    // or PIN in system Settings and come back via Recents, leaving a
+    // stale toggle behind. lockEnabled stays read-once (114-F1, not m-706).
+    var lockAvailability by remember { mutableStateOf(lockAvailability(lockContext)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                lockAvailability = lockAvailability(lockContext)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // Audit-200 D15 (m-705): the last enable-lock failure, shown inline
+    // under the row — this screen has no snackbar. The text is the
+    // biometric error itself, so a lockout reads differently from a
+    // plain not-recognized (the system words the lockout, including the
+    // wait / use-device-PIN guidance); a user-cancel never reaches here.
+    var lockError by remember { mutableStateOf<String?>(null) }
     val lockTitle = stringResource(R.string.lock_title)
     val lockSubtitle = stringResource(R.string.lock_subtitle)
     val lockOnValue = stringResource(R.string.common_on)
@@ -294,63 +323,138 @@ fun SettingsScreen(
     )
     val lockFailedMessage = stringResource(R.string.lock_failed)
 
+    // Audit-200 D15 (m-545): bilingual search — a query in either language
+    // must find the row. The wrapped contexts resolve the same string
+    // resources in English and Indonesian; each row matches its display
+    // texts plus both translations, so "project folder" finds
+    // "Folder proyek" in the ID locale and vice versa. Dynamic texts
+    // (paths, ports, state words) are matched as-is via [display].
+    val enStrings = remember { LanguageStore.wrap(lockContext, AppLanguage.English) }
+    val idStrings = remember { LanguageStore.wrap(lockContext, AppLanguage.Indonesian) }
+    fun bilingual(query: String, display: List<String?>, @StringRes vararg resIds: Int): Boolean {
+        val en = resIds.map { enStrings.getString(it) }
+        val id = resIds.map { idStrings.getString(it) }
+        return matchesSettingsQueryBilingual(query, display, en, id)
+    }
+    fun bilingualFmt(query: String, display: List<String?>, @StringRes resId: Int, vararg args: Any): Boolean {
+        val en = listOf(enStrings.getString(resId, *args))
+        val id = listOf(idStrings.getString(resId, *args))
+        return matchesSettingsQueryBilingual(query, display, en, id)
+    }
+
     // Per-row visibility; a section renders only when at least one of its
     // rows matches. A blank query matches everything, so the screen is
     // unchanged from before searching.
-    val projectFolderVisible = matchesSettingsQuery(
-        query, projectFolderTitle, projectFolderSubtitle,
+    val projectFolderVisible = bilingual(
+        query, listOf(projectFolderTitle, projectFolderSubtitle),
+        R.string.settings_project_folder,
     )
-    val allFilesVisible = matchesSettingsQuery(
-        query, allFilesTitle, allFilesSubtitle, allFilesValue,
+    val allFilesVisible = bilingual(
+        query, listOf(allFilesTitle, allFilesSubtitle, allFilesValue),
+        R.string.settings_all_files,
+        R.string.settings_all_files_granted_hint,
+        R.string.settings_all_files_missing_hint,
+        R.string.settings_granted,
+        R.string.settings_not_granted,
     )
     val projectVisible = projectFolderVisible || allFilesVisible
     val visibleSavedPermissions = savedPermissions.filter {
         matchesSettingsQuery(query, it.action, it.resource)
     }
-    val savedPermissionsVisible = matchesSettingsQuery(
+    val savedPermissionsVisible = bilingual(
         query,
-        savedPermissionsTitle,
-        savedPermissionsBody,
-        savedPermissionsEmptyText,
-        savedPermissionsLoadingText,
-        savedPermissionsFailureText,
+        listOf(
+            savedPermissionsTitle,
+            savedPermissionsBody,
+            savedPermissionsEmptyText,
+            savedPermissionsLoadingText,
+            savedPermissionsFailureText,
+        ),
+        R.string.settings_saved_permissions,
+        R.string.settings_saved_permissions_body,
+        R.string.settings_saved_permissions_empty,
+        R.string.common_loading,
     ) || visibleSavedPermissions.isNotEmpty()
-    val enginePortVisible = matchesSettingsQuery(
-        query, enginePortTitle, enginePortSubtitle, enginePortValue,
+    val enginePortVisible = bilingual(
+        query, listOf(enginePortTitle, enginePortSubtitle, enginePortValue),
+        R.string.settings_engine_port,
+        R.string.settings_engine_port_desc,
+        R.string.settings_engine_inactive,
     )
-    val diagnosticsVisible = matchesSettingsQuery(
-        query, diagnosticsTitle, diagnosticsSubtitle, diagnosticsValue,
+    // The diagnostics subtitle is a formatted string; its pattern words
+    // are what a cross-locale query needs, so the current-locale state
+    // word is passed as the arg in both locales.
+    val diagnosticsVisible = bilingual(
+        query, listOf(diagnosticsTitle, diagnosticsSubtitle, diagnosticsValue),
+        R.string.settings_diag_title,
+    ) || bilingualFmt(
+        query, listOf(diagnosticsSubtitle),
+        R.string.settings_diag_body, engineStateWord(status.state),
     )
-    val mcpVisible = matchesSettingsQuery(query, mcpTitle, mcpSubtitle)
-    val pluginVisible = matchesSettingsQuery(query, pluginTitle, pluginSubtitle)
-    val artifactVisible = matchesSettingsQuery(query, artifactTitle, artifactSubtitle)
-    val jobVisible = matchesSettingsQuery(query, jobTitle, jobSubtitle)
-    val generateVisible = matchesSettingsQuery(query, generateTitle, generateSubtitle)
-    val webSearchVisible = matchesSettingsQuery(query, webSearchTitle, webSearchSubtitle)
-    val worktreeVisible = matchesSettingsQuery(query, worktreeTitle, worktreeSubtitle)
-    val configVisible = matchesSettingsQuery(query, configTitle, configSubtitle)
-    val statsVisible = matchesSettingsQuery(query, statsTitle, statsSubtitle)
-    val usageVisible = matchesSettingsQuery(query, usageTitle, usageSubtitle)
+    val mcpVisible = bilingual(query, listOf(mcpTitle, mcpSubtitle), R.string.mcp_title, R.string.mcp_body)
+    val pluginVisible = bilingual(query, listOf(pluginTitle, pluginSubtitle), R.string.plugin_title, R.string.plugin_body)
+    val artifactVisible = bilingual(query, listOf(artifactTitle, artifactSubtitle), R.string.artifact_title, R.string.artifact_body)
+    val jobVisible = bilingual(query, listOf(jobTitle, jobSubtitle), R.string.job_title, R.string.job_body)
+    val generateVisible = bilingual(query, listOf(generateTitle, generateSubtitle), R.string.generate_title, R.string.generate_body)
+    val webSearchVisible = bilingual(query, listOf(webSearchTitle, webSearchSubtitle), R.string.websearch_title, R.string.websearch_body)
+    val worktreeVisible = bilingual(query, listOf(worktreeTitle, worktreeSubtitle), R.string.worktree_title, R.string.worktree_body)
+    val configVisible = bilingual(query, listOf(configTitle, configSubtitle), R.string.config_title, R.string.config_body)
+    val statsVisible = bilingual(query, listOf(statsTitle, statsSubtitle), R.string.stats_title, R.string.stats_body)
+    val usageVisible = bilingual(query, listOf(usageTitle, usageSubtitle), R.string.usage_title, R.string.usage_body)
     val engineVisible = enginePortVisible || diagnosticsVisible || mcpVisible || pluginVisible || artifactVisible || jobVisible || generateVisible || webSearchVisible || worktreeVisible || configVisible || statsVisible || usageVisible
-    val languageVisible = matchesSettingsQuery(
+    val languageVisible = bilingual(
         query,
-        languageTitle,
-        // 29-F4: match every language label, not just the active one —
-        // searching for the language you want to switch TO must not hide
-        // the row you need to switch with.
-        languageLabel(AppLanguage.System),
-        languageLabel(AppLanguage.English),
-        languageLabel(AppLanguage.Indonesian),
+        listOf(
+            languageTitle,
+            // 29-F4: match every language label, not just the active one —
+            // searching for the language you want to switch TO must not hide
+            // the row you need to switch with.
+            languageLabel(AppLanguage.System),
+            languageLabel(AppLanguage.English),
+            languageLabel(AppLanguage.Indonesian),
+        ),
+        R.string.settings_language,
+        R.string.language_system,
+        R.string.language_english,
+        R.string.language_indonesian,
     )
     val visibleThemeModes = ThemeMode.entries.filter { mode ->
-        matchesSettingsQuery(query, themeModeLabel(mode), themeModeHint(mode))
+        val labelRes = when (mode) {
+            ThemeMode.System -> R.string.settings_theme_system
+            ThemeMode.Dark -> R.string.settings_theme_dark
+            ThemeMode.Light -> R.string.settings_theme_light
+        }
+        val hintRes = when (mode) {
+            ThemeMode.System -> R.string.settings_theme_system_hint
+            ThemeMode.Dark -> R.string.settings_theme_dark_hint
+            ThemeMode.Light -> R.string.settings_theme_light_hint
+        }
+        bilingual(query, listOf(themeModeLabel(mode), themeModeHint(mode)), labelRes, hintRes)
     }
     val appearanceVisible = visibleThemeModes.isNotEmpty()
-    val securityVisible = matchesSettingsQuery(
-        query, lockTitle, lockSubtitle, lockOnValue, lockOffValue, lockUnavailableText,
+    val securityVisible = bilingual(
+        query, listOf(lockTitle, lockSubtitle, lockOnValue, lockOffValue, lockUnavailableText),
+        R.string.lock_title,
+        R.string.lock_subtitle,
+        R.string.common_on,
+        R.string.common_off,
+        R.string.lock_unavailable_no_hardware,
+        R.string.lock_unavailable_none_enrolled,
+        R.string.lock_unavailable_generic,
     )
-    val providerVisible = matchesSettingsQuery(query, providerTitle, providerSubtitle)
-    val aboutVisible = matchesSettingsQuery(query, aboutTitle, aboutSubtitle)
+    val providerVisible = bilingual(
+        query, listOf(providerTitle, providerSubtitle),
+        R.string.settings_provider_title, R.string.settings_provider_body,
+    )
+    val replayVisible = bilingual(
+        query, listOf(replayTitle, replayBody),
+        R.string.settings_replay_onboarding_title,
+        R.string.settings_replay_onboarding_body,
+    )
+    val aboutVisible = bilingual(
+        query, listOf(aboutTitle, aboutSubtitle),
+        R.string.settings_about_title, R.string.settings_about_body,
+    ) || replayVisible
     val statusCardVisible = matchesSettingsQuery(
         query,
         diagnosticsValue,
@@ -670,6 +774,7 @@ fun SettingsScreen(
                             if (!wantOn) {
                                 AppLockPrefs.setEnabled(lockContext, false)
                                 lockEnabled = false
+                                lockError = null
                             } else {
                                 val activity = lockActivity ?: return@SettingsToggleRow
                                 authenticateWithBiometrics(
@@ -680,12 +785,26 @@ fun SettingsScreen(
                                     onSuccess = {
                                         AppLockPrefs.setEnabled(lockContext, true)
                                         lockEnabled = true
+                                        lockError = null
                                     },
-                                    onError = {},
+                                    onError = { lockError = it },
                                 )
                             }
                         },
                     )
+                    // Audit-200 D15 (m-705): a failed enable used to die
+                    // silently — the toggle just stayed off. The error
+                    // reads here, under the row, until the next attempt.
+                    lockError?.let { error ->
+                        Text(
+                            text = error,
+                            style = OpenCodeTypography.bodySmall,
+                            color = colors.danger,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = spacing.md, top = spacing.xs),
+                        )
+                    }
                 }
             }
 
@@ -709,6 +828,18 @@ fun SettingsScreen(
                         subtitle = aboutSubtitle,
                         onClick = onAbout,
                     )
+                    // Audit-200 D15 (m-1086): onboarding is replayable —
+                    // clearing the flag shows the flow again on demand
+                    // instead of only after a full clear-data.
+                    if (replayVisible) {
+                        RowDivider(inset = spacing.md)
+                        SettingsRow(
+                            glyph = Glyph.Refresh,
+                            title = replayTitle,
+                            subtitle = replayBody,
+                            onClick = onReplayOnboarding,
+                        )
+                    }
                 }
             }
 

@@ -12,6 +12,13 @@ import dev.bidzz.opencode.workspace.WorkspaceStore
  * once — when the workspace is still empty — and never again after it is
  * dismissed or completed, whichever step the user leaves from. Skipping is
  * completing: a skipped flow is not forced on the next launch.
+ *
+ * Audit-200 D15 (m-265): [markCompleted] writes with `commit()`, not
+ * `apply()` — killing the process right after Skip/Finish must not lose
+ * the flag and show onboarding once more. Audit-200 D15 (m-1086):
+ * [reset] clears the flag (also with `commit()`) so the flow can be
+ * replayed from Settings; the flow is once-per-install by default, not
+ * once-forever.
  */
 object OnboardingStore {
     private const val PREFS = "app_settings"
@@ -23,7 +30,17 @@ object OnboardingStore {
 
     fun markCompleted(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_COMPLETED, true).apply()
+            .edit().putBoolean(KEY_COMPLETED, true).commit()
+    }
+
+    /**
+     * Clears the completed flag so the onboarding flow shows again on the
+     * next launch (when the workspace still looks like a first run).
+     * Synchronous `commit()` for the same reason as [markCompleted].
+     */
+    fun reset(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(KEY_COMPLETED).commit()
     }
 
     /**

@@ -223,10 +223,17 @@ internal sealed interface Screen {
     data class Diagnostics(val returnTo: Screen = Screen.Chat) : Screen
     data object McpServers : Screen
     data object Plugins : Screen
-    data object Artifacts : Screen
-    data object Jobs : Screen
-    data object Generate : Screen
-    data object WebSearch : Screen
+    /**
+     * Where Back returns to (audit-200 D15, m-992): these four open from
+     * Settings and from the chat drawer, and each of them is the right
+     * place to come back to. Same pattern as [Diagnostics.returnTo]
+     * (C10); like it, the return target is not carried in the saved key,
+     * so a restore after process death returns to Settings (the default).
+     */
+    data class Artifacts(val returnTo: Screen = Screen.Settings) : Screen
+    data class Jobs(val returnTo: Screen = Screen.Settings) : Screen
+    data class Generate(val returnTo: Screen = Screen.Settings) : Screen
+    data class WebSearch(val returnTo: Screen = Screen.Settings) : Screen
     data object Worktrees : Screen
     data object EngineConfig : Screen
     /**
@@ -277,10 +284,10 @@ internal sealed interface Screen {
         is Diagnostics -> "diagnostics"
         McpServers -> "mcpservers"
         Plugins -> "plugins"
-        Artifacts -> "artifacts"
-        Jobs -> "jobs"
-        Generate -> "generate"
-        WebSearch -> "websearch"
+        is Artifacts -> "artifacts"
+        is Jobs -> "jobs"
+        is Generate -> "generate"
+        is WebSearch -> "websearch"
         Worktrees -> "worktrees"
         EngineConfig -> "engineconfig"
         is About -> "about"
@@ -317,10 +324,10 @@ internal fun screenFromSavedKey(key: String): Screen {
         "diagnostics" -> Screen.Diagnostics()
         "mcpservers" -> Screen.McpServers
         "plugins" -> Screen.Plugins
-        "artifacts" -> Screen.Artifacts
-        "jobs" -> Screen.Jobs
-        "generate" -> Screen.Generate
-        "websearch" -> Screen.WebSearch
+        "artifacts" -> Screen.Artifacts()
+        "jobs" -> Screen.Jobs()
+        "generate" -> Screen.Generate()
+        "websearch" -> Screen.WebSearch()
         "worktrees" -> Screen.Worktrees
         "engineconfig" -> Screen.EngineConfig
         "about" -> Screen.About()
@@ -374,10 +381,10 @@ internal fun Screen.parent(): Screen = when (this) {
     Screen.Providers -> Screen.Settings
     Screen.McpServers -> Screen.Settings
     Screen.Plugins -> Screen.Settings
-    Screen.Artifacts -> Screen.Settings
-    Screen.Jobs -> Screen.Settings
-    Screen.Generate -> Screen.Settings
-    Screen.WebSearch -> Screen.Settings
+    is Screen.Artifacts -> this.returnTo
+    is Screen.Jobs -> this.returnTo
+    is Screen.Generate -> this.returnTo
+    is Screen.WebSearch -> this.returnTo
     Screen.Worktrees -> Screen.Settings
     Screen.EngineConfig -> Screen.Settings
     is Screen.Inbox -> Screen.Sessions
@@ -414,8 +421,8 @@ internal fun Screen.depth(): Int = when (this) {
     Screen.Sessions -> 1
     is Screen.Projects, Screen.Files, Screen.Settings, is Screen.Diagnostics -> 2
     is Screen.FileView, Screen.DiffList, Screen.SessionDiff,
-    Screen.Providers, Screen.McpServers, Screen.Plugins, Screen.Artifacts, Screen.Jobs,
-    Screen.Generate, Screen.WebSearch,
+    Screen.Providers, Screen.McpServers, Screen.Plugins, is Screen.Artifacts, is Screen.Jobs,
+    is Screen.Generate, is Screen.WebSearch,
     Screen.Worktrees,
     Screen.EngineConfig, is Screen.About, is Screen.InAppBrowser,
     is Screen.Inbox, is Screen.MoveSession, is Screen.SessionExport,
@@ -1656,15 +1663,23 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onProviders = { screen = Screen.Providers },
                         onMcpServers = { screen = Screen.McpServers },
                         onPlugins = { screen = Screen.Plugins },
-                        onArtifacts = { screen = Screen.Artifacts },
-                        onJobs = { screen = Screen.Jobs },
-                        onGenerate = { screen = Screen.Generate },
-                        onWebSearch = { screen = Screen.WebSearch },
+                        onArtifacts = { screen = Screen.Artifacts(Screen.Settings) },
+                        onJobs = { screen = Screen.Jobs(Screen.Settings) },
+                        onGenerate = { screen = Screen.Generate(Screen.Settings) },
+                        onWebSearch = { screen = Screen.WebSearch(Screen.Settings) },
                         onWorktrees = { screen = Screen.Worktrees },
                         onEngineConfig = { screen = Screen.EngineConfig },
                         onSessionStats = { screen = Screen.SessionStats },
                         onUsageLimits = { screen = Screen.UsageLimits },
                         onAbout = { screen = Screen.About(Screen.Settings) },
+                        onReplayOnboarding = {
+                            // Audit-200 D15 (m-1086): clear the flag and
+                            // show the flow at once — the replay does not
+                            // wait for a relaunch, and dismissing it
+                            // completes it again like any other run.
+                            OnboardingStore.reset(hostContext)
+                            showOnboarding = true
+                        },
                     )
 
                     is Screen.About -> AboutScreen(
@@ -1741,9 +1756,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onClearActionFailure = pluginsViewModel::clearActionFailure,
                     )
 
-                    Screen.Artifacts -> ArtifactsScreen(
+                    is Screen.Artifacts -> ArtifactsScreen(
                         state = artifactsState,
-                        onBack = { screen = Screen.Settings },
+                        onBack = { screen = screen.parent() },
                         onRefresh = artifactsViewModel::refresh,
                         onOpen = { artifact ->
                             // The view URL is a relative engine path; the
@@ -1757,7 +1772,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                     basicAuth = "opencode" to creds.password,
                                     // Audit-200 B7 (M-158): back returns to
                                     // Artifacts, where the link was tapped.
-                                    returnTo = Screen.Artifacts,
+                                    returnTo = Screen.Artifacts(),
                                 )
                             }
                         },
@@ -1765,17 +1780,17 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onClearActionFailure = artifactsViewModel::clearActionFailure,
                     )
 
-                    Screen.Jobs -> JobsScreen(
+                    is Screen.Jobs -> JobsScreen(
                         state = jobsState,
-                        onBack = { screen = Screen.Settings },
+                        onBack = { screen = screen.parent() },
                         onRefresh = jobsViewModel::refresh,
                         onKindFilter = jobsViewModel::setKindFilter,
                         onStatusFilter = jobsViewModel::setStatusFilter,
                     )
 
-                    Screen.Generate -> GenerateScreen(
+                    is Screen.Generate -> GenerateScreen(
                         state = generateState,
-                        onBack = { screen = Screen.Settings },
+                        onBack = { screen = screen.parent() },
                         onRefreshModels = generateViewModel::refreshModels,
                         onPromptChange = generateViewModel::setPrompt,
                         onModeChange = generateViewModel::setMode,
@@ -1785,16 +1800,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                         onGenerate = generateViewModel::generate,
                     )
 
-                    Screen.WebSearch -> WebSearchScreen(
+                    is Screen.WebSearch -> WebSearchScreen(
                         state = webSearchState,
-                        onBack = { screen = Screen.Settings },
+                        onBack = { screen = screen.parent() },
                         onRefreshProviders = webSearchViewModel::refreshProviders,
                         onQueryChange = webSearchViewModel::setQuery,
                         onProviderChange = webSearchViewModel::setProvider,
                         onSearch = webSearchViewModel::search,
                         // Audit-200 B7 (M-158): back returns to WebSearch,
                         // where the link was tapped.
-                        onOpenUrl = { url -> screen = Screen.InAppBrowser(url, returnTo = Screen.WebSearch) },
+                        onOpenUrl = { url -> screen = Screen.InAppBrowser(url, returnTo = Screen.WebSearch()) },
                     )
 
                     Screen.Worktrees -> WorktreesScreen(
@@ -2086,6 +2101,10 @@ private fun ChatDestination(
         onSettingsClick = { onNavigate(Screen.Settings) },
         onDiagnosticsClick = { onNavigate(Screen.Diagnostics(Screen.Chat)) },
         onAboutClick = { onNavigate(Screen.About(Screen.Chat)) },
+        onArtifactsClick = { onNavigate(Screen.Artifacts(Screen.Chat)) },
+        onJobsClick = { onNavigate(Screen.Jobs(Screen.Chat)) },
+        onGenerateClick = { onNavigate(Screen.Generate(Screen.Chat)) },
+        onWebSearchClick = { onNavigate(Screen.WebSearch(Screen.Chat)) },
         onRenameSession = { id, title ->
             sessionViewModel.rename(id, title)
         },

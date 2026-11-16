@@ -92,6 +92,13 @@ fun LocalizedDraggableBottomSheet(
     title: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
     actions: (@Composable () -> Unit)? = null,
+    /**
+     * Audit-200 D15 (m-692): false while the sheet must stay — the scrim
+     * tap, the back button and a dismiss drag are all ignored, and a
+     * drag-down stops at Peek. Defaults true so every existing dialog
+     * keeps its behaviour.
+     */
+    dismissable: Boolean = true,
 ) {
     Localized {
         DraggableBottomSheet(
@@ -100,6 +107,7 @@ fun LocalizedDraggableBottomSheet(
             title = title,
             content = content,
             actions = actions,
+            dismissable = dismissable,
         )
     }
 }
@@ -112,6 +120,7 @@ fun DraggableBottomSheet(
     title: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
     actions: (@Composable () -> Unit)? = null,
+    dismissable: Boolean = true,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -127,7 +136,7 @@ fun DraggableBottomSheet(
     val heightAnim = remember { Animatable(0f) }
 
     fun dismiss() {
-        if (dismissing) return
+        if (dismissing || !dismissable) return
         dismissing = true
         scope.launch {
             heightAnim.animateTo(
@@ -188,7 +197,7 @@ fun DraggableBottomSheet(
                     }
                 }
                 val onDragStopped: suspend CoroutineScope.(Float) -> Unit = { velocity ->
-                        when (val snap = resolveSheetSnap(heightAnim.value, velocity, stopHeights)) {
+                        when (val snap = resolveSheetSnap(heightAnim.value, velocity, stopHeights, dismissable = dismissable)) {
                             is SheetSnap.Stop -> currentStop = SheetStop.entries[snap.index]
                             SheetSnap.Dismiss -> dismiss()
                         }

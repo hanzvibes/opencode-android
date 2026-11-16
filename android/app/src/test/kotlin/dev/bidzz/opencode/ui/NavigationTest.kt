@@ -72,17 +72,41 @@ class NavigationTest {
     @Test
     fun `M-158 back from the browser returns to Artifacts when opened there`() {
         assertEquals(
-            Screen.Artifacts,
-            Screen.InAppBrowser("http://127.0.0.1:1/view", returnTo = Screen.Artifacts).parent(),
+            Screen.Artifacts(),
+            Screen.InAppBrowser("http://127.0.0.1:1/view", returnTo = Screen.Artifacts()).parent(),
         )
     }
 
     @Test
     fun `M-158 back from the browser returns to WebSearch when opened there`() {
         assertEquals(
-            Screen.WebSearch,
-            Screen.InAppBrowser("https://example.com", returnTo = Screen.WebSearch).parent(),
+            Screen.WebSearch(),
+            Screen.InAppBrowser("https://example.com", returnTo = Screen.WebSearch()).parent(),
         )
+    }
+
+    @Test
+    fun `D15 m-992 back from the four tool screens defaults to Settings`() {
+        assertEquals(Screen.Settings, Screen.Artifacts().parent())
+        assertEquals(Screen.Settings, Screen.Jobs().parent())
+        assertEquals(Screen.Settings, Screen.Generate().parent())
+        assertEquals(Screen.Settings, Screen.WebSearch().parent())
+    }
+
+    @Test
+    fun `D15 m-992 back from the four tool screens returns to Chat when opened from the drawer`() {
+        assertEquals(Screen.Chat, Screen.Artifacts(Screen.Chat).parent())
+        assertEquals(Screen.Chat, Screen.Jobs(Screen.Chat).parent())
+        assertEquals(Screen.Chat, Screen.Generate(Screen.Chat).parent())
+        assertEquals(Screen.Chat, Screen.WebSearch(Screen.Chat).parent())
+    }
+
+    @Test
+    fun `D15 m-992 the four tool screens keep their depth`() {
+        assertEquals(3, Screen.Artifacts().depth())
+        assertEquals(3, Screen.Jobs().depth())
+        assertEquals(3, Screen.Generate().depth())
+        assertEquals(3, Screen.WebSearch().depth())
     }
 
     @Test

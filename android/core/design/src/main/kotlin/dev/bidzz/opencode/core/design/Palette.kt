@@ -415,7 +415,7 @@ object AuraPalette {
     val auraBlue = Color(0xFF5890FF)
     /** Fill under white text (white on it 4.58:1); as text, white only. */
     val auraBlueFill = Color(0xFF4673CC)
-    /** Text-safe blue (7.89:1 on white, 7.36:1 on #F6F7F8). */
+    /** Text-safe blue (7.89:1 on white, 7.50:1 on the app page #F9F9FA). */
     val auraBlueText = Color(0xFF355089)
     /** Light blue: gradient stop + text on navy (9.31:1 on #141823). */
     val auraBlueLight = Color(0xFF9BBCFF)
@@ -445,6 +445,6 @@ object AuraPalette {
     // ---- Aura semantics ----
     /** Brand green: fill / dot (white on it 4.58:1). */
     val auraSuccess = Color(0xFF1D873B)
-    /** Google red: AA as text on white only (4.77:1; 4.45:1 on #F6F7F8). */
+    /** Google red: AA as text on white (4.77:1) and, barely, on the app page #F9F9FA (4.54:1). */
     val auraDanger = Color(0xFFD93025)
 }

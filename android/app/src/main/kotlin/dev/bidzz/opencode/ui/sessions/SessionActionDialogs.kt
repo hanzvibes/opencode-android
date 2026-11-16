@@ -260,8 +260,12 @@ fun DeleteSessionDialog(
     // and behaviour — the title is shown, not just passed in, because
     // deleting the wrong session is one tap away when every dialog
     // reads the same.
+    // Audit-200 D15 (m-683): a session the engine has not named yet has
+    // a blank title — show "Untitled" instead of empty quotes, the same
+    // fallback the session list already uses for its rows.
+    val displayTitle = sessionTitle.ifBlank { stringResource(R.string.drawer_untitled) }
     val message = buildString {
-        append(stringResource(R.string.session_delete_message, sessionTitle))
+        append(stringResource(R.string.session_delete_message, displayTitle))
         if (isRunning) {
             append("\n\n")
             append(stringResource(R.string.session_delete_message_running))
