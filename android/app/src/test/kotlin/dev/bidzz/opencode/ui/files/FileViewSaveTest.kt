@@ -150,6 +150,23 @@ class FileViewSaveTest {
     }
 
     @Test
+    fun `m-714 a draft restored onto a preview file is skipped, never edited`() {
+        val basis = sha256Hex("one\n")
+
+        val decision = resolveRestoreDecision(
+            restoredPath = "photo.jpg",
+            restoredEditing = true,
+            truncated = false,
+            path = "photo.jpg",
+            diskContent = "one\n",
+            basisHash = basis,
+            isPreview = true,
+        )
+
+        assertEquals(RestoreDecision.Skip, decision)
+    }
+
+    @Test
     fun `a handle written before basis tracking still restores`() {
         val decision = resolveRestoreDecision(
             restoredPath = "a.kt",

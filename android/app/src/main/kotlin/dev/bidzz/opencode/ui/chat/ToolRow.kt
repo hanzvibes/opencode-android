@@ -665,7 +665,7 @@ fun ToolStep(
     val badgeColor = badgeColorForKind(toolKind, colors)
     val label = stepLabel(call.name, call.summary, call.status)
     val verbText = label.verbText()
-    val hasDetails = !call.inputText.isNullOrBlank() || !call.output.isNullOrBlank() || !call.error.isNullOrBlank()
+    val hasDetails = !call.inputText.isNullOrBlank() || !call.output.isNullOrBlank() || !call.error.isNullOrBlank() || call.outputDecodeFailed
 
     // Edit/write steps show a concise unified diff instead of raw input
     // JSON (audit finding 4). Parsed once per input change; null when the
@@ -1071,11 +1071,17 @@ fun ToolStep(
                                 // "+n −m" — the change itself, not the output
                                 // line count. Anything else keeps the old
                                 // "N lines" / "Success" pill.
+                                // Audit-200 D11 (m-103/m-1134): when the
+                                // output could not be decoded, the pill says
+                                // so instead of a bare "Success" with no
+                                // output under it.
                                 val summaryText = diffCounts?.let { (added, removed) ->
                                     "+$added −$removed"
                                 } ?: run {
                                     val out = call.output
-                                    if (!out.isNullOrBlank()) {
+                                    if (call.outputDecodeFailed) {
+                                        stringResource(R.string.tool_output_unreadable)
+                                    } else if (!out.isNullOrBlank()) {
                                         val lines = out.lines().size
                                         if (lines > 1) {
                                             stringResource(R.string.tool_lines, lines)
@@ -1246,6 +1252,18 @@ fun ToolStep(
                                 text = stringResource(R.string.tool_output_on_finish),
                                 style = OpenCodeTypography.caption.copy(fontSize = 11.sp),
                                 color = colors.onSurfaceFaint,
+                            )
+                        }
+
+                        // Audit-200 D11 (m-103/m-1134): the tool succeeded
+                        // but its output could not be decoded — say so
+                        // where the STDOUT block would be, instead of a
+                        // bare "Success" with nothing under it.
+                        if (call.outputDecodeFailed) {
+                            Text(
+                                text = stringResource(R.string.tool_output_unreadable),
+                                style = OpenCodeTypography.caption.copy(fontSize = 11.sp),
+                                color = colors.warning,
                             )
                         }
 

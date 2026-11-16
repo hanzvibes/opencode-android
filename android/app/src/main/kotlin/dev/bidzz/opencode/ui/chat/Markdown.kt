@@ -16,10 +16,13 @@ import dev.bidzz.opencode.ui.browser.isForwardableUrl
  * - blockquotes (> text)
  * - unordered and ordered lists
  * - links ([text](url)) and bare URLs (https://… autolinks)
+ * - images (`![alt](url)`) as a plain `[gambar: alt]` placeholder —
+ *   there is no image span, so the URL is never kept and nothing here
+ *   can open a browser (audit-200 D11, m-058)
  * - horizontal rules / dividers (---, ***, ___ or <hr>)
  * - pipe tables with a `| --- | --- |` separator row
  *
- * What it deliberately does **not** handle: images, nested lists, HTML, footnotes,
+ * What it deliberately does **not** handle: nested lists, HTML, footnotes,
  * task lists, merged cells. A table needs a header row plus a
  * separator row; anything less is left as literal text, because rendering a
  * half-recognised table is worse than showing the pipes. Column alignment
@@ -655,6 +658,34 @@ object Markdown {
                     }
                 }
 
+                // Image: ![alt](url) — there is no image span, so this
+                // used to fall through to the link branch and render as a
+                // tappable "!alt" link (audit-200 D11, m-058). Render the
+                // whole thing as one plain placeholder instead; the URL
+                // is not kept, so nothing here can open a browser.
+                c == '!' && i + 1 < text.length && text[i + 1] == '[' -> {
+                    when (val link = parseLink(text, i + 1, streaming, allowEmptyText = true)) {
+                        null -> {
+                            plain.append(c); i++
+                        }
+                        else -> {
+                            if (link.url != null) {
+                                flushPlain()
+                                val alt = plainText(link.spans)
+                                spans += MdSpan.Text(
+                                    if (alt.isBlank()) "[gambar]" else "[gambar: $alt]",
+                                )
+                                i = link.endIndex
+                            } else {
+                                // Streaming: the image is not closed yet —
+                                // leave the `!` literal and let the link
+                                // branch render the streaming fallback.
+                                plain.append(c); i++
+                            }
+                        }
+                    }
+                }
+
                 // Link: [text](url) — see [parseLink] for the details
                 // (04-F1 parens in the URL, 04-F8 `]` in the text, titles,
                 // `<...>` destinations).
@@ -712,6 +743,24 @@ object Markdown {
         return spans
     }
 
+    /** Flattens parsed spans to their visible text (D11 m-058): image alt text. */
+    private fun plainText(spans: List<MdSpan>): String {
+        val out = StringBuilder()
+        fun visit(span: MdSpan) {
+            when (span) {
+                is MdSpan.Text -> out.append(span.text)
+                is MdSpan.Code -> out.append(span.text)
+                is MdSpan.Bold -> span.spans.forEach(::visit)
+                is MdSpan.Italic -> span.spans.forEach(::visit)
+                is MdSpan.Link -> span.spans.forEach(::visit)
+                is MdSpan.Highlight -> span.spans.forEach(::visit)
+                is MdSpan.Strikethrough -> span.spans.forEach(::visit)
+            }
+        }
+        spans.forEach(::visit)
+        return out.toString()
+    }
+
     /** Index of the next backtick run of exactly [run] backticks at or after [start], or -1. */
     private fun findCodeClose(text: String, start: Int, run: Int): Int {
         var j = start
@@ -747,7 +796,7 @@ object Markdown {
      */
     private data class LinkParse(val spans: List<MdSpan>, val url: String?, val endIndex: Int)
 
-    private fun parseLink(text: String, i: Int, streaming: Boolean): LinkParse? {
+    private fun parseLink(text: String, i: Int, streaming: Boolean, allowEmptyText: Boolean = false): LinkParse? {
         // Link text with bracket depth: a nested `[` does not confuse the `]`.
         var depth = 1
         var j = i + 1
@@ -780,7 +829,10 @@ object Markdown {
         // rendering it as a link shows nothing at all (empty spans, and
         // the URL is not text), so the whole thing vanished from the
         // screen. Returning null leaves it literal, as it was before.
-        if (linkText.isBlank()) return null
+        // Images are the exception (audit-200 D11, m-058): `![](url)` is
+        // a valid image with no alt text, and its placeholder is
+        // "[gambar]" — the caller asks for that with [allowEmptyText].
+        if (linkText.isBlank() && !allowEmptyText) return null
         // Destination: `<...>` or a paren-balanced run, then an optional title.
         var k = close + 2
         while (k < text.length && (text[k] == ' ' || text[k] == '\t')) k++

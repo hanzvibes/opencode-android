@@ -7,12 +7,32 @@ class FilePreviewKindTest {
 
     @Test
     fun `image extensions preview as IMAGE`() {
-        listOf("jpg", "jpeg", "png", "webp", "gif", "bmp").forEach { ext ->
+        listOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif").forEach { ext ->
             assertEquals(
                 FilePreviewKind.IMAGE,
                 previewKindForPath("photo.$ext"),
             )
         }
+    }
+
+    @Test
+    fun `m-722 avif previews only on API 34 and up`() {
+        assertEquals(FilePreviewKind.IMAGE, previewKindForPath("photo.avif", sdkInt = 34))
+        assertEquals(FilePreviewKind.IMAGE, previewKindForPath("photo.avif", sdkInt = 35))
+        assertEquals(FilePreviewKind.UNSUPPORTED, previewKindForPath("photo.avif", sdkInt = 33))
+        assertEquals(FilePreviewKind.UNSUPPORTED, previewKindForPath("photo.avif", sdkInt = 29))
+    }
+
+    @Test
+    fun `m-722 tiff and ico are unsupported, not text`() {
+        listOf("scan.tif", "scan.tiff", "icon.ico").forEach { name ->
+            assertEquals(FilePreviewKind.UNSUPPORTED, previewKindForPath(name))
+        }
+    }
+
+    @Test
+    fun `m-722 svg stays NONE because it is XML text`() {
+        assertEquals(FilePreviewKind.NONE, previewKindForPath("logo.svg"))
     }
 
     @Test

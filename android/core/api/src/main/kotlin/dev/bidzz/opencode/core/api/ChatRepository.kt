@@ -9,6 +9,7 @@ import dev.bidzz.opencode.core.api.dto.MessageTime
 import dev.bidzz.opencode.core.api.dto.ModelRef
 import dev.bidzz.opencode.core.api.dto.TokenUsage
 import dev.bidzz.opencode.core.api.dto.ToolCall
+import dev.bidzz.opencode.core.api.dto.parseToolOutput
 import dev.bidzz.opencode.core.api.dto.toolOutput
 import dev.bidzz.opencode.core.api.dto.PendingPermission
 import dev.bidzz.opencode.core.api.dto.PromptSkillAttachment
@@ -1403,7 +1404,8 @@ class ChatRepository(
             }
             EventTypes.TOOL_SUCCESS -> {
                 stopLiveShellPoll(id)
-                val finalOutput = parseToolOutput(p)
+                val parsed = parseToolOutput(p)
+                val finalOutput = parsed.text
                 // A backgrounded shell's success carries only the notice
                 // ("Command moved to the background...") — replacing the
                 // live log the reader already watched with it would hide
@@ -1422,7 +1424,8 @@ class ChatRepository(
                 prev?.copy(
                     status = "completed",
                     output = output,
-                ) ?: ToolCall(id, "", "completed", output = output)
+                    outputDecodeFailed = parsed.decodeFailed,
+                ) ?: ToolCall(id, "", "completed", output = output, outputDecodeFailed = parsed.decodeFailed)
             }
             else -> {
                 stopLiveShellPoll(id)
@@ -1434,15 +1437,6 @@ class ChatRepository(
         }
         _state.value = _state.value.copy(liveTools = tools + (id to LiveTool(messageID, next)))
     }
-
-    /** The `content` list of a `tool.success` event as display text, or null. */
-    private fun parseToolOutput(p: kotlinx.serialization.json.JsonObject): String? =
-        runCatching {
-            ApiJson.decodeFromJsonElement(
-                kotlinx.serialization.builtins.ListSerializer(serializer<MessageContent>()),
-                p["content"] ?: return@runCatching null,
-            ).toolOutput()
-        }.getOrNull()
 
     /** The `error` object of a `tool.failed` event as display text. */
     private fun parseToolError(p: kotlinx.serialization.json.JsonObject): String =

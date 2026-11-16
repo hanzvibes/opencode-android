@@ -127,6 +127,58 @@ class FileApiReadTextTest {
     }
 
     @Test
+    fun `m-807 a genuinely invalid byte at the cap is refused, not dropped`() {
+        // Audit-200 D11 (m-807): the kept prefix ends on 0xFF — a byte
+        // that is invalid anywhere, not a sequence the cap cut in half.
+        // The old retry dropped it and returned wrong text as Success;
+        // now the read fails as NotUtf8, like any other malformation.
+        val body = ByteArray(FILE_READ_CAP_BYTES + 2)
+        body.fill('a'.code.toByte(), 0, FILE_READ_CAP_BYTES - 1)
+        body[FILE_READ_CAP_BYTES - 1] = 0xFF.toByte()
+        body[FILE_READ_CAP_BYTES] = 'b'.code.toByte()
+        body[FILE_READ_CAP_BYTES + 1] = '\n'.code.toByte()
+
+        val result = read(body)
+
+        assertTrue(result is ApiResult.Failure)
+        assertEquals("NotUtf8", (result as ApiResult.Failure).tag)
+    }
+
+    @Test
+    fun `m-807 a cap cut through a three-byte character still decodes`() {
+        // "€" (0xE2 0x82 0xAC) cut after its second byte: the two kept
+        // bytes really are an incomplete sequence, so they are dropped
+        // and the read succeeds — the mirror of the 0xFF case above.
+        val body = ByteArray(FILE_READ_CAP_BYTES + 2)
+        body.fill('a'.code.toByte(), 0, FILE_READ_CAP_BYTES - 2)
+        body[FILE_READ_CAP_BYTES - 2] = 0xE2.toByte()
+        body[FILE_READ_CAP_BYTES - 1] = 0x82.toByte()
+        body[FILE_READ_CAP_BYTES] = 0xAC.toByte()
+        body[FILE_READ_CAP_BYTES + 1] = 'b'.code.toByte()
+
+        val result = read(body)
+
+        assertTrue(result is ApiResult.Success)
+        val file = (result as ApiResult.Success).value
+        assertEquals("a".repeat(FILE_READ_CAP_BYTES - 2), file.text)
+        assertTrue(file.truncated)
+    }
+
+    @Test
+    fun `m-807 the tail check only drops a real incomplete sequence`() {
+        assertEquals(0, trailingIncompleteSequenceLength("ab".encodeToByteArray(), 2))
+        assertEquals(0, trailingIncompleteSequenceLength("aé".encodeToByteArray(), 3))
+        assertEquals(1, trailingIncompleteSequenceLength(byteArrayOf('a'.code.toByte(), 0xC3.toByte()), 2))
+        assertEquals(2, trailingIncompleteSequenceLength(byteArrayOf('a'.code.toByte(), 0xE2.toByte(), 0x82.toByte()), 3))
+        assertEquals(3, trailingIncompleteSequenceLength(byteArrayOf(0xF0.toByte(), 0x9F.toByte(), 0x98.toByte()), 3))
+        assertEquals(0, trailingIncompleteSequenceLength(byteArrayOf('a'.code.toByte(), 0xFF.toByte()), 2))
+        assertEquals(0, trailingIncompleteSequenceLength(byteArrayOf('a'.code.toByte(), 0xFE.toByte()), 2))
+        assertEquals(0, trailingIncompleteSequenceLength(byteArrayOf('a'.code.toByte(), 0x80.toByte()), 2))
+        assertEquals(0, trailingIncompleteSequenceLength(byteArrayOf(0x80.toByte(), 0x80.toByte()), 2))
+        assertEquals(0, trailingIncompleteSequenceLength(byteArrayOf(), 0))
+    }
+
+    @Test
     fun `countLines matches String lines for every separator shape`() {
         assertEquals(1, countLines(byteArrayOf()))
         assertEquals(1, countLines("a".encodeToByteArray()))

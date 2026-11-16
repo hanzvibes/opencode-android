@@ -45,6 +45,39 @@ data class FileTextResult(
 internal const val FILE_READ_CAP_BYTES = 8_388_608
 
 /**
+ * Length of the trailing incomplete UTF-8 sequence in `bytes[0..<end]`,
+ * or 0 when the tail ends on a complete character (audit-200 D11, m-807).
+ *
+ * Pure, so the cap-retry in [FileApi] can be unit-tested without a
+ * server: walk back over continuation bytes (at most 3 — a sequence is
+ * at most 4 bytes), then read the lead. A lead that still needs more
+ * continuation bytes than are present means the cap cut the sequence
+ * in half, so those bytes may be dropped. Anything else — a complete
+ * ASCII or multi-byte tail, an invalid lead (0xC0/0xC1/0xF5..0xFF), or
+ * continuation bytes with no lead in range — is a genuine malformation
+ * and must fail, not be silently dropped.
+ */
+internal fun trailingIncompleteSequenceLength(bytes: ByteArray, end: Int): Int {
+    var i = end - 1
+    var continuations = 0
+    while (i >= 0 && continuations < 3 && (bytes[i].toInt() and 0xC0) == 0x80) {
+        continuations++
+        i--
+    }
+    if (i < 0) return 0
+    val lead = bytes[i].toInt() and 0xFF
+    val needed = when (lead) {
+        in 0x00..0x7F -> 0
+        in 0xC2..0xDF -> 1
+        in 0xE0..0xEF -> 2
+        in 0xF0..0xF4 -> 3
+        else -> 0
+    }
+    if (needed == 0 || continuations >= needed) return 0
+    return continuations + 1
+}
+
+/**
  * Normalises a workspace-relative path, or null when it escapes the workspace.
  *
  * A path is resolved lexically, segment by segment: `.` and empty segments are
@@ -230,9 +263,16 @@ class FileApi(private val client: EngineClient) {
     /**
      * Strict UTF-8 decode of the kept bytes (item 11). A cap can cut a
      * multi-byte sequence in half, which is not a malformed file: when
-     * truncated, retry after dropping up to 3 trailing bytes (a UTF-8
-     * sequence is at most 4 bytes). A genuine malformation anywhere else
-     * still fails all attempts and returns null.
+     * truncated, retry after dropping the trailing incomplete sequence.
+     * A genuine malformation anywhere else still fails all attempts and
+     * returns null.
+     *
+     * Audit-200 D11 (m-807): the old retry dropped trailing bytes blindly,
+     * one at a time — a genuinely invalid byte at the tail (0xFF, 0xFE,
+     * an orphan continuation) was dropped just like a split lead byte,
+     * and the viewer showed wrong text as Success. Now a byte is dropped
+     * only when [trailingIncompleteSequenceLength] proves the tail really
+     * is an incomplete sequence.
      */
     private fun decodeCapped(kept: ByteArray, truncated: Boolean): String? {
         var end = kept.size
@@ -245,8 +285,10 @@ class FileApi(private val client: EngineClient) {
                     .toString()
             }.getOrNull()
             if (decoded != null) return decoded
-            if (!truncated || kept.size - end >= 3) return null
-            end--
+            if (!truncated) return null
+            val incomplete = trailingIncompleteSequenceLength(kept, end)
+            if (incomplete == 0 || kept.size - end + incomplete > 3) return null
+            end -= incomplete
         }
     }
 

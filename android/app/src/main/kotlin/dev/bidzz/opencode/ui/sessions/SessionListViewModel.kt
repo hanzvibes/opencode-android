@@ -32,6 +32,18 @@ internal const val SESSION_PAGE_SIZE = 50
  */
 internal const val PREVIEW_PAGE_SIZE = 200
 
+/**
+ * Most pages one preview walk may fetch (audit-200 D11, m-355): at
+ * [PREVIEW_PAGE_SIZE] messages a page, a walk reads at most 5,000
+ * messages — enough that every ordinary session still finds its true
+ * first user message, while a 10,000-message session stops after 25
+ * requests instead of walking its whole history before its row shows
+ * a preview. A capped walk reports incomplete (see
+ * [fetchFirstUserPreview]), so the D10 note says so and the next load
+ * retries it — bounded again by this same cap.
+ */
+internal const val MAX_PREVIEW_WALK_PAGES = 25
+
 /** How long ago something happened, as a unit and a count; the screen words it in the user's language. */
 enum class AgeUnit { NOW, MINUTES, HOURS, DAYS, MONTHS }
 
@@ -141,6 +153,27 @@ fun resolveSessionPreviewNote(state: SessionListUiState): SessionPreviewNote {
         state.previewsIncomplete -> SessionPreviewNote.INCOMPLETE
         else -> SessionPreviewNote.NONE
     }
+}
+
+/**
+ * The sessions a search that found nothing still owes a preview walk
+ * (audit-200 D11, m-485): rows below the fold have no search text
+ * until their preview walk runs, and the walk only seeds the first 20
+ * — so a word that lives only in an unwalked session's preview matches
+ * nothing, silently. A non-blank query with zero matches and at least
+ * one listed session still unwalked owes those ids a walk; anything
+ * else owes nothing. Pure so the rule is testable without a live
+ * engine; the screen fires it once per query (see SessionListPane),
+ * so a walk that fails cannot re-trigger itself forever.
+ */
+fun idsToWalkForEmptySearch(
+    query: String,
+    hasResults: Boolean,
+    rows: List<SessionRow>,
+    details: Map<String, SessionDetail>,
+): List<String> {
+    if (query.isBlank() || hasResults) return emptyList()
+    return rows.filter { details[it.id]?.previewKnown != true }.map { it.id }
 }
 
 /**
@@ -465,11 +498,12 @@ class SessionListViewModel(
      * history — the page walk never holds more than one page in memory.
      * A repeated cursor (an engine that loops) ends the walk instead of
      * spinning; a failed page keeps whatever was found so far and
-     * reports the walk incomplete, so the next load retries it. One very
-     * long session still walks its whole history when it becomes visible
-     * — the engine has no first-message endpoint or oldest-first paging —
-     * but the walk is bounded to visible rows, runs in parallel with the
-     * others, and never re-walks a proven-empty session.
+     * reports the walk incomplete, so the next load retries it. A walk
+     * that hits [MAX_PREVIEW_WALK_PAGES] pages stops the same way
+     * (audit-200 D11, m-355): the candidate is the oldest user message
+     * found so far and the walk reports incomplete, so the D10 note says
+     * the previews are not all loaded — before this, one very long
+     * session walked its whole history when it became visible.
      */
     private suspend fun fetchFirstUserPreview(
         handle: EngineApi.Handle,
@@ -479,15 +513,18 @@ class SessionListViewModel(
         var cursor: String? = null
         var candidate: String? = null
         var searchText: String? = null
+        var pagesWalked = 0
         val seenCursors = mutableSetOf<String>()
         while (true) {
             if (generation != loadGeneration) return PreviewLookup(candidate, searchText, complete = false)
             when (val page = handle.sessions.messagesPage(sessionID, limit = PREVIEW_PAGE_SIZE, cursor = cursor)) {
                 is ApiResult.Success -> {
+                    pagesWalked++
                     candidate = updatePreviewCandidate(candidate, page.value.data)
                     searchText = accumulateSearchText(searchText, page.value.data)
                     val next = page.value.cursor?.next
                     if (next == null || next in seenCursors) return PreviewLookup(candidate, searchText, complete = true)
+                    if (pagesWalked >= MAX_PREVIEW_WALK_PAGES) return PreviewLookup(candidate, searchText, complete = false)
                     seenCursors += next
                     cursor = next
                 }

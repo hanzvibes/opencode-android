@@ -711,6 +711,7 @@
     <string name="tool_status_failed">Gagal</string>
     <string name="tool_status_interrupted">Terhenti</string>
     <string name="tool_output_on_finish">Output muncul saat tool selesai.</string>
+    <string name="tool_output_unreadable">Hasil tool tidak bisa ditampilkan</string>
     <string name="tool_lines_one">%1$d baris</string>
     <string name="tool_lines">%1$d baris</string>
     <string name="tool_stdout">STDOUT</string>
@@ -844,6 +845,7 @@
     <string name="preview_page_prev">Halaman sebelumnya</string>
     <string name="preview_page_next">Halaman berikutnya</string>
     <string name="preview_load_failed">Pratinjau tidak bisa dibuka</string>
+    <string name="preview_unsupported_format">Format berkas ini belum didukung untuk pratinjau</string>
     <string name="preview_image_size">%1$d × %2$d</string>
     <string name="preview_image_desc">Pratinjau gambar, %1$s, %2$d kali %3$d piksel</string>
     <string name="preview_pdf_page_desc">Halaman PDF %2$d dari %3$d, %1$s (gambar, teks tidak tersedia)</string>
