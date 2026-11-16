@@ -30,6 +30,8 @@ import dev.bidzz.opencode.ui.RowDivider
 import dev.bidzz.opencode.ui.ScreenScaffold
 import dev.bidzz.opencode.ui.TextAction
 import dev.bidzz.opencode.ui.message
+import dev.bidzz.opencode.ui.sessions.formatAge
+import dev.bidzz.opencode.ui.sessions.label
 
 /**
  * Queued work for one session, in enqueue order.
@@ -161,8 +163,17 @@ private fun InboxRow(
             )
         }
         val delivery = item.delivery?.takeIf { it.isNotBlank() }
+        // Audit-200 D14 (m-472): how long the prompt has been queued —
+        // the row never showed its time before, so a prompt that waited
+        // an hour looked the same as one that arrived a second ago.
+        // Resolved here, not inside buildString: label() is @Composable.
+        val ageText = item.time?.created?.let { formatAge(it) }?.label()
         val metaText = buildString {
-            if (delivery != null) append(inboxDeliveryWord(delivery))
+            if (ageText != null) append(ageText)
+            if (delivery != null) {
+                if (isNotEmpty()) append(" · ")
+                append(inboxDeliveryWord(delivery))
+            }
             if (fileCount > 0) {
                 if (isNotEmpty()) append(" · ")
                 append(fileCountText(fileCount))

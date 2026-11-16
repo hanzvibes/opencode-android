@@ -471,6 +471,12 @@ class MainActivity : FragmentActivity() {
             // in Settings does not lock the running session — it takes
             // effect on the next launch or background return.
             val lockEnabled = remember { AppLockPrefs.isEnabled(this) }
+            // Audit-200 D14 (m-531): publish whether the lock screen is
+            // showing — the service watcher posts the agent-done
+            // notification while it is, instead of swallowing the run.
+            LaunchedEffect(lockEnabled, unlocked) {
+                (application as OpenCodeApplication).isLockScreenShowing = lockEnabled && !unlocked
+            }
             if (lockEnabled && !unlocked) {
                 LockScreen(onUnlocked = { unlocked = true })
             } else {
@@ -517,6 +523,17 @@ class MainActivity : FragmentActivity() {
     }
 
     /**
+     * Holds [pending] when App Lock is showing and returns true; the
+     * caller returns without executing (audit-200 D14, m-707). False
+     * when the app is unlocked — the caller executes as before.
+     */
+    private fun holdIfLocked(pending: PendingExternalIntent): Boolean {
+        if (!shouldHoldExternalIntent(AppLockPrefs.isEnabled(this), unlocked)) return false
+        (application as OpenCodeApplication).holdExternalIntent(pending)
+        return true
+    }
+
+    /**
      * External entries (Native C): a text share becomes a fresh draft,
      * an opencode://session/{id} link opens that session. Both travel
      * through the application flows, so the UI picks them up whenever
@@ -529,10 +546,17 @@ class MainActivity : FragmentActivity() {
                 // Launcher shortcut (Native C): a home-screen tap has no
                 // extras, so this only fires for the shortcut intents.
                 when (intent.getStringExtra(EXTRA_OPENCODE_ACTION)) {
-                    ACTION_NEW_SESSION -> app.requestNewSession()
+                    ACTION_NEW_SESSION -> {
+                        if (holdIfLocked(PendingExternalIntent.NewSession)) return
+                        app.requestNewSession()
+                    }
                     ACTION_OPEN_SESSION -> {
                         val id = intent.getStringExtra(EXTRA_SESSION_ID)
                             ?.takeIf { it.isNotBlank() } ?: return
+                        // Audit-200 D14 (m-707): a shortcut tap while
+                        // locked waits for the post-unlock confirmation
+                        // instead of opening the session silently.
+                        if (holdIfLocked(PendingExternalIntent.OpenSession(id))) return
                         // Audit-200 D12 (m-377): an id that fails
                         // validation is no longer a silent drop — the
                         // shortcut pointed at a session id the app cannot
@@ -549,6 +573,10 @@ class MainActivity : FragmentActivity() {
                 if (intent.type?.startsWith("text/") != true) return
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)
                     ?.takeIf { it.isNotBlank() } ?: return
+                // Audit-200 D14 (m-707): a share while locked waits for
+                // the post-unlock confirmation instead of starting a new
+                // session silently.
+                if (holdIfLocked(PendingExternalIntent.SharedText(text))) return
                 app.deliverSharedText(text)
             }
             Intent.ACTION_VIEW -> {
@@ -570,6 +598,10 @@ class MainActivity : FragmentActivity() {
                     app.showSnackbar(localizedString(R.string.session_link_invalid))
                     return
                 }
+                // Audit-200 D14 (m-707): a deep link while locked waits
+                // for the post-unlock confirmation instead of opening
+                // the session silently.
+                if (holdIfLocked(PendingExternalIntent.OpenSession(sessionID))) return
                 if (app.deliverSessionOpen(sessionID) == SessionOpenDelivery.INVALID) {
                     app.showSnackbar(localizedString(R.string.session_link_invalid))
                 }
@@ -823,6 +855,15 @@ class MainActivity : FragmentActivity() {
  */
 internal fun mayAskNotificationPermission(onboardingCompleted: Boolean, onboardingWillShow: Boolean): Boolean =
     onboardingCompleted || !onboardingWillShow
+
+/**
+ * Audit-200 D14 (m-707): whether an external intent must be held for the
+ * post-unlock confirmation instead of executing at once — only when App
+ * Lock is enabled AND the lock screen has not been passed yet. Pure so
+ * it is unit-testable; the Activity path cannot be.
+ */
+internal fun shouldHoldExternalIntent(lockEnabled: Boolean, unlocked: Boolean): Boolean =
+    lockEnabled && !unlocked
 
 /**
  * Audit-200 D9 (m-488): the stock `OpenDocument` contract's intent

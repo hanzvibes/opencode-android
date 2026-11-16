@@ -26,8 +26,11 @@ import dev.bidzz.opencode.core.engine.EngineCredentials
 import dev.bidzz.opencode.core.engine.EngineState
 import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
+import dev.bidzz.opencode.ui.currentChannelLanguage
 import dev.bidzz.opencode.ui.isAgentRunEndEvent
+import dev.bidzz.opencode.ui.notificationChannelId
 import dev.bidzz.opencode.ui.notifyAgentDone
+import dev.bidzz.opencode.ui.pruneStaleNotificationChannels
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +44,21 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * Whether a finished run deserves its agent-done notification (audit-200
+ * D14, m-531/m-789/m-979). Suppress ONLY while the user is watching that
+ * exact session's chat: foreground, no lock screen, that session visible.
+ * Every other case posts — the lock showing, another screen, another
+ * session, or the app backgrounded. Pure so it is unit-tested without a
+ * service; the watcher reads the three inputs from the application.
+ */
+internal fun shouldPostAgentDone(
+    isAppForeground: Boolean,
+    isLockScreenShowing: Boolean,
+    visibleChatSessionID: String?,
+    eventSessionID: String,
+): Boolean = !isAppForeground || isLockScreenShowing || visibleChatSessionID != eventSessionID
 
 /**
  * Keeps the embedded engine alive while the app is not in the foreground.
@@ -84,7 +102,14 @@ class EngineService : Service() {
          */
         const val ACTION_RESTART = "dev.bidzz.opencode.action.RESTART"
 
-        private const val CHANNEL_ID = "engine"
+        /**
+         * Base ids for the notification channels (audit-200 D14, m-370):
+         * the live id carries the display language — see
+         * [dev.bidzz.opencode.ui.notificationChannelId] — so a channel's
+         * name follows a language change instead of freezing in the
+         * language it was created in.
+         */
+        private const val CHANNEL_BASE = "engine"
         private const val NOTIFICATION_ID = 1001
         private const val FAILED_NOTIFICATION_ID = 1002
 
@@ -94,7 +119,7 @@ class EngineService : Service() {
          * foreground channel's `IMPORTANCE_LOW`. A new id on purpose — a
          * channel's importance cannot be changed once created.
          */
-        private const val FAILED_CHANNEL_ID = "engine_failure"
+        private const val FAILED_CHANNEL_BASE = "engine_failure"
 
         /** Consecutive failures after which the service stops resurrecting itself. */
         private const val RESTART_FAILURE_LIMIT = 3
@@ -147,7 +172,7 @@ class EngineService : Service() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
 
-            val builder = Notification.Builder(context, CHANNEL_ID)
+            val builder = Notification.Builder(context, notificationChannelId(CHANNEL_BASE, currentChannelLanguage(context)))
                 .setContentTitle(title)
                 .setContentText(text)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
@@ -188,10 +213,15 @@ class EngineService : Service() {
 
         private fun ensureChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
-            if (manager.getNotificationChannel(CHANNEL_ID) == null) {
+            // Audit-200 D14 (m-370): the channel ids carry the display
+            // language, so a language change creates channels with the new
+            // names instead of reusing the frozen ones.
+            val channelId = notificationChannelId(CHANNEL_BASE, currentChannelLanguage(context))
+            val failureChannelId = notificationChannelId(FAILED_CHANNEL_BASE, currentChannelLanguage(context))
+            if (manager.getNotificationChannel(channelId) == null) {
                 manager.createNotificationChannel(
                     NotificationChannel(
-                        CHANNEL_ID,
+                        channelId,
                         context.getString(R.string.engine_notif_channel_name),
                         NotificationManager.IMPORTANCE_LOW,
                     ).apply {
@@ -203,10 +233,10 @@ class EngineService : Service() {
             // 55-F3: the failure channel lives apart from the foreground
             // one, so a failed start actually alerts instead of whispering
             // through the low-importance channel.
-            if (manager.getNotificationChannel(FAILED_CHANNEL_ID) == null) {
+            if (manager.getNotificationChannel(failureChannelId) == null) {
                 manager.createNotificationChannel(
                     NotificationChannel(
-                        FAILED_CHANNEL_ID,
+                        failureChannelId,
                         context.getString(R.string.engine_notif_failure_channel_name),
                         NotificationManager.IMPORTANCE_DEFAULT,
                     ).apply {
@@ -215,6 +245,7 @@ class EngineService : Service() {
                     },
                 )
             }
+            pruneStaleNotificationChannels(context, setOf(channelId, failureChannelId))
         }
     }
 
@@ -473,7 +504,20 @@ class EngineService : Service() {
                 EventStream(client).events().collect { event ->
                     if (!isAgentRunEndEvent(event.type)) return@collect
                     val sessionID = event.sessionIDOf() ?: return@collect
-                    if ((application as OpenCodeApplication).isAppForeground) return@collect
+                    // Audit-200 D14 (m-531/m-789/m-979): post unless the
+                    // user is watching that exact session's chat — the old
+                    // gate suppressed whenever ANY activity was started,
+                    // so a run that ended behind the lock, on another
+                    // screen, or in another session never notified at
+                    // all, and the swallowed event was gone for good.
+                    val app = application as OpenCodeApplication
+                    if (!shouldPostAgentDone(
+                            app.isAppForeground,
+                            app.isLockScreenShowing,
+                            app.visibleChatSessionID,
+                            sessionID,
+                        )
+                    ) return@collect
                     val title = runCatching { sessions.get(sessionID) }
                         .getOrNull()
                         ?.let { (it as? ApiResult.Success)?.value?.title }
@@ -551,8 +595,12 @@ class EngineService : Service() {
         // Audit-200 D1 (m-530): same explicit wrap as buildNotification —
         // the stored language, read fresh, not the process-start one.
         val strings = appLanguageContext(this)
+        // Audit-200 D14 (m-370): the failure channel id carries the
+        // display language — ensure it exists before posting, because a
+        // language change moves the id and the new one is created here.
+        ensureChannel(strings)
         // 55-F2: the notification dismisses itself when tapped.
-        val notification = Notification.Builder(this, FAILED_CHANNEL_ID)
+        val notification = Notification.Builder(this, notificationChannelId(FAILED_CHANNEL_BASE, currentChannelLanguage(this)))
             .setContentTitle(strings.getString(R.string.engine_notif_failed_title))
             .setContentText(strings.getString(textRes))
             .setSmallIcon(android.R.drawable.stat_notify_error)
