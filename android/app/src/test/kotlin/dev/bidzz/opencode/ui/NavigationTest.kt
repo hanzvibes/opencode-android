@@ -21,8 +21,19 @@ class NavigationTest {
 
     @Test
     fun `back from a top level screen goes to the conversation`() {
-        listOf(Screen.Files, Screen.Sessions, Screen.Projects, Screen.Settings, Screen.Diagnostics(), Screen.About())
+        listOf(Screen.Files, Screen.Sessions, Screen.Settings, Screen.Diagnostics(), Screen.About())
             .forEach { assertEquals(Screen.Chat, it.parent()) }
+    }
+
+    @Test
+    fun `D13 m-1167 back from Projects returns to Settings when opened there`() {
+        assertEquals(Screen.Settings, Screen.Projects(Screen.Settings).parent())
+    }
+
+    @Test
+    fun `D13 m-1167 back from Projects defaults to Chat when opened from the drawer`() {
+        assertEquals(Screen.Chat, Screen.Projects().parent())
+        assertEquals(Screen.Chat, Screen.Projects(Screen.Chat).parent())
     }
 
     @Test

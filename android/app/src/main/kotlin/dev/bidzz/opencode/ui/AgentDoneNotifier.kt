@@ -12,6 +12,7 @@ import android.util.Log
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.R
 import dev.bidzz.opencode.appLanguageContext
+import dev.bidzz.opencode.ui.security.AppLockPrefs
 
 private const val TAG = "AgentDoneNotifier"
 private const val CHANNEL_ID = "agent_done"
@@ -26,6 +27,17 @@ private const val CHANNEL_ID = "agent_done"
 internal fun isAgentRunEndEvent(type: String): Boolean =
     type == dev.bidzz.opencode.core.api.dto.EventTypes.EXECUTION_SUCCEEDED ||
         type == dev.bidzz.opencode.core.api.dto.EventTypes.EXECUTION_FAILED
+
+/**
+ * Lock-screen visibility of the agent-done notification (audit-200
+ * D13, m-788): with App Lock on, the session title is private — the
+ * notification must hide its content where anyone holding the locked
+ * phone can read it. Pure, so it is unit-tested without posting
+ * anything; the public version (generic, no title) is built by the
+ * caller when this returns SECRET.
+ */
+internal fun agentDoneVisibility(lockEnabled: Boolean): Int =
+    if (lockEnabled) Notification.VISIBILITY_SECRET else Notification.VISIBILITY_PRIVATE
 
 /**
  * Tells the user an agent run finished while the app was in the
@@ -70,6 +82,7 @@ fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val locked = AppLockPrefs.isEnabled(context)
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(strings.getString(R.string.notification_agent_done_title))
@@ -79,6 +92,24 @@ fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
             )
             .setContentIntent(pending)
             .setAutoCancel(true)
+            // Audit-200 D13 (m-788): with App Lock on, the session
+            // title must not print on the system lock screen — hide
+            // the content and offer only a generic public version
+            // ("Tap to open the session", no title). Without the lock
+            // the notification keeps its normal private visibility.
+            .setVisibility(agentDoneVisibility(locked))
+            .apply {
+                if (locked) {
+                    setPublicVersion(
+                        Notification.Builder(context, CHANNEL_ID)
+                            .setSmallIcon(android.R.drawable.stat_notify_chat)
+                            .setContentTitle(strings.getString(R.string.notification_agent_done_title))
+                            .setContentText(strings.getString(R.string.notification_agent_done_body))
+                            .setContentIntent(pending)
+                            .build(),
+                    )
+                }
+            }
             .build()
         manager.notify(notificationId, notification)
     }.onFailure {

@@ -18,6 +18,7 @@ import dev.bidzz.opencode.ui.ACTION_NEW_SESSION
 import dev.bidzz.opencode.ui.ACTION_OPEN_SESSION
 import dev.bidzz.opencode.ui.EXTRA_OPENCODE_ACTION
 import dev.bidzz.opencode.ui.EXTRA_SESSION_ID
+import dev.bidzz.opencode.ui.security.AppLockPrefs
 
 /**
  * Home-screen widget (Native C): the last session's title, a button to
@@ -66,9 +67,17 @@ fun pushWidget(context: Context, sessionID: String?, title: String?) {
         )
         setTextColor(R.id.widget_title, if (dark) 0xFFFFFFFF.toInt() else 0xFF111111.toInt())
         setTextColor(R.id.widget_subtitle, if (dark) 0xFF9A9AA0.toInt() else 0xFF666666.toInt())
+        // Audit-200 D13 (m-1005): with App Lock on, the session title
+        // must not print on the home screen — the widget shows the app
+        // name instead. The Open button still points at the session
+        // (its tap goes through the lock), only the title is hidden.
+        // The title returns on the next push after unlock: OpenCodeApp
+        // re-composes then and pushes it again.
+        val locked = AppLockPrefs.isEnabled(context)
         setTextViewText(
             R.id.widget_title,
-            title?.takeIf { it.isNotBlank() } ?: appLabel(context),
+            if (locked) appLabel(context)
+            else title?.takeIf { it.isNotBlank() } ?: appLabel(context),
         )
         setTextViewText(
             R.id.widget_subtitle,

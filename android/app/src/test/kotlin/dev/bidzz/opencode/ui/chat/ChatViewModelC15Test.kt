@@ -366,7 +366,10 @@ class ChatViewModelC15Test {
         vm.deferSessionOpen()
 
         assertEquals(R.string.session_link_verify_failed, vm.state.value.failureKey)
-        assertEquals(RetryKind.NONE, vm.state.value.retryKind)
+        // Audit-200 D13 (m-977): a defer is retryable now — the banner's
+        // Retry re-runs the verification instead of leaving the link
+        // stranded until the next attach.
+        assertEquals(RetryKind.RETRY_OPEN, vm.state.value.retryKind)
         // Kept: the next attach re-verifies it instead of the link dying.
         assertEquals("s9", vm.pendingOpenForTest())
         assertNull(vm.state.value.sessionID)

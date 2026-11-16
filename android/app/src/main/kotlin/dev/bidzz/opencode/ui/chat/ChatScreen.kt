@@ -1591,7 +1591,7 @@ fun ChatScreen(
             // LazyColumn scrolls away exactly when it is needed most.
             // Both are capped at the content width like the transcript.
             val hasError = state.failure != null || state.failureKey != null
-            if (hasError || state.connecting || state.restoringSession) {
+            if (hasError || state.connecting || state.restoringSession || state.openingSession) {
                 Box(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.TopCenter,
@@ -1614,6 +1614,17 @@ fun ChatScreen(
                             ReconnectingIndicator(
                                 modifier = Modifier.padding(top = spacing.sm),
                                 text = stringResource(R.string.chat_restoring_session),
+                            )
+                        }
+                        // Audit-200 D13 (m-977): same row for a
+                        // deep-link verification in flight — the user
+                        // tapped a link, the session is being proven,
+                        // and the screen says so instead of sitting
+                        // silently on the old session.
+                        if (state.openingSession) {
+                            ReconnectingIndicator(
+                                modifier = Modifier.padding(top = spacing.sm),
+                                text = stringResource(R.string.chat_opening_session),
                             )
                         }
                         if (hasError) {

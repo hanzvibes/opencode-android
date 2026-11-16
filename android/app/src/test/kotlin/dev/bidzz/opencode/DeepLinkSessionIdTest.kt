@@ -31,4 +31,11 @@ class DeepLinkSessionIdTest {
         assertFalse(isValidSessionId("-abc"))
         assertFalse(isValidSessionId(""))
     }
+
+    @Test
+    fun `D13 m-780 ids longer than 128 characters fail`() {
+        assertTrue(isValidSessionId("a".repeat(128)))
+        assertFalse(isValidSessionId("a".repeat(129)))
+        assertFalse(isValidSessionId("a".repeat(20 * 1024)))
+    }
 }

@@ -16,7 +16,7 @@ class ScreenSaverTest {
         val screens = listOf(
             Screen.Chat,
             Screen.Sessions,
-            Screen.Projects,
+            Screen.Projects(),
             Screen.Files,
             Screen.DiffList,
             Screen.SessionDiff,
