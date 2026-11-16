@@ -71,6 +71,14 @@ data class EngineStatus(
      * Cleared when a new poll starts.
      */
     val antigravityPatchPollEnded: Boolean = false,
+    /**
+     * The last state changes, newest last (audit-200 D10, m-510): the
+     * supervisor used to log each transition and forget it, so a bug
+     * report could say the engine was FAILED but never how it got
+     * there. Capped at [MAX_TRANSITION_HISTORY] — a restart that cycles
+     * fast must not grow the snapshot without bound.
+     */
+    val recentTransitions: List<EngineTransition> = emptyList(),
 ) {
     /**
      * Never prints the credentials object (audit-100 53-F1): the default
@@ -83,6 +91,35 @@ data class EngineStatus(
             "pid=$pid, port=$port, lastError=$lastError, recentOutput=$recentOutput, " +
             "antigravityPatch=$antigravityPatch)"
 }
+
+/**
+ * One engine state change, for the diagnostics history (audit-200 D10,
+ * m-510). The error is the redacted text the transition reported, or
+ * null when the change had no reason to record.
+ */
+data class EngineTransition(
+    val from: EngineState,
+    val to: EngineState,
+    val atEpochMs: Long,
+    val error: String? = null,
+)
+
+/** How many transitions [EngineStatus.recentTransitions] keeps. */
+const val MAX_TRANSITION_HISTORY = 20
+
+/**
+ * Appends one transition, keeping the newest [MAX_TRANSITION_HISTORY].
+ * Pure so the cap and the order are testable without a supervisor.
+ */
+fun appendEngineTransition(
+    history: List<EngineTransition>,
+    from: EngineState,
+    to: EngineState,
+    atEpochMs: Long,
+    error: String? = null,
+    maxSize: Int = MAX_TRANSITION_HISTORY,
+): List<EngineTransition> =
+    (history + EngineTransition(from, to, atEpochMs, error)).takeLast(maxSize)
 
 /**
  * Chooses the loopback port the engine listens on.
@@ -752,6 +789,16 @@ class ProcessManager(
                 EngineState.FAILED, EngineState.STOPPED -> emptyList()
                 else -> current.recentOutput
             },
+            // Audit-200 D10 (m-510): the history rides with the snapshot
+            // — the log line above already said the change, but only the
+            // snapshot survives for the diagnostics screen and the report.
+            recentTransitions = appendEngineTransition(
+                current.recentTransitions,
+                current.state,
+                next,
+                System.currentTimeMillis(),
+                error?.let { redactEnginePassword(it, capturedPassword.get()) },
+            ),
         )
         true
     }

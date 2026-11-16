@@ -124,6 +124,43 @@ fun ArtifactsScreen(
                 )
             }
             when {
+                // Audit-200 D10 (m-611): a refresh used to blank the cached
+                // list — refresh() loads with showLoading = true and this
+                // `when` checked loading first, so every entry into the
+                // screen flashed the full loading state. With rows already
+                // on screen the list stays and a small loading state sits
+                // above it; the full loading state is only for the first
+                // load, when there is nothing to show yet. A failure still
+                // wins over the list (the branches below), so a failed
+                // refresh is never silently hidden behind stale rows.
+                state.artifacts.isNotEmpty() && state.failure == null -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        if (state.loading) {
+                            LoadingState(
+                                stringResource(R.string.common_loading),
+                                onRetry = onRefresh,
+                                fillMaxSize = false,
+                            )
+                        }
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = spacing.lg),
+                        ) {
+                            itemsIndexed(state.artifacts, key = { _, artifact -> artifact.id }, contentType = { _, _ -> "data_row" }) { index, artifact ->
+                                if (index > 0) RowDivider(inset = spacing.md)
+                                ArtifactRow(
+                                    artifact = artifact,
+                                    deleting = artifact.id in state.deletingIds,
+                                    onOpen = { onOpen(artifact) },
+                                    onDelete = { pendingDeleteId = artifact.id },
+                                )
+                            }
+                        }
+                    }
+                }
                 state.loading -> LoadingState(stringResource(R.string.common_loading), onRetry = onRefresh)
                 state.failure != null && state.failure.isArtifactsDisabled() ->
                     EmptyState(stringResource(R.string.artifact_disabled))
@@ -137,23 +174,6 @@ fun ArtifactsScreen(
                     onRetry = onRefresh,
                 )
                 state.artifacts.isEmpty() -> EmptyState(stringResource(R.string.artifact_empty))
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = spacing.lg),
-                    ) {
-                        itemsIndexed(state.artifacts, key = { _, artifact -> artifact.id }, contentType = { _, _ -> "data_row" }) { index, artifact ->
-                            if (index > 0) RowDivider(inset = spacing.md)
-                            ArtifactRow(
-                                artifact = artifact,
-                                deleting = artifact.id in state.deletingIds,
-                                onOpen = { onOpen(artifact) },
-                                onDelete = { pendingDeleteId = artifact.id },
-                            )
-                        }
-                    }
-                }
             }
         }
     }

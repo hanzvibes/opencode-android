@@ -142,6 +142,7 @@ import dev.bidzz.opencode.ui.sessions.SessionListPane
 import dev.bidzz.opencode.ui.sessions.SessionListScreen
 import dev.bidzz.opencode.ui.sessions.SessionListUiState
 import dev.bidzz.opencode.ui.sessions.SessionListViewModel
+import dev.bidzz.opencode.ui.sessions.resolveSessionPreviewNote
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import dev.bidzz.opencode.ui.updateLastSessionShortcut
 import dev.bidzz.opencode.ui.widget.updateSessionWidget
@@ -637,8 +638,13 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         GenerateViewModel(app.engineApi, app.filesDir)
     })
 
-    val webSearchViewModel: WebSearchViewModel = viewModel(factory = viewModelFactory { _ ->
-        WebSearchViewModel(app.engineApi)
+    val webSearchViewModel: WebSearchViewModel = viewModel(factory = viewModelFactory { extras ->
+        WebSearchViewModel(
+            app.engineApi,
+            // Audit-200 D10 (m-658): the recent queries survive process
+            // death through the saved state handle.
+            savedStateHandle = extras.createSavedStateHandle(),
+        )
     })
 
     val worktreesViewModel: WorktreesViewModel = viewModel(factory = viewModelFactory { _ ->
@@ -1837,6 +1843,7 @@ private fun ChatDestination(
         sessionsLoading = sessionsState.loading,
         sessionsFailure = sessionsState.failure,
         sessionsFailureKey = sessionsState.failureKey,
+        sessionsPreviewNote = resolveSessionPreviewNote(sessionsState),
         // Audit-200 D6 (m-477): the drawer shows failed delete/rename
         // banners from the same view model the sessions screen uses.
         sessionsDeleteFailure = sessionsState.deleteFailure,

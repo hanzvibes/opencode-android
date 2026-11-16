@@ -436,9 +436,19 @@ fun SessionListPane(
                             .padding(horizontal = spacing.lg, vertical = spacing.xs),
                     )
                 }
-                if (query.isNotBlank() && state.detailsLoading && state.rows.any { details[it.id]?.previewKnown != true }) {
+                // Audit-200 D10 (m-173/m-1115): the note used to be gated
+                // on detailsLoading alone, so it vanished the moment the
+                // walk finished — including when the walk failed and some
+                // previews stayed unknown. The derived note keeps it (with
+                // the "could not be loaded" wording) until every listed
+                // preview is known.
+                val previewNote = resolveSessionPreviewNote(state)
+                if (query.isNotBlank() && previewNote != SessionPreviewNote.NONE) {
                     Text(
-                        text = stringResource(R.string.history_previews_loading),
+                        text = stringResource(
+                            if (previewNote == SessionPreviewNote.LOADING) R.string.history_previews_loading
+                            else R.string.history_previews_incomplete,
+                        ),
                         style = OpenCodeTypography.caption,
                         color = colors.onSurfaceFaint,
                         modifier = Modifier
@@ -521,14 +531,18 @@ fun SessionListPane(
                 // Search matches previews only once they land (80-F8), and
                 // the previews arrive one session at a time — without a
                 // word about it, a query reads "no match" and the rows show
-                // up seconds later. The note shows only while searching
-                // and only while some listed session's walk has not
-                // finished yet (audit-200 C5, M-089: a completed walk
-                // with no preview means the session is genuinely empty,
-                // not still loading).
-                if (query.isNotBlank() && state.detailsLoading && state.rows.any { details[it.id]?.previewKnown != true }) {
+                // up seconds later. The note shows while the walk runs and
+                // stays (with the "could not be loaded" wording) when the
+                // walk finished with lookups failed (audit-200 D10,
+                // m-173/m-1115) — a completed walk with no preview means
+                // the session is genuinely empty, not still loading.
+                val previewNote = resolveSessionPreviewNote(state)
+                if (query.isNotBlank() && previewNote != SessionPreviewNote.NONE) {
                     Text(
-                        text = stringResource(R.string.history_previews_loading),
+                        text = stringResource(
+                            if (previewNote == SessionPreviewNote.LOADING) R.string.history_previews_loading
+                            else R.string.history_previews_incomplete,
+                        ),
                         style = OpenCodeTypography.caption,
                         color = colors.onSurfaceFaint,
                         modifier = Modifier

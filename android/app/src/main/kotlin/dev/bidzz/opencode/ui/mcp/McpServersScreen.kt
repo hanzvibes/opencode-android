@@ -282,6 +282,21 @@ fun McpServersScreen(
                         // server list: one scrollable surface, no nested
                         // scrolling. The section only appears when the
                         // catalog loaded and is non-empty.
+                        // Audit-200 D10 (m-1010): a failed catalog used to
+                        // look exactly like an empty one — the section just
+                        // never appeared. The banner says the load failed
+                        // and offers the same refresh the header does.
+                        if (state.resourcesFailure != null) {
+                            item(key = "resources-failure", contentType = "banner") {
+                                HatchInlineBanner(
+                                    message = stringResource(R.string.mcp_resources_failed),
+                                    kind = HatchBannerKind.WARNING,
+                                    modifier = Modifier.padding(top = spacing.md),
+                                    onRetry = onRefresh,
+                                    actionLabel = stringResource(R.string.chat_retry),
+                                )
+                            }
+                        }
                         val catalog = state.resources
                         if (catalog != null &&
                             (catalog.resources.isNotEmpty() || catalog.templates.isNotEmpty())
