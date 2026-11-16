@@ -120,6 +120,10 @@
     <string name="mcp_add_name">Nama</string>
     <string name="mcp_add_name_hint">server-saya</string>
     <string name="mcp_add_name_invalid">Huruf, angka, - dan _ saja.</string>
+    <!-- Audit-200 D9 (m-915): alasan tombol Tambah nonaktif saat form
+         belum lengkap (nama / perintah / URL kosong) — dua string invalid
+         di atas hanya menutup input yang salah tapi terisi. -->
+    <string name="mcp_add_incomplete">Isi kolom yang wajib diisi.</string>
     <!-- Audit-200 D7 (m-631): server remote butuh URL yang benar, bukan sekadar teks tak kosong. -->
     <string name="mcp_add_url_invalid">Server remote butuh URL http(s) dengan host, contoh: https://example.com:8080/mcp.</string>
     <string name="mcp_add_command">Perintah</string>
@@ -179,6 +183,9 @@
     <string name="generate_title">Hasilkan</string>
     <string name="generate_body">Hasilkan teks dan gambar sekali jalan dari engine, tanpa memulai sesi. Teks memakai model bawaan kecuali dipilih; gambar butuh model gambar.</string>
     <string name="generate_action">Hasilkan</string>
+    <!-- Audit-200 D9 (m-915): alasan aksi Hasilkan nonaktif. -->
+    <string name="generate_prompt_empty">Tulis prompt dulu.</string>
+    <string name="generate_model_required">Pilih model dulu.</string>
     <string name="generate_mode_text">Teks</string>
     <string name="generate_mode_image">Gambar</string>
     <string name="generate_model_default">Model bawaan</string>
@@ -308,7 +315,7 @@
     <string name="chat_rate_limited_guidance">Batas laju tercapai — ganti model atau tunggu sebentar, lalu kirim lagi.</string>
     <string name="chat_rate_limited_guidance_action">Lihat panduan</string>
     <string name="chat_agent_failed">Agen gagal</string>
-    <string name="stop_unconfirmed">Stop belum terkonfirmasi — ketuk Stop untuk mencoba lagi.</string>
+    <string name="stop_unconfirmed">Berhenti belum terkonfirmasi — ketuk Berhenti untuk mencoba lagi.</string>
     <string name="chat_session_gone_guidance">Sesi ini sudah tidak ada di engine — mulai sesi baru dari drawer.</string>
     <string name="session_link_gone">Sesi itu sudah tidak ada di engine — link-nya menunjuk ke sesi yang sudah hilang.</string>
     <string name="session_link_wrong_workspace">Sesi itu milik proyek lain — ganti ruang kerja untuk membukanya.</string>
@@ -484,6 +491,9 @@
     <string name="session_action_export">Ekspor</string>
     <string name="session_action_instructions">Instruksi</string>
     <string name="session_rename_title">Ganti nama obrolan</string>
+    <!-- Audit-200 D9 (m-915): diumumkan saat Selesai ditekan dengan judul
+         kosong, dan alasan tombol Simpan nonaktif. -->
+    <string name="rename_title_empty">Judul tidak boleh kosong.</string>
     <string name="session_rename_hint">Judul obrolan</string>
     <string name="session_delete_title">Hapus obrolan</string>
     <string name="session_delete_message">Apakah Anda yakin ingin menghapus “%1$s”? Tindakan ini tidak dapat dibatalkan.</string>
@@ -741,6 +751,14 @@
     <string name="directory_picker_failed">Tidak bisa membuka pemilih folder.</string>
     <string name="saf_picker_failed">Tidak bisa membuka pemilih berkas.</string>
     <string name="saf_file_dropped_named">"Tidak bisa melampirkan '%1$s' — coba pilih lagi."</string>
+    <!-- Audit-200 D9 (m-488): foto yang tidak bisa diantrekan setelah
+         diambil — bentuknya sama dengan pesan SAF di atas. -->
+    <string name="camera_photo_dropped_named">"Tidak bisa melampirkan '%1$s' — coba ambil lagi."</string>
+    <!-- Audit-200 D9 (m-732): petunjuk drag di atas composer — dulu drag
+         hanya menunjukkan border tipis 1,5dp, tanpa label dan tanpa
+         petunjuk saat melayang di atas transkrip. -->
+    <string name="drag_drop_to_attach">Lepas untuk melampirkan</string>
+    <string name="drag_drop_rejected">Tidak bisa dilampirkan di sini</string>
     <string name="code_highlight_off">Highlight mati (berkas besar)</string>
 
     <!-- Project -->
@@ -888,6 +906,10 @@
     <string name="tool_diff_accepted">Diterima</string>
     <string name="tool_diff_rejected">Permintaan revert dikirim</string>
     <string name="tool_diff_decision_note">Terima mempertahankan perubahan. Tolak meminta agen mengembalikan berkas ini.</string>
+    <!-- Audit-200 D9 (m-088): shown when Reject is hidden because the
+         file path could not be verified — the plain note would promise
+         a button that is not there. -->
+    <string name="tool_diff_decision_note_no_reject">Terima mempertahankan perubahan. Tolak tidak tersedia: path berkas tidak bisa diverifikasi.</string>
     <string name="turn_footer_tokens">%1$s token</string>
     <string name="turn_footer_stop_reason">berhenti: %1$s</string>
     <string name="prompt_history_previous">Prompt sebelumnya</string>
@@ -1223,7 +1245,9 @@
     <string name="widget_no_session">Belum ada sesi</string>
     <string name="task_delete_title">Hapus tugas</string>
     <string name="task_delete_message">Apakah Anda yakin ingin menghapus “%1$s”? Tindakan ini tidak dapat dibatalkan.</string>
-    <string name="publish_state_publish">Publikasikan</string>
+    <!-- Audit-200 D9 (m-687): was the imperative "Publikasikan" while
+         the other four labels are states — PUBLISH is in progress. -->
+    <string name="publish_state_publish">Memublikasikan…</string>
     <string name="publish_state_success">Berhasil dipublikasikan</string>
     <string name="publish_state_failed">Gagal dipublikasikan</string>
     <string name="publish_state_up_to_date">Sudah terbaru</string>

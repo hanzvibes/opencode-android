@@ -74,4 +74,42 @@ class QuestionDataTest {
         assertEquals("iOS", q.options[1].label)
         assertEquals("Desktop", q.options[2].label)
     }
+
+    @Test
+    fun `duplicate labels without ids get distinct selection keys`() {
+        // Audit-200 D9 (m-117): two "Ya" options used to share the id
+        // (it defaults to the label), so one tap selected both rows and
+        // answered "Header: Ya, Ya". The first keeps its id; later
+        // duplicates get a "#n" suffix. Labels are untouched — the
+        // engine receives labels, not ids.
+        val json = """
+            {
+              "question": "Lanjut?",
+              "options": ["Ya", "Ya", "Tidak"]
+            }
+        """.trimIndent()
+        val questions = parseQuestionInput(Json.parseToJsonElement(json))
+
+        assertEquals(1, questions.size)
+        val ids = questions[0].options.map { it.id }
+        assertEquals(listOf("Ya", "Ya#1", "Tidak"), ids)
+        assertEquals(listOf("Ya", "Ya", "Tidak"), questions[0].options.map { it.label })
+    }
+
+    @Test
+    fun `duplicate explicit ids get distinct selection keys`() {
+        val json = """
+            {
+              "question": "Lanjut?",
+              "options": [
+                { "id": "a", "label": "Ya" },
+                { "id": "a", "label": "Ya" },
+                { "id": "b", "label": "Tidak" }
+              ]
+            }
+        """.trimIndent()
+        val questions = parseQuestionInput(Json.parseToJsonElement(json))
+
+        assertEquals(listOf("a", "a#1", "b"), questions[0].options.map { it.id })
+    }
 }

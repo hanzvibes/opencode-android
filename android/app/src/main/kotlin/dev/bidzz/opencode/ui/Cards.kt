@@ -3,6 +3,7 @@ package dev.bidzz.opencode.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -756,6 +757,13 @@ fun AppRadioButton(
  * selected = accentFill bg + border + white text, unselected = fill bg +
  * hairline border + muted text. StatusChip is a different component
  * (dot/pulse + mono 11sp status text) and is NOT merged into this one.
+ *
+ * [role] is the semantics of the GROUP, not of the chip: a single-select
+ * group is [Role.RadioButton] (TalkBack: "selected / not selected"), a
+ * multi-select group or an on/off toggle stays [Role.Checkbox]
+ * ("checked / not checked"), and a chip that is really an action — not
+ * a choice at all — is [Role.Button]. Audit-200 D9 (m-853): every
+ * single-select group used to announce itself as a checkbox.
  */
 @Composable
 fun SelectorChip(
@@ -763,6 +771,7 @@ fun SelectorChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    role: Role = Role.Checkbox,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -778,7 +787,26 @@ fun SelectorChip(
             )
             // A11y (#8c): a filter chip is a toggle, not a plain button —
             // toggleable announces "selected / not selected" with the label.
-            .toggleable(value = selected, role = Role.Checkbox, onValueChange = { onClick() })
+            // (D9 m-853: that comment was only true for the Checkbox
+            // role — RadioButton groups use selectable instead.)
+            .then(
+                when (role) {
+                    Role.RadioButton -> Modifier.selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                        onClick = onClick,
+                    )
+                    Role.Button -> Modifier.clickable(
+                        role = Role.Button,
+                        onClick = onClick,
+                    )
+                    else -> Modifier.toggleable(
+                        value = selected,
+                        role = Role.Checkbox,
+                        onValueChange = { onClick() },
+                    )
+                },
+            )
             // Audit-200 D3 (m-859): the chip was ~22dp tall — below even
             // the 24dp WCAG floor. One line here lifts all 16 call sites.
             .defaultMinSize(minHeight = 48.dp)

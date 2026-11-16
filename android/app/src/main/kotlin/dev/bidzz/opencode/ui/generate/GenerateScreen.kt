@@ -87,6 +87,15 @@ fun GenerateScreen(
 
     val canGenerate = state.prompt.isNotBlank() && !state.generating &&
         (state.mode == GenerateMode.TEXT || state.selectedModelId != null)
+    // Audit-200 D9 (m-915): the header action's disabled reason — no
+    // reason while generating (it is busy, not blocked).
+    val generateDisabledReason = when {
+        state.generating -> null
+        state.prompt.isBlank() -> stringResource(R.string.generate_prompt_empty)
+        state.mode == GenerateMode.IMAGE && state.selectedModelId == null ->
+            stringResource(R.string.generate_model_required)
+        else -> null
+    }
     val modelsForMode = when (state.mode) {
         GenerateMode.TEXT -> state.models
         GenerateMode.IMAGE -> state.models.imageModels()
@@ -101,6 +110,7 @@ fun GenerateScreen(
                 label = stringResource(R.string.generate_action),
                 onClick = onGenerate,
                 enabled = canGenerate,
+                disabledReason = generateDisabledReason,
             )
         },
     ) {
@@ -123,11 +133,14 @@ fun GenerateScreen(
                     label = stringResource(R.string.generate_mode_text),
                     selected = state.mode == GenerateMode.TEXT,
                     onClick = { onModeChange(GenerateMode.TEXT) },
+                    // Audit-200 D9 (m-853): one mode at a time — radio.
+                    role = Role.RadioButton,
                 )
                 SelectorChip(
                     label = stringResource(R.string.generate_mode_image),
                     selected = state.mode == GenerateMode.IMAGE,
                     onClick = { onModeChange(GenerateMode.IMAGE) },
+                    role = Role.RadioButton,
                 )
             }
             when {
@@ -170,6 +183,8 @@ fun GenerateScreen(
                             label = aspect,
                             selected = state.aspect == aspect,
                             onClick = { onAspectChange(aspect) },
+                            // Audit-200 D9 (m-853): one aspect at a time.
+                            role = Role.RadioButton,
                         )
                     }
                 }
@@ -179,6 +194,8 @@ fun GenerateScreen(
                             label = resolution ?: stringResource(R.string.generate_resolution_default),
                             selected = state.resolution == resolution,
                             onClick = { onResolutionChange(resolution) },
+                            // Audit-200 D9 (m-853): one resolution at a time.
+                            role = Role.RadioButton,
                         )
                     }
                 }

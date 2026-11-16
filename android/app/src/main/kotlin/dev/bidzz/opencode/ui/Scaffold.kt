@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -219,6 +220,10 @@ fun TextAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    // Audit-200 D9 (m-915): why the action is unavailable, read by
+    // TalkBack when the button is disabled — a disabled action with no
+    // reason is silent about what would enable it.
+    disabledReason: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -240,6 +245,9 @@ fun TextAction(
                 scaleY = scale
             }
             .clip(RoundedCornerShape(OpenCodeTheme.tokens.radius.md))
+            .semantics {
+                if (!enabled && disabledReason != null) stateDescription = disabledReason
+            }
             .clickable(
                 interactionSource = interactionSource,
                 indication = ripple(bounded = true),

@@ -529,34 +529,6 @@ fun rememberCommandPaletteState(
     return state
 }
 
-/**
- * Pro IDE Command Palette popover anchored above the message composer.
- *
- * Features prefix highlighting, parameter syntax hints, smooth slide/expand animations,
- * keyboard navigation, and single-tap selection. [onSkillPick] receives the
- * picked skill row; it defaults to treating it like a command unless the
- * caller says otherwise.
- */
-@Composable
-fun CommandSuggestions(
-    commands: List<CommandInfo>,
-    draft: String,
-    onPick: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    onDismiss: () -> Unit = {},
-    skills: List<SkillInfo> = emptyList(),
-    onSkillPick: (SlashCommand) -> Unit = { cmd -> onPick(cmd.name) },
-) {
-    val state = rememberCommandPaletteState(commands = commands, draft = draft, skills = skills)
-    CommandSuggestions(
-        paletteState = state,
-        onPick = onPick,
-        modifier = modifier,
-        onDismiss = onDismiss,
-        onSkillPick = onSkillPick,
-    )
-}
-
 /** Rows fully visible in the command palette at once. */
 private const val PALETTE_VISIBLE_ROWS = 4
 
@@ -572,6 +544,19 @@ private val PALETTE_ROW_VERTICAL_PADDING = 16.dp
 
 /**
  * Overload accepting an explicit [CommandPaletteState] to coordinate with external keyboard input.
+ *
+ * Pro IDE Command Palette popover anchored above the message composer:
+ * prefix highlighting, parameter syntax hints, smooth slide/expand
+ * animations, keyboard navigation, and single-tap selection.
+ * [onSkillPick] receives the picked skill row; it defaults to treating
+ * it like a command unless the caller says otherwise.
+ *
+ * Audit-200 D9 (m-128): this is the ONLY overload. The old
+ * (commands, draft, …) overload built its own state WITHOUT the
+ * localized descriptions, so a caller using it got English-only
+ * filtering in the Indonesian locale — the 011-F3 bug back through a
+ * second door. It had no callers, so it was deleted rather than given
+ * a parameter nobody would remember to fill.
  */
 @Composable
 fun CommandSuggestions(

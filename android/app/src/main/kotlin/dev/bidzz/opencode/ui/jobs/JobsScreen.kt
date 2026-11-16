@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.R
@@ -87,6 +88,8 @@ fun JobsScreen(
                         label = stringResource(jobKindLabel(filter)),
                         selected = state.kindFilter == filter,
                         onClick = { onKindFilter(filter) },
+                        // Audit-200 D9 (m-853): one kind filter at a time.
+                        role = Role.RadioButton,
                     )
                 }
             }
@@ -102,6 +105,8 @@ fun JobsScreen(
                         label = stringResource(jobStatusLabel(filter)),
                         selected = state.statusFilter == filter,
                         onClick = { onStatusFilter(filter) },
+                        // Audit-200 D9 (m-853): one status filter at a time.
+                        role = Role.RadioButton,
                     )
                 }
             }

@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,6 +80,17 @@ fun ExportScreen(
         copied = false
         copyTooLarge = false
         onRefresh()
+    }
+
+    // Audit-200 D9 (m-1028): the "Copied" label never reset until the
+    // session changed. Every other copy site resets after 1,500 ms
+    // (ToolRow, MarkdownText) — do the same here so a second tap is
+    // visibly a fresh copy.
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_500)
+            copied = false
+        }
     }
 
     ScreenScaffold(

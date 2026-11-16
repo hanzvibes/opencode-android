@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.OpenCodeApplication
@@ -345,6 +346,8 @@ private fun CreateScheduleDialog(
                             ),
                             selected = kind == option,
                             onClick = { kind = option },
+                            // Audit-200 D9 (m-853): one time mode at a time.
+                            role = Role.RadioButton,
                         )
                     }
                 }

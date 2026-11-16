@@ -482,6 +482,7 @@ private fun ExplorerListContent(
  * count, ranked rows, and arrow/Enter/Escape keyboard navigation — but over
  * files, with a type badge and the relative path on each row.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun QuickOpenPalette(
     index: List<FileRow>,
@@ -700,6 +701,32 @@ private fun QuickOpenPalette(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .animateItem()
+                                // Audit-200 D9 (m-243): palette rows could
+                                // only be tapped — the list rows have had a
+                                // drag source since Batch 7. Same payload
+                                // (workspace-relative path under the private
+                                // MIME type), so a drop on the composer
+                                // inserts the same @path mention. A plain
+                                // tap still picks; only a long-press drags.
+                                .dragAndDropSource {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            startTransfer(
+                                                DragAndDropTransferData(
+                                                    clipData = ClipData(
+                                                        "path",
+                                                        arrayOf(MIME_WORKSPACE_PATH),
+                                                        ClipData.Item(row.path),
+                                                    ),
+                                                ),
+                                            )
+                                        },
+                                        // No live drag feedback: the drop
+                                        // target highlights instead (see
+                                        // ChatScreen).
+                                        onDrag = { _, _ -> },
+                                    )
+                                }
                                 .pressScale(motion, rowPressSource)
                                 .background(if (isSelected) colors.accent.copy(alpha = 0.12f) else Color.Transparent)
                                 // Audit-200 C11 (M-163): the keyboard

@@ -29,9 +29,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -161,6 +163,8 @@ fun HatchRenameDialog(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
     val radius = OpenCodeTheme.tokens.radius
+    val context = LocalContext.current
+    val emptyTitleReason = stringResource(R.string.rename_title_empty)
 
     // Audit-200 A2 (C-006, PROVEN): TextFieldValue needs its Saver —
     // without it, backgrounding the app with this dialog open crashes
@@ -209,6 +213,11 @@ fun HatchRenameDialog(
                         onDone = {
                             if (isValidRenameTitle(tfv.text)) {
                                 onConfirm(tfv.text.trim())
+                            } else {
+                                // Audit-200 D9 (m-915): Done with an
+                                // empty title used to do nothing at all —
+                                // announce why, once, on the tap.
+                                announceForAccessibility(context, emptyTitleReason)
                             }
                         },
                     ),
@@ -251,7 +260,13 @@ fun HatchRenameDialog(
             TextButton(
                 onClick = { onConfirm(tfv.text.trim()) },
                 enabled = isValidRenameTitle(tfv.text),
-                modifier = Modifier.sizeIn(minHeight = 48.dp),
+                modifier = Modifier
+                    .sizeIn(minHeight = 48.dp)
+                    // Audit-200 D9 (m-915): a disabled Save said nothing
+                    // about why — TalkBack now reads the reason.
+                    .semantics {
+                        if (!isValidRenameTitle(tfv.text)) stateDescription = emptyTitleReason
+                    },
             ) {
                 Text(
                     text = stringResource(R.string.session_action_save),
