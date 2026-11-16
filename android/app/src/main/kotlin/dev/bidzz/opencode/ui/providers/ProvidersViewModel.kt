@@ -231,6 +231,15 @@ class ProvidersViewModel(
     private val _state = MutableStateFlow(ProvidersUiState())
     val state: StateFlow<ProvidersUiState> = _state.asStateFlow()
 
+    /**
+     * The credential a `replaceCredential` failed to remove (audit-200
+     * D15, m-496): [staleKeyRemains] is true exactly while this id is
+     * still in the credential list the engine returns, so [reload]
+     * recomputes the flag from the fresh list instead of trusting a
+     * boolean set once. Null when no replace left a stale key behind.
+     */
+    private var staleCredentialId: String? = null
+
     /** The restart watch from the last provider write, if still running. */
     private var restartWatchJob: Job? = null
 
@@ -455,6 +464,12 @@ class ProvidersViewModel(
                     // The old key outliving the new one is a warning, not a failure: the new
                     // key did save. Remembered separately so the screen can say both.
                     val stale = (h.credentialStore.remove(credentialID) as? ApiResult.Failure)
+                    // Audit-200 D15 (m-496): record which credential is stale
+                    // BEFORE reload() — reload recomputes staleKeyRemains
+                    // from the fresh list, so a key deleted elsewhere (or
+                    // a second replace that finally removed it) clears the
+                    // warning on the next refresh instead of sticking.
+                    staleCredentialId = if (stale != null) credentialID else null
                     reload(h)
                     _state.value = _state.value.copy(
                         busyFor = _state.value.busyFor - credentialID,
@@ -883,7 +898,20 @@ class ProvidersViewModel(
             )
         }
         when (val result = h.credentialStore.list()) {
-            is ApiResult.Success -> _state.value = _state.value.copy(credentials = result.value, loading = false)
+            is ApiResult.Success -> {
+                // Audit-200 D15 (m-496): the stale-key warning is only
+                // true while the credential the replace failed to remove
+                // is still in the list. A refresh after the key was
+                // deleted elsewhere clears it; a save of another key
+                // leaves it (the stale key still remains).
+                val staleRemains = staleKeyStillRemains(staleCredentialId, result.value.map { it.id })
+                if (!staleRemains) staleCredentialId = null
+                _state.value = _state.value.copy(
+                    credentials = result.value,
+                    loading = false,
+                    staleKeyRemains = staleRemains,
+                )
+            }
             // Only reported when it is the first failure, so it does not hide the
             // catalog error that already explains an unreachable engine.
             is ApiResult.Failure -> if (_state.value.failure == null && _state.value.failureKey == null) {
@@ -916,3 +944,14 @@ internal fun resolveRestartPending(
 } else {
     pendingName
 }
+
+/**
+ * Whether the stale-key warning stays up after a fresh credential list
+ * (audit-200 D15, m-496): true exactly while the credential a replace
+ * failed to remove is still in the list. Pure so it is unit-testable;
+ * [ProvidersViewModel.reload] calls it on every refresh, so a key
+ * deleted elsewhere clears the warning and a save of another key
+ * leaves it.
+ */
+internal fun staleKeyStillRemains(staleCredentialId: String?, credentialIds: List<String>): Boolean =
+    staleCredentialId != null && staleCredentialId in credentialIds

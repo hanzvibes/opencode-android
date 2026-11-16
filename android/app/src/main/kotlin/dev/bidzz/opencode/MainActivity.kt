@@ -446,7 +446,6 @@ class MainActivity : FragmentActivity() {
             (application as OpenCodeApplication).deliverCameraPhoto(pendingPhotoUri!!)
         }
 
-        requestNotificationPermission()
         // Audit-200 C10 (M-156): a start that never started is not
         // silent anymore — the reason (usually a missing binary) reaches
         // the user instead of leaving them on a dead chat screen.
@@ -476,6 +475,14 @@ class MainActivity : FragmentActivity() {
             // notification while it is, instead of swallowing the run.
             LaunchedEffect(lockEnabled, unlocked) {
                 (application as OpenCodeApplication).isLockScreenShowing = lockEnabled && !unlocked
+            }
+            // Audit-200 D15 (m-1088): the notification prompt waits until
+            // the lock screen is passed — asking in onCreate put the
+            // system dialog in front of the biometric/PIN prompt with no
+            // explanation. requestNotificationPermission() is safe to call
+            // again: it returns early once granted, asked, or gated.
+            LaunchedEffect(lockEnabled, unlocked) {
+                if (!lockEnabled || unlocked) requestNotificationPermission()
             }
             if (lockEnabled && !unlocked) {
                 LockScreen(onUnlocked = { unlocked = true })
@@ -740,8 +747,17 @@ class MainActivity : FragmentActivity() {
         // Audit-200 D8 (m-267): never ask before onboarding is out of
         // the way — the prompt used to stack on top of it with no
         // explanation. The next launch asks, once onboarding is done or
-        // will never show.
-        if (!mayAskNotificationPermission(OnboardingStore.isCompleted(this), OnboardingStore.shouldShow(this, app.workspaceStore))) return
+        // will never show. Audit-200 D15 (m-1088): never ask before the
+        // lock screen is passed either — the same gate, extended with
+        // the lock state, so the prompt cannot precede the biometric /
+        // PIN challenge on a locked launch.
+        if (!mayAskNotificationPermission(
+                OnboardingStore.isCompleted(this),
+                OnboardingStore.shouldShow(this, app.workspaceStore),
+                AppLockPrefs.isEnabled(this),
+                unlocked,
+            )
+        ) return
         if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
             if (!notificationRationaleShown()) {
                 markNotificationRationaleShown()
@@ -850,11 +866,18 @@ class MainActivity : FragmentActivity() {
  * fresh install it stacked on top of the onboarding flow with no
  * explanation. Onboarding is out of the way when it is completed
  * (skipping counts as completing), or when it will never show (a real
- * workspace from before onboarding existed). Pure so it is unit-testable;
- * the Activity path and the system launcher cannot be.
+ * workspace from before onboarding existed). Audit-200 D15 (m-1088):
+ * the prompt must not fire before the lock screen is passed either —
+ * [lockEnabled] with [unlocked] still false blocks it just like a
+ * pending onboarding. Pure so it is unit-testable; the Activity path
+ * and the system launcher cannot be.
  */
-internal fun mayAskNotificationPermission(onboardingCompleted: Boolean, onboardingWillShow: Boolean): Boolean =
-    onboardingCompleted || !onboardingWillShow
+internal fun mayAskNotificationPermission(
+    onboardingCompleted: Boolean,
+    onboardingWillShow: Boolean,
+    lockEnabled: Boolean = false,
+    unlocked: Boolean = true,
+): Boolean = (onboardingCompleted || !onboardingWillShow) && (!lockEnabled || unlocked)
 
 /**
  * Audit-200 D14 (m-707): whether an external intent must be held for the

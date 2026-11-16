@@ -291,6 +291,10 @@ fun ChatScreen(
     onSettingsClick: () -> Unit,
     onDiagnosticsClick: () -> Unit = onStatusClick,
     onAboutClick: () -> Unit = {},
+    onArtifactsClick: () -> Unit = {},
+    onJobsClick: () -> Unit = {},
+    onGenerateClick: () -> Unit = {},
+    onWebSearchClick: () -> Unit = {},
     onRenameSession: (String, String) -> Unit = { _, _ -> },
     onDeleteSession: (String) -> Unit = {},
     onTogglePinSession: (String) -> Unit = {},
@@ -2720,6 +2724,10 @@ fun ChatScreen(
                         onSettings = onSettingsClick,
                         onDiagnostics = onDiagnosticsClick,
                         onDeveloper = onAboutClick,
+                        onArtifacts = onArtifactsClick,
+                        onJobs = onJobsClick,
+                        onGenerate = onGenerateClick,
+                        onWebSearch = onWebSearchClick,
                         onRenameSession = onRenameSession,
                         onDeleteSession = onDeleteSession,
                         onTogglePinSession = onTogglePinSession,
@@ -2779,6 +2787,10 @@ fun ChatScreen(
                         onSettings = { closeThen(onSettingsClick) },
                         onDiagnostics = { closeThen(onDiagnosticsClick) },
                         onDeveloper = { closeThen(onAboutClick) },
+                        onArtifacts = { closeThen(onArtifactsClick) },
+                        onJobs = { closeThen(onJobsClick) },
+                        onGenerate = { closeThen(onGenerateClick) },
+                        onWebSearch = { closeThen(onWebSearchClick) },
                         onRenameSession = onRenameSession,
                         onDeleteSession = onDeleteSession,
                         onTogglePinSession = onTogglePinSession,
@@ -4180,6 +4192,10 @@ private fun ChatDrawer(
     onSettings: () -> Unit,
     onDiagnostics: () -> Unit,
     onDeveloper: () -> Unit,
+    onArtifacts: () -> Unit,
+    onJobs: () -> Unit,
+    onGenerate: () -> Unit,
+    onWebSearch: () -> Unit,
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
@@ -4238,6 +4254,10 @@ private fun ChatDrawer(
                 onSettings = onSettings,
                 onDiagnostics = onDiagnostics,
                 onDeveloper = onDeveloper,
+                onArtifacts = onArtifacts,
+                onJobs = onJobs,
+                onGenerate = onGenerate,
+                onWebSearch = onWebSearch,
                 onRenameSession = onRenameSession,
                 onDeleteSession = onDeleteSession,
                 onTogglePinSession = onTogglePinSession,
@@ -4303,6 +4323,10 @@ private fun ChatDrawerContent(
     onSettings: () -> Unit,
     onDiagnostics: () -> Unit,
     onDeveloper: () -> Unit,
+    onArtifacts: () -> Unit,
+    onJobs: () -> Unit,
+    onGenerate: () -> Unit,
+    onWebSearch: () -> Unit,
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
@@ -4716,6 +4740,30 @@ private fun ChatDrawerContent(
             glyph = Glyph.Pulse,
             onClick = onDiagnostics,
         )
+        // Audit-200 D15 (m-992): Artifacts, Jobs, Generate and Web search
+        // used to be reachable only from Settings — the chat drawer is
+        // the navigation hub, so they get footer rows here too. The
+        // Settings entries stay as the fallback.
+        DrawerItem(
+            label = stringResource(R.string.artifact_title),
+            glyph = Glyph.File,
+            onClick = onArtifacts,
+        )
+        DrawerItem(
+            label = stringResource(R.string.job_title),
+            glyph = Glyph.History,
+            onClick = onJobs,
+        )
+        DrawerItem(
+            label = stringResource(R.string.generate_title),
+            glyph = Glyph.Sparkles,
+            onClick = onGenerate,
+        )
+        DrawerItem(
+            label = stringResource(R.string.websearch_title),
+            glyph = Glyph.Search,
+            onClick = onWebSearch,
+        )
 
         // Developer profile with engine status: the logomark, 30dp,
         // is the drawer's identity mark since the name was removed
@@ -4821,6 +4869,10 @@ private fun ChatSidebar(
     onSettings: () -> Unit,
     onDiagnostics: () -> Unit,
     onDeveloper: () -> Unit,
+    onArtifacts: () -> Unit,
+    onJobs: () -> Unit,
+    onGenerate: () -> Unit,
+    onWebSearch: () -> Unit,
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
@@ -4877,6 +4929,10 @@ private fun ChatSidebar(
             onSettings = onSettings,
             onDiagnostics = onDiagnostics,
             onDeveloper = onDeveloper,
+            onArtifacts = onArtifacts,
+            onJobs = onJobs,
+            onGenerate = onGenerate,
+            onWebSearch = onWebSearch,
             onRenameSession = onRenameSession,
             onDeleteSession = onDeleteSession,
             onTogglePinSession = onTogglePinSession,

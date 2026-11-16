@@ -73,6 +73,25 @@ class SettingsSearchTest {
     }
 
     @Test
+    fun `a query in either language finds the row`() {
+        // Audit-200 D15 (m-545): the row's texts in the display locale
+        // plus the same texts in English and Indonesian.
+        val displayId = listOf("Folder proyek", "/storage/emulated/0/proyek")
+        val english = listOf("Project folder")
+        val indonesian = listOf("Folder proyek")
+        assertTrue(matchesSettingsQueryBilingual("project folder", displayId, english, indonesian))
+        assertTrue(matchesSettingsQueryBilingual("folder proyek", listOf("Project folder"), english, indonesian))
+        assertTrue(matchesSettingsQueryBilingual("app language", listOf("Bahasa aplikasi"), listOf("App language"), listOf("Bahasa aplikasi")))
+        assertTrue(matchesSettingsQueryBilingual("bahasa aplikasi", listOf("App language"), listOf("App language"), listOf("Bahasa aplikasi")))
+    }
+
+    @Test
+    fun `a bilingual query still needs every token to match`() {
+        assertFalse(matchesSettingsQueryBilingual("project theme", listOf("Folder proyek"), listOf("Project folder"), listOf("Folder proyek")))
+        assertFalse(matchesSettingsQueryBilingual("missing", listOf("Folder proyek"), listOf("Project folder"), listOf("Folder proyek")))
+    }
+
+    @Test
     fun `a null subtitle or value never matches`() {
         val titleOnly = SettingsSearchEntry(title = "About")
         assertFalse(matchesSettingsQuery("missing", titleOnly))

@@ -48,6 +48,24 @@ class SheetSnapTest {
     }
 
     @Test
+    fun `m-692 a locked sheet snaps back to peek instead of dismissing`() {
+        // Audit-200 D15 (m-692): while a publish is in flight the sheet
+        // cannot be dragged away — both dismiss paths land on Peek.
+        assertEquals(SheetSnap.Stop(0), resolveSheetSnap(191f, 0f, stops, dismissable = false))
+        assertEquals(SheetSnap.Stop(0), resolveSheetSnap(100f, 0f, stops, dismissable = false))
+        assertEquals(SheetSnap.Stop(0), resolveSheetSnap(320f, 800f, stops, dismissable = false))
+    }
+
+    @Test
+    fun `m-692 a locked sheet still moves between stops`() {
+        // Only the dismiss is blocked: an upward fling still climbs,
+        // and a downward fling from Half still lands on Peek.
+        assertEquals(SheetSnap.Stop(1), resolveSheetSnap(320f, -800f, stops, dismissable = false))
+        assertEquals(SheetSnap.Stop(0), resolveSheetSnap(580f, 800f, stops, dismissable = false))
+        assertEquals(SheetSnap.Stop(0), resolveSheetSnap(300f, 0f, stops, dismissable = false))
+    }
+
+    @Test
     fun `slow release exactly at the dismiss threshold snaps back to peek`() {
         assertEquals(SheetSnap.Stop(0), resolveSheetSnap(192f, 0f, stops))
         assertEquals(SheetSnap.Stop(0), resolveSheetSnap(200f, 0f, stops))

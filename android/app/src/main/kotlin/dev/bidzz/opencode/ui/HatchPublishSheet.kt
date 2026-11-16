@@ -121,6 +121,13 @@ fun hatchPublishDismissLabelRes(state: HatchPublishState): Int = when (state) {
  * [title] and [message] default to the per-state text (D1 m-696): a
  * caller that passes nothing — or an empty string — gets a sheet that
  * still says what happened, never a bare dot and band.
+ *
+ * Audit-200 D15 (m-692): [dismissable] defaults to false while a
+ * publish is in flight (`state == PUBLISH`) — closing the sheet then
+ * does NOT cancel the publish, so the sheet simply stays: the scrim,
+ * the back button and a dismiss drag are ignored, and the Cancel
+ * button is hidden. A dismiss is never a cancel; the first real caller
+ * must wire its own cancellation, not rely on the sheet closing.
  */
 @Composable
 fun HatchPublishBottomSheet(
@@ -130,12 +137,14 @@ fun HatchPublishBottomSheet(
     onDismiss: () -> Unit,
     primaryLabel: String? = null,
     onPrimary: (() -> Unit)? = null,
+    dismissable: Boolean = state != HatchPublishState.PUBLISH,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
     LocalizedDraggableBottomSheet(
         onDismiss = onDismiss,
+        dismissable = dismissable,
         initialStop = SheetStop.PEEK,
         title = {
             Row(
@@ -196,15 +205,20 @@ fun HatchPublishBottomSheet(
             }
         },
         actions = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.sizeIn(minHeight = 48.dp),
-            ) {
-                Text(
-                    text = stringResource(hatchPublishDismissLabelRes(state)),
-                    style = OpenCodeTypography.body,
-                    color = colors.onSurfaceMuted,
-                )
+            // Audit-200 D15 (m-692): no dismiss button while the sheet is
+            // locked — a "Cancel" button that does nothing would be worse
+            // than none, and dismissing is not cancelling the publish.
+            if (dismissable) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
+                ) {
+                    Text(
+                        text = stringResource(hatchPublishDismissLabelRes(state)),
+                        style = OpenCodeTypography.body,
+                        color = colors.onSurfaceMuted,
+                    )
+                }
             }
             if (primaryLabel != null && onPrimary != null) {
                 TextButton(

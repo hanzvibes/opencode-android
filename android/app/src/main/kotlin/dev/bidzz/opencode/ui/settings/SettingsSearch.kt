@@ -28,6 +28,21 @@ fun matchesSettingsQuery(query: String, entry: SettingsSearchEntry): Boolean =
     matchesSettingsQuery(query, entry.title, entry.subtitle, entry.value)
 
 /**
+ * Bilingual match (audit-200 D15, m-545): [query] matches when it matches
+ * the row's texts in the display locale ([texts]), or the same texts
+ * resolved in English ([englishTexts]) or Indonesian ([indonesianTexts]).
+ * The caller resolves the translations — this function only proves the
+ * matcher itself is bilingual, so a cross-locale query ("project folder"
+ * in the ID locale, "folder proyek" in the EN locale) finds the row.
+ */
+fun matchesSettingsQueryBilingual(
+    query: String,
+    texts: List<String?>,
+    englishTexts: List<String?>,
+    indonesianTexts: List<String?>,
+): Boolean = matchesSettingsQuery(query, *(texts + englishTexts + indonesianTexts).toTypedArray())
+
+/**
  * The entries whose title, subtitle or value match [query].
  * A blank query returns every entry, in order.
  */

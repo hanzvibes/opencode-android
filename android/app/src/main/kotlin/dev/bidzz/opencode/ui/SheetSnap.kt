@@ -58,6 +58,12 @@ fun nearestSheetStopIndex(currentHeightPx: Float, stopHeightsPx: List<Float>): I
  *   dragged below [dismissBelowFractionOfPeek] of the Peek height, in
  *   which case it dismisses. A slow release exactly at the threshold
  *   still snaps back to Peek: dragging must clearly mean "close".
+ *
+ * Audit-200 D15 (m-692): when [dismissable] is false, a release that
+ * would dismiss instead lands back on Peek — the sheet cannot be
+ * dragged away while its caller says it must stay (a publish in
+ * flight). The composable applies the same flag to the scrim tap and
+ * the back button; this function only decides the drag outcome.
  */
 fun resolveSheetSnap(
     currentHeightPx: Float,
@@ -65,9 +71,10 @@ fun resolveSheetSnap(
     stopHeightsPx: List<Float>,
     flingVelocityPxPerSec: Float = 400f,
     dismissBelowFractionOfPeek: Float = 0.6f,
+    dismissable: Boolean = true,
 ): SheetSnap {
     val nearest = nearestSheetStopIndex(currentHeightPx, stopHeightsPx)
-    return when {
+    val snap = when {
         velocityPxPerSec < -flingVelocityPxPerSec ->
             SheetSnap.Stop((nearest + 1).coerceAtMost(stopHeightsPx.lastIndex))
         velocityPxPerSec > flingVelocityPxPerSec ->
@@ -76,4 +83,5 @@ fun resolveSheetSnap(
             SheetSnap.Dismiss
         else -> SheetSnap.Stop(nearest)
     }
+    return if (snap is SheetSnap.Dismiss && !dismissable) SheetSnap.Stop(SheetStop.PEEK.ordinal) else snap
 }

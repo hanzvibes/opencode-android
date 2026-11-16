@@ -96,6 +96,8 @@
     <string name="lock_failed">Tidak dikenali — coba lagi</string>
     <string name="settings_about_title">Tentang pengembang</string>
     <string name="settings_about_body">Portofolio dan cara menghubungi.</string>
+    <string name="settings_replay_onboarding_title">Ulangi pengenalan</string>
+    <string name="settings_replay_onboarding_body">Tampilkan lagi pengenalan awal.</string>
     <string name="settings_saved_permissions">Izin tersimpan</string>
     <string name="settings_saved_permissions_body">Izin yang disimpan dengan “Selalu”. Cabut salah satu agar ditanya lagi lain kali.</string>
     <string name="settings_saved_permissions_empty">Belum ada izin tersimpan. Jawab “Selalu” pada permintaan izin untuk menyimpan satu.</string>
