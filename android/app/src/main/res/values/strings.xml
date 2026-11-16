@@ -323,6 +323,9 @@
     <string name="session_link_wrong_workspace">That session belongs to another project — switch workspace to open it.</string>
     <string name="session_link_verify_failed">Could not verify this session — the engine did not answer. Try again when it is back.</string>
     <string name="session_link_invalid">This session link is not valid.</string>
+    <string name="external_intent_open_session">Open session %1$s? It arrived while the app was locked.</string>
+    <string name="external_intent_new_session">Start a new session? It was requested while the app was locked.</string>
+    <string name="external_intent_new_session_shared">Start a new session with this shared text? It arrived while the app was locked.</string>
     <string name="chat_queued_returned">Engine stopped — queued follow-up returned to the composer.</string>
     <string name="chat_parked_unreadable">Saved draft could not be read.</string>
     <string name="workspace_unavailable">Workspace unavailable — using the internal workspace for now. Re-pick it in Projects.</string>

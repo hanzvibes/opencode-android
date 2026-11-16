@@ -323,6 +323,9 @@
     <string name="session_link_wrong_workspace">Sesi itu milik proyek lain — ganti ruang kerja untuk membukanya.</string>
     <string name="session_link_verify_failed">Sesi ini tidak bisa diverifikasi — engine tidak menjawab. Coba lagi saat engine kembali.</string>
     <string name="session_link_invalid">Tautan sesi ini tidak valid.</string>
+    <string name="external_intent_open_session">Buka sesi %1$s? Tautan ini tiba saat aplikasi terkunci.</string>
+    <string name="external_intent_new_session">Mulai sesi baru? Permintaan ini datang saat aplikasi terkunci.</string>
+    <string name="external_intent_new_session_shared">Mulai sesi baru dengan teks yang dibagikan ini? Teks ini tiba saat aplikasi terkunci.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="chat_parked_unreadable">Draft tersimpan tidak bisa dibaca.</string>
     <string name="workspace_unavailable">Ruang kerja tidak tersedia — memakai ruang kerja internal untuk sementara. Pilih ulang di Proyek.</string>

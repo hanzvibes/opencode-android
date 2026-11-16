@@ -15,7 +15,56 @@ import dev.bidzz.opencode.appLanguageContext
 import dev.bidzz.opencode.ui.security.AppLockPrefs
 
 private const val TAG = "AgentDoneNotifier"
-private const val CHANNEL_ID = "agent_done"
+
+/**
+ * The notification channel id for [base] in display language [language]
+ * (audit-200 D14, m-370): a channel's name freezes in the language it was
+ * created in, so each display language gets its own channel id — the next
+ * post in a new language creates a channel with the new name instead of
+ * reusing the frozen one. "in" is the phone's old code for Indonesian; it
+ * maps to "id" so one display language never splits into two channels.
+ * The id is derived at every post from the CURRENT stored language, so no
+ * channel is ever deleted while its notification is live — the old
+ * delete-and-recreate route would have pulled the foreground service's
+ * notification out from under it.
+ */
+internal fun notificationChannelId(base: String, language: String): String {
+    val tag = if (language == "in") "id" else language
+    return "${base}_$tag"
+}
+
+/** The display language [context] currently shows, for the channel id. */
+internal fun currentChannelLanguage(context: Context): String =
+    appLanguageContext(context).resources.configuration.locales.get(0)?.language ?: "en"
+
+/**
+ * Deletes our notification channels for languages other than the ones in
+ * [keepChannelIds] (audit-200 D14, m-370): without this, every language
+ * switch leaves a stale channel in system Settings. Only channels with no
+ * live notification are deleted — the foreground service's channel is
+ * never touched while its notification is up.
+ */
+internal fun pruneStaleNotificationChannels(context: Context, keepChannelIds: Set<String>) {
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+    val active = manager.activeNotifications.map { it.notification.channelId }.toSet()
+    manager.notificationChannels
+        .map { it.id }
+        .filter { id ->
+            (id.startsWith("agent_done_") || id.startsWith("engine")) &&
+                id !in keepChannelIds && id !in active
+        }
+        .forEach { manager.deleteNotificationChannel(it) }
+}
+
+/**
+ * Whether the legacy pre-6h notification id for a session may be
+ * cancelled (audit-200 D14, m-790): never when it is the session's own
+ * new stable id, and never when it is another session's assigned stable
+ * id — a 32-bit hash can land on a small stable id, and cancelling that
+ * would delete a live notification.
+ */
+internal fun shouldCancelLegacyAgentDoneId(legacyId: Int, stableId: Int, assignedIds: Set<Int>): Boolean =
+    legacyId != stableId && legacyId !in assignedIds
 
 /**
  * Whether an engine event type marks the end of an agent run (Fase 5,
@@ -63,19 +112,25 @@ fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
         // Audit-200 D1 (m-530): the stored language, read fresh — the
         // service's base context lags a language change by one restart.
         val strings = appLanguageContext(context)
+        // Audit-200 D14 (m-370): the channel id carries the display
+        // language, so a language change creates a channel with the new
+        // name instead of reusing the frozen one.
+        val channelId = notificationChannelId("agent_done", currentChannelLanguage(context))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID,
+                channelId,
                 strings.getString(R.string.notification_agent_done_channel),
                 NotificationManager.IMPORTANCE_DEFAULT,
             )
             manager.createNotificationChannel(channel)
+            pruneStaleNotificationChannels(context, setOf(channelId))
         }
         val intent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             data = Uri.parse("opencode://session/$sessionID")
         }
-        val notificationId = AgentDoneIdStore(context).idFor(sessionID)
+        val store = AgentDoneIdStore(context)
+        val notificationId = store.idFor(sessionID)
         val pending = PendingIntent.getActivity(
             context,
             notificationId,
@@ -83,7 +138,7 @@ fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val locked = AppLockPrefs.isEnabled(context)
-        val notification = Notification.Builder(context, CHANNEL_ID)
+        val notification = Notification.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(strings.getString(R.string.notification_agent_done_title))
             .setContentText(
@@ -92,6 +147,10 @@ fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
             )
             .setContentIntent(pending)
             .setAutoCancel(true)
+            // Audit-200 D14 (m-785): a run whose terminal event arrives
+            // twice must not alert twice — the second post overwrites the
+            // first silently.
+            .setOnlyAlertOnce(true)
             // Audit-200 D13 (m-788): with App Lock on, the session
             // title must not print on the system lock screen — hide
             // the content and offer only a generic public version
@@ -101,7 +160,7 @@ fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
             .apply {
                 if (locked) {
                     setPublicVersion(
-                        Notification.Builder(context, CHANNEL_ID)
+                        Notification.Builder(context, channelId)
                             .setSmallIcon(android.R.drawable.stat_notify_chat)
                             .setContentTitle(strings.getString(R.string.notification_agent_done_title))
                             .setContentText(strings.getString(R.string.notification_agent_done_body))
@@ -111,6 +170,16 @@ fun notifyAgentDone(context: Context, sessionID: String, title: String?) {
                 }
             }
             .build()
+        // Audit-200 D14 (m-790): a pre-6h notification for this session
+        // used the legacy id sessionID.hashCode() and can never be
+        // cancelled by the new stable id — cancel the legacy id on every
+        // post, so the stale entry disappears the next time the session
+        // runs instead of lingering until swiped. Never a live stable id:
+        // a legacy hash that happens to equal an assigned id is left
+        // alone (see shouldCancelLegacyAgentDoneId).
+        if (shouldCancelLegacyAgentDoneId(sessionID.hashCode(), notificationId, store.assignedIdValues())) {
+            manager.cancel(sessionID.hashCode())
+        }
         manager.notify(notificationId, notification)
     }.onFailure {
         Log.w(TAG, "could not post agent-done notification for session $sessionID", it)

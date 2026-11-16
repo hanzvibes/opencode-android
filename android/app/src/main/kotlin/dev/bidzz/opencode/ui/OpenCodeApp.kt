@@ -33,6 +33,8 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -50,8 +52,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.bidzz.opencode.LanguageStore
+import dev.bidzz.opencode.PendingExternalIntent
 import dev.bidzz.opencode.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -745,6 +749,54 @@ fun OpenCodeApp(app: OpenCodeApplication) {
         }
     }
 
+    // Audit-200 D14 (m-531/m-789/m-979): publish which chat (if any) the
+    // user is looking at — the service watcher suppresses the agent-done
+    // notification only while this is the session that just finished. Any
+    // other screen clears it, so a run ending there still notifies.
+    LaunchedEffect(screen, chatState.sessionID) {
+        app.visibleChatSessionID = if (screen is Screen.Chat) chatState.sessionID else null
+    }
+
+    // Audit-200 D14 (m-707): an external intent held while App Lock was
+    // showing asks once after unlock — it never executes silently behind
+    // the lock. Dismissing drops it; confirming runs the held delivery.
+    // This only composes after unlock (MainActivity gates OpenCodeApp
+    // behind the lock), so the dialog cannot appear over the lock screen.
+    val pendingExternal by app.pendingExternalIntent.collectAsStateWithLifecycle()
+    pendingExternal?.let { pending ->
+        LocalizedAlertDialog(
+            onDismissRequest = { app.pendingExternalIntent.value = null },
+            confirmButton = {
+                TextButton(onClick = { app.executePendingExternalIntent(pending) }) {
+                    Text(
+                        text = stringResource(R.string.common_yes),
+                        color = OpenCodeTheme.colors.accentText,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { app.pendingExternalIntent.value = null }) {
+                    Text(
+                        text = stringResource(R.string.common_cancel),
+                        color = OpenCodeTheme.colors.onSurfaceMuted,
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = when (pending) {
+                        is PendingExternalIntent.OpenSession ->
+                            stringResource(R.string.external_intent_open_session, pending.sessionID)
+                        is PendingExternalIntent.SharedText ->
+                            stringResource(R.string.external_intent_new_session_shared)
+                        PendingExternalIntent.NewSession ->
+                            stringResource(R.string.external_intent_new_session)
+                    },
+                )
+            },
+        )
+    }
+
     // External entries (Native C): shared text and deep links arrive via
     // the application flows, not navigation arguments — the activity can
     // be re-created for them while the UI is already composed. A share
@@ -1386,11 +1438,13 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                     sessionViewModel.togglePin(row.id)
                                 },
                                 onInbox = { row ->
-                                    inboxViewModel.load(row.id)
+                                    // Audit-200 D14 (m-324): no load() here — InboxScreen's
+                                    // LaunchedEffect(sessionID) loads once on entry; loading
+                                    // here too fetched the session twice per open.
                                     screen = Screen.Inbox(row.id)
                                 },
                                 onMove = { row ->
-                                    moveSessionViewModel.load(row.id)
+                                    // Audit-200 D14 (m-324): no load() here — see onInbox above.
                                     screen = Screen.MoveSession(row.id)
                                 },
                                 onExport = { row ->
@@ -1400,7 +1454,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                     screen = Screen.SessionExport(row.id)
                                 },
                                 onInstructions = { row ->
-                                    instructionsViewModel.load(row.id)
+                                    // Audit-200 D14 (m-324): no load() here — see onInbox above.
                                     screen = Screen.Instructions(row.id)
                                 },
                                 details = sessionsState.details,
@@ -1496,11 +1550,13 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 sessionViewModel.togglePin(row.id)
                             },
                             onInbox = { row ->
-                                inboxViewModel.load(row.id)
+                                // Audit-200 D14 (m-324): no load() here — InboxScreen's
+                                // LaunchedEffect(sessionID) loads once on entry; loading
+                                // here too fetched the session twice per open.
                                 screen = Screen.Inbox(row.id)
                             },
                             onMove = { row ->
-                                moveSessionViewModel.load(row.id)
+                                // Audit-200 D14 (m-324): no load() here — see onInbox above.
                                 screen = Screen.MoveSession(row.id)
                             },
                             onExport = { row ->
@@ -1509,7 +1565,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 screen = Screen.SessionExport(row.id)
                             },
                             onInstructions = { row ->
-                                instructionsViewModel.load(row.id)
+                                // Audit-200 D14 (m-324): no load() here — see onInbox above.
                                 screen = Screen.Instructions(row.id)
                             },
                             onRefresh = { sessionViewModel.load(sessionScopeToProject) },
@@ -1555,7 +1611,10 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 } else {
                                     app.showSnackbarWithRetry(
                                         scope,
-                                        app.getString(R.string.workspace_too_broad),
+                                        // Audit-200 D14 (m-501): the stored language, read fresh —
+                                        // `app` was wrapped once per process, so a language
+                                        // change used to reach this snackbar only after a restart.
+                                        localized.getString(R.string.workspace_too_broad),
                                         long = true,
                                     )
                                 }
@@ -2046,6 +2105,13 @@ private fun ChatDestination(
         onTogglePinSession = { id ->
             sessionViewModel.togglePin(id)
         },
+        // Audit-200 D14 (m-1169): the drawer menu gets the same four
+        // screens the full sessions list has — navigation only, no
+        // load(): each screen loads once on entry (D14 m-324).
+        onInboxSession = { id -> onNavigate(Screen.Inbox(id)) },
+        onMoveSession = { id -> onNavigate(Screen.MoveSession(id)) },
+        onExportSession = { id -> onNavigate(Screen.SessionExport(id)) },
+        onInstructionsSession = { id -> onNavigate(Screen.Instructions(id)) },
         fileIndex = fileIndex,
         fileIndexLoading = fileIndexLoading,
         fileIndexFailed = fileIndexFailed,

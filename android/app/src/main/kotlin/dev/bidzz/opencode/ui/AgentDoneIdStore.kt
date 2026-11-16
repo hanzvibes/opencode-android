@@ -22,6 +22,13 @@ import android.content.Context
  * One upgrade note: notifications posted before 6h used the hash id, so a
  * pre-upgrade entry can linger in the drawer until swiped — the new id
  * cannot cancel an id the store never assigned.
+ *
+ * Audit-200 D14 (m-839): clear data resets the counter to 10000 while
+ * notifications posted before the clear may still be alive — the next
+ * ids can reuse values the old notifications still carry. There is no
+ * robust fix without a per-install epoch (documented limitation, not
+ * fixed): uninstall removes the posted notifications, only clear data
+ * (without uninstall) collides.
  */
 class AgentDoneIdStore(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -49,6 +56,11 @@ class AgentDoneIdStore(context: Context) {
     /** The id assigned earlier, or null when this session never got one. */
     fun idIfPresent(sessionID: String): Int? = synchronized(LOCK) {
         assignedIds()[sessionID]
+    }
+
+    /** All stable ids assigned so far (audit-200 D14, m-790): the legacy-id cancel must never delete one of these. */
+    internal fun assignedIdValues(): Set<Int> = synchronized(LOCK) {
+        assignedIds().values.toSet()
     }
 
     private fun assignedIds(): Map<String, Int> =

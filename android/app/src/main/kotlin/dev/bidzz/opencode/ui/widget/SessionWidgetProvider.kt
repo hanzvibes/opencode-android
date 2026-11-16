@@ -11,6 +11,7 @@ import android.widget.RemoteViews
 import dev.bidzz.opencode.MainActivity
 import dev.bidzz.opencode.OpenCodeApplication
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.appLanguageContext
 import dev.bidzz.opencode.core.design.ThemeStore
 import dev.bidzz.opencode.core.design.isDarkTheme
 import dev.bidzz.opencode.core.design.isSystemNightMode
@@ -38,7 +39,10 @@ class SessionWidgetProvider : AppWidgetProvider() {
         val lastSessionID = context
             .getSharedPreferences(OpenCodeApplication.PREFS_NAME, Context.MODE_PRIVATE)
             .getString(OpenCodeApplication.KEY_LAST_SESSION, null)
-        pushWidget(context, lastSessionID, null)
+        // Audit-200 D14 (m-551): the receiver context was wrapped once per
+        // process, so the cold-start widget kept the old language until a
+        // restart — wrap the stored language fresh on every update.
+        pushWidget(appLanguageContext(context), lastSessionID, null)
     }
 }
 

@@ -294,6 +294,10 @@ fun ChatScreen(
     onRenameSession: (String, String) -> Unit = { _, _ -> },
     onDeleteSession: (String) -> Unit = {},
     onTogglePinSession: (String) -> Unit = {},
+    onInboxSession: (String) -> Unit = {},
+    onMoveSession: (String) -> Unit = {},
+    onExportSession: (String) -> Unit = {},
+    onInstructionsSession: (String) -> Unit = {},
     onDismissError: () -> Unit = {},
     /** Re-sends the last prompt after a failure; no-op when there is none. */
     onRetryError: () -> Unit = {},
@@ -2719,6 +2723,10 @@ fun ChatScreen(
                         onRenameSession = onRenameSession,
                         onDeleteSession = onDeleteSession,
                         onTogglePinSession = onTogglePinSession,
+                        onInboxSession = onInboxSession,
+                        onMoveSession = onMoveSession,
+                        onExportSession = onExportSession,
+                        onInstructionsSession = onInstructionsSession,
                         onToggleCollapse = { sidebarCollapsed = true },
                     )
                 }
@@ -2774,6 +2782,10 @@ fun ChatScreen(
                         onRenameSession = onRenameSession,
                         onDeleteSession = onDeleteSession,
                         onTogglePinSession = onTogglePinSession,
+                        onInboxSession = { id -> closeThen { onInboxSession(id) } },
+                        onMoveSession = { id -> closeThen { onMoveSession(id) } },
+                        onExportSession = { id -> closeThen { onExportSession(id) } },
+                        onInstructionsSession = { id -> closeThen { onInstructionsSession(id) } },
                         onCloseDrawer = { scope.launch { drawerState.close() } },
                     )
                 },
@@ -4171,6 +4183,10 @@ private fun ChatDrawer(
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
+    onInboxSession: (String) -> Unit,
+    onMoveSession: (String) -> Unit,
+    onExportSession: (String) -> Unit,
+    onInstructionsSession: (String) -> Unit,
     onCloseDrawer: () -> Unit,
     /** The drawer rows currently visible (audit-200 C5, M-089). */
     onVisibleSessions: (List<String>) -> Unit = {},
@@ -4225,6 +4241,10 @@ private fun ChatDrawer(
                 onRenameSession = onRenameSession,
                 onDeleteSession = onDeleteSession,
                 onTogglePinSession = onTogglePinSession,
+                onInboxSession = onInboxSession,
+                onMoveSession = onMoveSession,
+                onExportSession = onExportSession,
+                onInstructionsSession = onInstructionsSession,
                 onVisibleSessions = onVisibleSessions,
             )
         }
@@ -4286,6 +4306,10 @@ private fun ChatDrawerContent(
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
+    onInboxSession: (String) -> Unit,
+    onMoveSession: (String) -> Unit,
+    onExportSession: (String) -> Unit,
+    onInstructionsSession: (String) -> Unit,
     /** The drawer rows currently visible (audit-200 C5, M-089). */
     onVisibleSessions: (List<String>) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -4632,6 +4656,10 @@ private fun ChatDrawerContent(
                         onPinToggle = { onTogglePinSession(row.id) },
                         onRenameClick = { sessionToRenameId = row.id },
                         onDeleteClick = { sessionToDeleteId = row.id },
+                        onInboxClick = { onInboxSession(row.id) },
+                        onMoveClick = { onMoveSession(row.id) },
+                        onExportClick = { onExportSession(row.id) },
+                        onInstructionsClick = { onInstructionsSession(row.id) },
                         modifier = Modifier.animateItem(),
                     )
                 }
@@ -4796,6 +4824,10 @@ private fun ChatSidebar(
     onRenameSession: (String, String) -> Unit,
     onDeleteSession: (String) -> Unit,
     onTogglePinSession: (String) -> Unit,
+    onInboxSession: (String) -> Unit,
+    onMoveSession: (String) -> Unit,
+    onExportSession: (String) -> Unit,
+    onInstructionsSession: (String) -> Unit,
     onToggleCollapse: () -> Unit,
     /** The drawer rows currently visible (audit-200 C5, M-089). */
     onVisibleSessions: (List<String>) -> Unit = {},
@@ -4848,6 +4880,10 @@ private fun ChatSidebar(
             onRenameSession = onRenameSession,
             onDeleteSession = onDeleteSession,
             onTogglePinSession = onTogglePinSession,
+            onInboxSession = onInboxSession,
+            onMoveSession = onMoveSession,
+            onExportSession = onExportSession,
+            onInstructionsSession = onInstructionsSession,
             onVisibleSessions = onVisibleSessions,
             modifier = Modifier.fillMaxSize(),
         )
@@ -5032,6 +5068,11 @@ private fun SessionDrawerItem(
     onPinToggle: () -> Unit,
     onRenameClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    /** Null hides the entry: only callers that can open the screen pass one. */
+    onInboxClick: (() -> Unit)? = null,
+    onMoveClick: (() -> Unit)? = null,
+    onExportClick: (() -> Unit)? = null,
+    onInstructionsClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     /** Transcript preview from the details lookup; null until it lands, and the row stays title-only. */
     detail: SessionDetail? = null,
@@ -5184,6 +5225,10 @@ private fun SessionDrawerItem(
                 onPinToggle = onPinToggle,
                 onRenameClick = onRenameClick,
                 onDeleteClick = onDeleteClick,
+                onInboxClick = onInboxClick,
+                onMoveClick = onMoveClick,
+                onExportClick = onExportClick,
+                onInstructionsClick = onInstructionsClick,
             )
         }
     }

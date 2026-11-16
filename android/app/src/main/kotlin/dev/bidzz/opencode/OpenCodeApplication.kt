@@ -62,6 +62,24 @@ enum class SessionOpenDelivery {
     BUFFER_FULL,
 }
 
+/**
+ * An external intent that arrived while App Lock was showing (audit-200
+ * D14, m-707): held for one confirmation dialog after unlock instead of
+ * executing silently behind the lock. One value per intent kind — the
+ * dialog names what will happen, and the confirm path re-runs the same
+ * delivery the intent would have taken unlocked.
+ */
+sealed interface PendingExternalIntent {
+    /** An opencode://session/{id} deep link, widget tap or shortcut. */
+    data class OpenSession(val sessionID: String) : PendingExternalIntent
+
+    /** Text shared from another app (ACTION_SEND). */
+    data class SharedText(val text: String) : PendingExternalIntent
+
+    /** A fresh session from the widget or launcher shortcut. */
+    data object NewSession : PendingExternalIntent
+}
+
 class OpenCodeApplication : Application() {
     companion object {
         private const val TAG = "OpenCodeApp"
@@ -236,8 +254,14 @@ class OpenCodeApplication : Application() {
             // EngineStartupException and anything else resolve() can throw
             // (item 1): a disk error staging git/rg used to escape as a bare
             // IOException and crash the process on every launch.
-            startupFailure = e.message
-            unavailableStatus.value = EngineStatus(lastError = e.message)
+            // Audit-200 D14 (m-419): the screen, the clipboard and the chat
+            // banner show only a generic failure — the exception's own
+            // words can carry a path (and, on other paths, a password),
+            // and they are English either way. The raw message stays in
+            // logcat only.
+            val genericFailure = appLanguageContext(this).getString(R.string.engine_notif_failed_title)
+            startupFailure = genericFailure
+            unavailableStatus.value = EngineStatus(lastError = genericFailure)
             Log.e(TAG, "engine unavailable: ${e.message}")
         }
 
@@ -371,7 +395,11 @@ class OpenCodeApplication : Application() {
      */
     fun requestSafFile() {
         if (!safFileRequest.tryEmit(System.currentTimeMillis())) {
-            showSnackbar(getString(R.string.saf_picker_failed))
+            // Audit-200 D14 (m-501): the stored language, read fresh — the
+            // Application's base context was wrapped once per process, so
+            // a language change used to reach this snackbar only after a
+            // restart.
+            showSnackbar(appLanguageContext(this).getString(R.string.saf_picker_failed))
         }
     }
 
@@ -392,7 +420,7 @@ class OpenCodeApplication : Application() {
             val name = safDisplayName(uri)
             showSnackbarWithRetry(
                 applicationScope,
-                getString(R.string.saf_file_dropped_named, name),
+                appLanguageContext(this).getString(R.string.saf_file_dropped_named, name),
                 long = true,
             )
         }
@@ -584,6 +612,40 @@ class OpenCodeApplication : Application() {
     val newSessionRequested = MutableSharedFlow<Long>(replay = 0, extraBufferCapacity = 1)
 
     /**
+     * An external intent that arrived while App Lock was showing
+     * (audit-200 D14, m-707): held for one confirmation dialog after
+     * unlock instead of executing silently behind the lock. In-memory
+     * only — killing the app while locked drops it, and the user just
+     * taps the link again. Only the latest held intent is kept; the
+     * share/new-session flows are buffer-1 too, so a second intent
+     * while locked was already lost before this hold existed.
+     */
+    val pendingExternalIntent = MutableStateFlow<PendingExternalIntent?>(null)
+
+    /** Holds [pending] for the post-unlock confirmation dialog. */
+    fun holdExternalIntent(pending: PendingExternalIntent) {
+        pendingExternalIntent.value = pending
+    }
+
+    /**
+     * Runs a held external intent after the user confirms it (D14,
+     * m-707): the same deliveries the intent would have taken unlocked.
+     * Clears the hold first, so a recomposition can never run it twice.
+     */
+    fun executePendingExternalIntent(pending: PendingExternalIntent) {
+        pendingExternalIntent.value = null
+        when (pending) {
+            is PendingExternalIntent.OpenSession -> {
+                if (deliverSessionOpen(pending.sessionID) == SessionOpenDelivery.INVALID) {
+                    showSnackbar(appLanguageContext(this).getString(R.string.session_link_invalid))
+                }
+            }
+            is PendingExternalIntent.SharedText -> deliverSharedText(pending.text)
+            PendingExternalIntent.NewSession -> requestNewSession()
+        }
+    }
+
+    /**
      * Camera photo (Native C): asks MainActivity to open the system
      * camera, and the URI of the photo it took. Same bridge shape as
      * the SAF attach flow above.
@@ -596,7 +658,8 @@ class OpenCodeApplication : Application() {
      */
     fun requestCameraPhoto() {
         if (!cameraPhotoRequestChannel.trySend(System.currentTimeMillis()).isSuccess) {
-            showSnackbar(getString(R.string.camera_open_failed))
+            // Audit-200 D14 (m-501): same fresh wrap as the SAF sites above.
+            showSnackbar(appLanguageContext(this).getString(R.string.camera_open_failed))
         }
     }
 
@@ -606,7 +669,7 @@ class OpenCodeApplication : Application() {
             val name = safDisplayName(uri)
             showSnackbarWithRetry(
                 applicationScope,
-                getString(R.string.camera_photo_dropped_named, name),
+                appLanguageContext(this).getString(R.string.camera_photo_dropped_named, name),
                 long = true,
             )
         }
@@ -709,13 +772,36 @@ class OpenCodeApplication : Application() {
     /**
      * Whether any activity is currently started (Fase 5, 55-F6).
      *
-     * The agent-done watcher in [EngineService] needs to know if the user
-     * is looking at the app: a run that ends while the app is in the
-     * foreground needs no notification. A counter, not a boolean: two
-     * activities can overlap during a transition, and a single flag would
-     * flicker false between onStop and onStart.
+     * The agent-done watcher in [EngineService] reads this together with
+     * [isLockScreenShowing] and [visibleChatSessionID] (audit-200 D14,
+     * m-531/m-789/m-979): a run that ends while the user is watching that
+     * session's chat needs no notification; any other foreground case
+     * does. A counter, not a boolean: two activities can overlap during
+     * a transition, and a single flag would flicker false between onStop
+     * and onStart.
      */
     val isAppForeground: Boolean get() = ForegroundTracker.startedCount > 0
+
+    /**
+     * Whether the App Lock screen is currently showing (audit-200 D14,
+     * m-531/m-789): written by MainActivity's lock gate, read by the
+     * service watcher — a run that ends while the lock is up DOES get its
+     * agent-done notification, it is not swallowed.
+     */
+    @Volatile
+    var isLockScreenShowing: Boolean = false
+
+    /**
+     * The session whose chat the user is currently looking at (audit-200
+     * D14, m-531/m-789/m-979): written from OpenCodeApp's composition,
+     * read by the service watcher — the agent-done notification is
+     * suppressed only while this is the session that just finished.
+     * Null on any other screen, while the lock is showing, or when the
+     * app is backgrounded (the last value then goes stale, so the
+     * watcher also requires the app to be in the foreground).
+     */
+    @Volatile
+    var visibleChatSessionID: String? = null
 }
 
 /**
