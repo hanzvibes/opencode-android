@@ -122,14 +122,21 @@ private val CodeLineHeight = 20.sp
 
 /**
  * True when the file-switch dialog may show (89-F4): the conflict dialog
- * is not showing. A save from the switch can itself raise a conflict, so
- * the two dialogs are exclusive — the held switch is kept in the view
- * model and reappears once the conflict is resolved. The caller checks
- * `pendingSwitch != null` itself, so the smart cast survives at the use
- * site (a null check hidden inside this function would not).
+ * is not showing, and neither is the discard dialog (audit-200 D8,
+ * m-537 — two stacked bottom sheets leave the user choosing between
+ * contradictory actions). A save from the switch can itself raise a
+ * conflict, so the dialogs are exclusive — the held switch is kept in the
+ * view model and reappears once the conflict is resolved. The caller
+ * checks `pendingSwitch != null` itself, so the smart cast survives at
+ * the use site (a null check hidden inside this function would not).
  */
-internal fun shouldShowSwitchDialog(pendingSwitch: String, conflict: Boolean, editing: Boolean): Boolean =
-    !(conflict && editing)
+internal fun shouldShowSwitchDialog(
+    pendingSwitch: String,
+    conflict: Boolean,
+    editing: Boolean,
+    showDiscardDialog: Boolean = false,
+): Boolean =
+    !(conflict && editing) && !showDiscardDialog
 
 /**
  * Code viewer and editor with:
@@ -462,7 +469,7 @@ fun FileViewScreen(
     // The held switch is kept in the view model, so it reappears once the
     // conflict is resolved.
     val pendingSwitch = state.confirmSwitchTo
-    if (pendingSwitch != null && shouldShowSwitchDialog(pendingSwitch, state.conflict, state.editing)) {
+    if (pendingSwitch != null && shouldShowSwitchDialog(pendingSwitch, state.conflict, state.editing, showDiscardDialog)) {
         LocalizedDraggableBottomSheet(
             onDismiss = onCancelSwitch,
             initialStop = SheetStop.PEEK,

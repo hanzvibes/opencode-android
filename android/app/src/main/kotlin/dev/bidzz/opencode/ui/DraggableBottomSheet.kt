@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.bidzz.opencode.R
+import dev.bidzz.opencode.core.design.AuraPalette
 import dev.bidzz.opencode.core.design.OpenCodeTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -154,7 +155,11 @@ fun DraggableBottomSheet(
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val maxHeightPx = with(density) { maxHeight.toPx() }
-                val stopHeights = remember(maxHeightPx) { sheetStopHeights(maxHeightPx) }
+                // Audit-200 D8 (m-950): Peek never opens below 220dp, or
+                // the sheet chrome hides the message on short screens.
+                val stopHeights = remember(maxHeightPx) {
+                    sheetStopHeights(maxHeightPx, peekMinPx = with(density) { 220.dp.toPx() })
+                }
 
                 // Entry animation and every snap: animate to the target stop
                 // whenever the stop or the available height (rotation,
@@ -245,7 +250,9 @@ fun DraggableBottomSheet(
                         .background(colors.surface)
                         .border(
                             OpenCodeTheme.tokens.shadow.cardBorderWidth,
-                            colors.cardBorder,
+                            // Audit-200 D8 (m-676): the light sheet border is
+                            // the Aura border, as the comment above claims.
+                            AuraPalette.auraBorder,
                             sheetShape,
                         )
                 }

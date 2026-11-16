@@ -58,6 +58,14 @@ import dev.bidzz.opencode.core.design.OpenCodeTypography
 internal fun isValidRenameTitle(text: String): Boolean = text.isNotBlank()
 
 /**
+ * Audit-200 D8 (m-1228): a session title is capped at 200 characters —
+ * the rename field truncates pasted text to this, and
+ * [dev.bidzz.opencode.ui.sessions.SessionListViewModel.rename] enforces
+ * it on save, so an old over-long title is cut on its next rename.
+ */
+internal const val MAX_SESSION_TITLE_LENGTH = 200
+
+/**
  * Generic Hatch delete confirmation: danger dot + title in the sheet
  * header, the item named in the message (deleting the wrong item is one
  * tap away when every dialog reads the same), Cancel + Delete actions.
@@ -104,12 +112,12 @@ fun HatchDeleteConfirmationDialog(
             }
         },
         content = {
+            // Audit-200 D8 (m-682/m-958): no maxLines — a delete message
+            // must never be cut off; the sheet scrolls if it is long.
             Text(
                 text = message,
                 style = OpenCodeTypography.bodySmall,
                 color = colors.onSurfaceMuted,
-                maxLines = 2,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         },
         actions = {
@@ -185,7 +193,14 @@ fun HatchRenameDialog(
             Column(modifier = Modifier.fillMaxWidth()) {
                 BasicTextField(
                     value = tfv,
-                    onValueChange = { tfv = it },
+                    // Audit-200 D8 (m-1228): the title is capped — pasted
+                    // text is truncated to the cap, cursor at the end.
+                    onValueChange = {
+                        tfv = it.copy(
+                            text = it.text.take(MAX_SESSION_TITLE_LENGTH),
+                            selection = TextRange(it.text.take(MAX_SESSION_TITLE_LENGTH).length),
+                        )
+                    },
                     singleLine = true,
                     textStyle = OpenCodeTypography.body.copy(color = colors.onSurface),
                     cursorBrush = SolidColor(colors.accent),

@@ -36,6 +36,7 @@ import dev.bidzz.opencode.ui.EXTRA_OPENCODE_ACTION
 import dev.bidzz.opencode.ui.EXTRA_SESSION_ID
 import dev.bidzz.opencode.ui.OpenCodeApp
 import dev.bidzz.opencode.ui.chat.PendingPhotoStore
+import dev.bidzz.opencode.ui.onboarding.OnboardingStore
 import dev.bidzz.opencode.ui.security.AppLockPrefs
 import dev.bidzz.opencode.ui.security.LockScreen
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +84,32 @@ class MainActivity : FragmentActivity() {
     private var unlocked by mutableStateOf(false)
     private var wentBackground = false
 
+    /**
+     * Audit-200 D8 (m-1006): true while a system picker or the camera is
+     * open. Launching one stops this activity, so without this the lock
+     * would re-arm on the return — the user never left the app. The flag
+     * is consumed by the next [onResume], which IS the return from the
+     * picker: the result callbacks run around onResume, so they must not
+     * clear it themselves (a callback that fires first would disarm the
+     * guard before onResume reads it).
+     */
+    private var expectingActivityResult = false
+
+    /**
+     * Launches a system picker or the camera, marking that the lock must
+     * not re-arm on the return. A failed launch clears the mark at once,
+     * so the next real background return still locks.
+     */
+    private inline fun launchForResult(crossinline launch: () -> Unit) {
+        expectingActivityResult = true
+        try {
+            launch()
+        } catch (e: Exception) {
+            expectingActivityResult = false
+            throw e
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         wentBackground = true
@@ -92,7 +119,12 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         if (wentBackground) {
             wentBackground = false
-            unlocked = false
+            // Audit-200 D8 (m-1006): returning from a system picker or
+            // the camera is not leaving the app — do not re-arm the lock.
+            if (!expectingActivityResult) {
+                unlocked = false
+            }
+            expectingActivityResult = false
         }
     }
 
@@ -298,7 +330,7 @@ class MainActivity : FragmentActivity() {
         pendingPhotoUri = uri
         pendingPhotoStore.put(uri)
         cameraOpen = true
-        runCatching { takePhoto.launch(uri) }
+        runCatching { launchForResult { takePhoto.launch(uri) } }
             .onFailure {
                 // The camera never opened: the row just created would sit
                 // in the gallery empty (73-F6), and the pending URI would
@@ -482,7 +514,7 @@ class MainActivity : FragmentActivity() {
                     // missing DocumentsUI or a finishing activity must not
                     // crash the app; the folder simply never opens — and
                     // the user is told so instead of a dead tap (15-F5).
-                    runCatching { pickDirectory.launch(null) }
+                    runCatching { launchForResult { pickDirectory.launch(null) } }
                         .onFailure {
                             Log.w("MainActivity", "Directory picker launch failed", it)
                             app.showSnackbar(localizedString(R.string.directory_picker_failed))
@@ -501,7 +533,7 @@ class MainActivity : FragmentActivity() {
                 // activity must not crash the app; the chat screen simply
                 // never receives a file — and the user is told so instead
                 // of a dead tap (15-F5).
-                runCatching { pickSafFile.launch(arrayOf("*/*")) }
+                runCatching { launchForResult { pickSafFile.launch(arrayOf("*/*")) } }
                     .onFailure {
                         Log.w("MainActivity", "SAF picker launch failed", it)
                         app.showSnackbar(localizedString(R.string.saf_picker_failed))
@@ -527,7 +559,7 @@ class MainActivity : FragmentActivity() {
                 if (codeSavePickerOpen) return@collect
                 val pending = app.peekPendingCodeSave() ?: return@collect
                 codeSavePickerOpen = true
-                runCatching { saveCodeDocument.launch(pending.filename) }
+                runCatching { launchForResult { saveCodeDocument.launch(pending.filename) } }
                     .onFailure {
                         codeSavePickerOpen = false
                         Log.w("MainActivity", "Code save picker launch failed", it)
@@ -563,11 +595,19 @@ class MainActivity : FragmentActivity() {
      * Denied permanently (asked before, no rationale left): a snackbar
      * points at Settings. Each hint shows once, then the app stops
      * nagging — the permission can still be granted from system Settings.
+     *
+     * Audit-200 D8 (m-267): the first ask never fires before onboarding
+     * is out of the way — see [mayAskNotificationPermission].
      */
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
         val app = application as OpenCodeApplication
+        // Audit-200 D8 (m-267): never ask before onboarding is out of
+        // the way — the prompt used to stack on top of it with no
+        // explanation. The next launch asks, once onboarding is done or
+        // will never show.
+        if (!mayAskNotificationPermission(OnboardingStore.isCompleted(this), OnboardingStore.shouldShow(this, app.workspaceStore))) return
         if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
             if (!notificationRationaleShown()) {
                 markNotificationRationaleShown()
@@ -669,3 +709,15 @@ class MainActivity : FragmentActivity() {
         return if (parts[1].isEmpty()) root else File(root, parts[1])
     }
 }
+
+/**
+ * Audit-200 D8 (m-267): whether the notification permission may be asked
+ * now. The prompt must not fire while onboarding is still to come — on a
+ * fresh install it stacked on top of the onboarding flow with no
+ * explanation. Onboarding is out of the way when it is completed
+ * (skipping counts as completing), or when it will never show (a real
+ * workspace from before onboarding existed). Pure so it is unit-testable;
+ * the Activity path and the system launcher cannot be.
+ */
+internal fun mayAskNotificationPermission(onboardingCompleted: Boolean, onboardingWillShow: Boolean): Boolean =
+    onboardingCompleted || !onboardingWillShow

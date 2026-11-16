@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -268,6 +269,9 @@ fun AttachFilePicker(
                     textStyle = OpenCodeTypography.bodySmall.copy(color = colors.onSurface),
                     cursorBrush = SolidColor(colors.accent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    // Audit-200 D8 (m-1050): the soft keyboard's Search key
+                    // did nothing — it picks the selected result, like Enter.
+                    keyboardActions = KeyboardActions(onSearch = { pickSelected() }),
                     singleLine = true,
                     modifier = Modifier
                         .weight(1f)

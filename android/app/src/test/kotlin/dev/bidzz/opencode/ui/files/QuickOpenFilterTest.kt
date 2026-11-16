@@ -86,4 +86,18 @@ class QuickOpenFilterTest {
         // A conflict flag without an editor behind it shows no dialog anyway.
         assertTrue(shouldShowSwitchDialog("b.kt", conflict = true, editing = false))
     }
+
+    @Test
+    fun `m-537 the switch dialog hides while the discard dialog shows`() {
+        // Two stacked bottom sheets leave the user choosing between
+        // contradictory actions; the held switch reappears once the
+        // discard dialog is dismissed, like it does after a conflict.
+        assertTrue(shouldShowSwitchDialog("b.kt", conflict = false, editing = true))
+        assertFalse(
+            shouldShowSwitchDialog("b.kt", conflict = false, editing = true, showDiscardDialog = true),
+        )
+        assertFalse(
+            shouldShowSwitchDialog("b.kt", conflict = true, editing = true, showDiscardDialog = true),
+        )
+    }
 }

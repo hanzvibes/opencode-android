@@ -245,14 +245,35 @@ fun DeleteSessionDialog(
     sessionTitle: String,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    /**
+     * Audit-200 D8 (m-171): true while the session has a run in
+     * progress — the message says so, because deleting it stops the run.
+     */
+    isRunning: Boolean = false,
+    /**
+     * Audit-200 D8 (m-1228): the session's directory, shown on its own
+     * line so two sessions with the same title can be told apart.
+     */
+    sessionDirectory: String? = null,
 ) {
     // Batch 1 (Aura full, Opsi B): the Hatch delete sheet. Same strings
     // and behaviour — the title is shown, not just passed in, because
     // deleting the wrong session is one tap away when every dialog
     // reads the same.
+    val message = buildString {
+        append(stringResource(R.string.session_delete_message, sessionTitle))
+        if (isRunning) {
+            append("\n\n")
+            append(stringResource(R.string.session_delete_message_running))
+        }
+        if (sessionDirectory != null) {
+            append("\n\n")
+            append(stringResource(R.string.session_delete_message_directory, sessionDirectory))
+        }
+    }
     HatchDeleteConfirmationDialog(
         title = stringResource(R.string.session_delete_title),
-        message = stringResource(R.string.session_delete_message, sessionTitle),
+        message = message,
         confirmLabel = stringResource(R.string.session_action_delete),
         onDismiss = onDismiss,
         onConfirm = onConfirm,

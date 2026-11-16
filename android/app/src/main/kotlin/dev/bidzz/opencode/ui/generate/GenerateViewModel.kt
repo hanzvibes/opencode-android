@@ -34,6 +34,14 @@ data class GenerateUiState(
     val generating: Boolean = false,
     val textResult: String? = null,
     val imageResults: List<GenerateImageOutput> = emptyList(),
+    /**
+     * Audit-200 D8 (m-990): the last result of each mode, kept across
+     * mode switches so an accidental tap does not discard work — see
+     * [withMode]. In-memory only; the disk record (DL-011) keeps only
+     * the current mode's result.
+     */
+    val savedTextResult: String? = null,
+    val savedImageResults: List<GenerateImageOutput> = emptyList(),
     val resultCost: Double? = null,
     val resultInputTokens: Long? = null,
     val resultOutputTokens: Long? = null,
@@ -58,6 +66,32 @@ data class GenerateUiState(
 /** Image-capable models, by the engine's own `type` (`"image"`). */
 internal fun List<ModelInfo>.imageModels(): List<ModelInfo> =
     filter { it.type == "image" }
+
+/**
+ * Audit-200 D8 (m-990): the mode switch, as a pure function. The result
+ * of the mode being left is stashed ([GenerateUiState.savedTextResult] /
+ * [GenerateUiState.savedImageResults]) and the result of the mode being
+ * entered comes back — toggling Text → Image → Text restores the text,
+ * instead of discarding it without confirmation. The cost is not stashed
+ * (it belongs to the current generation); a restored result shows
+ * without one. Pure so it is unit-testable.
+ */
+internal fun GenerateUiState.withMode(mode: GenerateMode): GenerateUiState {
+    if (mode == this.mode) return this
+    return copy(
+        mode = mode,
+        selectedModelId = null,
+        savedTextResult = if (this.mode == GenerateMode.TEXT) textResult else savedTextResult,
+        savedImageResults = if (this.mode == GenerateMode.IMAGE) imageResults else savedImageResults,
+        textResult = if (mode == GenerateMode.TEXT) savedTextResult else null,
+        imageResults = if (mode == GenerateMode.IMAGE) savedImageResults else emptyList(),
+        resultCost = null,
+        resultInputTokens = null,
+        resultOutputTokens = null,
+        failure = null,
+        interrupted = false,
+    )
+}
 
 /**
  * One-shot generation (mockup group 5).
@@ -125,18 +159,7 @@ class GenerateViewModel(
     }
 
     fun setMode(mode: GenerateMode) {
-        if (mode == _state.value.mode) return
-        _state.value = _state.value.copy(
-            mode = mode,
-            selectedModelId = null,
-            textResult = null,
-            imageResults = emptyList(),
-            resultCost = null,
-            resultInputTokens = null,
-            resultOutputTokens = null,
-            failure = null,
-            interrupted = false,
-        )
+        _state.value = _state.value.withMode(mode)
     }
 
     fun setModel(modelId: String?) {
@@ -185,10 +208,13 @@ class GenerateViewModel(
                         // it look like the answer to the prompt that just
                         // failed. The same clearing applies to the image
                         // failure and the no-model failure below.
+                        // Audit-200 D8 (m-990): the stash goes too, or a
+                        // mode toggle would resurrect the failed result.
                         is ApiResult.Failure -> _state.value = _state.value.copy(
                             generating = false,
                             textResult = null,
                             imageResults = emptyList(),
+                            savedTextResult = null,
                             resultCost = null,
                             resultInputTokens = null,
                             resultOutputTokens = null,
@@ -206,6 +232,9 @@ class GenerateViewModel(
                             generating = false,
                             textResult = null,
                             imageResults = emptyList(),
+                            // Audit-200 D8 (m-990): the stash goes too, or
+                            // a mode toggle would resurrect the failed result.
+                            savedImageResults = emptyList(),
                             resultCost = null,
                             resultInputTokens = null,
                             resultOutputTokens = null,
@@ -234,6 +263,9 @@ class GenerateViewModel(
                             generating = false,
                             textResult = null,
                             imageResults = emptyList(),
+                            // Audit-200 D8 (m-990): the stash goes too, or
+                            // a mode toggle would resurrect the failed result.
+                            savedImageResults = emptyList(),
                             resultCost = null,
                             resultInputTokens = null,
                             resultOutputTokens = null,

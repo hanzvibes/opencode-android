@@ -7,6 +7,7 @@ import dev.bidzz.opencode.R
 import dev.bidzz.opencode.core.api.ApiResult
 import dev.bidzz.opencode.core.api.dto.SessionInfo
 import dev.bidzz.opencode.core.api.dto.TokenUsage
+import dev.bidzz.opencode.ui.MAX_SESSION_TITLE_LENGTH
 import dev.bidzz.opencode.ui.chat.ReadPositionStore
 import dev.bidzz.opencode.ui.formatCompactTokens
 import kotlinx.coroutines.Job
@@ -428,7 +429,9 @@ class SessionListViewModel(
 
     /** Renames a session. */
     fun rename(sessionID: String, newTitle: String) {
-        val trimmed = newTitle.trim()
+        // Audit-200 D8 (m-1228): the title is capped — an old over-long
+        // title is cut on its next rename.
+        val trimmed = newTitle.trim().take(MAX_SESSION_TITLE_LENGTH)
         if (trimmed.isEmpty()) return
         val oldTitle = _state.value.rows.find { it.id == sessionID }?.title
         _state.value = _state.value.copy(
