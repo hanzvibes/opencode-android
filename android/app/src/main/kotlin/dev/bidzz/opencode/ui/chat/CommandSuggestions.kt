@@ -523,7 +523,12 @@ fun rememberCommandPaletteState(
     state.localizedDescriptions = localizedDescriptions
 
     val matches = state.matches
-    LaunchedEffect(matches) {
+    // Audit-200 D12 (m-132): keyed on the query, not the match list —
+    // the engine lists arrive one by one (agents, models, commands,
+    // skills last) and every arrival rebuilt `matches` and reset the
+    // selection to row 0, so Enter could pick the wrong row. Typing
+    // still resets the selection; a late list no longer does.
+    LaunchedEffect(draft) {
         state.selectIndex(0)
     }
     return state

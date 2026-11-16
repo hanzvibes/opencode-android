@@ -83,6 +83,7 @@ import dev.bidzz.opencode.ui.chat.ChatUiState
 import dev.bidzz.opencode.ui.chat.ChatViewModel
 import dev.bidzz.opencode.ui.chat.MIME_WORKSPACE_PATH
 import dev.bidzz.opencode.ui.chat.SharedPrefsParkedComposerStore
+import dev.bidzz.opencode.ui.chat.SharedPrefsPendingOpenStore
 import dev.bidzz.opencode.ui.chat.acceptsDropMimeTypes
 import dev.bidzz.opencode.ui.chat.droppedContent
 import dev.bidzz.opencode.ui.files.SharedPrefsFileDraftStore
@@ -499,6 +500,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
             onSessionCleared = { app.lastSessionID = null },
             // Parked composers survive process death on disk (Fase 1a, 57-F1).
             parkedStore = SharedPrefsParkedComposerStore(app),
+            // Audit-200 D12 (m-379): pending deep-link / restore ids
+            // survive process death on disk the same way.
+            pendingOpenStore = SharedPrefsPendingOpenStore(app),
             // Audit-200 A9-3 (DL-029): the session with a run in flight, so
             // the next engine start knows an orphan may still be working.
             onBusySessionChanged = { app.lastBusySessionID = it },
@@ -914,8 +918,16 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // First-run onboarding (Phase 3): shown once, while the workspace is
     // still empty. Read once on first composition; dismissing or finishing
     // marks it completed in prefs, so it never reappears.
-    var showOnboarding by remember {
+    // Audit-200 D12 (m-327): saveable, so a process death mid-flow
+    // resumes the onboarding instead of restarting it from step 0.
+    var showOnboarding by rememberSaveable {
         mutableStateOf(OnboardingStore.shouldShow(hostContext, app.workspaceStore))
+    }
+    // Audit-200 D12 (m-264): dismissing the flow — by the Skip button or
+    // by system Back — completes it, so it never shows again.
+    val dismissOnboarding = {
+        OnboardingStore.markCompleted(hostContext)
+        showOnboarding = false
     }
 
     // The launcher shortcut follows the last opened session (Native C):
@@ -925,8 +937,22 @@ fun OpenCodeApp(app: OpenCodeApplication) {
     // from `localized`, not the raw host context — and `language` is in
     // the key, so they re-push in the new language at once instead of
     // waiting for the next session open.
+    // Audit-200 D12 (m-440): the last published id, so the null branch
+    // below can tell "no session yet" (startup, nothing to clear) from
+    // "the session went away" (deleted / workspace switched — clear the
+    // shortcut and the widget, or they keep pointing at a dead session).
+    var lastPublishedSessionID by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(chatState.sessionID, sessionsState.rows, language) {
-        val id = chatState.sessionID ?: return@LaunchedEffect
+        val id = chatState.sessionID
+        if (id == null) {
+            if (lastPublishedSessionID != null) {
+                clearLastSessionShortcut(localized)
+                updateSessionWidget(localized, null, null)
+                lastPublishedSessionID = null
+            }
+            return@LaunchedEffect
+        }
+        lastPublishedSessionID = id
         val title = sessionsState.rows.find { it.id == id }?.title
         updateLastSessionShortcut(localized, id, title)
         updateSessionWidget(localized, id, title)
@@ -1089,6 +1115,11 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                 // First run, empty workspace: the 3-step flow replaces the
                 // navigation until it is dismissed or finished. Either way it
                 // is marked completed, so it never shows again.
+                // Audit-200 D12 (m-264): system Back completes the flow
+                // instead of leaving the app with onboarding unmarked —
+                // without this the next launch showed onboarding again
+                // from step 0.
+                BackHandler(enabled = true, onBack = dismissOnboarding)
                 OnboardingScreen(
                     workspacePath = app.workspaceStore.resolve().absolutePath,
                     hasAllFilesAccess = app.workspaceStore.hasAllFilesAccess(),
@@ -1102,10 +1133,7 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                     onCreateSample = {
                         SampleProject.seed(app.workspaceStore.resolve())
                     },
-                    onDismiss = {
-                        OnboardingStore.markCompleted(hostContext)
-                        showOnboarding = false
-                    },
+                    onDismiss = dismissOnboarding,
                 )
             } else SharedTransitionLayout {
                 // Animation C shared-element pilot: the SharedTransitionScope
@@ -1320,7 +1348,9 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                     screen = Screen.MoveSession(row.id)
                                 },
                                 onExport = { row ->
-                                    exportViewModel.load(row.id)
+                                    // Audit-200 D12 (m-410): no load() here — ExportScreen's
+                                    // LaunchedEffect(sessionID) loads once on entry; loading
+                                    // here too fetched the session twice per open.
                                     screen = Screen.SessionExport(row.id)
                                 },
                                 onInstructions = { row ->
@@ -1428,7 +1458,8 @@ fun OpenCodeApp(app: OpenCodeApplication) {
                                 screen = Screen.MoveSession(row.id)
                             },
                             onExport = { row ->
-                                exportViewModel.load(row.id)
+                                // Audit-200 D12 (m-410): no load() here — see the other
+                                // onExport above; ExportScreen loads once on entry.
                                 screen = Screen.SessionExport(row.id)
                             },
                             onInstructions = { row ->

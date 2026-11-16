@@ -322,6 +322,7 @@
     <string name="session_link_gone">Sesi itu sudah tidak ada di engine — link-nya menunjuk ke sesi yang sudah hilang.</string>
     <string name="session_link_wrong_workspace">Sesi itu milik proyek lain — ganti ruang kerja untuk membukanya.</string>
     <string name="session_link_verify_failed">Sesi ini tidak bisa diverifikasi — engine tidak menjawab. Coba lagi saat engine kembali.</string>
+    <string name="session_link_invalid">Tautan sesi ini tidak valid.</string>
     <string name="chat_queued_returned">Engine berhenti — follow-up yang antre dikembalikan ke composer.</string>
     <string name="chat_parked_unreadable">Draft tersimpan tidak bisa dibaca.</string>
     <string name="workspace_unavailable">Ruang kerja tidak tersedia — memakai ruang kerja internal untuk sementara. Pilih ulang di Proyek.</string>

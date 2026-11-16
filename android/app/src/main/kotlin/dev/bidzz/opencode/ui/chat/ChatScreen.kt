@@ -180,6 +180,7 @@ import dev.bidzz.opencode.ui.sessions.label
 import dev.bidzz.opencode.ui.sessions.SessionRow
 import dev.bidzz.opencode.ui.sessionTitleSharedKey
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.debounce
@@ -1202,8 +1203,16 @@ fun ChatScreen(
     }
 
     /** Closes the drawer, then runs [action]; the drawer must not stay open over the next screen. */
+    // Audit-200 D12 (m-194): one flight at a time — two fast taps used
+    // to launch two coroutines and run two actions (two new sessions,
+    // or "New session" then "Settings"). Cancelling the previous job
+    // means only the latest tap's action runs; the drawer still ends
+    // closed because the new job closes it again from wherever the
+    // cancelled close left it.
+    var closeThenJob: Job? by remember { mutableStateOf(null) }
     fun closeThen(action: () -> Unit) {
-        scope.launch {
+        closeThenJob?.cancel()
+        closeThenJob = scope.launch {
             drawerState.close()
             action()
         }

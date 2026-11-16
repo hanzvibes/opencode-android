@@ -14,7 +14,6 @@ import dev.bidzz.opencode.core.engine.EngineStatus
 import dev.bidzz.opencode.core.engine.ProcessManager
 import dev.bidzz.opencode.core.engine.StartupTimings
 import dev.bidzz.opencode.service.EngineService
-import dev.bidzz.opencode.ui.cancelAgentDone
 import dev.bidzz.opencode.ui.chat.CodeSaveQueue
 import dev.bidzz.opencode.ui.chat.CodeSaveRequest
 import dev.bidzz.opencode.ui.chat.SharedPrefsCodeSaveQueueStore
@@ -508,18 +507,21 @@ class OpenCodeApplication : Application() {
     /**
      * Session id from an opencode://session/{id} deep link (Native C).
      * Same bridge shape as the share above. An id that fails
-     * [isValidSessionId] is dropped silently: it came from outside the
-     * app and never reaches the engine (Fase 5, 53-F6).
+     * [isValidSessionId] is rejected, not queued: it came from outside
+     * the app and never reaches the engine (Fase 5, 53-F6). The caller
+     * tells the user the link is not valid (audit-200 D12, m-377) —
+     * a rejected link used to die silently and the tap did nothing.
      *
      * Returns false when the id could not be queued (56-F4): the old
      * code ignored the `tryEmit` result, so a second deep link arriving
-     * before the first was consumed vanished without a trace. Opening
-     * the session also cancels its agent-done notification (55-F7) —
-     * the user is looking at the answer now.
+     * before the first was consumed vanished without a trace. The
+     * agent-done notification is cancelled when the session actually
+     * opens (OpenCodeApp, 55-F7), not here — cancelling it before the
+     * id was even verified deleted the notification for links that
+     * were then refused or deferred (audit-200 D12, m-382).
      */
     fun deliverSessionOpen(sessionID: String): Boolean {
         if (!isValidSessionId(sessionID)) return false
-        cancelAgentDone(this, sessionID)
         val delivered = sessionOpenRequested.tryEmit(sessionID)
         if (!delivered) {
             Log.w(TAG, "session open request dropped (buffer full): $sessionID")

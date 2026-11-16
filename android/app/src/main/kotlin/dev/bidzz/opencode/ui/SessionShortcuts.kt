@@ -54,3 +54,17 @@ fun updateLastSessionShortcut(context: Context, sessionID: String, title: String
         manager.dynamicShortcuts = listOf(info)
     }
 }
+
+/**
+ * Removes the dynamic "last session" shortcut (audit-200 D12, m-440):
+ * the session it points at is gone — a deleted session's shortcut used
+ * to stay on the launcher forever, opening a session that no longer
+ * exists. Same swallow-everything rule as the publish above.
+ */
+fun clearLastSessionShortcut(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) return
+    runCatching {
+        val manager = context.getSystemService(ShortcutManager::class.java) ?: return
+        manager.removeDynamicShortcuts(listOf("last_session"))
+    }
+}

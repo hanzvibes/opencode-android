@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,9 +66,11 @@ fun OnboardingScreen(
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
 
-    var step by remember { mutableIntStateOf(0) }
-    var samplePath by remember { mutableStateOf<String?>(null) }
-    var sampleError by remember { mutableStateOf<String?>(null) }
+    // Audit-200 D12 (m-327): saveable, so a process death mid-flow
+    // resumes the onboarding at the same step instead of step 0.
+    var step by rememberSaveable { mutableIntStateOf(0) }
+    var samplePath by rememberSaveable { mutableStateOf<String?>(null) }
+    var sampleError by rememberSaveable { mutableStateOf<String?>(null) }
     // Audit-200 B6 (M-525): "Choose a folder" only launches the picker —
     // advancing here also advanced on cancel, on denial, and when the
     // picker never opened. Remember the path at tap time and advance only
