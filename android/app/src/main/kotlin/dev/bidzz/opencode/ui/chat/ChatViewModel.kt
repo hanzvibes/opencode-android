@@ -2464,7 +2464,16 @@ class ChatViewModel(
             // those; a history message still streaming keeps its row, and
             // an entry still in the map was just refreshed above.
             val historyIds = chat.messages.map { it.id }.toSet()
-            overlaid.removeAll { it.streaming && it.id !in historyIds && it.id !in chat.streaming }
+            // Audit-200 D16 (m-054): a live tool-only entry is a
+            // legitimate streaming bubble, not a ghost — it has no history
+            // row yet and its id is not in the streaming map (only its
+            // tool call is). Without the live-tool exception an unrelated
+            // PERMISSION_ASKED emission erased the running tool's bubble
+            // until the next tool event rebuilt it.
+            overlaid.removeAll {
+                it.streaming && it.id !in historyIds && it.id !in chat.streaming &&
+                    it.tools.none { t -> chat.liveTools.containsKey(t.id) }
+            }
             lastUnmergedMessages = overlaid
             val merged = mergeContiguousAssistant(overlaid)
             lastMergedMessages = merged
@@ -4601,6 +4610,10 @@ class ChatViewModel(
      * (the engine answers `InvalidRequestError`, kind `empty_session`).
      */
     fun forkMessage(messageId: String) {
+        // Audit-200 D16 (m-151): an optimistic bubble ("local:…") has no
+        // engine id yet — forking it would fork before nothing. The UI
+        // hides the pill too; this is the second line of defence.
+        if (messageId.startsWith("local:")) return
         val sessionID = _state.value.sessionID ?: return
         val sessions = handle?.sessions ?: return
         // Audit-200 B3 (M-492): the forking flag clears on fork-API
@@ -4710,6 +4723,9 @@ class ChatViewModel(
      * only. It used to be always true: there was no message-only revert.
      */
     fun stageRevert(messageId: String, files: Boolean = true) {
+        // Audit-200 D16 (m-151): same guard as forkMessage — an
+        // optimistic bubble has no engine id to revert to.
+        if (messageId.startsWith("local:")) return
         val sessionID = _state.value.sessionID ?: return
         val sessions = handle?.sessions ?: return
         if (_state.value.busy || _state.value.revertBusy) return

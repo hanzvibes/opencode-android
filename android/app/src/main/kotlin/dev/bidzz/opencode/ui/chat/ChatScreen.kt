@@ -174,6 +174,7 @@ import dev.bidzz.opencode.ui.sessions.highlightMatches
 import dev.bidzz.opencode.ui.sessions.searchTokens
 import dev.bidzz.opencode.ui.sessions.sessionMatchSnippet
 import dev.bidzz.opencode.ui.sessions.filterSessionRows
+import dev.bidzz.opencode.ui.sessions.drawerSessions
 import dev.bidzz.opencode.ui.formatCompactTokens
 import dev.bidzz.opencode.ui.sessions.groupSessions
 import dev.bidzz.opencode.ui.sessions.label
@@ -185,6 +186,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlin.math.roundToLong
 import kotlinx.coroutines.launch
@@ -477,6 +479,20 @@ fun ChatScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
+    // Audit-200 D16 (m-192): in expanded width the modal drawer leaves
+    // the composition, but its state survives — rotating back to compact
+    // finds the drawer still open. Close it on the way to expanded.
+    LaunchedEffect(isExpanded) {
+        if (isExpanded) drawerState.close()
+    }
+
+    // Audit-200 D16 (m-199): the workspace paths the drawer knows about,
+    // so the header can disambiguate two projects with the same folder
+    // name (only when they actually collide — the common case is unchanged).
+    val knownWorkspacePaths = remember(sessions) {
+        sessions.mapNotNull { it.directory }.toSet()
+    }
+
     // Opsi 2 sidebar collapse (tablet only): rememberSaveable so a
     // rotation keeps the rail collapsed. The rail always offers a way
     // back (expand button + logomark tap), so the sidebar can never
@@ -606,13 +622,20 @@ fun ChatScreen(
     var anchorBaseSize by remember { mutableIntStateOf(0) }
     var anchorBaseHeadOffset by remember { mutableIntStateOf(0) }
     var anchorSessionId by remember { mutableStateOf<String?>(null) }
+    // Audit-200 D16 (m-038/m-048): the id of the message the anchor sits
+    // on, captured with it — the count formula below is exact only when
+    // the size delta is purely prepended messages, and a streaming ghost
+    // or an optimistic bubble staged mid-load grows the tail by one.
+    var anchorMessageId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.loadingEarlier, state.messages.size) {
         val anchor = pendingAnchor
         if (anchor != null && !state.loadingEarlier) {
             if (state.sessionID == anchorSessionId) {
                 val newHeadOffset = if (state.hasMoreOlder) 1 else 0
-                val restored = restoreScrollAnchor(
+                val restored = restoreScrollAnchorById(
+                    anchorMessageId = anchorMessageId,
                     anchor = anchor,
+                    messageIds = state.messages.map { it.id },
                     oldMessageCount = anchorBaseSize,
                     newMessageCount = state.messages.size,
                     oldHeadOffset = anchorBaseHeadOffset,
@@ -634,6 +657,7 @@ fun ChatScreen(
                 }
             }
             pendingAnchor = null
+            anchorMessageId = null
         }
     }
 
@@ -643,18 +667,44 @@ fun ChatScreen(
     // ScrollAnchor as #6d before the toggle (via
     // onBeforeToolTraceHeightChange, threaded through MessageBubble →
     // ToolTrace → ToolStep) and restore it once after recomposition.
-    // No prepend here, so the anchor index is restored as-is. Skipped
-    // while the reader is mid-gesture — the next toggle re-captures.
+    // Audit-200 D16 (m-044): the anchor is NOT dropped while the reader
+    // is mid-gesture — the effect waits for the scroll to settle
+    // (snapshotFlow) and then restores. The old code nulled the anchor
+    // first and returned, so the compensation was silently lost whenever
+    // a toggle landed mid-drag; "the next toggle re-captures" was only
+    // true if there was a next toggle. A newer capture restarts this
+    // effect (keyed on the anchor), so the newest toggle always wins.
+    // Audit-200 D16 (m-051): when the reader was pinned to the bottom at
+    // capture time, a top-anchor restore leaves the last message's tail
+    // below the fold with no follow key changing to repair it — restore
+    // bottom-pinned instead (same target as the follow effect).
     var pendingExpandAnchor by remember { mutableStateOf<ScrollAnchor?>(null) }
+    var pendingExpandPinned by remember { mutableStateOf(false) }
     fun captureExpandAnchor() {
         pendingExpandAnchor = listState.captureAnchor()
+        pendingExpandPinned = pinnedToBottom
     }
     LaunchedEffect(pendingExpandAnchor) {
         val anchor = pendingExpandAnchor ?: return@LaunchedEffect
-        pendingExpandAnchor = null
-        if (listState.isScrollInProgress) return@LaunchedEffect
+        val pinned = pendingExpandPinned
+        if (listState.isScrollInProgress) {
+            snapshotFlow { listState.isScrollInProgress }.first { !it }
+        }
         withFrameNanos { }
-        listState.scrollToItem(anchor.index, anchor.offset)
+        if (pinned) {
+            // m-051: a top-anchor restore leaves the last message's tail
+            // below the fold; when the reader was pinned, re-pin instead.
+            listState.scrollToItemBottom(
+                expandRestoreLastIndex(
+                    hasMoreOlder = state.hasMoreOlder,
+                    messageCount = state.messages.size,
+                    hasWorking = state.busy && state.messages.lastOrNull()?.role == Role.USER && !state.sending,
+                ),
+            )
+        } else {
+            listState.scrollToItem(anchor.index, anchor.offset)
+        }
+        pendingExpandAnchor = null
     }
 
     // Which session the open effect has already scrolled for (below).
@@ -734,15 +784,26 @@ fun ChatScreen(
     }
 
     // The badge stays until the reader actually reaches the unread message:
-    // once the first unread item is on screen it counts as read and the
-    // watermark advances past it, so the badge drains as the reader scrolls
-    // through instead of clearing on any scroll. Keyed on the index as
-    // well as the visibility: several unread messages can be on screen at
-    // once, and the effect must re-run for each one it advances past.
+    // once at least half of the first unread item is on screen it counts
+    // as read (audit-200 D16, m-049 — a 1px sliver at the viewport edge
+    // used to advance the watermark) and the watermark advances past it,
+    // so the badge drains as the reader scrolls through instead of
+    // clearing on any scroll. Keyed on the index as well as the
+    // visibility: several unread messages can be on screen at once, and
+    // the effect must re-run for each one it advances past.
     val firstUnreadVisible by remember {
         derivedStateOf {
             if (firstUnreadListIndex < 0) false
-            else listState.layoutInfo.visibleItemsInfo.any { it.index == firstUnreadListIndex }
+            else listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index == firstUnreadListIndex }
+                ?.let {
+                    visibleFraction(
+                        itemOffset = it.offset,
+                        itemSize = it.size,
+                        viewportHeight = listState.layoutInfo.viewportSize.height,
+                    ) >= 0.5f
+                }
+                ?: false
         }
     }
     LaunchedEffect(firstUnreadVisible, firstUnreadIndex) {
@@ -1264,7 +1325,7 @@ fun ChatScreen(
             // staging only happens once the user picks.
             var revertTargetId by rememberSaveable { mutableStateOf<String?>(null) }
             ChatHeader(
-                title = headerTitle(state.workspacePath),
+                title = headerTitle(state.workspacePath, knownWorkspacePaths),
                 // The active session's own title, so the header says which
                 // conversation this is — not just which folder it is in.
                 // Audit-200 B3 (M-567): the list may never have loaded
@@ -1751,10 +1812,16 @@ fun ChatScreen(
                                                         role = SemanticsRole.Button,
                                                         enabled = !state.loadingEarlier,
                                                         onClick = {
-                                                            pendingAnchor = listState.captureAnchor()
+                                                            val captured = listState.captureAnchor()
+                                                            pendingAnchor = captured
                                                             anchorBaseSize = state.messages.size
                                                             anchorBaseHeadOffset =
                                                                 if (state.hasMoreOlder) 1 else 0
+                                                            anchorMessageId = anchorMessageId(
+                                                                anchor = captured,
+                                                                messageIds = state.messages.map { it.id },
+                                                                headOffset = anchorBaseHeadOffset,
+                                                            )
                                                             anchorSessionId = state.sessionID
                                                             onLoadEarlier()
                                                         },
@@ -1939,13 +2006,18 @@ fun ChatScreen(
                                             // user bubbles only, like edit
                                             // and resend — the fork boundary
                                             // and the revert point are user
-                                            // turns.
-                                            onFork = if (message.role == Role.USER) {
+                                            // turns. Audit-200 D16 (m-151):
+                                            // an optimistic bubble
+                                            // ("local:…") is not an engine
+                                            // message yet — it gets no pill
+                                            // until the echo lands (and the
+                                            // ViewModel refuses it too).
+                                            onFork = if (message.role == Role.USER && !message.id.startsWith("local:")) {
                                                 { onForkMessage(message.id) }
                                             } else {
                                                 null
                                             },
-                                            onRevert = if (message.role == Role.USER) {
+                                            onRevert = if (message.role == Role.USER && !message.id.startsWith("local:")) {
                                                 { revertTargetId = message.id }
                                             } else {
                                                 null
@@ -2690,7 +2762,7 @@ fun ChatScreen(
                     )
                 } else {
                     ChatSidebar(
-                        projectTitle = headerTitle(state.workspacePath),
+                        projectTitle = headerTitle(state.workspacePath, knownWorkspacePaths),
                         currentSessionID = state.sessionID,
                         sessions = sessions,
                         sessionsLoading = sessionsLoading,
@@ -2756,7 +2828,7 @@ fun ChatScreen(
                 scrimColor = Color.Black.copy(alpha = 0.6f),
                 drawerContent = {
                     ChatDrawer(
-                        projectTitle = headerTitle(state.workspacePath),
+                        projectTitle = headerTitle(state.workspacePath, knownWorkspacePaths),
                         currentSessionID = state.sessionID,
                         sessions = sessions,
                         sessionsLoading = sessionsLoading,
@@ -4530,8 +4602,11 @@ private fun ChatDrawerContent(
     val filteredSessions = remember(sessions, sidebarQuery, sessionDetails) {
         filterSessionRows(sessions, sidebarQuery, sessionDetails)
     }
-    val drawerSessions = remember(filteredSessions) { filteredSessions.take(DRAWER_SESSIONS) }
-    val groupedSessions = remember(drawerSessions) { groupSessions(drawerSessions) }
+    // Audit-200 D16 (m-163): pin first, then cap — see drawerSessions.
+    val drawerRows = remember(filteredSessions) {
+        drawerSessions(filteredSessions, DRAWER_SESSIONS)
+    }
+    val groupedSessions = remember(drawerRows) { groupSessions(drawerRows) }
     // Audit-200 C5 (M-089): previews are walked lazily, so the drawer
     // reports the rows actually visible — debounced, so a fast scroll
     // does not spam the view model, and header keys never reach it
@@ -5404,6 +5479,31 @@ internal data class FollowKeys(
  * (M-038 — an output growing in place keeps the same call id and
  * list size), and part-count growth.
  */
+/**
+ * Fraction of a list item visible in the viewport (audit-200 D16, m-049):
+ * an item counts as "read" only when at least half of it is on screen.
+ * [itemOffset] is the item's offset from the viewport top (negative when
+ * scrolled partly past), [itemSize] its height, [viewportHeight] the
+ * viewport height. Fully above or below the viewport is 0.
+ */
+internal fun visibleFraction(itemOffset: Int, itemSize: Int, viewportHeight: Int): Float {
+    if (itemSize <= 0 || viewportHeight <= 0) return 0f
+    val visible = (minOf(itemOffset + itemSize, viewportHeight) - maxOf(itemOffset, 0))
+        .coerceAtLeast(0)
+    return visible.toFloat() / itemSize
+}
+
+/**
+ * The bottom-pin target for an expand restore while the reader is pinned
+ * (audit-200 D16, m-051): the same target the follow effect computes
+ * ([targetLastIndex] — head item + messages + working placeholder, minus
+ * one), as a pure function so the rule is unit-tested without a live list.
+ */
+internal fun expandRestoreLastIndex(hasMoreOlder: Boolean, messageCount: Int, hasWorking: Boolean): Int {
+    val headOffset = if (hasMoreOlder) 1 else 0
+    return (headOffset + messageCount + (if (hasWorking) 1 else 0) - 1).coerceAtLeast(0)
+}
+
 internal fun followKeysOf(message: ChatMessage?): FollowKeys = FollowKeys(
     textLength = message?.text?.length ?: 0,
     reasoningLength = message?.reasoning?.length ?: 0,
@@ -5934,8 +6034,13 @@ private fun ReadinessStatusRow(
     busy: Boolean,
     workspacePath: String?,
     onStatusClick: (() -> Unit)?,
-    onProjectClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onProjectClick: (() -> Unit)? = null,
+    // Audit-200 D16 (m-199): workspaces the drawer knows, for the
+    // same-name disambiguation as the header. Modifier stays the first
+    // optional parameter, otherwise ModifierParameter fires (the
+    // pre-existing onProjectClick default used to sit before it).
+    knownWorkspaces: Set<String> = emptySet(),
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
@@ -5952,7 +6057,7 @@ private fun ReadinessStatusRow(
         label = "readiness_status_color",
     )
     val gitBranch = remember(workspacePath) { detectGitBranch(workspacePath) }
-    val projectName = headerTitle(workspacePath)
+    val projectName = headerTitle(workspacePath, knownWorkspaces)
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()

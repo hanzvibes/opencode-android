@@ -1970,6 +1970,12 @@ private fun InlineDiffBlock(
 
     val allLines = remember(hunks) { hunks.flatMap { it.lines } }
     val visibleLines = if (showFull) allLines else allLines.take(DIFF_COLLAPSED_LINES)
+    // Audit-200 D16 (m-100): ONE horizontal scroll state for the whole
+    // block, not one per row — every row used to scroll on its own, so a
+    // long line could only be read one row at a time and the columns
+    // never lined up. The console block next door already shares one
+    // state this way (C2).
+    val horizontalScrollState = rememberScrollState()
     val patchText = remember(hunks) {
         buildString {
             hunks.forEach { hunk ->
@@ -2090,7 +2096,7 @@ private fun InlineDiffBlock(
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .horizontalScroll(rememberScrollState()),
+                            .horizontalScroll(horizontalScrollState),
                     ) {
                         Text(
                             text = line.text.ifEmpty { " " },

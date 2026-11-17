@@ -31,6 +31,51 @@ fun computeRestoredIndex(
     .coerceAtLeast(0)
 
 /**
+ * The id of the message [anchor] sits on, or null when the anchor is the
+ * "load earlier" head item itself (its index is below [headOffset], so it
+ * points at no message). [messageIds] is the message list in list order.
+ */
+fun anchorMessageId(anchor: ScrollAnchor, messageIds: List<String>, headOffset: Int): String? {
+    val messageIndex = anchor.index - headOffset
+    return messageIds.getOrNull(messageIndex)
+}
+
+/**
+ * Where [anchor] lands when the transcript changed while older messages
+ * were loading — by MESSAGE ID, not by count (audit-200 D16, m-038/m-048).
+ *
+ * The count formula in [restoreScrollAnchor] assumes the size delta is
+ * purely prepended messages, but two polluters grow the tail mid-load: a
+ * streaming ghost appended by the overlay and an optimistic bubble staged
+ * while loading. Either one inflates the delta by one, so the count
+ * formula lands one item too low. The anchor's own id does not move when
+ * the tail grows: if it is still in the new list, it targets that message
+ * directly (plus the head shift); only when the id is gone — merged away
+ * by a rebuild — does it fall back to the count formula.
+ */
+fun restoreScrollAnchorById(
+    anchorMessageId: String?,
+    anchor: ScrollAnchor,
+    messageIds: List<String>,
+    oldMessageCount: Int,
+    newMessageCount: Int,
+    oldHeadOffset: Int,
+    newHeadOffset: Int,
+): ScrollAnchor {
+    val found = anchorMessageId?.let { messageIds.indexOf(it) } ?: -1
+    if (found >= 0) {
+        return ScrollAnchor(index = found + newHeadOffset, offset = anchor.offset)
+    }
+    return restoreScrollAnchor(
+        anchor = anchor,
+        oldMessageCount = oldMessageCount,
+        newMessageCount = newMessageCount,
+        oldHeadOffset = oldHeadOffset,
+        newHeadOffset = newHeadOffset,
+    )
+}
+
+/**
  * Where [anchor] lands after `newMessageCount - oldMessageCount` messages
  * were prepended at the front and the head-item offset moved from
  * [oldHeadOffset] to [newHeadOffset] — index AND offset, because the two

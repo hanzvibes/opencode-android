@@ -128,9 +128,29 @@ fun matchesSessionQuery(query: String, row: SessionRow, detail: SessionDetail? =
         // walk passed is what makes a session findable by a later ask.
         detail?.searchText,
         detail?.model,
-        row.directory,
+        // Audit-200 D16 (m-175): the directory the UI shows is the
+        // basename, not the absolute path — matching the full path made
+        // a single token like "storage" or "app" match every session
+        // of a project. A query token still matches by substring, but
+        // only within the basename ("app" still finds "my-app").
+        row.directory?.substringAfterLast('/')?.takeIf { it.isNotEmpty() },
     ) + statusSearchTerms(detail?.status)
     return matchesAllTokens(query, fields)
+}
+
+/**
+ * The drawer's capped session list (audit-200 D16, m-163): pin first,
+ * then cap. Capping the filtered list at [cap] before grouping cut off
+ * pins below the newest [cap] before [groupSessions] ever saw them, so a
+ * pin at position 21+ never reached the PINNED group. Pinned rows always
+ * ride along (deduped by id — a row is either pinned or not); the cap
+ * applies to the unpinned rest. Order inside each half is preserved.
+ */
+fun drawerSessions(rows: List<SessionRow>, cap: Int): List<SessionRow> {
+    val pinned = rows.filter { it.isPinned }
+    val rest = rows.filter { !it.isPinned }
+        .take((cap - pinned.size).coerceAtLeast(0))
+    return pinned + rest
 }
 
 /** Filters rows by [query] across titles and transcript previews (see [matchesSessionQuery]). */

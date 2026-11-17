@@ -86,4 +86,19 @@ class ChatFollowTest {
     fun `M-040 scrolled up 40px is still near the bottom`() {
         assertTrue(isNearBottomOffset(936 - 100 + 40, 100, 1000, 64, 48))
     }
+
+    // Audit-200 D16 (m-051): the expand restore re-pins when pinned ------
+
+    @Test
+    fun `m-051 the pinned expand restore targets the last list item`() {
+        // 10 messages, head item shown, no working placeholder: the last
+        // list index is 1 + 10 - 1 = 10.
+        assertEquals(10, expandRestoreLastIndex(hasMoreOlder = true, messageCount = 10, hasWorking = false))
+        // No head item: 0 + 10 - 1 = 9.
+        assertEquals(9, expandRestoreLastIndex(hasMoreOlder = false, messageCount = 10, hasWorking = false))
+        // Working placeholder takes the last slot: 1 + 10 + 1 - 1 = 11.
+        assertEquals(11, expandRestoreLastIndex(hasMoreOlder = true, messageCount = 10, hasWorking = true))
+        // An empty transcript never goes below 0.
+        assertEquals(0, expandRestoreLastIndex(hasMoreOlder = false, messageCount = 0, hasWorking = false))
+    }
 }
