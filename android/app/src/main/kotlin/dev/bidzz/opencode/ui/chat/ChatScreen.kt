@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
@@ -91,6 +92,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -618,15 +620,19 @@ fun ChatScreen(
     // above, so the viewport jumps up by a page. The session id is part
     // of the anchor: a session switch mid-load drops it instead of
     // restoring a stale position into the new session.
-    var pendingAnchor by remember { mutableStateOf<ScrollAnchor?>(null) }
-    var anchorBaseSize by remember { mutableIntStateOf(0) }
-    var anchorBaseHeadOffset by remember { mutableIntStateOf(0) }
-    var anchorSessionId by remember { mutableStateOf<String?>(null) }
+    // Audit-200 D17 (m-426): saveable, so a recreate or process death
+    // mid-load does not throw the anchor away — the restore effect below
+    // keys on the loading flag and the size, and a null anchor means it
+    // never runs. The anchor itself needs a saver (ScrollAnchorSaver).
+    var pendingAnchor by rememberSaveable(stateSaver = ScrollAnchorSaver) { mutableStateOf<ScrollAnchor?>(null) }
+    var anchorBaseSize by rememberSaveable { mutableIntStateOf(0) }
+    var anchorBaseHeadOffset by rememberSaveable { mutableIntStateOf(0) }
+    var anchorSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     // Audit-200 D16 (m-038/m-048): the id of the message the anchor sits
     // on, captured with it — the count formula below is exact only when
     // the size delta is purely prepended messages, and a streaming ghost
     // or an optimistic bubble staged mid-load grows the tail by one.
-    var anchorMessageId by remember { mutableStateOf<String?>(null) }
+    var anchorMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(state.loadingEarlier, state.messages.size) {
         val anchor = pendingAnchor
         if (anchor != null && !state.loadingEarlier) {
@@ -641,7 +647,23 @@ fun ChatScreen(
                     oldHeadOffset = anchorBaseHeadOffset,
                     newHeadOffset = newHeadOffset,
                 )
-                listState.scrollToItem(restored.index, restored.offset)
+                // Audit-200 D17 (m-450): the reader may have scrolled away
+                // while the page loaded — restoring then yanks them back
+                // to the tap position. Wait for any gesture to settle
+                // (the #6f pattern, m-044), then restore only if the
+                // viewport is still where the tap left it: the first
+                // visible item and its offset are unchanged when nothing
+                // moved (a prepend keeps the index number, it does not
+                // re-scroll the list).
+                if (listState.isScrollInProgress) {
+                    snapshotFlow { listState.isScrollInProgress }.first { !it }
+                }
+                val firstVisible = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+                if (firstVisible == null ||
+                    (firstVisible.index == anchor.index && firstVisible.offset == anchor.offset)
+                ) {
+                    listState.scrollToItem(restored.index, restored.offset)
+                }
                 // The prepend shifted the watermark's index with it (01-F2):
                 // the id is unchanged, but the in-memory count must follow
                 // the message it points past, or the badge counts the newly
@@ -678,8 +700,10 @@ fun ChatScreen(
     // capture time, a top-anchor restore leaves the last message's tail
     // below the fold with no follow key changing to repair it — restore
     // bottom-pinned instead (same target as the follow effect).
-    var pendingExpandAnchor by remember { mutableStateOf<ScrollAnchor?>(null) }
-    var pendingExpandPinned by remember { mutableStateOf(false) }
+    // Audit-200 D17 (m-426): saveable, like the #6d anchor above — a
+    // recreate mid-expand used to drop the compensation entirely.
+    var pendingExpandAnchor by rememberSaveable(stateSaver = ScrollAnchorSaver) { mutableStateOf<ScrollAnchor?>(null) }
+    var pendingExpandPinned by rememberSaveable { mutableStateOf(false) }
     fun captureExpandAnchor() {
         pendingExpandAnchor = listState.captureAnchor()
         pendingExpandPinned = pinnedToBottom
@@ -715,6 +739,25 @@ fun ChatScreen(
     // jump through the shared list mutex (Fase 2, 76-F2). The follow stays
     // off until the open effect has landed this session.
     var scrolledSessionID by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Audit-200 D17 (m-421): the open effect below keys its landing on
+    // scrolledSessionID — when the engine dies the view model nulls the
+    // session id but this kept the old value, so the post-crash restore
+    // (same session, refilled window) looked "already scrolled" and
+    // landed nowhere. Reset it while the session is gone; the restore
+    // then reads as a new session and lands on the first unread.
+    LaunchedEffect(state.sessionID) {
+        if (state.sessionID == null) scrolledSessionID = null
+    }
+
+    // Audit-200 D17 (m-455/m-356): entry animation is for messages that
+    // actually arrive, not for history. On a session open every visible
+    // item is a fresh composition, so without this flag the whole
+    // transcript fades + slides in staggered while the open effect snaps
+    // the scroll — a burst of motion on top of a snap. Suppressed until
+    // the open effect below has landed (it clears the flag at its end,
+    // even when it does not scroll, so a restore never sticks it on).
+    var suppressEntryAnimation by remember(state.sessionID) { mutableStateOf(true) }
 
     LaunchedEffect(nearBottom, state.messages.size) {
         // Audit-200 C14 (M-200): do not write before the session-open
@@ -806,8 +849,17 @@ fun ChatScreen(
                 ?: false
         }
     }
+    // Audit-200 D17 (m-449): which message hosted the "New messages"
+    // divider when the watermark last advanced past it. The divider
+    // lives in the same item as the first unread message, so advancing
+    // unmounts it and the item shrinks by its height — the message the
+    // reader is looking at jumps up. The item below keeps an invisible
+    // divider of the same height until the watermark moves on.
+    var dividerHostId by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(firstUnreadVisible, firstUnreadIndex) {
         if (firstUnreadVisible && firstUnreadIndex >= 0) {
+            dividerHostId = state.messages.getOrNull(firstUnreadIndex)?.id
             lastReadMessageCount = firstUnreadIndex + 1
             lastReadMessageId = state.messages.getOrNull(firstUnreadIndex)?.id
             saveReadPosition()
@@ -1122,7 +1174,6 @@ fun ChatScreen(
             lastReadMessageCount = resolveReadCount(restoredId, state.messages)
             lastReadMessageId = restoredId ?: state.messages.lastOrNull()?.id
             if (isNewSession) {
-                scrolledSessionID = state.sessionID
                 val firstUnread = state.messages.withIndex().firstOrNull { (index, message) ->
                     index >= lastReadMessageCount && message.role == Role.ASSISTANT
                 }?.index ?: -1
@@ -1145,7 +1196,24 @@ fun ChatScreen(
                     listState.scrollToItemBottom(targetLastIndex)
                     pinnedToBottom = true
                 }
+                // Audit-200 D17 (m-459): the gate opens only once the
+                // scroll has landed. It used to open first, and a token
+                // arriving mid-scroll tripped the follow effect (its key
+                // includes the last message's text length) while the
+                // open effect was still between frames — follow glided
+                // down, then the open effect snapped back: a swoop and
+                // a snap in one open. Programmatic snaps do not set
+                // isScrollInProgress, so the follow guard could not
+                // see the open scroll coming.
+                scrolledSessionID = state.sessionID
             }
+            // Audit-200 D17 (m-455): the open has landed (or there was
+            // nothing to land on) — history items are composed, so from
+            // here on only genuinely new arrivals animate in. Deliberately
+            // inside the non-empty branch: clearing it on an empty run
+            // would let the history batch that arrives next animate in
+            // as if it were new.
+            suppressEntryAnimation = false
         }
     }
 
@@ -1867,17 +1935,27 @@ fun ChatScreen(
                                 // it, capped at 150ms. Slide/fade change
                                 // no layout size, so the bottom-pin scroll
                                 // math is untouched.
+                                // Audit-200 D17 (m-455): history does not
+                                // enter — it is already there. The flag is
+                                // true until the session-open effect lands,
+                                // so a session open composes its transcript
+                                // with no entry animation at all; only a
+                                // message that arrives after that animates.
                                 val entryDelay = messageEntryDelayMillis(index, state.messages.lastIndex)
                                 Column(
                                     modifier = Modifier.animateItem(),
                                 ) {
                                 AnimatedVisibility(
                                     visible = true,
-                                    enter = fadeIn(
-                                        animationSpec = motion.tweenStandard(delayMillis = entryDelay),
-                                    ) + slideInVertically(
-                                        animationSpec = motion.tweenStandard(delayMillis = entryDelay),
-                                    ) { messageEntrySlidePx },
+                                    enter = if (suppressEntryAnimation) {
+                                        EnterTransition.None
+                                    } else {
+                                        fadeIn(
+                                            animationSpec = motion.tweenStandard(delayMillis = entryDelay),
+                                        ) + slideInVertically(
+                                            animationSpec = motion.tweenStandard(delayMillis = entryDelay),
+                                        ) { messageEntrySlidePx }
+                                    },
                                 ) {
                                     Column(
                                         modifier = Modifier.padding(top = topSpacing),
@@ -1918,6 +1996,18 @@ fun ChatScreen(
                                         if (index == firstUnreadIndex) {
                                             NewMessagesDivider(
                                                 modifier = Modifier.padding(bottom = spacing.sm),
+                                            )
+                                        } else if (message.id == dividerHostId) {
+                                            // Audit-200 D17 (m-449): the divider
+                                            // just moved past this message when
+                                            // the watermark advanced — keep an
+                                            // invisible one of the same height
+                                            // so the message does not jump up
+                                            // by the divider height.
+                                            NewMessagesDivider(
+                                                modifier = Modifier
+                                                    .padding(bottom = spacing.sm)
+                                                    .alpha(0f),
                                             )
                                         }
                                         // Redesign C: no hairline divider above an
@@ -1969,6 +2059,7 @@ fun ChatScreen(
                                             // A failed run with partial content
                                             // (01-F4): named under the turn.
                                             errorText = message.errorText,
+                                            errorType = message.errorType,
                                             toolDurations = message.toolDurations,
                                             // Live elapsed time for a running step
                                             // (Fase 2, item 5): the start stamps
@@ -4453,11 +4544,12 @@ private fun ChatDrawerContent(
         }
     }
     // One Column owns the whole height in both hosts (item 19): the
-    // session list takes the remaining space (weight(1f)) and the footer
-    // sits at the bottom. The header used to be its own Column with the
-    // divider and footer as siblings, which only stacked correctly
-    // inside ModalDrawerSheet; in the sidebar's Box the footer drew on
-    // top of the workspace switcher and New Chat.
+    // header, search and banners are fixed, and a single LazyColumn
+    // takes the remaining space (weight(1f)) for the session list AND
+    // the footer (audit-200 D17, m-352). The header used to be its own
+    // Column with the divider and footer as siblings, which only
+    // stacked correctly inside ModalDrawerSheet; in the sidebar's Box
+    // the footer drew on top of the workspace switcher and New Chat.
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -4619,102 +4711,115 @@ private fun ChatDrawerContent(
             .collect { keys ->
                 onVisibleSessions(
                     keys.filterIsInstance<String>()
-                        .filter { !it.startsWith("header_") },
+                        .filter { !it.startsWith("header_") && !it.startsWith("footer_") },
                 )
             }
     }
 
-    if (filteredSessions.isEmpty()) {
-        // Mini empty state, pinned to the top of the list area: the old
-        // centred "No sessions yet" filled the whole middle of the
-        // drawer with dead space. The list area still takes the
-        // remaining height (weight(1f)) so the footer stays at the bottom.
-        // Three states, mirroring SessionListPane (19-F8): loading, a
-        // failed load with Retry, and truly empty. Loading and failure
-        // only claim the area while no rows exist at all — a refresh over
-        // loaded rows keeps showing them, and a search that matches
-        // nothing still says so instead of crying failure.
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = spacing.lg, vertical = spacing.xl),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                when {
-                    // Audit-200 D10 (m-196): the drawer loading state was
-                    // a static text while every other screen shows a
-                    // spinner — the same LoadingState the History screen
-                    // uses, mini so it fits the drawer column, with the
-                    // same retry the failure branch offers.
-                    sessionsLoading && sessions.isEmpty() -> {
-                        LoadingState(
-                            stringResource(R.string.common_loading),
-                            onRetry = onRetrySessions,
-                            fillMaxSize = false,
-                        )
-                    }
-                    (sessionsFailure != null || sessionsFailureKey != null) && sessions.isEmpty() -> {
-                        EmptyState(
-                            sessionsFailure?.message()
-                                ?: sessionsFailureKey?.let { stringResource(it) }.orEmpty(),
-                            isError = true,
-                            onRetry = onRetrySessions,
-                            fillMaxSize = false,
-                        )
-                    }
-                    else -> {
-                        Text(
-                            text = if (sidebarQuery.isBlank()) {
-                                stringResource(R.string.drawer_no_sessions)
-                            } else {
-                                stringResource(R.string.history_search_no_results, sidebarQuery)
-                            },
-                            style = OpenCodeTypography.bodySmall,
-                            color = colors.onSurfaceMuted,
-                            textAlign = TextAlign.Center,
-                        )
-                        if (sidebarQuery.isBlank()) {
-                            Text(
-                                text = stringResource(R.string.sidebar_empty_hint),
-                                style = OpenCodeTypography.caption,
-                                color = colors.onSurfaceFaint,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(top = spacing.xs),
-                            )
-                        }
-                        // Audit-200 D10 (m-173/m-1115): the drawer had no
-                        // preview note at all — a search with no matches
-                        // read as complete while previews were still
-                        // arriving (or had failed). Same note as History,
-                        // derived from the same state.
-                        if (sidebarQuery.isNotBlank() && sessionsPreviewNote != SessionPreviewNote.NONE) {
-                            Text(
-                                text = stringResource(
-                                    if (sessionsPreviewNote == SessionPreviewNote.LOADING) R.string.history_previews_loading
-                                    else R.string.history_previews_incomplete,
-                                ),
-                                style = OpenCodeTypography.caption,
-                                color = colors.onSurfaceFaint,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(top = spacing.xs),
-                            )
+    // Audit-200 D17 (m-352): ONE scrollable column for the list AND
+    // the footer. The list used to be a LazyColumn with weight(1f) and
+    // the footer a fixed Column below it, so on a short screen
+    // (landscape ~360dp) the fixed chrome plus the ~660dp footer left
+    // the list 0dp and the footer itself off-screen with no way to
+    // scroll to it. The footer now rides as the trailing item of the
+    // same LazyColumn — reachable by scrolling on any height. The
+    // trade-off is deliberate: the footer is no longer pinned to the
+    // bottom on tall screens; it flows after the last row instead.
+    LazyColumn(
+        state = drawerListState,
+        modifier = Modifier.weight(1f),
+        contentPadding = PaddingValues(vertical = spacing.xxs),
+    ) {
+        if (filteredSessions.isEmpty()) {
+            item(key = "header_empty", contentType = "drawer-empty") {
+                // Mini empty state, pinned to the top of the list area: the old
+                // centred "No sessions yet" filled the whole middle of the
+                // drawer with dead space.
+                // Three states, mirroring SessionListPane (19-F8): loading, a
+                // failed load with Retry, and truly empty. Loading and failure
+                // only claim the area while no rows exist at all — a refresh over
+                // loaded rows keeps showing them, and a search that matches
+                // nothing still says so instead of crying failure.
+                // Audit-200 D17 (m-352): this is now an item of the drawer's
+                // single LazyColumn (list + footer), so it scrolls with the
+                // footer instead of pinning it to the bottom.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = spacing.lg, vertical = spacing.xl),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        when {
+                            // Audit-200 D10 (m-196): the drawer loading state was
+                            // a static text while every other screen shows a
+                            // spinner — the same LoadingState the History screen
+                            // uses, mini so it fits the drawer column, with the
+                            // same retry the failure branch offers.
+                            sessionsLoading && sessions.isEmpty() -> {
+                                LoadingState(
+                                    stringResource(R.string.common_loading),
+                                    onRetry = onRetrySessions,
+                                    fillMaxSize = false,
+                                )
+                            }
+                            (sessionsFailure != null || sessionsFailureKey != null) && sessions.isEmpty() -> {
+                                EmptyState(
+                                    sessionsFailure?.message()
+                                        ?: sessionsFailureKey?.let { stringResource(it) }.orEmpty(),
+                                    isError = true,
+                                    onRetry = onRetrySessions,
+                                    fillMaxSize = false,
+                                )
+                            }
+                            else -> {
+                                Text(
+                                    text = if (sidebarQuery.isBlank()) {
+                                        stringResource(R.string.drawer_no_sessions)
+                                    } else {
+                                        stringResource(R.string.history_search_no_results, sidebarQuery)
+                                    },
+                                    style = OpenCodeTypography.bodySmall,
+                                    color = colors.onSurfaceMuted,
+                                    textAlign = TextAlign.Center,
+                                )
+                                if (sidebarQuery.isBlank()) {
+                                    Text(
+                                        text = stringResource(R.string.sidebar_empty_hint),
+                                        style = OpenCodeTypography.caption,
+                                        color = colors.onSurfaceFaint,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(top = spacing.xs),
+                                    )
+                                }
+                                // Audit-200 D10 (m-173/m-1115): the drawer had no
+                                // preview note at all — a search with no matches
+                                // read as complete while previews were still
+                                // arriving (or had failed). Same note as History,
+                                // derived from the same state.
+                                if (sidebarQuery.isNotBlank() && sessionsPreviewNote != SessionPreviewNote.NONE) {
+                                    Text(
+                                        text = stringResource(
+                                            if (sessionsPreviewNote == SessionPreviewNote.LOADING) R.string.history_previews_loading
+                                            else R.string.history_previews_incomplete,
+                                        ),
+                                        style = OpenCodeTypography.caption,
+                                        color = colors.onSurfaceFaint,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(top = spacing.xs),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-    } else {
-        LazyColumn(
-            state = drawerListState,
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = spacing.xxs),
-        ) {
+        } else {
+
             groupedSessions.forEach { (group, rows) ->
                 item(key = "header_${group.name}", contentType = "session-header") {
                     Row(
@@ -4763,142 +4868,145 @@ private fun ChatDrawerContent(
                     )
                 }
             }
-        }
-
-        // Past the cap, the full history lives one tap away on the
-        // sessions screen instead of scrolling forever in the drawer.
-        if (filteredSessions.size > DRAWER_SESSIONS) {
-            DrawerItem(
-                label = stringResource(R.string.drawer_view_all),
-                glyph = Glyph.History,
-                onClick = onAllSessions,
-            )
-        }
-    }
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(0.5.dp)
-            .background(colors.hairline),
-    )
-
-    // One footer block (Opsi 2): compact workspace switcher, Settings,
-    // Diagnostics, then the developer profile with engine status — all
-    // plain 48dp rows, no pill buttons. The workspace switcher moved
-    // down here from the top card, so the header is brand + search.
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = spacing.sm, vertical = spacing.xs),
-    ) {
-        DrawerItem(
-            label = projectTitle.ifBlank { "OpenCode" },
-            glyph = Glyph.Folder,
-            onClick = onProject,
-            trailing = {
-                GlyphIcon(
-                    glyph = Glyph.ChevronDown,
-                    tint = colors.onSurfaceFaint,
-                    size = 14.dp,
-                )
-            },
-        )
-        DrawerItem(
-            label = stringResource(R.string.settings_title),
-            glyph = Glyph.Sliders,
-            onClick = onSettings,
-        )
-        DrawerItem(
-            label = stringResource(R.string.drawer_diagnostics),
-            glyph = Glyph.Pulse,
-            onClick = onDiagnostics,
-        )
-        // Audit-200 D15 (m-992): Artifacts, Jobs, Generate and Web search
-        // used to be reachable only from Settings — the chat drawer is
-        // the navigation hub, so they get footer rows here too. The
-        // Settings entries stay as the fallback.
-        DrawerItem(
-            label = stringResource(R.string.artifact_title),
-            glyph = Glyph.File,
-            onClick = onArtifacts,
-        )
-        DrawerItem(
-            label = stringResource(R.string.job_title),
-            glyph = Glyph.History,
-            onClick = onJobs,
-        )
-        DrawerItem(
-            label = stringResource(R.string.generate_title),
-            glyph = Glyph.Sparkles,
-            onClick = onGenerate,
-        )
-        DrawerItem(
-            label = stringResource(R.string.websearch_title),
-            glyph = Glyph.Search,
-            onClick = onWebSearch,
-        )
-
-        // Developer profile with engine status: the logomark, 30dp,
-        // is the drawer's identity mark since the name was removed
-        // (user decision 2026-11-11). The status dot + label reuse the
-        // header's wording (Ready / Working / Unhealthy / …), so the
-        // footer never invents a second vocabulary for the same state.
-        val engineStatus = engineState.toStatus(busy)
-        val engineLabel = engineState.statusLabel(busy)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .padding(top = spacing.xs)
-                .clip(RoundedCornerShape(radius.md))
-                .clickable(role = SemanticsRole.Button, onClick = onDeveloper)
-                .padding(horizontal = spacing.sm, vertical = spacing.xs),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(radius.sm)),
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_logomark),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                )
+        
+            // Past the cap, the full history lives one tap away on the
+            // sessions screen instead of scrolling forever in the drawer.
+            if (filteredSessions.size > DRAWER_SESSIONS) {
+                item(key = "footer_view_all", contentType = "drawer-footer") {
+                    DrawerItem(
+                        label = stringResource(R.string.drawer_view_all),
+                        glyph = Glyph.History,
+                        onClick = onAllSessions,
+                    )
+                }
             }
-            Text(
-                text = "@hanzvibes",
-                style = OpenCodeTypography.caption,
-                // onSurfaceMuted (#5F5F66) clears AA at 11sp in
-                // the light theme; onSurfaceFaint did not.
-                color = colors.onSurfaceMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = spacing.sm),
-            )
+        }
+        item(key = "footer_block", contentType = "drawer-footer") {
             Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(colors.hairline),
+            )
+
+            // One footer block (Opsi 2): compact workspace switcher, Settings,
+            // Diagnostics, then the developer profile with engine status — all
+            // plain 48dp rows, no pill buttons. The workspace switcher moved
+            // down here from the top card, so the header is brand + search.
+            Column(
                 modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(statusDotColor(colors, engineStatus)),
-            )
-            Text(
-                text = engineLabel,
-                style = OpenCodeTypography.caption,
-                color = colors.onSurfaceMuted,
-                maxLines = 1,
-                modifier = Modifier.padding(start = spacing.xs),
-            )
-            GlyphIcon(
-                glyph = Glyph.ChevronRight,
-                tint = colors.onSurfaceMuted,
-                size = 14.dp,
-                modifier = Modifier.padding(start = spacing.xs),
-            )
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = spacing.sm, vertical = spacing.xs),
+            ) {
+                DrawerItem(
+                    label = projectTitle.ifBlank { "OpenCode" },
+                    glyph = Glyph.Folder,
+                    onClick = onProject,
+                    trailing = {
+                        GlyphIcon(
+                            glyph = Glyph.ChevronDown,
+                            tint = colors.onSurfaceFaint,
+                            size = 14.dp,
+                        )
+                    },
+                )
+                DrawerItem(
+                    label = stringResource(R.string.settings_title),
+                    glyph = Glyph.Sliders,
+                    onClick = onSettings,
+                )
+                DrawerItem(
+                    label = stringResource(R.string.drawer_diagnostics),
+                    glyph = Glyph.Pulse,
+                    onClick = onDiagnostics,
+                )
+                // Audit-200 D15 (m-992): Artifacts, Jobs, Generate and Web search
+                // used to be reachable only from Settings — the chat drawer is
+                // the navigation hub, so they get footer rows here too. The
+                // Settings entries stay as the fallback.
+                DrawerItem(
+                    label = stringResource(R.string.artifact_title),
+                    glyph = Glyph.File,
+                    onClick = onArtifacts,
+                )
+                DrawerItem(
+                    label = stringResource(R.string.job_title),
+                    glyph = Glyph.History,
+                    onClick = onJobs,
+                )
+                DrawerItem(
+                    label = stringResource(R.string.generate_title),
+                    glyph = Glyph.Sparkles,
+                    onClick = onGenerate,
+                )
+                DrawerItem(
+                    label = stringResource(R.string.websearch_title),
+                    glyph = Glyph.Search,
+                    onClick = onWebSearch,
+                )
+
+                // Developer profile with engine status: the logomark, 30dp,
+                // is the drawer's identity mark since the name was removed
+                // (user decision 2026-11-11). The status dot + label reuse the
+                // header's wording (Ready / Working / Unhealthy / …), so the
+                // footer never invents a second vocabulary for the same state.
+                val engineStatus = engineState.toStatus(busy)
+                val engineLabel = engineState.statusLabel(busy)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .padding(top = spacing.xs)
+                        .clip(RoundedCornerShape(radius.md))
+                        .clickable(role = SemanticsRole.Button, onClick = onDeveloper)
+                        .padding(horizontal = spacing.sm, vertical = spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(RoundedCornerShape(radius.sm)),
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_logomark),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    Text(
+                        text = "@hanzvibes",
+                        style = OpenCodeTypography.caption,
+                        // onSurfaceMuted (#5F5F66) clears AA at 11sp in
+                        // the light theme; onSurfaceFaint did not.
+                        color = colors.onSurfaceMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = spacing.sm),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(statusDotColor(colors, engineStatus)),
+                    )
+                    Text(
+                        text = engineLabel,
+                        style = OpenCodeTypography.caption,
+                        color = colors.onSurfaceMuted,
+                        maxLines = 1,
+                        modifier = Modifier.padding(start = spacing.xs),
+                    )
+                    GlyphIcon(
+                        glyph = Glyph.ChevronRight,
+                        tint = colors.onSurfaceMuted,
+                        size = 14.dp,
+                        modifier = Modifier.padding(start = spacing.xs),
+                    )
+                }
+            }
         }
     }
     }
@@ -5530,25 +5638,30 @@ internal fun followKeysOf(message: ChatMessage?): FollowKeys = FollowKeys(
  * The fast path (item already laid out, the streaming case) measures the
  * item from layoutInfo and scrolls once with the exact offset — no
  * intermediate top-pin frame, so no flicker. The slow path (item not
- * laid out yet, e.g. opening a session) snaps it into view first,
- * waits for a layout pass, then corrects the offset; up to three frames
- * are tried because the first frame after a scroll may not have laid
- * the item out yet.
+ * laid out yet, e.g. opening a session) waits for the pending layout
+ * pass to settle first, then scrolls once with the correct offset;
+ * audit-200 D17 (m-453) removed the old snap-then-correct, which showed
+ * the item top-pinned for a frame. If the item is still not laid out
+ * (far from the viewport), the offset below requests far past its
+ * bottom: the list clamps to its max scroll, which bottom-pins the last
+ * item in one jump. Callers always pass the last index; the clamp
+ * fallback relies on that.
  */
+private const val BOTTOM_PIN_CLAMP_OFFSET = 1_000_000
+
 private suspend fun LazyListState.scrollToItemBottom(index: Int) {
     val visible = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
     if (visible != null) {
         scrollToItem(index, bottomOffsetFor(visible))
         return
     }
-    scrollToItem(index)
-    repeat(3) {
-        withFrameNanos { }
-        val laidOut = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@repeat
-        val offset = bottomOffsetFor(laidOut)
-        if (offset > 0) scrollToItem(index, offset)
+    withFrameNanos { }
+    val laidOut = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    if (laidOut != null) {
+        scrollToItem(index, bottomOffsetFor(laidOut))
         return
     }
+    scrollToItem(index, BOTTOM_PIN_CLAMP_OFFSET)
 }
 
 /** Animated twin of [scrollToItemBottom]: same bottom pin, smooth. */
@@ -5558,14 +5671,13 @@ private suspend fun LazyListState.animateScrollToItemBottom(index: Int) {
         animateScrollToItem(index, bottomOffsetFor(visible))
         return
     }
-    animateScrollToItem(index)
-    repeat(3) {
-        withFrameNanos { }
-        val laidOut = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@repeat
-        val offset = bottomOffsetFor(laidOut)
-        if (offset > 0) animateScrollToItem(index, offset)
+    withFrameNanos { }
+    val laidOut = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    if (laidOut != null) {
+        animateScrollToItem(index, bottomOffsetFor(laidOut))
         return
     }
+    animateScrollToItem(index, BOTTOM_PIN_CLAMP_OFFSET)
 }
 
 /**

@@ -266,6 +266,32 @@ class PermissionRestoreGate {
 }
 
 /**
+ * Transcript-window memory shared across [ChatRepository] instances
+ * (audit-200 D17, m-426): how wide the loaded window was per session.
+ *
+ * The repository is rebuilt on every attach, reload and new session,
+ * and `open()` used to reset the window to the default 100 messages —
+ * so every restore after an engine crash (and every re-open of a
+ * session the reader had already widened with "load earlier") started
+ * narrow again. The view model owns one of these and hands it to every
+ * repository it builds, the same pattern as [PermissionRestoreGate].
+ * Only the WIDTH is remembered (message count / limit): a re-open
+ * fetches that many newest messages in one window, which covers the
+ * pages "load earlier" had prepended; the pagination cursor itself is
+ * re-derived by the resync.
+ */
+class TranscriptWindowMemory {
+    private val widthsBySession = mutableMapOf<String, Int>()
+
+    fun widthFor(sessionID: String): Int? = widthsBySession[sessionID]
+
+    fun remember(sessionID: String, width: Int) {
+        val current = widthsBySession[sessionID] ?: 0
+        if (width > current) widthsBySession[sessionID] = width
+    }
+}
+
+/**
  * Owns one session's conversation state.
  *
  * Streaming text is accumulated per assistant message id, not per "last message":
@@ -277,6 +303,8 @@ class ChatRepository(
     private val eventStream: EventStream,
     private val scope: CoroutineScope,
     private val permissionGate: PermissionRestoreGate = PermissionRestoreGate(),
+    /** Window widths remembered per session (audit-200 D17, m-426). */
+    private val windowMemory: TranscriptWindowMemory = TranscriptWindowMemory(),
     /** Shell API for live tool output (audit-200 C14, M-195); null in tests that do not poll. */
     private val shells: ShellApi? = null,
 ) {
@@ -435,9 +463,11 @@ class ChatRepository(
         permissionsDirty = true
         lastStreamEventAtMs = 0L
         this.sessionID = sessionID
-        // A fresh open starts at the default window (item 28): earlier
-        // messages are one tap away, not fetched up front every time.
-        messageLimit = INITIAL_MESSAGE_LIMIT
+        // A fresh open starts at the remembered window width (audit-200
+        // D17, m-426) — a session the reader already widened with "load
+        // earlier" re-opens wide instead of resetting to the default 100;
+        // a session never widened starts at the default (item 28).
+        messageLimit = windowMemory.widthFor(sessionID) ?: INITIAL_MESSAGE_LIMIT
         messagesCursor = null
         _state.value = ChatState(sessionID = sessionID)
 
@@ -536,6 +566,9 @@ class ChatRepository(
                 prependOlderPage(id, cursor)
             } else {
                 messageLimit += MESSAGE_PAGE
+                // Audit-200 D17 (m-426): remember the widened window so
+                // the next open of this session starts wide.
+                windowMemory.remember(id, messageLimit)
                 // Pinned to the session the tap was for (audit-200 B3,
                 // M-490): an unpinned resync would adopt whatever session is
                 // current when it runs.
@@ -574,14 +607,29 @@ class ChatRepository(
                     }
                 }
                 val existing = _state.value.messages
+                // Audit-200 D17 (m-451): when the whole page is one
+                // continuation of the window's first message, folding it
+                // in leaves the list the same size while the reading point
+                // sinks to the middle of the merged item — the load-earlier
+                // anchor (by id + offset from the item top) then lands in
+                // the absorbed content instead of at the reading point.
+                // A page that still contributes standalone messages folds
+                // its boundary as before; only a fully-absorbed page stays
+                // unfolded, so the list grows by one and the anchor holds.
+                // (The grow-window fallback has no page boundary to hold
+                // onto — its fold still merges; see the PR body.)
                 val combined = if (pageMerged.isNotEmpty() && existing.isNotEmpty() &&
-                    isAssistantContinuation(existing.first(), pageMerged.last())
+                    isAssistantContinuation(existing.first(), pageMerged.last()) &&
+                    pageMerged.size > 1
                 ) {
                     pageMerged.dropLast(1) + mergeAssistant(pageMerged.last(), existing.first()) + existing.drop(1)
                 } else {
                     pageMerged + existing
                 }
                 messagesCursor = page.value.cursor?.next
+                // Audit-200 D17 (m-426): remember the widened window so
+                // the next open of this session starts wide.
+                windowMemory.remember(id, combined.size)
                 _state.value = _state.value.copy(
                     messages = combined,
                     hasMoreOlder = page.value.cursor?.next != null,

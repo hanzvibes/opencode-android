@@ -820,8 +820,11 @@ class MainActivity : FragmentActivity() {
         notificationPrefs().edit().putBoolean("settings_hint_shown", true).apply()
     }
 
-    /** Unused for now; the workspace picker lives in Settings. */
-    @Suppress("unused")
+    /**
+     * Opens the system all-files-access screen (API 30+) or requests the
+     * legacy storage permission (older APIs). Called from the workspace
+     * folder gate and from the onboarding "Grant all-files access" action.
+     */
     private fun requestStorageIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) return

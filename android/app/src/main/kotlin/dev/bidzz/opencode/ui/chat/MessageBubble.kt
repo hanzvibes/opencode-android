@@ -254,6 +254,12 @@ fun MessageBubble(
      * content at all renders as a [Role.ERROR] bubble instead.
      */
     errorText: String? = null,
+    /**
+     * The engine's error TYPE for the same turn (e.g. `provider.free-limit`),
+     * used by [isRateLimitError] to match the free-tier rate limit exactly
+     * instead of guessing from the text (audit-200 D17, m-315).
+     */
+    errorType: String? = null,
 ) {
     val colors = OpenCodeTheme.colors
     val spacing = OpenCodeTheme.tokens.spacing
@@ -598,6 +604,7 @@ fun MessageBubble(
                                         isThinkingActive = isThinkingActive,
                                         reasoningText = part.text,
                                         elapsedSeconds = finalDuration,
+                                        onBeforeHeightChange = onBeforeToolTraceHeightChange,
                                         modifier = Modifier.padding(bottom = spacing.sm),
                                     )
                                 }
@@ -822,7 +829,7 @@ fun MessageBubble(
                         // picker or the view model (see isRateLimitError),
                         // so the guidance is the fix and the affordance is
                         // documented as remaining work.
-                        if (isRateLimitError(markdown)) {
+                        if (isRateLimitError(markdown, errorType)) {
                             Text(
                                 text = stringResource(R.string.chat_rate_limited_guidance),
                                 style = OpenCodeTypography.bodySmall,
@@ -887,9 +894,20 @@ fun ThinkingDisclosure(
      * no elapsed-time suffix — the wait is not thinking time.
      */
     activeLabel: String? = null,
+    /**
+     * Called before the disclosure changes height (audit-200 D17, m-448):
+     * the screen captures the scroll anchor first, so expanding or
+     * collapsing the reasoning does not shove the messages below it.
+     * Same role as ToolTrace's callback, threaded from the same call site.
+     */
+    onBeforeHeightChange: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
+    // Audit-200 D17 (m-430): true once the reader opens the panel by
+    // hand — the auto-collapse below must never close a panel the reader
+    // opened on purpose. Same flag as ToolTrace (ChatTurnMeta).
+    var userExpanded by rememberSaveable { mutableStateOf(false) }
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
     val spacing = OpenCodeTheme.tokens.spacing
@@ -900,9 +918,18 @@ fun ThinkingDisclosure(
     // the reasoning is the live activity while the model thinks, and a
     // quiet "Thought for Xs" pill once it has answered. The effect only
     // fires on the transition, so tapping to collapse mid-thought still
-    // works until the next transition.
+    // works until the next transition — and a panel the reader opened by
+    // hand stays open when thinking ends (m-430).
     LaunchedEffect(isThinkingActive) {
-        isExpanded = isThinkingActive
+        if (isThinkingActive) {
+            if (!isExpanded) {
+                onBeforeHeightChange()
+                isExpanded = true
+            }
+        } else if (!userExpanded && isExpanded) {
+            onBeforeHeightChange()
+            isExpanded = false
+        }
     }
 
     // Breathing soft glow animation while actively thinking, on the one
@@ -959,7 +986,11 @@ fun ThinkingDisclosure(
                 .then(
                     if (hasContent) {
                         Modifier.clickable(role = androidx.compose.ui.semantics.Role.Button) {
+                            // #6f: anchor the scroll position before the
+                            // height toggle, so the list does not jump.
+                            onBeforeHeightChange()
                             isExpanded = !isExpanded
+                            if (isExpanded) userExpanded = true
                         }
                     } else {
                         Modifier
@@ -1262,17 +1293,15 @@ internal fun formatTurnCost(costUsd: Double): String =
  * The engine reports it as error type `provider.free-limit` (HTTP 429);
  * the bubble is rendered from `error.message ?: error.type`, so the type
  * usually IS the text, and a 429 message carries the code or the words
- * "rate limit". Matched case-insensitively on the rendered text because
- * the bubble only ever receives that text — the error type itself is
- * dropped before it reaches this composable (ChatViewModel's toUiMessages
- * keeps only the text on ChatMessage). That is also why a typed retry
- * cannot live here yet: it would need the error type preserved on
- * ChatMessage, a bubble-originated retry kind in the view model, and a
- * model-picker opener plumbed from the composer through ChatScreen.
+ * "rate limit". The typed match wins when the view model preserved the
+ * error type on [ChatMessage.errorType] (audit-200 D17, m-315); the text
+ * fallback only matches the code on a word boundary, so "4299" or "14290"
+ * no longer count as a rate limit.
  */
-internal fun isRateLimitError(text: String): Boolean {
+internal fun isRateLimitError(text: String, errorType: String? = null): Boolean {
+    if (errorType == "provider.free-limit") return true
     val lower = text.lowercase()
     return lower.contains("free-limit") || lower.contains("free limit") ||
         lower.contains("rate limit") || lower.contains("rate_limit") ||
-        lower.contains("429")
+        Regex("\\b429\\b").containsMatchIn(lower)
 }

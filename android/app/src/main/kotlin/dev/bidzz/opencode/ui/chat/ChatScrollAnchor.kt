@@ -11,6 +11,20 @@ import androidx.compose.foundation.lazy.LazyListState
  */
 data class ScrollAnchor(val index: Int, val offset: Int)
 
+/**
+ * Saver for [ScrollAnchor] (audit-200 D17, m-426): the load/expand
+ * anchors are saveable state now, so a recreate or process death
+ * mid-load does not throw the reading position away. Saved as a plain
+ * two-int list, which the Bundle handles.
+ */
+val ScrollAnchorSaver: androidx.compose.runtime.saveable.Saver<ScrollAnchor?, List<Int>> =
+    androidx.compose.runtime.saveable.Saver(
+        save = { anchor -> anchor?.let { listOf(it.index, it.offset) } },
+        restore = { list ->
+            if (list != null && list.size == 2) ScrollAnchor(list[0], list[1]) else null
+        },
+    )
+
 fun LazyListState.captureAnchor(): ScrollAnchor =
     ScrollAnchor(firstVisibleItemIndex, firstVisibleItemScrollOffset)
 

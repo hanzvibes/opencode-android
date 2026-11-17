@@ -14,6 +14,7 @@ import dev.bidzz.opencode.core.api.ChatRepository
 import dev.bidzz.opencode.core.api.ChatState
 import dev.bidzz.opencode.core.api.InboxApi
 import dev.bidzz.opencode.core.api.PermissionRestoreGate
+import dev.bidzz.opencode.core.api.TranscriptWindowMemory
 import dev.bidzz.opencode.core.api.LiveTool
 import dev.bidzz.opencode.core.api.VcsApi
 import dev.bidzz.opencode.core.api.dto.ModelRef
@@ -585,6 +586,13 @@ data class ChatMessage(
      * engine reported no error for this turn.
      */
     val errorText: String? = null,
+    /**
+     * The engine's error TYPE for the same turn (e.g. `provider.free-limit`),
+     * preserved alongside [errorText] so the bubble can match it exactly
+     * instead of guessing from the text (audit-200 D17, m-315). Null when
+     * the engine sent no type, or the turn has no error.
+     */
+    val errorType: String? = null,
 )
 
 /** What the busy→idle edge does with the queued follow-ups (Fase 2, 13-F2/17-F1). */
@@ -1226,6 +1234,14 @@ class ChatViewModel(
      * dead-run suppressions must survive the rebuild.
      */
     private val permissionRestoreGate = PermissionRestoreGate()
+    /**
+     * Transcript-window memory shared by every repository this view
+     * model builds (audit-200 D17, m-426): the repository is rebuilt on
+     * attach, reload and new session, but a widened "load earlier"
+     * window must survive the rebuild — otherwise every restore after
+     * an engine crash starts narrow again.
+     */
+    private val transcriptWindowMemory = TranscriptWindowMemory()
     /**
      * Question answers the engine already confirmed, by tool call id
      * (audit-200 B5, M-065): the card used to keep them only in its own
@@ -2360,7 +2376,7 @@ class ChatViewModel(
         // The header names the folder the engine just started in, so this is the moment
         // to record it: earlier than this the value would be a guess.
         _state.value = _state.value.copy(workspacePath = workspace())
-        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope, permissionRestoreGate)
+        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope, permissionRestoreGate, transcriptWindowMemory)
         repository = repo
 
         collectRepo(repo)
@@ -5189,7 +5205,7 @@ class ChatViewModel(
         val attachedHandle = handle ?: return
         sessionReloadAttempts++
         repository?.close()
-        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope, permissionRestoreGate)
+        val repo = ChatRepository(attachedHandle.sessions, attachedHandle.stream, viewModelScope, permissionRestoreGate, transcriptWindowMemory)
         repository = repo
         _state.value = _state.value.copy(failure = null, failureKey = null, retryKind = RetryKind.NONE, agentSelectionFailure = null, modelSelectionFailure = null, rateLimitGuidanceShown = false)
         collectRepo(repo)
@@ -5890,7 +5906,7 @@ class ChatViewModel(
         repository?.close()
         val attached = handle
         if (attached != null) {
-            val repo = ChatRepository(attached.sessions, attached.stream, viewModelScope, permissionRestoreGate)
+            val repo = ChatRepository(attached.sessions, attached.stream, viewModelScope, permissionRestoreGate, transcriptWindowMemory)
             repository = repo
             collectRepo(repo)
         }
@@ -6714,6 +6730,7 @@ private fun ChatState.buildUnmergedMessages(
                         id = message.id,
                         role = Role.ERROR,
                         text = message.error?.message ?: message.error?.type ?: "",
+                        errorType = message.error?.type,
                         agent = message.agent,
                         model = message.model,
                         createdAtMillis = message.time?.created,
@@ -6768,6 +6785,7 @@ private fun ChatState.buildUnmergedMessages(
                     // handles the empty-content case — so the partial
                     // answer rendered as a complete one.
                     errorText = message.error?.message ?: message.error?.type,
+                    errorType = message.error?.type,
                 )
             }
             // `idle` markers are engine bookkeeping, not conversation.
