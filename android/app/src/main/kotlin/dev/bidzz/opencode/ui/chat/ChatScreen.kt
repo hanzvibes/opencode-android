@@ -6034,11 +6034,13 @@ private fun ReadinessStatusRow(
     busy: Boolean,
     workspacePath: String?,
     onStatusClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
     onProjectClick: (() -> Unit)? = null,
     // Audit-200 D16 (m-199): workspaces the drawer knows, for the
-    // same-name disambiguation as the header.
+    // same-name disambiguation as the header. Modifier stays the first
+    // optional parameter, otherwise ModifierParameter fires (the
+    // pre-existing onProjectClick default used to sit before it).
     knownWorkspaces: Set<String> = emptySet(),
-    modifier: Modifier = Modifier,
 ) {
     val colors = OpenCodeTheme.colors
     val motion = OpenCodeTheme.tokens.motion
