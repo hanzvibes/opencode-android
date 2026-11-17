@@ -126,6 +126,8 @@ fun OnboardingScreen(
                     workspacePath = workspacePath,
                     samplePath = samplePath,
                     sampleError = sampleError,
+                    hasAllFilesAccess = hasAllFilesAccess,
+                    onGrantAllFilesAccess = onGrantAllFilesAccess,
                     onCreateSample = {
                         when (val result = onCreateSample()) {
                             is SampleProject.SeedResult.Created -> {
@@ -166,6 +168,8 @@ private fun ProjectStep(
     workspacePath: String,
     samplePath: String?,
     sampleError: String?,
+    hasAllFilesAccess: Boolean,
+    onGrantAllFilesAccess: () -> Unit,
     onCreateSample: () -> Unit,
     onSampleContinue: () -> Unit,
     onChooseFolder: () -> Unit,
@@ -209,6 +213,25 @@ private fun ProjectStep(
             color = colors.onAccent,
             modifier = Modifier.fillMaxWidth(),
         )
+        // Audit-200 D17 (m-266): asking for access and choosing a folder
+        // are two different actions. On a fresh install "Choose a folder"
+        // used to jump straight to the system Settings with no explanation
+        // — so the grant gets its own explained button first, reusing the
+        // permissions step's text; only then does Choose make sense.
+        if (!hasAllFilesAccess) {
+            Text(
+                text = stringResource(R.string.onboarding_permissions_body),
+                style = OpenCodeTypography.bodySmall,
+                color = colors.onSurfaceMuted,
+            )
+            TonalButton(
+                label = stringResource(R.string.onboarding_grant_access),
+                onClick = onGrantAllFilesAccess,
+                fill = colors.accentFill,
+                color = colors.onAccent,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         TonalButton(
             label = stringResource(R.string.onboarding_choose_folder),
             onClick = onChooseFolder,

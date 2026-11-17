@@ -149,8 +149,15 @@ class ChatRepositoryLoadEarlierTest {
     }
 
     @Test
-    fun `a turn split across the page boundary still merges into one`() {
+    fun `a single-message page that would be fully absorbed stays unfolded`() {
         // Newest window: assistant a2, then user u3. Older page: assistant a1.
+        // Audit-200 D17 (m-451): folding a1 into a2 would leave the list
+        // the same size while the reading point sinks to the middle of the
+        // merged item, so the load-earlier anchor lands in the absorbed
+        // content instead of at the reading point. A page that is one
+        // continuation and nothing else stays a message of its own; a page
+        // that contributes standalone messages still folds its boundary
+        // (see ChatRepositoryD17Test).
         Stub(
             newest = listOf(
                 """{"id":"a2","type":"assistant","content":[{"type":"text","text":"a2"}]}""",
@@ -177,12 +184,15 @@ class ChatRepositoryLoadEarlierTest {
                 }
                 assertEquals(true, loaded)
 
-                // a1 + a2 folded into one turn; the user message untouched.
+                // a1 stays its own turn; the list grows by one, so the
+                // load-earlier anchor still points at the reading point.
                 val messages = repository.state.value.messages
-                assertEquals(2, messages.size)
-                assertEquals("a2", messages[0].id)
-                assertEquals("a1a2", messages[0].plainText)
-                assertEquals("u3", messages[1].id)
+                assertEquals(3, messages.size)
+                assertEquals("a1", messages[0].id)
+                assertEquals("a2", messages[1].id)
+                assertEquals("a1", messages[0].plainText)
+                assertEquals("a2", messages[1].plainText)
+                assertEquals("u3", messages[2].id)
             } finally {
                 scope.cancel()
             }
